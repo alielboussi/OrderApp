@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
 sealed class Routes(val route: String) {
     data object Login : Routes("login")
     data object Home : Routes("home")
+    data object ProductList : Routes("product_list")
 }
 
 @Composable
@@ -47,8 +48,15 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.Home.route) {
             HomeScreen(
-                onCreateOrder = { /* TODO: navigate to product list */ },
+                onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 viewModel = appViewModel
+            )
+        }
+        composable(Routes.ProductList.route) {
+            com.afterten.orders.ui.screens.ProductListScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() },
+                onContinue = { /* TODO: navigate to summary */ }
             )
         }
     }

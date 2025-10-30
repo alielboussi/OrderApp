@@ -2,7 +2,13 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+}
+
+// Ensure Kotlin uses JDK 17 toolchain consistently (helps KSP/Javac alignment)
+kotlin {
+    jvmToolchain(17)
 }
 
 android {
@@ -18,6 +24,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildTypes {
@@ -38,9 +49,7 @@ android {
         buildConfig = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
-    }
+    // With Kotlin 2.0+, Compose compiler is provided via the kotlin-compose plugin.
 
     kotlinOptions {
         jvmTarget = "17"
@@ -56,6 +65,14 @@ android {
     }
 }
 
+// Reduce memory pressure by not creating test variants for now (can re-enable later)
+androidComponents {
+    beforeVariants { variant ->
+        variant.enableAndroidTest = false
+        variant.enableUnitTest = false
+    }
+}
+
 dependencies {
     // Compose BOM
     implementation(platform("androidx.compose:compose-bom:2024.10.00"))
@@ -67,6 +84,12 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Material Components (for AndroidX view system theme resources like Theme.Material3.DayNight.NoActionBar)
+    implementation("com.google.android.material:material:1.12.0")
+
+    // Material Icons (provides Icons.Default.* vectors used in UI)
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.0")

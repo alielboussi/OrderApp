@@ -1,0 +1,60 @@
+package com.afterten.orders.data.repo
+
+import com.afterten.orders.data.ProductDto
+import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.data.VariationDto
+import com.afterten.orders.db.AppDatabase
+import com.afterten.orders.db.ProductEntity
+import com.afterten.orders.db.VariationEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+
+class ProductRepository(
+    private val provider: SupabaseProvider,
+    private val db: AppDatabase
+) {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun listenProducts(): Flow<List<ProductEntity>> = db.productDao().listenProducts()
+
+    suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
+        val raw = provider.getWithJwt("/rest/v1/products?active=eq.true&select=id,sku,name,image_url,uom,cost,has_variations,active", jwt)
+        val items = json.decodeFromString<List<ProductDto>>(raw)
+        val mapped = items.map {
+            ProductEntity(
+                id = it.id,
+                sku = it.sku,
+                name = it.name,
+                imageUrl = it.imageUrl,
+                uom = it.uom,
+                cost = it.cost,
+                hasVariations = it.hasVariations,
+                active = it.active
+            )
+        }
+        db.productDao().upsertAll(mapped)
+    }
+
+    fun listenVariations(productId: String): Flow<List<VariationEntity>> =
+        db.variationDao().listenByProduct(productId)
+
+    suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
+        val raw = provider.getWithJwt("/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,product_id,name,image_url,uom,cost,active", jwt)
+        val items = json.decodeFromString<List<VariationDto>>(raw)
+        val mapped = items.map {
+            VariationEntity(
+                id = it.id,
+                productId = it.productId,
+                name = it.name,
+                imageUrl = it.imageUrl,
+                uom = it.uom,
+                cost = it.cost,
+                active = it.active
+            )
+        }
+        db.variationDao().clearForProduct(productId)
+        db.variationDao().upsertAll(mapped)
+    }
+}
