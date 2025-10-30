@@ -5,6 +5,35 @@ create extension if not exists pgjwt;    -- for JWT sign()
 
 -- Roles note: client uses anon key to call RPC login. JWT will carry role=authenticated with outlet claims.
 
+-- Compatibility wrapper for pgjwt: provide hmac(data text, key text, type text)
+-- pgcrypto provides hmac(bytea, bytea, text); some pgjwt installs call a text variant.
+-- This wrapper converts text to bytea and delegates to pgcrypto.hmac.
+create or replace function public.hmac(data text, key text, type text)
+returns bytea
+language plpgsql
+immutable
+as $$
+declare
+  bdata bytea := convert_to(data, 'utf8');
+  bkey  bytea := convert_to(key,  'utf8');
+  outv  bytea;
+begin
+  -- Try Supabase default extensions schema first
+  begin
+    select extensions.hmac(bdata, bkey, type) into outv;
+    return outv;
+  exception when undefined_function then
+    -- Fallback: some setups install pgcrypto functions in public schema
+    begin
+      select public.hmac(bdata, bkey, type) into outv;
+      return outv;
+    exception when undefined_function then
+      raise exception 'pgcrypto hmac(bytea,bytea,text) not found in schemas extensions or public. Ensure pgcrypto is installed.';
+    end;
+  end;
+end;
+$$;
+
 -- Outlets (storing plaintext password per user request; NOTE: not recommended for production)
 create table if not exists public.outlets (
   id uuid primary key default gen_random_uuid(),
