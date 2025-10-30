@@ -15,12 +15,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import coil.compose.AsyncImage
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.ProductRepository
 import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.db.ProductEntity
 import com.afterten.orders.db.VariationEntity
+import com.afterten.orders.util.formatMoney
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -88,7 +90,7 @@ fun ProductListScreen(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(text = "$count items", style = MaterialTheme.typography.bodyMedium)
-                        Text(text = "Subtotal: $" + "%.2f".format(subtotal), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Text(text = "Subtotal: ${formatMoney(subtotal)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     }
                     Button(onClick = onContinue, enabled = count > 0) { Text("Continue") }
                 }
@@ -143,10 +145,33 @@ private fun ProductRow(root: RootViewModel, item: ProductEntity, onOpenVariation
                 contentScale = ContentScale.Crop
             )
             Spacer(Modifier.width(12.dp))
+
+            // Left: product name
             Column(Modifier.weight(1f)) {
-                Text(text = item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                Text(text = "UoM: ${item.uom} • Cost: ${item.cost}", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
             }
+
+            // Middle: UOM (no label) and Cost stacked
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(end = 12.dp)) {
+                Text(
+                    text = item.uom,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White
+                )
+                Text(
+                    text = "Cost: ${formatMoney(item.cost)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.95f)
+                )
+            }
+
+            // Right: quantity stepper or variations button
             if (item.hasVariations) {
                 TextButton(onClick = onOpenVariations) { Text("Variations") }
             } else {
@@ -190,10 +215,32 @@ private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: 
 @Composable
 private fun VariationRow(root: RootViewModel, v: VariationEntity) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Left: variation name
         Column(Modifier.weight(1f)) {
-            Text(text = v.name, style = MaterialTheme.typography.bodyMedium)
-            Text(text = "UoM: ${v.uom} • Cost: ${v.cost}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = v.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
         }
+
+        // Middle: UOM and Cost stacked
+        Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(end = 12.dp)) {
+            Text(
+                text = v.uom,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White
+            )
+            Text(
+                text = "Cost: ${formatMoney(v.cost)}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.95f)
+            )
+        }
+
+        // Right: quantity stepper
         val qty = root.qty(v.productId, v.id)
         QuantityStepper(
             qty = qty,

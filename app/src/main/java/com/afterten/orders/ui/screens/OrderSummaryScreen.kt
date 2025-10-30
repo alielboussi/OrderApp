@@ -24,6 +24,7 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import com.afterten.orders.data.SupabaseProvider
 import java.nio.file.Files
+import com.afterten.orders.util.formatMoney
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,7 +56,7 @@ fun OrderSummaryScreen(
             Text(text = "Order #: ${orderNumber ?: "…"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(text = "Time (Lusaka): ${lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))}")
             Spacer(Modifier.height(16.dp))
-            Text(text = "Items: ${cart.sumOf { it.qty }}  •  Subtotal: $" + "%.2f".format(cart.sumOf { it.lineTotal }))
+            Text(text = "Items: ${cart.sumOf { it.qty }}  •  Subtotal: ${formatMoney(cart.sumOf { it.lineTotal })}")
             Spacer(Modifier.height(16.dp))
             Text("Customer Signature", style = MaterialTheme.typography.titleMedium)
             SignaturePad(modifier = Modifier.fillMaxWidth().height(180.dp), state = sigState)
@@ -142,7 +143,7 @@ private fun generatePdf(cacheDir: File, orderNo: String, cart: List<Triple<Strin
     c.drawText("Order #$orderNo", 40f, y, paint); y += 20f
     c.drawText("Items:", 40f, y, paint); y += 20f
     cart.forEach { (name, qty, total) ->
-        c.drawText("- $name  x$qty  = $" + String.format("%.2f", total), 50f, y, paint); y += 18f
+    c.drawText("- $name  x$qty  = ${formatMoney(total)}", 50f, y, paint); y += 18f
     }
     y += 20f
     // Signature

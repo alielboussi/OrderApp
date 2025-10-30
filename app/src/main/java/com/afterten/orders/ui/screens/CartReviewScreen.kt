@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
+import com.afterten.orders.util.formatMoney
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,7 +37,7 @@ fun CartReviewScreen(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(text = "Items: ${cart.sumOf { it.qty }}")
-                        Text(text = "Subtotal: $" + "%.2f".format(subtotal), fontWeight = FontWeight.SemiBold)
+                        Text(text = "Subtotal: ${formatMoney(subtotal)}", fontWeight = FontWeight.SemiBold)
                     }
                     Button(onClick = onContinue, enabled = cart.isNotEmpty()) { Text("Continue") }
                 }
@@ -55,7 +56,7 @@ fun CartReviewScreen(
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(text = item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            Text(text = "UoM: ${item.uom} • Cost: ${item.unitPrice}")
+                            Text(text = "${item.uom} • Cost: ${formatMoney(item.unitPrice)}")
                         }
                         QuantityStepper(
                             qty = item.qty,
