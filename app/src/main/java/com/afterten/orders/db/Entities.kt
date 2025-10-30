@@ -25,3 +25,14 @@ data class VariationEntity(
     val cost: Double,
     val active: Boolean
 )
+
+@Entity(tableName = "draft_cart")
+data class DraftCartItemEntity(
+    @PrimaryKey val key: String, // productId:variationId
+    val productId: String,
+    val variationId: String?,
+    val name: String,
+    val uom: String,
+    val unitPrice: Double,
+    val qty: Int
+)

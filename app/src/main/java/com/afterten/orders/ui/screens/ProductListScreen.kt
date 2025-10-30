@@ -20,6 +20,7 @@ import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.ProductRepository
 import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.db.ProductEntity
+import com.afterten.orders.db.VariationEntity
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,15 +70,26 @@ fun ProductListScreen(
             )
         },
         bottomBar = {
-            Button(
-                onClick = onContinue,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                enabled = products.isNotEmpty()
-            ) { Text("Continue") }
+            val cartMap = root.cart.collectAsState().value
+            val subtotal = cartMap.values.sumOf { it.lineTotal }
+            val count = cartMap.values.sumOf { it.qty }
+            Surface(shadowElevation = 4.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(text = "$count items", style = MaterialTheme.typography.bodyMedium)
+                        Text(text = "Subtotal: $" + "%.2f".format(subtotal), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    }
+                    Button(onClick = onContinue, enabled = count > 0) { Text("Continue") }
+                }
+            }
         }
     ) { padding ->
+        var showVariationsFor by remember { mutableStateOf<ProductEntity?>(null) }
         Column(Modifier.padding(padding)) {
             if (error != null) {
                 Text(
@@ -92,18 +104,26 @@ fun ProductListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(products, key = { it.id }) { item ->
-                    ProductRow(item = item, onOpenVariations = {
-                        // For products with variations, we would navigate to a variation list screen
-                        // TODO: navigate to variations screen with productId
+                    ProductRow(root = root, item = item, onOpenVariations = {
+                        showVariationsFor = item
                     })
                 }
+            }
+            val productForDialog = showVariationsFor
+            if (productForDialog != null) {
+                VariationsDialog(
+                    product = productForDialog,
+                    root = root,
+                    repo = repo,
+                    onDismiss = { showVariationsFor = null }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ProductRow(item: ProductEntity, onOpenVariations: () -> Unit) {
+private fun ProductRow(root: RootViewModel, item: ProductEntity, onOpenVariations: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
@@ -120,18 +140,55 @@ private fun ProductRow(item: ProductEntity, onOpenVariations: () -> Unit) {
             if (item.hasVariations) {
                 TextButton(onClick = onOpenVariations) { Text("Variations") }
             } else {
-                QuantityStepper()
+                val qty = root.qty(item.id, null)
+                QuantityStepper(
+                    qty = qty,
+                    onDec = { root.dec(item.id, null, item.name, item.uom, item.cost) },
+                    onInc = { root.inc(item.id, null, item.name, item.uom, item.cost) }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun QuantityStepper() {
-    var qty by remember { mutableStateOf(0) }
+fun QuantityStepper(qty: Int, onDec: () -> Unit, onInc: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { if (qty > 0) qty-- }) { Text("-") }
+        OutlinedButton(onClick = onDec, enabled = qty > 0) { Text("-") }
         Text(text = qty.toString(), modifier = Modifier.padding(horizontal = 8.dp))
-        OutlinedButton(onClick = { qty++ }) { Text("+") }
+        OutlinedButton(onClick = onInc) { Text("+") }
+    }
+}
+
+@Composable
+private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: ProductRepository, onDismiss: () -> Unit) {
+    val variations by repo.listenVariations(product.id).collectAsState(initial = emptyList())
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        title = { Text(text = product.name) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                variations.forEach { v -> VariationRow(root = root, v = v) }
+            }
+        }
+    )
+}
+
+@Composable
+private fun VariationRow(root: RootViewModel, v: VariationEntity) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(text = v.name, style = MaterialTheme.typography.bodyMedium)
+            Text(text = "UoM: ${v.uom} • Cost: ${v.cost}", style = MaterialTheme.typography.bodySmall)
+        }
+        val qty = root.qty(v.productId, v.id)
+        QuantityStepper(
+            qty = qty,
+            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost) },
+            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost) }
+        )
     }
 }

@@ -57,4 +57,16 @@ class SupabaseProvider(context: Context) {
         }
         return resp.bodyAsText()
     }
+
+    // Optional: Server-side order number generation via RPC
+    suspend fun rpcNextOrderNumber(jwt: String): String {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/next_order_number"
+        val response = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(emptyMap<String, String>())
+        }
+        return response.bodyAsText()
+    }
 }

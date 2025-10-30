@@ -29,3 +29,18 @@ interface VariationDao {
     @Query("delete from product_variations where productId = :productId")
     suspend fun clearForProduct(productId: String)
 }
+
+@Dao
+interface CartDao {
+    @Query("select * from draft_cart order by name")
+    fun listenAll(): Flow<List<DraftCartItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DraftCartItemEntity)
+
+    @Query("delete from draft_cart where `key` = :key")
+    suspend fun deleteByKey(key: String)
+
+    @Query("delete from draft_cart")
+    suspend fun clear()
+}

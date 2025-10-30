@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -21,7 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AppTheme {
-                Surface(color = MaterialTheme.colorScheme.background) {
+                Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
                     AppNavHost()
                 }
             }
@@ -33,6 +34,8 @@ sealed class Routes(val route: String) {
     data object Login : Routes("login")
     data object Home : Routes("home")
     data object ProductList : Routes("product_list")
+    data object CartReview : Routes("cart_review")
+    data object Summary : Routes("summary")
 }
 
 @Composable
@@ -56,7 +59,21 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             com.afterten.orders.ui.screens.ProductListScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() },
-                onContinue = { /* TODO: navigate to summary */ }
+                onContinue = { navController.navigate(Routes.CartReview.route) }
+            )
+        }
+        composable(Routes.CartReview.route) {
+            com.afterten.orders.ui.screens.CartReviewScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() },
+                onContinue = { navController.navigate(Routes.Summary.route) }
+            )
+        }
+        composable(Routes.Summary.route) {
+            com.afterten.orders.ui.screens.OrderSummaryScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() },
+                onFinished = { /* pdfPath -> TODO: upload + navigate home */ }
             )
         }
     }
