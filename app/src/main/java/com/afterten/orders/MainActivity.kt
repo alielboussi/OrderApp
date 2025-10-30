@@ -73,7 +73,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             com.afterten.orders.ui.screens.OrderSummaryScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() },
-                onFinished = { /* pdfPath -> TODO: upload + navigate home */ }
+                onFinished = { navController.navigate(Routes.Home.route) { popUpTo(Routes.Home.route) { inclusive = true } } }
             )
         }
     }

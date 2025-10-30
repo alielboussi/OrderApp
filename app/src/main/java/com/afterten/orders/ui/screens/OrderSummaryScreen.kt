@@ -22,6 +22,8 @@ import java.io.FileOutputStream
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import com.afterten.orders.data.SupabaseProvider
+import java.nio.file.Files
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,6 +37,7 @@ fun OrderSummaryScreen(
     val ctx = LocalContext.current
     var orderNumber by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var placing by remember { mutableStateOf(false) }
     val lusakaNow = remember { ZonedDateTime.now(ZoneId.of("Africa/Lusaka")) }
     val sigState = rememberSignatureState()
     val scope = rememberCoroutineScope()
@@ -42,8 +45,7 @@ fun OrderSummaryScreen(
     LaunchedEffect(session?.token) {
         if (session?.token != null) {
             try {
-                // TODO: Replace with Supabase RPC 'next_order_number'
-                orderNumber = "" + (1000..9999).random()
+                orderNumber = root.supabaseProvider.rpcNextOrderNumber(session.token, session.outletId)
             } catch (t: Throwable) { error = t.message }
         }
     }
@@ -61,13 +63,66 @@ fun OrderSummaryScreen(
             if (error != null) Text(text = error!!, color = MaterialTheme.colorScheme.error)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 OutlinedButton(onClick = onBack) { Text("Back") }
-                Button(onClick = {
-                    scope.launch(Dispatchers.IO) {
-                        val pdf = generatePdf(ctx.cacheDir, orderNumber ?: "pending", cart = cart.map { Triple(it.name, it.qty, it.lineTotal) }, signature = sigState)
-                        onFinished(pdf.absolutePath)
-                    }
-                }, enabled = cart.isNotEmpty() && orderNumber != null) {
-                    Text("Place Order")
+                Button(
+                    onClick = {
+                        placing = true
+                        error = null
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val number = orderNumber ?: error("No order number")
+                                val pdf = generatePdf(
+                                    ctx.cacheDir,
+                                    number,
+                                    cart = cart.map { Triple(it.name, it.qty, it.lineTotal) },
+                                    signature = sigState
+                                )
+                                val pdfBytes = pdf.readBytes()
+                                val pdfPath = "invoices/${session!!.outletId}/order-$number.pdf"
+
+                                // Upload PDF to storage (make sure the bucket exists and policy allows authenticated uploads)
+                                root.supabaseProvider.uploadToStorage(
+                                    jwt = session.token,
+                                    bucket = "invoices",
+                                    path = pdfPath,
+                                    bytes = pdfBytes,
+                                    contentType = "application/pdf",
+                                    upsert = true
+                                )
+
+                                // Prepare items per schema
+                                val items = cart.map {
+                                    SupabaseProvider.PlaceOrderItem(
+                                        productId = it.productId,
+                                        variationId = it.variationId,
+                                        name = it.name,
+                                        uom = it.uom,
+                                        cost = it.unitPrice,
+                                        qty = it.qty.toDouble()
+                                    )
+                                }
+
+                                val result = root.supabaseProvider.rpcPlaceOrder(
+                                    jwt = session!!.token,
+                                    outletId = session.outletId,
+                                    items = items,
+                                    employeeName = "Android App"
+                                )
+
+                                // Clear cart locally
+                                root.clearCart()
+
+                                // Notify completion
+                                onFinished(pdf.absolutePath)
+                            } catch (t: Throwable) {
+                                error = t.message
+                            } finally {
+                                placing = false
+                            }
+                        }
+                    },
+                    enabled = cart.isNotEmpty() && orderNumber != null && !placing
+                ) {
+                    Text(if (placing) "Placing…" else "Place Order")
                 }
             }
         }

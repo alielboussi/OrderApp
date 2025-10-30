@@ -103,4 +103,9 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun clearCart() {
+        _cart.value = emptyMap()
+        viewModelScope.launch { cartDao.clear() }
+    }
 }
