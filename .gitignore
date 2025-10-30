@@ -1,0 +1,38 @@
+# Android/Gradle
+.gradle/
+local.properties
+/.kotlin/
+/build/
+/app/build/
+/app/.cxx/
+/.cxx/
+/captures/
+.externalNativeBuild/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.fleet/
+
+# Artifacts
+*.apk
+*.ap_
+*.aab
+*.aar
+
+# Logs and dumps
+*.hprof
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+Ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Others
+/out/
+/.settings/
+/node_modules/
