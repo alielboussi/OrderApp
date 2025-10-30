@@ -3,14 +3,14 @@ create extension if not exists "uuid-ossp";
 create extension if not exists pgcrypto; -- for bcrypt crypt()
 create extension if not exists pgjwt;    -- for JWT sign()
 
--- Roles note: client uses anon key to call RPC login. JWT will carry role=outlet.
+-- Roles note: client uses anon key to call RPC login. JWT will carry role=authenticated with outlet claims.
 
--- Outlets
+-- Outlets (storing plaintext password per user request; NOTE: not recommended for production)
 create table if not exists public.outlets (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
   name text not null,
-  password_hash text not null, -- bcrypt via crypt()
+  password text not null,
   created_at timestamp with time zone default now()
 );
 
@@ -95,25 +95,30 @@ alter table public.assets enable row level security;
 
 -- Policies
 -- Outlets: only allow outlet to see self (for name/email), no inserts from client here except admin-side seeding.
-create policy if not exists outlets_self_select on public.outlets
+drop policy if exists outlets_self_select on public.outlets;
+create policy outlets_self_select on public.outlets
 for select using (
-  jwt_claim('role') = 'outlet' and (jwt_claim('outlet_id'))::uuid = id
+  (jwt_claim('outlet_id'))::uuid = id
 );
 
 -- Products and variations: readable by any outlet role; writes are admin-only (no policy for insert/update/delete)
-create policy if not exists products_outlet_read on public.products
-for select using (jwt_claim('role') = 'outlet' and active);
+drop policy if exists products_outlet_read on public.products;
+create policy products_outlet_read on public.products
+for select using ((jwt_claim('outlet_id')) is not null and active);
 
-create policy if not exists product_variations_outlet_read on public.product_variations
-for select using (jwt_claim('role') = 'outlet' and active);
+drop policy if exists product_variations_outlet_read on public.product_variations;
+create policy product_variations_outlet_read on public.product_variations
+for select using ((jwt_claim('outlet_id')) is not null and active);
 
 -- Orders: outlet can see only their rows
-create policy if not exists orders_outlet_rw on public.orders
-for all using (jwt_claim('role') = 'outlet' and (jwt_claim('outlet_id'))::uuid = outlet_id)
-with check (jwt_claim('role') = 'outlet' and (jwt_claim('outlet_id'))::uuid = outlet_id);
+drop policy if exists orders_outlet_rw on public.orders;
+create policy orders_outlet_rw on public.orders
+for all using ((jwt_claim('outlet_id'))::uuid = outlet_id)
+with check ((jwt_claim('outlet_id'))::uuid = outlet_id);
 
 -- Order items: only those under the outlet's orders
-create policy if not exists order_items_outlet_rw on public.order_items
+drop policy if exists order_items_outlet_rw on public.order_items;
+create policy order_items_outlet_rw on public.order_items
 for all using (
   exists (
     select 1 from public.orders o
@@ -128,51 +133,47 @@ with check (
 );
 
 -- Outlet sequences: only row for the outlet
-create policy if not exists outlet_sequences_outlet_rw on public.outlet_sequences
+drop policy if exists outlet_sequences_outlet_rw on public.outlet_sequences;
+create policy outlet_sequences_outlet_rw on public.outlet_sequences
 for all using ((jwt_claim('outlet_id'))::uuid = outlet_id)
 with check ((jwt_claim('outlet_id'))::uuid = outlet_id);
 
 -- Assets: read-only for outlet
-create policy if not exists assets_read on public.assets
-for select using (jwt_claim('role') = 'outlet');
+drop policy if exists assets_read on public.assets;
+create policy assets_read on public.assets
+for select using ((jwt_claim('outlet_id')) is not null);
 
--- Secure password hashing helpers
--- Create outlet with hashed password (admin-side). Example:
--- insert into public.outlets(email, name, password_hash)
--- values ('outlet@example.com','Outlet Name', crypt('PlaintextTempPassword', gen_salt('bf')));
+-- Outlet seeding helper (plaintext per request). Example:
+-- insert into public.outlets(email, name, password)
+-- values ('outlet@example.com','Outlet Name','YourTempPassword1');
 
 -- RPC: outlet_login(email, password) -> returns { token, outlet_id, outlet_name }
 create or replace function public.outlet_login(p_email text, p_password text)
 returns json language plpgsql security definer as $$
+declare
+  v_outlet record;
+  v_payload json;
+  v_token text;
 begin
-  -- Validate credentials
-  if not exists (
-    select 1 from public.outlets o
-    where o.email = p_email and crypt(p_password, o.password_hash) = o.password_hash
-  ) then
+  -- Validate credentials (plaintext comparison per request)
+  select id, name into v_outlet
+  from public.outlets
+  where email = p_email and password = p_password;
+
+  if not found then
     raise exception 'invalid_email_or_password' using errcode = '28000';
   end if;
 
-  -- Load outlet
-  declare v_outlet record;
-  begin
-    select id, name into v_outlet from public.outlets where email = p_email;
-  end;
-
-  -- Build JWT payload
-  declare v_payload json;
-  declare v_token text;
-  begin
-    v_payload := json_build_object(
-      'role', 'outlet',
-      'outlet_id', v_outlet.id::text,
-      'outlet_name', v_outlet.name
-    );
-    -- IMPORTANT: Ensure the database parameter app.settings.jwt_secret is set to your project JWT secret
-    -- Example (run once with service role privileges):
-    --   alter database postgres set app.settings.jwt_secret = '<YOUR_JWT_SECRET_FROM_PROJECT_SETTINGS>';
-    v_token := sign(v_payload, current_setting('app.settings.jwt_secret', true));
-  end;
+  -- Build JWT payload. Use role=authenticated (a real DB role in Supabase)
+  v_payload := json_build_object(
+    'role', 'authenticated',
+    'outlet_id', v_outlet.id::text,
+    'outlet_name', v_outlet.name
+  );
+  -- IMPORTANT: Ensure the database parameter app.settings.jwt_secret is set to your project JWT secret
+  -- Example (run once with service role privileges):
+  --   alter database postgres set app.settings.jwt_secret = '<YOUR_JWT_SECRET_FROM_PROJECT_SETTINGS>';
+  v_token := sign(v_payload, current_setting('app.settings.jwt_secret', true));
 
   return json_build_object(
     'token', v_token,
