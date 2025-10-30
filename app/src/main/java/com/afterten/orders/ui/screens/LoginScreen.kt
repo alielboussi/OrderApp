@@ -100,6 +100,8 @@ fun LoginScreen(
             onValueChange = { email = it.trim() },
             label = "Email",
             modifier = Modifier.fillMaxWidth(),
+            borderColor = MaterialTheme.colorScheme.error,
+            borderThickness = 2.dp,
             keyboardOptions = KeyboardOptions(
                 imeAction = ImeAction.Next,
                 keyboardType = KeyboardType.Email
@@ -111,6 +113,8 @@ fun LoginScreen(
             onValueChange = { password = it },
             label = "Password",
             modifier = Modifier.fillMaxWidth(),
+            borderColor = MaterialTheme.colorScheme.error,
+            borderThickness = 2.dp,
             keyboardOptions = KeyboardOptions(
                 imeAction = ImeAction.Done,
                 keyboardType = KeyboardType.Password
