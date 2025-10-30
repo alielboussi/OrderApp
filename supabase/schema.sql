@@ -154,6 +154,10 @@ declare
   v_outlet record;
   v_payload json;
   v_token text;
+  -- If you cannot set app.settings.jwt_secret, paste your Legacy JWT Secret below
+  -- and remove the angle brackets. This stays server-side in the DB function.
+  -- Example: v_secret := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+  v_secret text := '<REPLACE_WITH_LEGACY_JWT_SECRET>';  -- TODO: replace
 begin
   -- Validate credentials (plaintext comparison per request)
   select id, name into v_outlet
@@ -170,10 +174,11 @@ begin
     'outlet_id', v_outlet.id::text,
     'outlet_name', v_outlet.name
   );
-  -- IMPORTANT: Ensure the database parameter app.settings.jwt_secret is set to your project JWT secret
-  -- Example (run once with service role privileges):
-  --   alter database postgres set app.settings.jwt_secret = '<YOUR_JWT_SECRET_FROM_PROJECT_SETTINGS>';
-  v_token := sign(v_payload, current_setting('app.settings.jwt_secret', true));
+  -- If DB parameter is not set, fall back to the pasted secret above
+  v_token := sign(
+    v_payload,
+    coalesce(current_setting('app.settings.jwt_secret', true), v_secret)
+  );
 
   return json_build_object(
     'token', v_token,
