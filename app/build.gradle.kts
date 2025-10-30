@@ -59,6 +59,10 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // Keep debug symbols for all .so to avoid strip warnings in debug builds on Windows
+            keepDebugSymbols += listOf("**/*.so")
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
