@@ -1,0 +1,263 @@
+-- Enable required extensions
+create extension if not exists "uuid-ossp";
+create extension if not exists pgcrypto; -- for bcrypt crypt()
+create extension if not exists pgjwt;    -- for JWT sign()
+
+-- Roles note: client uses anon key to call RPC login. JWT will carry role=outlet.
+
+-- Outlets
+create table if not exists public.outlets (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  name text not null,
+  password_hash text not null, -- bcrypt via crypt()
+  created_at timestamp with time zone default now()
+);
+
+-- Products
+create table if not exists public.products (
+  id uuid primary key default gen_random_uuid(),
+  sku text unique,
+  name text not null,
+  image_url text,
+  uom text not null, -- unit of measure
+  cost numeric(12,2) not null,
+  has_variations boolean not null default false,
+  active boolean not null default true,
+  created_at timestamptz default now()
+);
+
+-- Product Variations
+create table if not exists public.product_variations (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.products(id) on delete cascade,
+  name text not null,
+  image_url text,
+  uom text not null,
+  cost numeric(12,2) not null,
+  active boolean not null default true,
+  created_at timestamptz default now()
+);
+create index if not exists idx_product_variations_product on public.product_variations(product_id);
+
+-- Per-outlet sequence table for order number generation
+create table if not exists public.outlet_sequences (
+  outlet_id uuid primary key references public.outlets(id) on delete cascade,
+  next_seq bigint not null default 1
+);
+
+-- Orders
+create table if not exists public.orders (
+  id uuid primary key default gen_random_uuid(),
+  outlet_id uuid not null references public.outlets(id) on delete restrict,
+  order_number text not null, -- e.g., OutletName0000001
+  status text not null default 'Order Placed',
+  created_at timestamptz not null default now(),
+  tz text not null default 'Africa/Lusaka'
+);
+create index if not exists idx_orders_outlet on public.orders(outlet_id);
+
+-- Order Items
+create table if not exists public.order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  product_id uuid references public.products(id),
+  variation_id uuid references public.product_variations(id),
+  name text not null, -- product or variation display name
+  uom text not null,
+  cost numeric(12,2) not null,
+  qty numeric(12,3) not null,
+  amount numeric(14,2) not null
+);
+create index if not exists idx_order_items_order on public.order_items(order_id);
+
+-- Assets table (catalog of static assets tracked in Storage)
+create table if not exists public.assets (
+  key text primary key,     -- e.g., 'seal.png'
+  bucket text not null,     -- e.g., 'assets'
+  url text not null
+);
+
+-- Helper: get JWT claims
+create or replace function public.jwt_claim(claim text)
+returns text language sql stable as $$
+  select coalesce((current_setting('request.jwt.claims', true)::jsonb ->> claim), null);
+$$;
+
+-- RLS
+alter table public.outlets enable row level security;
+alter table public.products enable row level security;
+alter table public.product_variations enable row level security;
+alter table public.orders enable row level security;
+alter table public.order_items enable row level security;
+alter table public.outlet_sequences enable row level security;
+alter table public.assets enable row level security;
+
+-- Policies
+-- Outlets: only allow outlet to see self (for name/email), no inserts from client here except admin-side seeding.
+create policy if not exists outlets_self_select on public.outlets
+for select using (
+  jwt_claim('role') = 'outlet' and (jwt_claim('outlet_id'))::uuid = id
+);
+
+-- Products and variations: readable by any outlet role; writes are admin-only (no policy for insert/update/delete)
+create policy if not exists products_outlet_read on public.products
+for select using (jwt_claim('role') = 'outlet' and active);
+
+create policy if not exists product_variations_outlet_read on public.product_variations
+for select using (jwt_claim('role') = 'outlet' and active);
+
+-- Orders: outlet can see only their rows
+create policy if not exists orders_outlet_rw on public.orders
+for all using (jwt_claim('role') = 'outlet' and (jwt_claim('outlet_id'))::uuid = outlet_id)
+with check (jwt_claim('role') = 'outlet' and (jwt_claim('outlet_id'))::uuid = outlet_id);
+
+-- Order items: only those under the outlet's orders
+create policy if not exists order_items_outlet_rw on public.order_items
+for all using (
+  exists (
+    select 1 from public.orders o
+    where o.id = order_items.order_id and (jwt_claim('outlet_id'))::uuid = o.outlet_id
+  )
+)
+with check (
+  exists (
+    select 1 from public.orders o
+    where o.id = order_items.order_id and (jwt_claim('outlet_id'))::uuid = o.outlet_id
+  )
+);
+
+-- Outlet sequences: only row for the outlet
+create policy if not exists outlet_sequences_outlet_rw on public.outlet_sequences
+for all using ((jwt_claim('outlet_id'))::uuid = outlet_id)
+with check ((jwt_claim('outlet_id'))::uuid = outlet_id);
+
+-- Assets: read-only for outlet
+create policy if not exists assets_read on public.assets
+for select using (jwt_claim('role') = 'outlet');
+
+-- Secure password hashing helpers
+-- Create outlet with hashed password (admin-side). Example:
+-- insert into public.outlets(email, name, password_hash)
+-- values ('outlet@example.com','Outlet Name', crypt('PlaintextTempPassword', gen_salt('bf')));
+
+-- RPC: outlet_login(email, password) -> returns { token, outlet_id, outlet_name }
+create or replace function public.outlet_login(p_email text, p_password text)
+returns json language plpgsql security definer as $$
+begin
+  -- Validate credentials
+  if not exists (
+    select 1 from public.outlets o
+    where o.email = p_email and crypt(p_password, o.password_hash) = o.password_hash
+  ) then
+    raise exception 'invalid_email_or_password' using errcode = '28000';
+  end if;
+
+  -- Load outlet
+  declare v_outlet record;
+  begin
+    select id, name into v_outlet from public.outlets where email = p_email;
+  end;
+
+  -- Build JWT payload
+  declare v_payload json;
+  declare v_token text;
+  begin
+    v_payload := json_build_object(
+      'role', 'outlet',
+      'outlet_id', v_outlet.id::text,
+      'outlet_name', v_outlet.name
+    );
+    -- IMPORTANT: Ensure the database parameter app.settings.jwt_secret is set to your project JWT secret
+    -- Example (run once with service role privileges):
+    --   alter database postgres set app.settings.jwt_secret = '<YOUR_JWT_SECRET_FROM_PROJECT_SETTINGS>';
+    v_token := sign(v_payload, current_setting('app.settings.jwt_secret', true));
+  end;
+
+  return json_build_object(
+    'token', v_token,
+    'outlet_id', v_outlet.id,
+    'outlet_name', v_outlet.name
+  );
+end;$$;
+
+-- Ensure anon can execute login
+grant execute on function public.outlet_login(text, text) to anon;
+
+-- RPC: next_order_number(outlet_id)
+create or replace function public.next_order_number(p_outlet_id uuid)
+returns text language plpgsql security definer as $$
+declare
+  v_next bigint;
+  v_name text;
+  v_number text;
+begin
+  -- Ensure row exists
+  insert into public.outlet_sequences(outlet_id, next_seq)
+  values (p_outlet_id, 1)
+  on conflict (outlet_id) do nothing;
+
+  -- Lock row and increment atomically
+  update public.outlet_sequences set next_seq = next_seq + 1
+  where outlet_id = p_outlet_id
+  returning next_seq - 1 into v_next;
+
+  select name into v_name from public.outlets where id = p_outlet_id;
+  v_number := v_name || to_char(v_next, 'FM0000000');
+  return v_number;
+end;$$;
+
+grant execute on function public.next_order_number(uuid) to authenticated, anon, service_role;
+
+-- RPC: place_order(outlet_id, items jsonb, employee_name text) -> returns order_id, order_number, created_at
+-- items: [{product_id, variation_id, name, uom, cost, qty}]
+create or replace function public.place_order(
+  p_outlet_id uuid,
+  p_items jsonb,
+  p_employee_name text
+)
+returns table(order_id uuid, order_number text, created_at timestamptz) language plpgsql security definer as $$
+declare
+  v_order_id uuid := gen_random_uuid();
+  v_order_number text;
+  v_now timestamptz := timezone('Africa/Lusaka', now());
+  v_item jsonb;
+  v_cost numeric(12,2);
+  v_qty numeric(12,3);
+  v_amount numeric(14,2);
+begin
+  -- Only allow the outlet itself
+  if (jwt_claim('outlet_id'))::uuid <> p_outlet_id then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+
+  v_order_number := public.next_order_number(p_outlet_id);
+
+  insert into public.orders(id, outlet_id, order_number, status, created_at, tz)
+  values (v_order_id, p_outlet_id, v_order_number, 'Order Placed', v_now, 'Africa/Lusaka');
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_cost := (v_item->>'cost')::numeric;
+    v_qty := (v_item->>'qty')::numeric;
+    v_amount := round(v_cost * v_qty, 2);
+    insert into public.order_items(order_id, product_id, variation_id, name, uom, cost, qty, amount)
+    values (
+      v_order_id,
+      nullif(v_item->>'product_id','')::uuid,
+      nullif(v_item->>'variation_id','')::uuid,
+      v_item->>'name',
+      v_item->>'uom',
+      v_cost,
+      v_qty,
+      v_amount
+    );
+  end loop;
+
+  return query select v_order_id, v_order_number, v_now;
+end;$$;
+
+grant execute on function public.place_order(uuid, jsonb, text) to authenticated, anon, service_role;
+
+-- RLS default denies other writes for products/variations/assets.
+-- Ensure anon cannot read private tables except via outlet JWT claims.

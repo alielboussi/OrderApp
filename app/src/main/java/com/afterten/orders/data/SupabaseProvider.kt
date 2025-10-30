@@ -1,0 +1,49 @@
+package com.afterten.orders.data
+
+import android.content.Context
+import com.afterten.orders.BuildConfig
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.ContentNegotiation
+import io.ktor.client.plugins.logging.LogLevel
+import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.request.header
+import io.ktor.client.request.setBody
+import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
+
+class SupabaseProvider(context: Context) {
+    val supabaseUrl: String = BuildConfig.SUPABASE_URL
+    val supabaseAnonKey: String = BuildConfig.SUPABASE_ANON_KEY
+
+    // Ktor client for custom RPC calls (e.g., outlet_login)
+    val http = HttpClient(OkHttp) {
+        install(ContentNegotiation) {
+            json(Json {
+                ignoreUnknownKeys = true
+                encodeDefaults = true
+            })
+        }
+        install(Logging) {
+            level = LogLevel.INFO
+        }
+    }
+
+    suspend fun rpcLogin(email: String, password: String): String {
+        require(supabaseUrl.isNotBlank() && supabaseAnonKey.isNotBlank()) {
+            "SUPABASE_URL/ANON_KEY not configured"
+        }
+        val endpoint = "$supabaseUrl/rest/v1/rpc/outlet_login"
+        val response = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("p_email" to email, "p_password" to password))
+        }
+        // Expecting JSON: { token: "...", outlet_id: "...", outlet_name: "..." }
+        return response.bodyAsText()
+    }
+}
