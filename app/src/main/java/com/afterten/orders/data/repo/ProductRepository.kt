@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
 
 class ProductRepository(
     private val provider: SupabaseProvider,
@@ -17,10 +18,33 @@ class ProductRepository(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    @Serializable
+    private data class PostgrestError(
+        val code: String? = null,
+        val message: String? = null,
+        val details: String? = null,
+        val hint: String? = null
+    )
+
+    private fun throwIfError(raw: String) {
+        val t = raw.trim()
+        if (t.startsWith("{")) {
+            runCatching { json.decodeFromString(PostgrestError.serializer(), t) }
+                .getOrNull()
+                ?.let { err ->
+                    if (!err.message.isNullOrBlank()) {
+                        throw IllegalStateException(err.message)
+                    }
+                }
+        }
+    }
+
     fun listenProducts(): Flow<List<ProductEntity>> = db.productDao().listenProducts()
 
     suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt("/rest/v1/products?active=eq.true&select=id,sku,name,image_url,uom,cost,has_variations,active", jwt)
+        // If Supabase returns an error object, surface a friendly message instead of a JSON parse crash
+        throwIfError(raw)
         val items = json.decodeFromString<List<ProductDto>>(raw)
         val mapped = items.map {
             ProductEntity(
@@ -42,6 +66,7 @@ class ProductRepository(
 
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt("/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,product_id,name,image_url,uom,cost,active", jwt)
+        throwIfError(raw)
         val items = json.decodeFromString<List<VariationDto>>(raw)
         val mapped = items.map {
             VariationEntity(

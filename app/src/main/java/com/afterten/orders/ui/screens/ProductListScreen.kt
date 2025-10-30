@@ -22,6 +22,10 @@ import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.db.ProductEntity
 import com.afterten.orders.db.VariationEntity
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +81,8 @@ fun ProductListScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -87,37 +93,41 @@ fun ProductListScreen(
                     Button(onClick = onContinue, enabled = count > 0) { Text("Continue") }
                 }
             }
-        }
+        },
+        contentWindowInsets = WindowInsets.safeDrawing
     ) { padding ->
         var showVariationsFor by remember { mutableStateOf<ProductEntity?>(null) }
-        Column(Modifier.padding(padding)) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             if (error != null) {
-                Text(
-                    text = error!!,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(products, key = { it.id }) { item ->
-                    ProductRow(root = root, item = item, onOpenVariations = {
-                        showVariationsFor = item
-                    })
+                item(key = "error") {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(16.dp)
+                    )
                 }
             }
-            val productForDialog = showVariationsFor
-            if (productForDialog != null) {
-                VariationsDialog(
-                    product = productForDialog,
-                    root = root,
-                    repo = repo,
-                    onDismiss = { showVariationsFor = null }
-                )
+            items(products, key = { it.id }) { item ->
+                ProductRow(root = root, item = item, onOpenVariations = {
+                    showVariationsFor = item
+                })
             }
+        }
+
+        val productForDialog = showVariationsFor
+        if (productForDialog != null) {
+            VariationsDialog(
+                product = productForDialog,
+                root = root,
+                repo = repo,
+                onDismiss = { showVariationsFor = null }
+            )
         }
     }
 }

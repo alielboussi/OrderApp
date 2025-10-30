@@ -186,7 +186,12 @@ declare
   -- If you cannot set app.settings.jwt_secret, paste your Legacy JWT Secret below
   -- and remove the angle brackets. This stays server-side in the DB function.
   -- Example: v_secret := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
-  v_secret text := '<REPLACE_WITH_LEGACY_JWT_SECRET>';  -- TODO: replace
+  v_secret text := 'l8URwHldwkKqxE8VT5lgpoyH7cPJnIl8Dxc+32p+Rmsu5SvzsksfWVbJOn/jXR5TMTC9T6ZLO9JZvlzmTq1Hew==';  -- TODO: replace
+  -- Token lifetime controls. By default, mint a long-lived token so the client
+  -- does not need to refresh frequently. Adjust as needed.
+  v_now int := extract(epoch from now())::int;
+  -- 10 years (approximate, ignoring leap years). Adjust if you prefer a different duration.
+  v_exp int := v_now + (60*60*24*365*10); -- ~10 years
 begin
   -- Validate credentials (plaintext comparison per request)
   select id, name into v_outlet
@@ -198,10 +203,16 @@ begin
   end if;
 
   -- Build JWT payload. Use role=authenticated (a real DB role in Supabase)
+  -- Build JWT payload. Use role=authenticated (a real DB role in Supabase)
+  -- Include standard claims so PostgREST and clients can validate/inspect.
   v_payload := json_build_object(
     'role', 'authenticated',
     'outlet_id', v_outlet.id::text,
-    'outlet_name', v_outlet.name
+    'outlet_name', v_outlet.name,
+    'iat', v_now,
+    'exp', v_exp,
+    'iss', 'supabase',
+    'aud', 'authenticated'
   );
   -- If DB parameter is not set, fall back to the pasted secret above
   v_token := sign(

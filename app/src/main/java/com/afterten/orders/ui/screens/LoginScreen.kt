@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
@@ -114,6 +115,7 @@ fun LoginScreen(
                 imeAction = ImeAction.Done,
                 keyboardType = KeyboardType.Password
             ),
+            visualTransformation = PasswordVisualTransformation(),
             keyboardActions = KeyboardActions(onDone = {
                 focus.clearFocus(); submit()
             })

@@ -77,7 +77,8 @@ fun OrderSummaryScreen(
                                     signature = sigState
                                 )
                                 val pdfBytes = pdf.readBytes()
-                                val pdfPath = "invoices/${session!!.outletId}/order-$number.pdf"
+                                // Storage path should be relative to the bucket (do not repeat the bucket name)
+                                val pdfPath = "${session!!.outletId}/order-$number.pdf"
 
                                 // Upload PDF to storage (make sure the bucket exists and policy allows authenticated uploads)
                                 root.supabaseProvider.uploadToStorage(

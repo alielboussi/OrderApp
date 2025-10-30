@@ -33,3 +33,26 @@ Open in Android Studio and run. First launch shows Outlet Login; after successfu
 - Passwords are stored hashed via `pgcrypto` (bcrypt) on the database. Never send/store plaintext.
 - JWTs include `role=outlet` and `outlet_id` claims so RLS can restrict access.
 - Africa/Lusaka timezone handling and PDF generation will be implemented in Phase 2.
+
+## Troubleshooting: No suitable key or wrong key type
+If the Products screen shows an error like:
+
+> No suitable key or wrong key type
+
+your login RPC is signing the JWT with a different secret than PostgREST expects. Fix it by configuring the same JWT secret in both places:
+
+1) In the Supabase dashboard, go to Settings → API and copy the "JWT Secret" (not the anon/service keys).
+
+2) In SQL, set the DB parameter so `outlet_login` can read it:
+
+```sql
+alter database postgres set app.settings.jwt_secret = '<YOUR_JWT_SECRET>';  -- paste from Settings → API
+```
+
+Alternatively, edit `supabase/schema.sql` and replace the placeholder `v_secret` value in `outlet_login` with your JWT secret, then re-run the function creation block:
+
+```sql
+v_secret text := '<YOUR_JWT_SECRET>';
+```
+
+After updating the secret, re-run the login and the Products fetch should work. The app now also surfaces PostgREST error messages directly instead of a JSON parsing stack trace.
