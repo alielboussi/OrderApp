@@ -21,6 +21,7 @@ import com.afterten.orders.RootViewModel
 @Composable
 fun HomeScreen(
     onCreateOrder: () -> Unit,
+    onViewOrders: () -> Unit,
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
@@ -43,6 +44,14 @@ fun HomeScreen(
             enabled = session != null
         ) {
             Text("Create New Order")
+        }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { onViewOrders() },
+            enabled = session != null
+        ) {
+            Text("Orders")
         }
     }
 }

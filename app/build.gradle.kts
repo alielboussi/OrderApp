@@ -13,12 +13,12 @@ kotlin {
 
 android {
     namespace = "com.afterten.orders"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.afterten.orders"
         minSdk = 24
-        targetSdk = 35
+    targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -29,6 +29,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     buildTypes {
@@ -78,6 +79,7 @@ androidComponents {
 }
 
 dependencies {
+    // (Removed BOM due to Kotlin/AGP constraints)
     // Compose BOM
     implementation(platform("androidx.compose:compose-bom:2024.10.00"))
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.10.00"))
@@ -117,15 +119,19 @@ dependencies {
     // Coil for image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Supabase Kotlin SDK (PostgREST + Storage)
+    // Supabase Kotlin SDK (v2.x compatible with Kotlin 2.0 toolchain)
     implementation("io.github.jan-tennert.supabase:postgrest-kt:2.4.0")
     implementation("io.github.jan-tennert.supabase:storage-kt:2.4.0")
+    implementation("io.github.jan-tennert.supabase:realtime-kt:2.4.0")
 
     // Ktor client for any custom calls if needed
     implementation("io.ktor:ktor-client-okhttp:2.3.11")
     implementation("io.ktor:ktor-client-logging:2.3.11")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.11")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
+
+    // Desugaring for Java 8+ APIs on minSdk < 26
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

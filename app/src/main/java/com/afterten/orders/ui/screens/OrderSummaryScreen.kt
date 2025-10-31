@@ -228,10 +228,7 @@ fun OrderSummaryScreen(
                                 // Clear cart locally
                                 root.clearCart()
 
-                                // Close the app after launching browser
-                                (ctx as? Activity)?.finishAffinity()
-
-                                // Notify completion
+                                // Notify completion (MainActivity observes and navigates Home)
                                 onFinished(pdf.absolutePath)
                             } catch (t: Throwable) {
                                 error = t.message

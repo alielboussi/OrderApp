@@ -21,6 +21,17 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import io.ktor.client.statement.HttpResponse
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.realtime.realtime
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.PostgresAction
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import android.util.Log
 
 class SupabaseProvider(context: Context) {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
@@ -36,6 +47,53 @@ class SupabaseProvider(context: Context) {
         }
         install(Logging) {
             level = LogLevel.INFO
+        }
+    }
+
+    // Supabase client for Realtime (v2 API)
+    private val realtimeClient = createSupabaseClient(supabaseUrl, supabaseAnonKey) {
+        install(Realtime)
+    }
+
+    data class RealtimeSubscriptionHandle(
+        private val job: Job,
+        private val onClose: suspend () -> Unit
+    ) {
+        fun close() {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { onClose() }
+            }
+            runCatching { job.cancel() }
+        }
+    }
+
+    /** Subscribe to Postgres changes on public.orders for the outlet; triggers on any insert/update */
+    fun subscribeOrders(
+        jwt: String,
+        outletId: String,
+        onEvent: () -> Unit
+    ): RealtimeSubscriptionHandle {
+        val scope = CoroutineScope(Dispatchers.IO)
+        val channel = realtimeClient.realtime.channel("orders")
+        val job = scope.launch {
+            // Provide JWT to this channel for RLS
+            runCatching { channel.updateAuth(jwt) }
+            // Build a flow of changes filtered by outlet
+            val flow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+                table = "orders"
+                filter = "outlet_id=eq.$outletId"
+            }
+            // Subscribe and start collecting
+            Log.d("Realtime", "Subscribing to orders changes for outlet=$outletId")
+            channel.subscribe()
+            flow.collect {
+                Log.d("Realtime", "orders change event received (outlet=$outletId), triggering refresh")
+                onEvent()
+            }
+        }
+        return RealtimeSubscriptionHandle(job) {
+            Log.d("Realtime", "Unsubscribing from orders (outlet=$outletId)")
+            channel.unsubscribe()
         }
     }
 
@@ -160,4 +218,6 @@ class SupabaseProvider(context: Context) {
             setBody(bytes)
         }
     }
+
+    // (Realtime support will be added later when toolchain is upgraded)
 }
