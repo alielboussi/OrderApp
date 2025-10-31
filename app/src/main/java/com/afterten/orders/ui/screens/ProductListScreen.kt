@@ -346,7 +346,7 @@ private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: 
                         variations.forEachIndexed { index, v ->
                             VariationRow(root = root, v = v)
                             if (index < variations.lastIndex) {
-                                Divider(modifier = Modifier.padding(vertical = 12.dp))
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                             }
                         }
                     }
