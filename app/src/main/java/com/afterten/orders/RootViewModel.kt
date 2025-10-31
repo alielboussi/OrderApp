@@ -93,8 +93,10 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
     fun subtotal(): Double = _cart.value.values.sumOf { it.lineTotal }
 
     init {
-        // Load existing draft cart from DB and keep in sync
+        // On fresh app start, ensure any stale draft quantities are cleared so each run starts at 0
         viewModelScope.launch {
+            cartDao.clear()
+            // Load draft cart (will be empty after clear) and keep in sync with DB for the session
             cartDao.listenAll().collect { list ->
                 _cart.value = list.associateBy(
                     keySelector = { it.key },

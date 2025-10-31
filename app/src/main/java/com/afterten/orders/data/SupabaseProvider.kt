@@ -43,14 +43,39 @@ class SupabaseProvider(context: Context) {
         require(supabaseUrl.isNotBlank() && supabaseAnonKey.isNotBlank()) {
             "SUPABASE_URL/ANON_KEY not configured"
         }
-        val endpoint = "$supabaseUrl/rest/v1/rpc/outlet_login"
-        val response = http.post(endpoint) {
+        // 1) Password grant with Supabase Auth to obtain a real JWT
+        @Serializable
+        data class AuthTokenResp(
+            @SerialName("access_token") val accessToken: String? = null
+        )
+
+        val tokenRespText = http.post("$supabaseUrl/auth/v1/token?grant_type=password") {
             header("apikey", supabaseAnonKey)
             contentType(ContentType.Application.Json)
-            setBody(mapOf("p_email" to email, "p_password" to password))
-        }
-        // Expecting JSON: { token: "...", outlet_id: "...", outlet_name: "..." }
-        return response.bodyAsText()
+            setBody(mapOf("email" to email, "password" to password))
+        }.bodyAsText()
+
+        val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
+        val jwt = tokenResp.accessToken ?: error("Auth failed: no access_token returned")
+
+        // 2) Ask DB who this user maps to (outlet)
+        @Serializable
+        data class WhoAmI(@SerialName("outlet_id") val outletId: String, @SerialName("outlet_name") val outletName: String)
+        val whoText = http.post("$supabaseUrl/rest/v1/rpc/whoami_outlet") {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody("{}")
+        }.bodyAsText()
+
+        val who = Json { ignoreUnknownKeys = true }
+            .decodeFromString(ListSerializer(WhoAmI.serializer()), whoText)
+            .firstOrNull() ?: error("No outlet mapping found for this user. Insert into public.outlet_users.")
+
+        // 3) Return the same shape the app expects
+        @Serializable
+        data class LoginPack(val token: String, @SerialName("outlet_id") val outletId: String, @SerialName("outlet_name") val outletName: String)
+        return Json { encodeDefaults = true }.encodeToString(LoginPack.serializer(), LoginPack(jwt, who.outletId, who.outletName))
     }
 
     suspend fun getWithJwt(pathAndQuery: String, jwt: String): String {

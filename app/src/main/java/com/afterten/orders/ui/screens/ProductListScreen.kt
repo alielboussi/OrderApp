@@ -24,6 +24,10 @@ import coil.request.ImageRequest
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -310,8 +314,8 @@ fun QuantityStepper(qty: Int, onDec: () -> Unit, onInc: () -> Unit, onChange: (I
             colors = TextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                focusedIndicatorColor = Color.White,
-                unfocusedIndicatorColor = Color.White.copy(alpha = 0.5f),
+                focusedIndicatorColor = MaterialTheme.colorScheme.error,
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
                 focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent
             )
@@ -335,7 +339,12 @@ private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth(0.95f)) {
             Column(Modifier.padding(20.dp)) {
-                Text(text = product.name, style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    text = product.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    textDecoration = TextDecoration.Underline
+                )
                 Spacer(Modifier.height(12.dp))
                 if (loading && variations.isEmpty()) {
                     Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
@@ -364,24 +373,33 @@ private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: 
 private fun VariationRow(root: RootViewModel, v: VariationEntity) {
     val cart = root.cart.collectAsState().value
     val qty = cart["${v.productId}:${v.id}"]?.qty ?: 0
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        // Thumbnail image (with placeholder/error) -> left
-        ProductImage(
-            url = v.imageUrl,
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Left panel: Image with name below (wrap up to 2 lines) and cost under it
+        Column(
             modifier = Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(Modifier.width(12.dp))
-
-        // Middle: variation name and cost under it
-        Column(Modifier.weight(1f)) {
+                .weight(1f)
+                .widthIn(min = 120.dp)
+        ) {
+            ProductImage(
+                url = v.imageUrl,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = v.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = Color.White,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -392,16 +410,88 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity) {
             )
         }
 
-        // Right: UOM above qty controls
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(start = 12.dp)) {
-            Text(text = v.uom, style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Spacer(Modifier.width(16.dp))
+
+        // Right: UOM centered above the qty text field, with red outlined -/+ buttons
+        VariationQtyControls(
+            uom = v.uom,
+            qty = qty,
+            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost) },
+            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost) },
+            onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n) }
+        )
+    }
+}
+
+@Composable
+private fun RedOutlinedCircleButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        // Pill-shaped button
+        shape = RoundedCornerShape(50),
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = MaterialTheme.colorScheme.error,
+            disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+        ),
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+        modifier = Modifier
+            .width(48.dp)
+            .height(34.dp)
+    ) {
+        Text(text)
+    }
+}
+
+@Composable
+private fun VariationQtyControls(
+    uom: String,
+    qty: Int,
+    onDec: () -> Unit,
+    onInc: () -> Unit,
+    onChange: (Int) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RedOutlinedCircleButton(text = "-", onClick = onDec, enabled = qty > 0)
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 8.dp)
+                .width(56.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = uom,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             Spacer(Modifier.height(6.dp))
-            QuantityStepper(
-                qty = qty,
-                onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost) },
-                onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost) },
-                onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n) }
+            OutlinedTextField(
+                value = qty.toString(),
+                onValueChange = { s ->
+                    val n = s.filter { it.isDigit() }.toIntOrNull() ?: 0
+                    onChange(n.coerceAtLeast(0))
+                },
+                singleLine = true,
+                modifier = Modifier
+                    .width(56.dp),
+                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
+                keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+                colors = TextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.error,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
         }
+        RedOutlinedCircleButton(text = "+", onClick = onInc)
     }
 }

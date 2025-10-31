@@ -23,6 +23,9 @@ import androidx.compose.ui.graphics.nativeCanvas
 
 class SignatureState {
     private val path = Path()
+    private var lastX: Float? = null
+    private var lastY: Float? = null
+    private var _distance: Float = 0f
     private val paint = Paint().apply {
         style = Paint.Style.STROKE
         color = Color.WHITE
@@ -31,10 +34,20 @@ class SignatureState {
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
-    fun clear() { path.reset() }
+    fun clear() { path.reset(); lastX = null; lastY = null; _distance = 0f }
     fun drawOn(canvas: Canvas) { canvas.drawPath(path, paint) }
     fun addPoint(x: Float, y: Float, down: Boolean) {
-        if (down) path.moveTo(x, y) else path.lineTo(x, y)
+        if (down) {
+            path.moveTo(x, y)
+            lastX = x; lastY = y
+        } else {
+            path.lineTo(x, y)
+            val lx = lastX; val ly = lastY
+            if (lx != null && ly != null) {
+                _distance += kotlin.math.hypot((x - lx).toDouble(), (y - ly).toDouble()).toFloat()
+            }
+            lastX = x; lastY = y
+        }
     }
     fun toBitmap(width: Int, height: Int): Bitmap {
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -43,6 +56,7 @@ class SignatureState {
         drawOn(c)
         return bmp
     }
+    fun isMeaningful(minDistancePx: Float = 60f): Boolean = _distance >= minDistancePx
 }
 
 @Composable
