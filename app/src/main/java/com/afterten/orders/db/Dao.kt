@@ -23,11 +23,17 @@ interface VariationDao {
     @Query("select * from product_variations where productId = :productId and active = 1 order by name")
     fun listenByProduct(productId: String): Flow<List<VariationEntity>>
 
+    @Query("select * from product_variations where active = 1")
+    fun listenAll(): Flow<List<VariationEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(variations: List<VariationEntity>)
 
     @Query("delete from product_variations where productId = :productId")
     suspend fun clearForProduct(productId: String)
+
+    @Query("delete from product_variations")
+    suspend fun clearAll()
 }
 
 @Dao

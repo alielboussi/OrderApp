@@ -61,7 +61,8 @@ fun CartReviewScreen(
                         QuantityStepper(
                             qty = item.qty,
                             onDec = { root.dec(item.productId, item.variationId, item.name, item.uom, item.unitPrice) },
-                            onInc = { root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice) }
+                            onInc = { root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice) },
+                            onChange = { n -> root.setQty(item.productId, item.variationId, item.name, item.uom, item.unitPrice, n) }
                         )
                     }
                 }

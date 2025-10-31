@@ -64,6 +64,9 @@ class ProductRepository(
     fun listenVariations(productId: String): Flow<List<VariationEntity>> =
         db.variationDao().listenByProduct(productId)
 
+    fun listenAllVariations(): Flow<List<VariationEntity>> =
+        db.variationDao().listenAll()
+
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt("/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,product_id,name,image_url,uom,cost,active", jwt)
         throwIfError(raw)
@@ -80,6 +83,25 @@ class ProductRepository(
             )
         }
         db.variationDao().clearForProduct(productId)
+        db.variationDao().upsertAll(mapped)
+    }
+
+    suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
+        val raw = provider.getWithJwt("/rest/v1/product_variations?active=eq.true&select=id,product_id,name,image_url,uom,cost,active", jwt)
+        throwIfError(raw)
+        val items = json.decodeFromString<List<VariationDto>>(raw)
+        val mapped = items.map {
+            VariationEntity(
+                id = it.id,
+                productId = it.productId,
+                name = it.name,
+                imageUrl = it.imageUrl,
+                uom = it.uom,
+                cost = it.cost,
+                active = it.active
+            )
+        }
+        db.variationDao().clearAll()
         db.variationDao().upsertAll(mapped)
     }
 }
