@@ -18,12 +18,18 @@ android {
     defaultConfig {
         applicationId = "com.afterten.orders"
         minSdk = 24
-    targetSdk = 36
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    lint {
+        lintConfig = file("lint.xml")
+        warningsAsErrors = false
+        abortOnError = true
     }
 
     compileOptions {
@@ -70,13 +76,19 @@ android {
     }
 }
 
-// Reduce memory pressure by not creating test variants for now (can re-enable later)
-androidComponents {
-    beforeVariants { variant ->
-        variant.enableAndroidTest = false
-        variant.enableUnitTest = false
-    }
+// Workaround for Windows file locks on lint-cache during clean
+// Exclude the lint-cache from :app:clean to avoid occasional FileSystemException
+// You can manually delete app/build/intermediates/lint-cache when needed (after stopping Gradle daemons)
+tasks.named<Delete>("clean") {
+    val buildDirFile = layout.buildDirectory.asFile.get()
+    delete(
+        fileTree(buildDirFile) {
+            exclude("intermediates/lint-cache/**")
+        }
+    )
 }
+
+// Note: If you need to disable test variants for performance, update to the new AGP hostTests API.
 
 dependencies {
     // (Removed BOM due to Kotlin/AGP constraints)

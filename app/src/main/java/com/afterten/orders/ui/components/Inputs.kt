@@ -21,7 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppTextFieldColors(): TextFieldColors = TextFieldDefaults.colors(
+fun appTextFieldColors(): TextFieldColors = TextFieldDefaults.colors(
     focusedTextColor = Color.White,
     unfocusedTextColor = Color.White,
     disabledTextColor = Color.White.copy(alpha = 0.6f),
@@ -67,7 +67,7 @@ fun AppOutlinedTextField(
             unfocusedContainerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent
         )
-    } else AppTextFieldColors()
+    } else appTextFieldColors()
 
     val base = if (borderColor != null && borderThickness > 0.dp) {
         modifier

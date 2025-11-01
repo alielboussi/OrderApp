@@ -2,6 +2,7 @@ package com.afterten.orders.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import android.graphics.pdf.PdfDocument
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -215,7 +216,7 @@ fun OrderSummaryScreen(
 
                                 // Open in browser (prefer Chrome if available)
                                 val publicUrl = "${root.supabaseProvider.supabaseUrl}/storage/v1/object/public/orders/${storagePath}"
-                                val uri = Uri.parse(publicUrl)
+                                val uri = publicUrl.toUri()
                                 var intent = Intent(Intent.ACTION_VIEW, uri)
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 // Try to use Chrome if installed, fall back otherwise

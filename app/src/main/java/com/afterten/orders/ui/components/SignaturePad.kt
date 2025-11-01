@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.core.graphics.createBitmap
 
 class SignatureState {
     private val path = Path()
@@ -50,7 +51,7 @@ class SignatureState {
         }
     }
     fun toBitmap(width: Int, height: Int): Bitmap {
-        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bmp = createBitmap(width, height)
         val c = Canvas(bmp)
         c.drawColor(Color.TRANSPARENT)
         drawOn(c)

@@ -32,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import android.util.Log
+import io.github.jan.supabase.postgrest.query.filter.FilterOperation
+import io.github.jan.supabase.postgrest.query.filter.FilterOperator
 
 class SupabaseProvider(context: Context) {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
@@ -81,7 +83,7 @@ class SupabaseProvider(context: Context) {
             // Build a flow of changes filtered by outlet
             val flow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "orders"
-                filter = "outlet_id=eq.$outletId"
+                filter("outlet_id", FilterOperator.EQ, outletId)
             }
             // Subscribe and start collecting
             Log.d("Realtime", "Subscribing to orders changes for outlet=$outletId")
