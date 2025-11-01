@@ -7,7 +7,8 @@ import android.graphics.Paint
 import android.graphics.Path
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -69,11 +71,22 @@ fun SignaturePad(modifier: Modifier = Modifier, state: SignatureState = remember
     Box(
         modifier = modifier
             .background(androidx.compose.ui.graphics.Color.Transparent)
+            // High-frequency pointer pipeline that consumes events early to avoid parent scroll interception
             .pointerInput(Unit) {
-                detectDragGestures(onDragStart = { offset ->
-                    state.addPoint(offset.x, offset.y, down = true)
-                }) { change, _ ->
-                    state.addPoint(change.position.x, change.position.y, down = false)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Consume immediately so verticalScroll won't steal the gesture
+                    // Consume initial down so parent scroll doesn't intercept
+                    down.consume()
+                    state.addPoint(down.position.x, down.position.y, down = true)
+                    var pointer = down.id
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == pointer } ?: continue
+                        state.addPoint(change.position.x, change.position.y, down = false)
+                        change.consume()
+                        if (!change.pressed || change.changedToUp()) break
+                    }
                 }
             }
     ) {

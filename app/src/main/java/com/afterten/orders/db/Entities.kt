@@ -36,3 +36,14 @@ data class DraftCartItemEntity(
     val unitPrice: Double,
     val qty: Int
 )
+
+@Entity(tableName = "pending_orders")
+data class PendingOrderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val outletId: String,
+    val employeeName: String,
+    val itemsJson: String,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val attempts: Int = 0,
+    val nextAttemptAtMillis: Long = System.currentTimeMillis()
+)

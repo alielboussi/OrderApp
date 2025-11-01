@@ -11,6 +11,8 @@ class OutletRepository(private val provider: SupabaseProvider) {
     @Serializable
     private data class LoginResponse(
         val token: String,
+        @SerialName("refresh_token") val refreshToken: String,
+        @SerialName("expires_at") val expiresAtMillis: Long,
         @SerialName("outlet_id") val outletId: String,
         @SerialName("outlet_name") val outletName: String
     )
@@ -22,6 +24,8 @@ class OutletRepository(private val provider: SupabaseProvider) {
         val parsed = json.decodeFromString<LoginResponse>(raw)
         return OutletSession(
             token = parsed.token,
+            refreshToken = parsed.refreshToken,
+            expiresAtMillis = parsed.expiresAtMillis,
             outletId = parsed.outletId,
             outletName = parsed.outletName
         )

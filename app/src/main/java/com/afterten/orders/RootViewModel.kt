@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.db.DraftCartItemEntity
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import com.afterten.orders.data.SessionStore
+import com.afterten.orders.sync.OrderSyncWorker
 
 class RootViewModel(application: Application) : AndroidViewModel(application) {
     val supabaseProvider = SupabaseProvider(application)
@@ -19,9 +23,41 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _session = MutableStateFlow<OutletSession?>(null)
     val session: StateFlow<OutletSession?> = _session
+    private var refreshJob: Job? = null
 
     fun setSession(session: OutletSession?) {
         _session.value = session
+        SessionStore.save(getApplication(), session)
+        refreshJob?.cancel()
+        if (session != null) {
+            // Immediately propagate auth to realtime
+            supabaseProvider.updateRealtimeAuth(session.token)
+            // Start background refresh loop
+            refreshJob = viewModelScope.launch {
+                while (true) {
+                    val waitMs = (session.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                    delay(waitMs)
+                    runCatching {
+                        val (newJwt, newExp) = supabaseProvider.refreshAccessToken(session.refreshToken)
+                        val updated = session.copy(token = newJwt, expiresAtMillis = newExp)
+                        _session.value = updated
+                        SessionStore.save(getApplication(), updated)
+                        supabaseProvider.updateRealtimeAuth(newJwt)
+                    }.onFailure {
+                        // If refresh fails, wait a bit and try again; if persistently failing, break
+                        delay(30_000L)
+                    }
+                }
+            }
+        }
+    }
+
+    init {
+        // Restore any previous session from disk
+        val restored = SessionStore.load(getApplication())
+        if (restored != null) setSession(restored)
+        // Kick the order sync worker once on startup
+        OrderSyncWorker.enqueue(getApplication())
     }
 
     // --- Cart state ---

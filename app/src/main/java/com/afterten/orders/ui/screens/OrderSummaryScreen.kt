@@ -44,6 +44,12 @@ import androidx.compose.material3.HorizontalDivider
 import com.afterten.orders.data.repo.ProductRepository
 import com.afterten.orders.db.AppDatabase
 import android.app.Activity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import com.afterten.orders.db.PendingOrderEntity
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.builtins.ListSerializer
+import com.afterten.orders.sync.OrderSyncWorker
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +69,7 @@ fun OrderSummaryScreen(
     var placing by remember { mutableStateOf(false) }
     val lusakaNow = remember { ZonedDateTime.now(ZoneId.of("Africa/Lusaka")) }
     val sigState = rememberSignatureState()
+    var sigSize by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
@@ -92,7 +99,7 @@ fun OrderSummaryScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(text = "Order #: ${orderNumber ?: "…"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(text = "Time (Lusaka): ${lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))}", color = Color.White)
+            Text(text = "Date: ${lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", color = Color.White)
             Spacer(Modifier.height(12.dp))
             Text(text = "Items: ${cart.sumOf { it.qty }}  •  Subtotal: ${formatMoney(cart.sumOf { it.lineTotal })}", color = Color.White)
 
@@ -100,14 +107,35 @@ fun OrderSummaryScreen(
             val productsById = products.associateBy({ it.id }, { it.name })
             val groups = cart.groupBy { it.productId }
             Spacer(Modifier.height(12.dp))
+            val colWidth = 76.dp
             groups.entries.forEachIndexed { index, entry ->
                 val header = productsById[entry.key] ?: (entry.value.firstOrNull()?.name ?: "")
                 Text(text = header, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.Underline, color = Color.White)
                 Spacer(Modifier.height(6.dp))
+                // Column headers aligned to the right of the name
+                Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.weight(1f))
+                    Text("UOM", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
+                    Text("Cost", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
+                    Text("Qty", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
+                    Text("Amount", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.height(4.dp))
                 entry.value.forEach { item ->
-                    Text(text = item.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = Color.White)
-                    Text(text = "${item.uom} • Cost: ${formatMoney(item.unitPrice)} • Qty: ${item.qty} • Amount: ${formatMoney(item.lineTotal)}", color = Color.White.copy(alpha = 0.9f))
-                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(item.uom, modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
+                        Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
+                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
+                        Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
+                    }
+                    Spacer(Modifier.height(6.dp))
                 }
                 if (index < groups.size - 1) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
@@ -119,24 +147,32 @@ fun OrderSummaryScreen(
             Text(text = "Employee Name", style = MaterialTheme.typography.titleMedium, color = Color.White)
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("First name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = Color.White)
+                    Spacer(Modifier.height(4.dp))
                 AppOutlinedTextField(
                     value = firstName,
                     onValueChange = { firstName = it },
-                    label = "First name",
+                    label = "",
                     modifier = Modifier.weight(1f),
                     borderColor = MaterialTheme.colorScheme.error,
                     borderThickness = 2.dp,
                     shape = RoundedCornerShape(50)
                 )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Last name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = Color.White)
+                    Spacer(Modifier.height(4.dp))
                 AppOutlinedTextField(
                     value = lastName,
                     onValueChange = { lastName = it },
-                    label = "Last name",
+                    label = "",
                     modifier = Modifier.weight(1f),
                     borderColor = MaterialTheme.colorScheme.error,
                     borderThickness = 2.dp,
                     shape = RoundedCornerShape(50)
                 )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -148,6 +184,7 @@ fun OrderSummaryScreen(
                     .height(180.dp)
                     .border(1.5.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(12.dp))
                     .padding(2.dp)
+                    .onSizeChanged { sigSize = it }
             ) {
                 SignaturePad(modifier = Modifier.fillMaxSize(), state = sigState)
             }
@@ -155,12 +192,14 @@ fun OrderSummaryScreen(
             if (error != null) Text(text = error!!, color = MaterialTheme.colorScheme.error)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 OutlinedButton(onClick = onBack) { Text("Back") }
+                TextButton(onClick = { sigState.clear() }) { Text("Clear Signature", color = MaterialTheme.colorScheme.error) }
                 Button(
                     onClick = {
                         placing = true
                         error = null
                         scope.launch(Dispatchers.IO) {
                             try {
+                                val ses = session ?: error("No active session")
                                 val number = orderNumber ?: error("No order number")
                                 // Validate employee name and signature
                                 val fn = firstName.trim()
@@ -169,26 +208,52 @@ fun OrderSummaryScreen(
                                 val title = fn.lowercase().replaceFirstChar { it.titlecase() } + " " + ln.lowercase().replaceFirstChar { it.titlecase() }
                                 if (!sigState.isMeaningful()) error("Please provide a valid signature")
 
+                                // Build signature bitmap (PNG) with actual canvas size
+                                val sigW = sigSize.width.coerceAtLeast(500)
+                                val sigH = sigSize.height.coerceAtLeast(160)
+                                val signatureBitmap = sigState.toBitmap(sigW, sigH)
+
+                                // Upload signature image to Supabase Storage (signatures bucket)
+                                runCatching {
+                                    val baos = java.io.ByteArrayOutputStream()
+                                    signatureBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+                                    val sigBytes = baos.toByteArray()
+                                    val capFn = fn.lowercase().replaceFirstChar { it.titlecase() }
+                                    val capLn = ln.lowercase().replaceFirstChar { it.titlecase() }
+                                    val outletSafe = ses.outletName.replace(" ", "_").replace(Regex("[^A-Za-z0-9_-]"), "")
+                                    val sigDate = lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+                                    val sigFile = "${capFn}_${capLn}_${sigDate}_${outletSafe}.png"
+                                    val sigPath = "${ses.outletId}/$sigFile"
+                                    root.supabaseProvider.uploadToStorage(
+                                        jwt = ses.token,
+                                        bucket = "signatures",
+                                        path = sigPath,
+                                        bytes = sigBytes,
+                                        contentType = "image/png",
+                                        upsert = true
+                                    )
+                                }
+
                                 // Build PDF including all item details
                                 val pdf = generateFullPdf(
                                     cacheDir = ctx.cacheDir,
-                                    outletName = session!!.outletName,
+                                    outletName = ses.outletName,
                                     orderNo = number,
                                     createdAt = lusakaNow,
                                     items = cart,
                                     employeeName = title,
-                                    signature = sigState
+                                    signatureBitmap = signatureBitmap
                                 )
                                 val pdfBytes = pdf.readBytes()
                                 val dateStr = lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                                val safeOutlet = session.outletName.replace(" ", "_")
+                                val safeOutlet = ses.outletName.replace(" ", "_")
                                     .replace(Regex("[^A-Za-z0-9_-]"), "")
                                 val pdfFileName = "${safeOutlet}_${number}_${dateStr}.pdf"
-                                val storagePath = "${session.outletId}/$pdfFileName"
+                                val storagePath = "${ses.outletId}/$pdfFileName"
 
                                 // Upload PDF to storage (orders bucket)
                                 root.supabaseProvider.uploadToStorage(
-                                    jwt = session.token,
+                                    jwt = ses.token,
                                     bucket = "orders",
                                     path = storagePath,
                                     bytes = pdfBytes,
@@ -207,12 +272,31 @@ fun OrderSummaryScreen(
                                         qty = it.qty.toDouble()
                                     )
                                 }
-                                root.supabaseProvider.rpcPlaceOrder(
-                                    jwt = session.token,
-                                    outletId = session.outletId,
-                                    items = itemsReq,
-                                    employeeName = title
-                                )
+                                runCatching {
+                                    root.supabaseProvider.rpcPlaceOrder(
+                                        jwt = ses.token,
+                                        outletId = ses.outletId,
+                                        items = itemsReq,
+                                        employeeName = title
+                                    )
+                                }.onFailure { placeErr ->
+                                    // Queue for background sync
+                                    val itemsJson = Json.encodeToString(
+                                        ListSerializer(SupabaseProvider.PlaceOrderItem.serializer()),
+                                        itemsReq
+                                    )
+                                    val db = AppDatabase.get(ctx)
+                                    db.pendingOrderDao().upsert(
+                                        PendingOrderEntity(
+                                            outletId = ses.outletId,
+                                            employeeName = title,
+                                            itemsJson = itemsJson
+                                        )
+                                    )
+                                    OrderSyncWorker.enqueue(ctx)
+                                    // Inform the user and continue clearing cart (queued)
+                                    error = "Order queued for sync and will be sent when online."
+                                }
 
                                 // Open in browser (prefer Chrome if available)
                                 val publicUrl = "${root.supabaseProvider.supabaseUrl}/storage/v1/object/public/orders/${storagePath}"
@@ -254,7 +338,7 @@ private fun generateFullPdf(
     createdAt: ZonedDateTime,
     items: List<RootViewModel.CartItem>,
     employeeName: String,
-    signature: com.afterten.orders.ui.components.SignatureState
+    signatureBitmap: android.graphics.Bitmap
 ): File {
     val doc = PdfDocument()
     val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 @ 72dpi
@@ -265,7 +349,7 @@ private fun generateFullPdf(
     var y = 40f
     canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
     canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-    canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))}", 40f, y, paint); y += 24f
+    canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
     canvas.drawText("Items:", 40f, y, paint); y += 18f
     // Table header
     canvas.drawText("Name", 40f, y, paint)
@@ -293,7 +377,7 @@ private fun generateFullPdf(
             // Re-draw header on new page
             canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
             canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-            canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))}", 40f, y, paint); y += 24f
+            canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
             canvas.drawText("Items:", 40f, y, paint); y += 18f
             canvas.drawText("Name", 40f, y, paint)
             canvas.drawText("UOM", 260f, y, paint)
@@ -308,7 +392,7 @@ private fun generateFullPdf(
     canvas.drawText("Subtotal: ${formatMoney(subtotal)}", 320f, y, paint); y += 24f
     y += 20f
     // Signature
-    val sigBmp = signature.toBitmap(500, 160)
+    val sigBmp = signatureBitmap
     canvas.drawText("Signed by: $employeeName", 40f, y, paint); y += 18f
     canvas.drawBitmap(sigBmp, 40f, y, null); y += sigBmp.height + 20f
 

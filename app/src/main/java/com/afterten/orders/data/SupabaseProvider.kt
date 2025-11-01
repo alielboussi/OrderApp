@@ -32,8 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import android.util.Log
-import io.github.jan.supabase.postgrest.query.filter.FilterOperation
 import io.github.jan.supabase.postgrest.query.filter.FilterOperator
+import kotlin.system.measureTimeMillis
 
 class SupabaseProvider(context: Context) {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
@@ -57,6 +57,10 @@ class SupabaseProvider(context: Context) {
         install(Realtime)
     }
 
+    // Track current JWT and active channels to support token refresh and auto-resubscribe
+    @Volatile private var currentJwt: String? = null
+    @Volatile private var ordersChannel: io.github.jan.supabase.realtime.RealtimeChannel? = null
+
     data class RealtimeSubscriptionHandle(
         private val job: Job,
         private val onClose: suspend () -> Unit
@@ -77,9 +81,11 @@ class SupabaseProvider(context: Context) {
     ): RealtimeSubscriptionHandle {
         val scope = CoroutineScope(Dispatchers.IO)
         val channel = realtimeClient.realtime.channel("orders")
+        ordersChannel = channel
+        currentJwt = jwt
         val job = scope.launch {
             // Provide JWT to this channel for RLS
-            runCatching { channel.updateAuth(jwt) }
+            try { channel.updateAuth(jwt) } catch (t: Throwable) { Log.w("Realtime", "updateAuth initial failed: ${t.message}") }
             // Build a flow of changes filtered by outlet
             val flow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "orders"
@@ -96,6 +102,17 @@ class SupabaseProvider(context: Context) {
         return RealtimeSubscriptionHandle(job) {
             Log.d("Realtime", "Unsubscribing from orders (outlet=$outletId)")
             channel.unsubscribe()
+            if (ordersChannel === channel) ordersChannel = null
+        }
+    }
+
+    /** Update JWT on active realtime channels (call when token refreshes) */
+    fun updateRealtimeAuth(newJwt: String) {
+        currentJwt = newJwt
+        ordersChannel?.let { ch ->
+            CoroutineScope(Dispatchers.IO).launch {
+                try { ch.updateAuth(newJwt) } catch (t: Throwable) { Log.w("Realtime", "updateAuth failed: ${t.message}") }
+            }
         }
     }
 
@@ -106,7 +123,10 @@ class SupabaseProvider(context: Context) {
         // 1) Password grant with Supabase Auth to obtain a real JWT
         @Serializable
         data class AuthTokenResp(
-            @SerialName("access_token") val accessToken: String? = null
+            @SerialName("access_token") val accessToken: String? = null,
+            @SerialName("refresh_token") val refreshToken: String? = null,
+            @SerialName("expires_in") val expiresInSec: Long? = null,
+            @SerialName("token_type") val tokenType: String? = null
         )
 
         val tokenRespText = http.post("$supabaseUrl/auth/v1/token?grant_type=password") {
@@ -115,8 +135,10 @@ class SupabaseProvider(context: Context) {
             setBody(mapOf("email" to email, "password" to password))
         }.bodyAsText()
 
-        val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
-        val jwt = tokenResp.accessToken ?: error("Auth failed: no access_token returned")
+    val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
+    val jwt = tokenResp.accessToken ?: error("Auth failed: no access_token returned")
+    val refresh = tokenResp.refreshToken ?: error("Auth failed: no refresh_token returned")
+    val expiresAtMillis = System.currentTimeMillis() + ((tokenResp.expiresInSec ?: 3600L) - 30L) * 1000L
 
         // 2) Ask DB who this user maps to (outlet)
         @Serializable
@@ -134,8 +156,35 @@ class SupabaseProvider(context: Context) {
 
         // 3) Return the same shape the app expects
         @Serializable
-        data class LoginPack(val token: String, @SerialName("outlet_id") val outletId: String, @SerialName("outlet_name") val outletName: String)
-        return Json { encodeDefaults = true }.encodeToString(LoginPack.serializer(), LoginPack(jwt, who.outletId, who.outletName))
+        data class LoginPack(
+            val token: String,
+            @SerialName("refresh_token") val refreshToken: String,
+            @SerialName("expires_at") val expiresAtMillis: Long,
+            @SerialName("outlet_id") val outletId: String,
+            @SerialName("outlet_name") val outletName: String
+        )
+        return Json { encodeDefaults = true }.encodeToString(
+            LoginPack.serializer(),
+            LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName)
+        )
+    }
+
+    /** Refresh an access token via refresh_token */
+    suspend fun refreshAccessToken(refreshToken: String): Pair<String, Long> {
+        @Serializable
+        data class RefreshResp(
+            @SerialName("access_token") val accessToken: String? = null,
+            @SerialName("expires_in") val expiresInSec: Long? = null
+        )
+        val text = http.post("$supabaseUrl/auth/v1/token?grant_type=refresh_token") {
+            header("apikey", supabaseAnonKey)
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("refresh_token" to refreshToken))
+        }.bodyAsText()
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(RefreshResp.serializer(), text)
+        val newJwt = parsed.accessToken ?: error("No access_token in refresh response")
+        val expiresAtMillis = System.currentTimeMillis() + ((parsed.expiresInSec ?: 3600L) - 30L) * 1000L
+        return newJwt to expiresAtMillis
     }
 
     suspend fun getWithJwt(pathAndQuery: String, jwt: String): String {

@@ -50,3 +50,18 @@ interface CartDao {
     @Query("delete from draft_cart")
     suspend fun clear()
 }
+
+@Dao
+interface PendingOrderDao {
+    @Query("select * from pending_orders where nextAttemptAtMillis <= :now order by createdAtMillis asc")
+    suspend fun due(now: Long): List<PendingOrderEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PendingOrderEntity): Long
+
+    @Query("delete from pending_orders where id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("update pending_orders set attempts = :attempts, nextAttemptAtMillis = :nextAt where id = :id")
+    suspend fun updateBackoff(id: Long, attempts: Int, nextAt: Long)
+}

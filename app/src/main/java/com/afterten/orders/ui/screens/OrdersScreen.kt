@@ -19,6 +19,7 @@ import com.afterten.orders.data.repo.OrderRepository
 import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import com.afterten.orders.util.LogAnalytics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,9 +48,11 @@ fun OrdersScreen(
         try {
             // Initial load
             items = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+            LogAnalytics.event("orders_loaded", mapOf("count" to items.size))
             loading = false
         } catch (t: Throwable) {
             error = t.message ?: t.toString()
+            LogAnalytics.error("orders_load_failed", error, t)
             loading = false
         }
     }
@@ -65,7 +68,9 @@ fun OrdersScreen(
             ) {
                 scope.launch {
                     runCatching {
-                        items = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                        val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                        items = newItems
+                        LogAnalytics.event("orders_refreshed", mapOf("count" to newItems.size))
                     }
                 }
             }
