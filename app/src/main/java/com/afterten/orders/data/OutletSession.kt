@@ -11,5 +11,7 @@ data class OutletSession(
     val outletName: String,
     val userId: String? = null,
     val email: String? = null,
-    val isAdmin: Boolean = false
+    val isAdmin: Boolean = false,
+    val canTransfer: Boolean = false,
+    val isTransferManager: Boolean = false
 )

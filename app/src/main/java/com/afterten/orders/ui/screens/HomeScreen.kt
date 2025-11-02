@@ -22,11 +22,14 @@ import com.afterten.orders.RootViewModel
 fun HomeScreen(
     onCreateOrder: () -> Unit,
     onViewOrders: () -> Unit,
-    onAdminWarehouses: () -> Unit,
+    onTransfers: () -> Unit,
+    onAdmin: () -> Unit,
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
     val isAdmin = session?.isAdmin == true
+    val canTransfer = session?.canTransfer == true
+    val isTransferManager = session?.isTransferManager == true
 
     Column(
         modifier = Modifier
@@ -40,29 +43,41 @@ fun HomeScreen(
             style = MaterialTheme.typography.headlineMedium
         )
         Spacer(Modifier.height(16.dp))
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { onCreateOrder() },
-            enabled = (session?.outletId?.isNotEmpty() == true)
-        ) {
-            Text("Create New Order")
+        if (!isTransferManager) {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onCreateOrder() },
+                enabled = (session?.outletId?.isNotEmpty() == true)
+            ) {
+                Text("Create New Order")
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onViewOrders() },
+                enabled = (session?.outletId?.isNotEmpty() == true)
+            ) {
+                Text("Orders")
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { onViewOrders() },
-            enabled = (session?.outletId?.isNotEmpty() == true)
-        ) {
-            Text("Orders")
+        if (canTransfer) {
+            Spacer(Modifier.height(12.dp))
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onTransfers() },
+                enabled = session != null
+            ) {
+                Text("Stock Transfers")
+            }
         }
         if (isAdmin) {
             Spacer(Modifier.height(12.dp))
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { onAdminWarehouses() },
+                onClick = { onAdmin() },
                 enabled = session != null
             ) {
-                Text("Warehouses Admin")
+                Text("Admin")
             }
         }
     }

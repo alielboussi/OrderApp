@@ -83,7 +83,11 @@ tasks.named<Delete>("clean") {
     val buildDirFile = layout.buildDirectory.asFile.get()
     delete(
         fileTree(buildDirFile) {
+            // These folders are known to be locked by Windows during/after builds
             exclude("intermediates/lint-cache/**")
+            exclude("kspCaches/**")
+            // If KSP keeps files open, skipping its caches prevents clean from failing.
+            // You can manually delete app/build/kspCaches after closing Android Studio/Gradle daemons.
         }
     )
 }

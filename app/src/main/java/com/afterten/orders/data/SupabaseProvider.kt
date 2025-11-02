@@ -147,7 +147,7 @@ class SupabaseProvider(context: Context) {
         }.bodyAsText()
 
         val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
-        val jwt = tokenResp.accessToken ?: error("Auth failed: no access_token returned")
+        val jwt = tokenResp.accessToken ?: error("Auth failed: ${tokenRespText}")
         val refresh = tokenResp.refreshToken ?: error("Auth failed: no refresh_token returned")
         val expiresAtMillis = System.currentTimeMillis() + ((tokenResp.expiresInSec ?: 3600L) - 30L) * 1000L
 
@@ -186,7 +186,7 @@ class SupabaseProvider(context: Context) {
             emailMatch || uuidMatch
         }
 
-        // 2) Ask DB who this user maps to (outlet)
+    // 2) Ask DB who this user maps to (outlet)
         @Serializable
     data class WhoAmI(@SerialName("outlet_id") val outletId: String, @SerialName("outlet_name") val outletName: String)
         val whoText = http.post("$supabaseUrl/rest/v1/rpc/whoami_outlet") {
@@ -196,11 +196,59 @@ class SupabaseProvider(context: Context) {
             setBody("{}")
         }.bodyAsText()
 
-        val whoList = Json { ignoreUnknownKeys = true }
-            .decodeFromString(ListSerializer(WhoAmI.serializer()), whoText)
+        // Decode array RPC response; if an error object comes back, surface it nicely
+        val whoList = run {
+            val t = whoText.trim()
+            if (t.startsWith("{") && t.contains("\"code\"")) {
+                throw IllegalStateException("whoami_outlet failed: $t")
+            }
+            Json { ignoreUnknownKeys = true }
+                .decodeFromString(ListSerializer(WhoAmI.serializer()), whoText)
+        }
         val who = whoList.firstOrNull()
 
-        // 3) Return the same shape the app expects
+        // 3) Fetch DB-driven roles (admin/supervisor/outlet/transfer_manager)
+        @Serializable
+        data class OutletRoleInfo(
+            @SerialName("outlet_id") val outletId: String? = null,
+            @SerialName("outlet_name") val outletName: String? = null,
+            val roles: List<String> = emptyList()
+        )
+
+        @Serializable
+        data class WhoRoles(
+            @SerialName("user_id") val userId: String? = null,
+            val email: String? = null,
+            @SerialName("is_admin") val isAdmin: Boolean = false,
+            val roles: List<String> = emptyList(),
+            val outlets: List<OutletRoleInfo> = emptyList()
+        )
+        val rolesText = http.post("$supabaseUrl/rest/v1/rpc/whoami_roles") {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody("{}")
+        }.bodyAsText()
+        val rolesList = run {
+            val t = rolesText.trim()
+            if (t.startsWith("{") && t.contains("\"code\"")) {
+                throw IllegalStateException("whoami_roles failed: $t")
+            }
+            Json { ignoreUnknownKeys = true }
+                .decodeFromString(ListSerializer(WhoRoles.serializer()), rolesText)
+        }
+        val whoRoles = rolesList.firstOrNull()
+
+        // Effective admin: BuildConfig gate OR DB role
+        val isAdminEff = isAdmin || (whoRoles?.isAdmin == true)
+        // Can transfer if admin or has transfer_manager on any outlet
+        val hasTransferRole = (whoRoles?.outlets ?: emptyList()).any { o ->
+            o.roles.any { it.equals("transfer_manager", ignoreCase = true) }
+        } || (whoRoles?.roles?.any { it.equals("transfer_manager", ignoreCase = true) } == true)
+        val canTransfer = isAdminEff || hasTransferRole
+        val isTransferManager = hasTransferRole
+
+        // 4) Return the same shape the app expects
         @Serializable
         data class LoginPack(
             val token: String,
@@ -210,15 +258,17 @@ class SupabaseProvider(context: Context) {
             @SerialName("outlet_name") val outletName: String,
             @SerialName("user_id") val userId: String? = null,
             val email: String? = null,
-            @SerialName("is_admin") val isAdmin: Boolean = false
+            @SerialName("is_admin") val isAdmin: Boolean = false,
+            @SerialName("can_transfer") val canTransfer: Boolean = false,
+            @SerialName("is_transfer_manager") val isTransferManager: Boolean = false
         )
         return Json { encodeDefaults = true }.encodeToString(
             LoginPack.serializer(),
             if (who != null) {
-                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdmin)
-            } else if (isAdmin) {
-                // Allow admin to sign in without an outlet mapping; outlet-related actions stay disabled by UI
-                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdmin)
+                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdminEff, canTransfer, isTransferManager)
+            } else if (isAdminEff || canTransfer) {
+                // Allow admin and transfer managers to sign in without an outlet mapping; outlet-specific actions should request context in UI
+                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager)
             } else {
                 error("No outlet mapping found for this user. Please set outlets.email to the user email or add a row in public.outlet_users.")
             }
