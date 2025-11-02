@@ -47,10 +47,12 @@ import com.afterten.orders.db.AppDatabase
 import android.app.Activity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.draw.clipToBounds
 import com.afterten.orders.db.PendingOrderEntity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
 import com.afterten.orders.sync.OrderSyncWorker
+import kotlinx.coroutines.withContext
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,9 +127,9 @@ fun OrderSummaryScreen(
                 // Column headers aligned to the right of the name
                 Row(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
+                    Text("Qty", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
                     Text("UOM", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
                     Text("Cost", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
-                    Text("Qty", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
                     Text("Amount", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
                 }
                 Spacer(Modifier.height(4.dp))
@@ -142,9 +144,9 @@ fun OrderSummaryScreen(
                             color = Color.White,
                             modifier = Modifier.weight(1f)
                         )
+                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                         Text(item.uom, modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                         Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
-                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                         Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                     }
                     Spacer(Modifier.height(6.dp))
@@ -198,6 +200,7 @@ fun OrderSummaryScreen(
                     .height(180.dp)
                     .border(1.5.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(12.dp))
                     .padding(2.dp)
+                    .clipToBounds()
                     .onSizeChanged { sigSize = it }
             ) {
                 SignaturePad(modifier = Modifier.fillMaxSize(), state = sigState)
@@ -218,7 +221,7 @@ fun OrderSummaryScreen(
                     onClick = {
                         placing = true
                         error = null
-                        scope.launch(Dispatchers.IO) {
+                        scope.launch {
                             try {
                                 val ses = session ?: error("No active session")
                                 val number = orderNumber ?: error("No order number")
@@ -234,108 +237,111 @@ fun OrderSummaryScreen(
                                 val sigH = sigSize.height.coerceAtLeast(160)
                                 val signatureBitmap = sigState.toBitmap(sigW, sigH)
 
-                                // Upload signature image to Supabase Storage (signatures bucket)
-                                runCatching {
-                                    val baos = java.io.ByteArrayOutputStream()
-                                    signatureBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
-                                    val sigBytes = baos.toByteArray()
-                                    val capFn = fn.lowercase().replaceFirstChar { it.titlecase() }
-                                    val capLn = ln.lowercase().replaceFirstChar { it.titlecase() }
-                                    val outletSafe = ses.outletName.replace(" ", "_").replace(Regex("[^A-Za-z0-9_-]"), "")
-                                    val sigDate = lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
-                                    val sigFile = "${capFn}_${capLn}_${sigDate}_${outletSafe}.png"
-                                    val sigPath = "${ses.outletId}/$sigFile"
+                                withContext(Dispatchers.IO) {
+                                    // Upload signature image to Supabase Storage (signatures bucket)
+                                    runCatching {
+                                        val baos = java.io.ByteArrayOutputStream()
+                                        signatureBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+                                        val sigBytes = baos.toByteArray()
+                                        val capFn = fn.lowercase().replaceFirstChar { it.titlecase() }
+                                        val capLn = ln.lowercase().replaceFirstChar { it.titlecase() }
+                                        val outletSafe = ses.outletName.replace(" ", "_").replace(Regex("[^A-Za-z0-9_-]"), "")
+                                        val sigDate = lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+                                        val sigFile = "${capFn}_${capLn}_${sigDate}_${outletSafe}.png"
+                                        val sigPath = "${ses.outletId}/$sigFile"
+                                        root.supabaseProvider.uploadToStorage(
+                                            jwt = ses.token,
+                                            bucket = "signatures",
+                                            path = sigPath,
+                                            bytes = sigBytes,
+                                            contentType = "image/png",
+                                            upsert = true
+                                        )
+                                    }
+
+                                    // Build PDF including all item details (new grouped layout)
+                                    val pdf = generateFullPdf(
+                                        cacheDir = ctx.cacheDir,
+                                        outletName = ses.outletName,
+                                        orderNo = number,
+                                        createdAt = lusakaNow,
+                                        items = cart,
+                                        employeeName = title,
+                                        signatureBitmap = signatureBitmap
+                                    )
+                                    val pdfBytes = pdf.readBytes()
+                                    val dateStr = lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                                    val safeOutlet = ses.outletName.replace(" ", "_")
+                                        .replace(Regex("[^A-Za-z0-9_-]"), "")
+                                    val pdfFileName = "${safeOutlet}_${number}_${dateStr}.pdf"
+                                    val storagePath = "${ses.outletId}/$pdfFileName"
+
+                                    // Upload PDF to storage (orders bucket)
                                     root.supabaseProvider.uploadToStorage(
                                         jwt = ses.token,
-                                        bucket = "signatures",
-                                        path = sigPath,
-                                        bytes = sigBytes,
-                                        contentType = "image/png",
+                                        bucket = "orders",
+                                        path = storagePath,
+                                        bytes = pdfBytes,
+                                        contentType = "application/pdf",
                                         upsert = true
                                     )
-                                }
 
-                                // Build PDF including all item details
-                                val pdf = generateFullPdf(
-                                    cacheDir = ctx.cacheDir,
-                                    outletName = ses.outletName,
-                                    orderNo = number,
-                                    createdAt = lusakaNow,
-                                    items = cart,
-                                    employeeName = title,
-                                    signatureBitmap = signatureBitmap
-                                )
-                                val pdfBytes = pdf.readBytes()
-                                val dateStr = lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                                val safeOutlet = ses.outletName.replace(" ", "_")
-                                    .replace(Regex("[^A-Za-z0-9_-]"), "")
-                                val pdfFileName = "${safeOutlet}_${number}_${dateStr}.pdf"
-                                val storagePath = "${ses.outletId}/$pdfFileName"
-
-                                // Upload PDF to storage (orders bucket)
-                                root.supabaseProvider.uploadToStorage(
-                                    jwt = ses.token,
-                                    bucket = "orders",
-                                    path = storagePath,
-                                    bytes = pdfBytes,
-                                    contentType = "application/pdf",
-                                    upsert = true
-                                )
-
-                                // Place order on server with employee name
-                                val itemsReq = cart.map {
-                                    SupabaseProvider.PlaceOrderItem(
-                                        productId = it.productId,
-                                        variationId = it.variationId,
-                                        name = it.name,
-                                        uom = it.uom,
-                                        cost = it.unitPrice,
-                                        qty = it.qty.toDouble()
-                                    )
-                                }
-                                runCatching {
-                                    root.supabaseProvider.rpcPlaceOrder(
-                                        jwt = ses.token,
-                                        outletId = ses.outletId,
-                                        items = itemsReq,
-                                        employeeName = title
-                                    )
-                                }.onFailure { placeErr ->
-                                    // Queue for background sync
-                                    val itemsJson = Json.encodeToString(
-                                        ListSerializer(SupabaseProvider.PlaceOrderItem.serializer()),
-                                        itemsReq
-                                    )
-                                    val db = AppDatabase.get(ctx)
-                                    db.pendingOrderDao().upsert(
-                                        PendingOrderEntity(
-                                            outletId = ses.outletId,
-                                            employeeName = title,
-                                            itemsJson = itemsJson
+                                    // Place order on server with employee name
+                                    val itemsReq = cart.map {
+                                        SupabaseProvider.PlaceOrderItem(
+                                            productId = it.productId,
+                                            variationId = it.variationId,
+                                            name = it.name,
+                                            uom = it.uom,
+                                            cost = it.unitPrice,
+                                            qty = it.qty.toDouble()
                                         )
-                                    )
-                                    OrderSyncWorker.enqueue(ctx)
-                                    // Inform the user and continue clearing cart (queued)
-                                    error = "Order queued for sync and will be sent when online."
+                                    }
+                                    try {
+                                        root.supabaseProvider.rpcPlaceOrder(
+                                            jwt = ses.token,
+                                            outletId = ses.outletId,
+                                            items = itemsReq,
+                                            employeeName = title
+                                        )
+                                    } catch (placeErr: Throwable) {
+                                        // Queue for background sync
+                                        val itemsJson = Json.encodeToString(
+                                            ListSerializer(SupabaseProvider.PlaceOrderItem.serializer()),
+                                            itemsReq
+                                        )
+                                        val db = AppDatabase.get(ctx)
+                                        db.pendingOrderDao().upsert(
+                                            PendingOrderEntity(
+                                                outletId = ses.outletId,
+                                                employeeName = title,
+                                                itemsJson = itemsJson
+                                            )
+                                        )
+                                        OrderSyncWorker.enqueue(ctx)
+                                        // Surface a gentle info (set on main later)
+                                        withContext(Dispatchers.Main) {
+                                            error = "Order queued for sync and will be sent when online."
+                                        }
+                                    }
+
+                                    // Trigger Chrome download link (add ?download= to force download)
+                                    val publicUrl = "${root.supabaseProvider.supabaseUrl}/storage/v1/object/public/orders/${storagePath}?download=${Uri.encode(pdfFileName)}"
+                                    withContext(Dispatchers.Main) {
+                                        // Clear cart and navigate home BEFORE opening Chrome
+                                        root.clearCart()
+                                        onFinished(pdf.absolutePath)
+
+                                        val uri = publicUrl.toUri()
+                                        var intent = Intent(Intent.ACTION_VIEW, uri)
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY)
+                                        intent.setPackage("com.android.chrome")
+                                        runCatching { ctx.startActivity(intent) }.onFailure {
+                                            intent = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY)
+                                            ctx.startActivity(intent)
+                                        }
+                                    }
                                 }
-
-                                // Open in browser (prefer Chrome if available)
-                                val publicUrl = "${root.supabaseProvider.supabaseUrl}/storage/v1/object/public/orders/${storagePath}"
-                                val uri = publicUrl.toUri()
-                                var intent = Intent(Intent.ACTION_VIEW, uri)
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                // Try to use Chrome if installed, fall back otherwise
-                                intent.setPackage("com.android.chrome")
-                                runCatching { ctx.startActivity(intent) }.onFailure {
-                                    intent = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    ctx.startActivity(intent)
-                                }
-
-                                // Clear cart locally
-                                root.clearCart()
-
-                                // Notify completion (MainActivity observes and navigates Home)
-                                onFinished(pdf.absolutePath)
                             } catch (t: Throwable) {
                                 error = t.message
                             } finally {
@@ -366,46 +372,65 @@ private fun generateFullPdf(
     var page = doc.startPage(pageInfo)
     var canvas = page.canvas
     val paint = android.graphics.Paint().apply { textSize = 14f; color = android.graphics.Color.BLACK }
+    val headerPaint = android.graphics.Paint().apply { textSize = 22f; isFakeBoldText = true; color = android.graphics.Color.BLACK }
+    val redPaint = android.graphics.Paint().apply { strokeWidth = 1.5f; color = android.graphics.Color.rgb(220, 20, 60) }
 
     var y = 40f
     canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
     canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
     canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
-    canvas.drawText("Items:", 40f, y, paint); y += 18f
-    // Table header
-    canvas.drawText("Name", 40f, y, paint)
-    canvas.drawText("UOM", 260f, y, paint)
-    canvas.drawText("Unit", 320f, y, paint)
-    canvas.drawText("Qty", 380f, y, paint)
-    canvas.drawText("Amount", 430f, y, paint); y += 16f
-    // Lines
-    canvas.drawLine(40f, y, 555f, y, paint); y += 14f
-    var subtotal = 0.0
-    items.forEach { it ->
-        val amount = it.lineTotal
-        subtotal += amount
-        canvas.drawText(it.name.take(30), 40f, y, paint)
-        canvas.drawText(it.uom, 260f, y, paint)
-        canvas.drawText(formatMoney(it.unitPrice), 320f, y, paint)
-        canvas.drawText(it.qty.toString(), 380f, y, paint)
-        canvas.drawText(formatMoney(amount), 430f, y, paint)
-        y += 16f
-        if (y > 760f) { // naive pagination
+    canvas.drawText("Items:", 40f, y, paint); y += 10f
+
+    fun newPageIfNeeded(targetY: Float) {
+        if (targetY > 780f) {
             doc.finishPage(page)
             page = doc.startPage(pageInfo)
             canvas = page.canvas
             y = 40f
-            // Re-draw header on new page
             canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
             canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
             canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
-            canvas.drawText("Items:", 40f, y, paint); y += 18f
-            canvas.drawText("Name", 40f, y, paint)
-            canvas.drawText("UOM", 260f, y, paint)
-            canvas.drawText("Unit", 320f, y, paint)
-            canvas.drawText("Qty", 380f, y, paint)
-            canvas.drawText("Amount", 430f, y, paint); y += 16f
-            canvas.drawLine(40f, y, 555f, y, paint); y += 14f
+            canvas.drawText("Items:", 40f, y, paint); y += 10f
+        }
+    }
+
+    val groups = items.groupBy { it.productId }
+    var subtotal = 0.0
+    groups.entries.forEachIndexed { idx, entry ->
+        val first = entry.value.firstOrNull()
+        val header = first?.name ?: ""
+        // Centered big header
+        val headerWidth = headerPaint.measureText(header)
+        val centerX = (595 - 40 - 40) / 2f + 40
+        newPageIfNeeded(y + 24f)
+        canvas.drawText(header, centerX - headerWidth / 2f, y + 20f, headerPaint)
+        y += 26f
+        // Column header (Qty, UOM, Cost, Amount)
+        canvas.drawText("Qty", 300f, y, paint)
+        canvas.drawText("UOM", 340f, y, paint)
+        canvas.drawText("Cost", 400f, y, paint)
+        canvas.drawText("Amount", 470f, y, paint)
+        y += 10f
+        entry.value.forEach { it ->
+            newPageIfNeeded(y + 26f)
+            // Line before
+            canvas.drawLine(40f, y, 555f, y, redPaint); y += 14f
+            val amount = it.lineTotal
+            subtotal += amount
+            canvas.drawText(it.name.take(30), 40f, y, paint)
+            canvas.drawText(it.qty.toString(), 300f, y, paint)
+            canvas.drawText(it.uom, 340f, y, paint)
+            canvas.drawText(formatMoney(it.unitPrice), 400f, y, paint)
+            canvas.drawText(formatMoney(amount), 470f, y, paint)
+            y += 12f
+            // Line after
+            canvas.drawLine(40f, y, 555f, y, redPaint)
+            y += 4f
+        }
+        if (idx < groups.size - 1) {
+            y += 10f
+            canvas.drawLine(40f, y, 555f, y, paint)
+            y += 6f
         }
     }
     y += 10f

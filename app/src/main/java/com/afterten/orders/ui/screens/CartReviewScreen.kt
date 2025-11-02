@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.util.formatMoney
+import androidx.compose.material3.HorizontalDivider
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,16 +91,19 @@ fun CartReviewScreen(
                 val items = entry.value
                 item(key = "group_${entry.key}") {
                     Column(Modifier.fillMaxWidth()) {
-                        // Group header: main product name, white and underlined
+                        // Group header: big centered product name, underlined
                         val header = nameByProduct[entry.key] ?: (items.firstOrNull()?.name ?: "")
                         Text(
                             text = header,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 48.sp),
                             color = Color.White,
                             textDecoration = TextDecoration.Underline,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                         )
                         items.forEach { item ->
+                            // Divider before each variance/item
+                            HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                             Card(Modifier.fillMaxWidth()) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
@@ -112,7 +117,7 @@ fun CartReviewScreen(
                                         )
                                         Spacer(Modifier.height(4.dp))
                                         Text(
-                                            text = "Cost: ${formatMoney(item.unitPrice)}",
+                                            text = "Cost: ${formatMoney(item.unitPrice)}  •  Amount: ${formatMoney(item.lineTotal)}",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = Color.White.copy(alpha = 0.9f)
                                         )
@@ -127,6 +132,9 @@ fun CartReviewScreen(
                                     )
                                 }
                             }
+                            Spacer(Modifier.height(6.dp))
+                            // Divider after each variance/item
+                            HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                         }
                         if (gIndex < groups.lastIndex) {
                             HorizontalDivider(
