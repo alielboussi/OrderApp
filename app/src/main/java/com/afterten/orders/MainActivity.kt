@@ -37,6 +37,7 @@ sealed class Routes(val route: String) {
     data object CartReview : Routes("cart_review")
     data object Summary : Routes("summary")
     data object Orders : Routes("orders")
+    data object AdminWarehouses : Routes("admin_warehouses")
 }
 
 @Composable
@@ -54,6 +55,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onViewOrders = { navController.navigate(Routes.Orders.route) },
+                onAdminWarehouses = { navController.navigate(Routes.AdminWarehouses.route) },
                 viewModel = appViewModel
             )
         }
@@ -80,6 +82,12 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.Orders.route) {
             com.afterten.orders.ui.screens.OrdersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.AdminWarehouses.route) {
+            com.afterten.orders.ui.screens.WarehousesAdminScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() }
             )

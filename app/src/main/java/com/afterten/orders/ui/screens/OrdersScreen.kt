@@ -81,6 +81,18 @@ fun OrdersScreen(
         }
     }
 
+    // Also refresh when we emit a local event (e.g., right after placing an order)
+    LaunchedEffect(session?.token, session?.outletId) {
+        val s = session ?: return@LaunchedEffect
+        root.supabaseProvider.ordersEvents.collect {
+            runCatching {
+                val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                items = newItems
+                LogAnalytics.event("orders_refreshed_local", mapOf("count" to newItems.size))
+            }
+        }
+    }
+
     val isLive = subHandle != null
 
     Scaffold(

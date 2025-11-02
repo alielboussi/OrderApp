@@ -33,6 +33,8 @@ class SignatureState {
     var version by mutableStateOf(0L)
     private val paint = Paint().apply {
         style = Paint.Style.STROKE
+        // White looks good on dark UI backgrounds, but is invisible on a white PDF.
+        // We'll keep the UI stroke white and allow color override when exporting.
         color = Color.WHITE
         strokeWidth = 6f
         isAntiAlias = true
@@ -55,11 +57,17 @@ class SignatureState {
         }
         version++
     }
-    fun toBitmap(width: Int, height: Int): Bitmap {
+    fun toBitmap(width: Int, height: Int, colorOverride: Int? = null): Bitmap {
         val bmp = createBitmap(width, height)
         val c = Canvas(bmp)
         c.drawColor(Color.TRANSPARENT)
-        drawOn(c)
+        if (colorOverride != null) {
+            val p = Paint(paint)
+            p.color = colorOverride
+            c.drawPath(path, p)
+        } else {
+            drawOn(c)
+        }
         return bmp
     }
     fun isMeaningful(minDistancePx: Float = 60f): Boolean = _distance >= minDistancePx

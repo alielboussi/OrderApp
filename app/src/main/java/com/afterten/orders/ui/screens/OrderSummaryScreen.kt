@@ -1,6 +1,9 @@
 package com.afterten.orders.ui.screens
 
 import android.content.Intent
+import android.app.DownloadManager
+import android.content.Context
+import android.os.Environment
 import android.net.Uri
 import androidx.core.net.toUri
 import android.graphics.pdf.PdfDocument
@@ -53,6 +56,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
 import com.afterten.orders.sync.OrderSyncWorker
 import kotlinx.coroutines.withContext
+import android.graphics.BitmapFactory
+// Use fully qualified android.graphics.Color where needed to avoid Compose Color conflict
+import kotlinx.coroutines.delay
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -235,28 +241,48 @@ fun OrderSummaryScreen(
                                 // Build signature bitmap (PNG) with actual canvas size
                                 val sigW = sigSize.width.coerceAtLeast(500)
                                 val sigH = sigSize.height.coerceAtLeast(160)
-                                val signatureBitmap = sigState.toBitmap(sigW, sigH)
+                                // Use BLACK for PDF contrast (UI stroke is white)
+                                val signatureBitmapLocal = sigState.toBitmap(sigW, sigH, colorOverride = android.graphics.Color.BLACK)
 
                                 withContext(Dispatchers.IO) {
                                     // Upload signature image to Supabase Storage (signatures bucket)
-                                    runCatching {
+                                    val sigPath = runCatching {
                                         val baos = java.io.ByteArrayOutputStream()
-                                        signatureBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+                                        signatureBitmapLocal.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
                                         val sigBytes = baos.toByteArray()
                                         val capFn = fn.lowercase().replaceFirstChar { it.titlecase() }
                                         val capLn = ln.lowercase().replaceFirstChar { it.titlecase() }
                                         val outletSafe = ses.outletName.replace(" ", "_").replace(Regex("[^A-Za-z0-9_-]"), "")
                                         val sigDate = lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
                                         val sigFile = "${capFn}_${capLn}_${sigDate}_${outletSafe}.png"
-                                        val sigPath = "${ses.outletId}/$sigFile"
+                                        val sp = "${ses.outletId}/$sigFile"
                                         root.supabaseProvider.uploadToStorage(
                                             jwt = ses.token,
                                             bucket = "signatures",
-                                            path = sigPath,
+                                            path = sp,
                                             bytes = sigBytes,
                                             contentType = "image/png",
                                             upsert = true
                                         )
+                                        sp
+                                    }.getOrElse { "${ses.outletId}/signature-${number}.png" }
+
+                                    // Build PDF including signature fetched from bucket (ensures the stored one is used)
+                                    // Poll up to 5 times for eventual consistency
+                                    var signatureBitmap: android.graphics.Bitmap = signatureBitmapLocal
+                                    runCatching {
+                                        val sigUrl = root.supabaseProvider.publicStorageUrl("signatures", sigPath)
+                                        var bytes: ByteArray? = null
+                                        repeat(5) { attempt ->
+                                            bytes = runCatching { root.supabaseProvider.downloadBytes(sigUrl) }.getOrNull()
+                                            if (bytes != null && bytes!!.isNotEmpty()) return@repeat
+                                            kotlinx.coroutines.delay(200L * (attempt + 1))
+                                        }
+                                        bytes?.let {
+                                            val bmp = BitmapFactory.decodeByteArray(it, 0, it.size)
+                                            // Convert any non-transparent pixels to black for PDF readability
+                                            signatureBitmap = bmp.toBlackInk()
+                                        }
                                     }
 
                                     // Build PDF including all item details (new grouped layout)
@@ -297,49 +323,87 @@ fun OrderSummaryScreen(
                                             qty = it.qty.toDouble()
                                         )
                                     }
+                                    var placedRemotely = false
                                     try {
-                                        root.supabaseProvider.rpcPlaceOrder(
+                                        val rpcRes = root.supabaseProvider.rpcPlaceOrder(
                                             jwt = ses.token,
                                             outletId = ses.outletId,
                                             items = itemsReq,
                                             employeeName = title
                                         )
-                                    } catch (placeErr: Throwable) {
-                                        // Queue for background sync
-                                        val itemsJson = Json.encodeToString(
-                                            ListSerializer(SupabaseProvider.PlaceOrderItem.serializer()),
-                                            itemsReq
-                                        )
-                                        val db = AppDatabase.get(ctx)
-                                        db.pendingOrderDao().upsert(
-                                            PendingOrderEntity(
-                                                outletId = ses.outletId,
-                                                employeeName = title,
-                                                itemsJson = itemsJson
+                                        placedRemotely = true
+                                        // Immediately approve, lock and allocate from warehouses (coldrooms)
+                                        runCatching {
+                                            root.supabaseProvider.approveLockAndAllocateOrder(
+                                                jwt = ses.token,
+                                                orderId = rpcRes.orderId,
+                                                strict = true
                                             )
-                                        )
-                                        OrderSyncWorker.enqueue(ctx)
-                                        // Surface a gentle info (set on main later)
-                                        withContext(Dispatchers.Main) {
-                                            error = "Order queued for sync and will be sent when online."
+                                        }
+                                    } catch (placeErr: Throwable) {
+                                        // Fallback: insert directly via PostgREST
+                                        runCatching {
+                                            val order = root.supabaseProvider.insertOrder(
+                                                jwt = ses.token,
+                                                outletId = ses.outletId,
+                                                orderNumber = number,
+                                                tz = lusakaNow.zone.id,
+                                                status = "placed"
+                                            )
+                                            root.supabaseProvider.insertOrderItems(
+                                                jwt = ses.token,
+                                                orderId = order.id,
+                                                items = itemsReq,
+                                                outletId = ses.outletId
+                                            )
+                                            // Approve, lock and allocate for fallback-created order as well
+                                            root.supabaseProvider.approveLockAndAllocateOrder(
+                                                jwt = ses.token,
+                                                orderId = order.id,
+                                                strict = true
+                                            )
+                                        }.onSuccess {
+                                            placedRemotely = true
+                                        }.onFailure {
+                                            // Queue for background sync
+                                            val itemsJson = Json.encodeToString(
+                                                ListSerializer(SupabaseProvider.PlaceOrderItem.serializer()),
+                                                itemsReq
+                                            )
+                                            val db = AppDatabase.get(ctx)
+                                            db.pendingOrderDao().upsert(
+                                                PendingOrderEntity(
+                                                    outletId = ses.outletId,
+                                                    employeeName = title,
+                                                    itemsJson = itemsJson
+                                                )
+                                            )
+                                            OrderSyncWorker.enqueue(ctx)
+                                            withContext(Dispatchers.Main) {
+                                                error = "Order queued for sync and will be sent when online."
+                                            }
                                         }
                                     }
 
-                                    // Trigger Chrome download link (add ?download= to force download)
-                                    val publicUrl = "${root.supabaseProvider.supabaseUrl}/storage/v1/object/public/orders/${storagePath}?download=${Uri.encode(pdfFileName)}"
+                                    // Prepare public URL and download the PDF via DownloadManager to keep the app in foreground
+                                    val publicUrl = root.supabaseProvider.publicStorageUrl("orders", storagePath, pdfFileName)
                                     withContext(Dispatchers.Main) {
-                                        // Clear cart and navigate home BEFORE opening Chrome
+                                        if (placedRemotely) {
+                                            // Proactively notify Orders screen to refresh now
+                                            root.supabaseProvider.emitOrdersChanged()
+                                        }
+                                        // Clear cart and navigate home BEFORE kicking off download
                                         root.clearCart()
                                         onFinished(pdf.absolutePath)
 
-                                        val uri = publicUrl.toUri()
-                                        var intent = Intent(Intent.ACTION_VIEW, uri)
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY)
-                                        intent.setPackage("com.android.chrome")
-                                        runCatching { ctx.startActivity(intent) }.onFailure {
-                                            intent = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY)
-                                            ctx.startActivity(intent)
-                                        }
+                                        // Enqueue download
+                                        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                        val req = DownloadManager.Request(publicUrl.toUri())
+                                            .setTitle(pdfFileName)
+                                            .setMimeType("application/pdf")
+                                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, pdfFileName)
+                                        runCatching { dm.enqueue(req) }
                                     }
                                 }
                             } catch (t: Throwable) {
@@ -372,7 +436,8 @@ private fun generateFullPdf(
     var page = doc.startPage(pageInfo)
     var canvas = page.canvas
     val paint = android.graphics.Paint().apply { textSize = 14f; color = android.graphics.Color.BLACK }
-    val headerPaint = android.graphics.Paint().apply { textSize = 22f; isFakeBoldText = true; color = android.graphics.Color.BLACK }
+    val headerPaint = android.graphics.Paint().apply { textSize = 24f; isFakeBoldText = true; color = android.graphics.Color.BLACK }
+    val underlinePaint = android.graphics.Paint().apply { strokeWidth = 2f; color = android.graphics.Color.BLACK }
     val redPaint = android.graphics.Paint().apply { strokeWidth = 1.5f; color = android.graphics.Color.rgb(220, 20, 60) }
 
     var y = 40f
@@ -399,18 +464,25 @@ private fun generateFullPdf(
     groups.entries.forEachIndexed { idx, entry ->
         val first = entry.value.firstOrNull()
         val header = first?.name ?: ""
-        // Centered big header
+        // Centered big header with explicit underline just below the text baseline
         val headerWidth = headerPaint.measureText(header)
         val centerX = (595 - 40 - 40) / 2f + 40
-        newPageIfNeeded(y + 24f)
-        canvas.drawText(header, centerX - headerWidth / 2f, y + 20f, headerPaint)
-        y += 26f
-        // Column header (Qty, UOM, Cost, Amount)
+        newPageIfNeeded(y + 64f)
+        val headerBaseline = y + 28f
+        canvas.drawText(header, centerX - headerWidth / 2f, headerBaseline, headerPaint)
+        // Underline directly beneath the text width
+        val ulY = headerBaseline + 4f
+        canvas.drawLine(centerX - headerWidth / 2f, ulY, centerX + headerWidth / 2f, ulY, underlinePaint)
+        // Additional divider for visual separation
+        y = ulY + 12f
+        canvas.drawLine(40f, y, 555f, y, redPaint)
+        y += 18f
+        // Column header (Qty, UOM, Cost, Amount) with extra spacing to avoid overlap
         canvas.drawText("Qty", 300f, y, paint)
         canvas.drawText("UOM", 340f, y, paint)
         canvas.drawText("Cost", 400f, y, paint)
         canvas.drawText("Amount", 470f, y, paint)
-        y += 10f
+        y += 16f
         entry.value.forEach { it ->
             newPageIfNeeded(y + 26f)
             // Line before
@@ -437,15 +509,56 @@ private fun generateFullPdf(
     canvas.drawLine(320f, y, 555f, y, paint); y += 18f
     canvas.drawText("Subtotal: ${formatMoney(subtotal)}", 320f, y, paint); y += 24f
     y += 20f
-    // Signature
+    // Signature boxed in 6cm x 6cm, drawing scaled signature inside 5cm x 5cm
     val sigBmp = signatureBitmap
-    canvas.drawText("Signed by: $employeeName", 40f, y, paint); y += 18f
-    canvas.drawBitmap(sigBmp, 40f, y, null); y += sigBmp.height + 20f
+    val cm = 72f / 2.54f
+    val boxSize = 6f * cm              // 6cm box
+    val innerMax = 5f * cm             // signature area inside box
+    val boxLeft = 40f
+    // Ensure we have enough space for label + box; if not, new page
+    newPageIfNeeded(y + 18f + boxSize + 20f)
+    canvas.drawText("Signed by: $employeeName", boxLeft, y, paint)
+    y += 18f
+    // Draw signature box (6cm x 6cm)
+    val rectPaint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 1.5f; color = android.graphics.Color.BLACK }
+    canvas.drawRect(boxLeft, y, boxLeft + boxSize, y + boxSize, rectPaint)
+    // Scale bitmap to fit within inner 5cm x 5cm, centered with small padding
+    val pad = kotlin.math.max(2f, (boxSize - innerMax) / 2f) // center inner area
+    val availW = innerMax
+    val availH = innerMax
+    val scale = kotlin.math.min(availW / sigBmp.width, availH / sigBmp.height)
+    val drawW = sigBmp.width * scale
+    val drawH = sigBmp.height * scale
+    val dx = boxLeft + pad + (availW - drawW) / 2f
+    val dy = y + pad + (availH - drawH) / 2f
+    val dest = android.graphics.RectF(dx, dy, dx + drawW, dy + drawH)
+    canvas.drawBitmap(sigBmp, null, dest, null)
+    y += boxSize + 20f
 
     doc.finishPage(page)
 
     val out = File(cacheDir, "order-$orderNo.pdf")
     FileOutputStream(out).use { doc.writeTo(it) }
     doc.close()
+    return out
+}
+
+// Convert any drawn signature strokes to solid black for white-paper PDFs
+private fun android.graphics.Bitmap.toBlackInk(): android.graphics.Bitmap {
+    val w = width
+    val h = height
+    val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val pixels = IntArray(w * h)
+    getPixels(pixels, 0, w, 0, 0, w, h)
+    for (i in pixels.indices) {
+        val a = (pixels[i] ushr 24) and 0xFF
+        if (a > 8) {
+            // Keep alpha, render as black
+            pixels[i] = (a shl 24) or 0x000000
+        } else {
+            pixels[i] = 0x00000000.toInt()
+        }
+    }
+    out.setPixels(pixels, 0, w, 0, 0, w, h)
     return out
 }
