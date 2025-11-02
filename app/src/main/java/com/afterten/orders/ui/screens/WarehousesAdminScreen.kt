@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
 fun WarehousesAdminScreen(
     root: RootViewModel,
     allowedAdminUuid: String = "d86e2ce6-13a3-4bd9-a174-9f18f6f8a035",
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onLogout: () -> Unit
 ) {
     val session = root.session.collectAsState().value
     val scope = rememberCoroutineScope()
@@ -59,6 +60,10 @@ fun WarehousesAdminScreen(
         }
 
         Column(Modifier.padding(padding).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = onLogout, shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) { Text("Log out") }
+            }
+            
             if (message != null) Text(text = message!!, color = MaterialTheme.colorScheme.primary)
             if (error != null) Text(text = error!!, color = MaterialTheme.colorScheme.error)
 

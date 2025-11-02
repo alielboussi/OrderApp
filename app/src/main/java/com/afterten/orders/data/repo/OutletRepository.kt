@@ -19,7 +19,8 @@ class OutletRepository(private val provider: SupabaseProvider) {
         val email: String? = null,
         @SerialName("is_admin") val isAdmin: Boolean = false,
         @SerialName("can_transfer") val canTransfer: Boolean = false,
-        @SerialName("is_transfer_manager") val isTransferManager: Boolean = false
+        @SerialName("is_transfer_manager") val isTransferManager: Boolean = false,
+        @SerialName("is_supervisor") val isSupervisor: Boolean = false
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -37,7 +38,8 @@ class OutletRepository(private val provider: SupabaseProvider) {
             email = parsed.email,
             isAdmin = parsed.isAdmin,
             canTransfer = parsed.canTransfer,
-            isTransferManager = parsed.isTransferManager
+            isTransferManager = parsed.isTransferManager,
+            isSupervisor = parsed.isSupervisor
         )
     }
 }

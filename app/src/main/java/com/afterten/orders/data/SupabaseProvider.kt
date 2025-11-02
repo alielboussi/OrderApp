@@ -247,6 +247,10 @@ class SupabaseProvider(context: Context) {
         } || (whoRoles?.roles?.any { it.equals("transfer_manager", ignoreCase = true) } == true)
         val canTransfer = isAdminEff || hasTransferRole
         val isTransferManager = hasTransferRole
+        // Is supervisor if role present either globally or per outlet
+        val isSupervisor = (whoRoles?.outlets ?: emptyList()).any { o ->
+            o.roles.any { it.equals("supervisor", ignoreCase = true) }
+        } || (whoRoles?.roles?.any { it.equals("supervisor", ignoreCase = true) } == true)
 
         // 4) Return the same shape the app expects
         @Serializable
@@ -260,15 +264,16 @@ class SupabaseProvider(context: Context) {
             val email: String? = null,
             @SerialName("is_admin") val isAdmin: Boolean = false,
             @SerialName("can_transfer") val canTransfer: Boolean = false,
-            @SerialName("is_transfer_manager") val isTransferManager: Boolean = false
+            @SerialName("is_transfer_manager") val isTransferManager: Boolean = false,
+            @SerialName("is_supervisor") val isSupervisor: Boolean = false
         )
         return Json { encodeDefaults = true }.encodeToString(
             LoginPack.serializer(),
             if (who != null) {
-                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdminEff, canTransfer, isTransferManager)
+                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor)
             } else if (isAdminEff || canTransfer) {
                 // Allow admin and transfer managers to sign in without an outlet mapping; outlet-specific actions should request context in UI
-                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager)
+                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor)
             } else {
                 error("No outlet mapping found for this user. Please set outlets.email to the user email or add a row in public.outlet_users.")
             }

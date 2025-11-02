@@ -13,5 +13,6 @@ data class OutletSession(
     val email: String? = null,
     val isAdmin: Boolean = false,
     val canTransfer: Boolean = false,
-    val isTransferManager: Boolean = false
+    val isTransferManager: Boolean = false,
+    val isSupervisor: Boolean = false
 )
