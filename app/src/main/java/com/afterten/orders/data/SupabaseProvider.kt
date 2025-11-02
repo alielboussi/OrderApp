@@ -146,14 +146,49 @@ class SupabaseProvider(context: Context) {
             setBody(mapOf("email" to email, "password" to password))
         }.bodyAsText()
 
-    val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
-    val jwt = tokenResp.accessToken ?: error("Auth failed: no access_token returned")
-    val refresh = tokenResp.refreshToken ?: error("Auth failed: no refresh_token returned")
-    val expiresAtMillis = System.currentTimeMillis() + ((tokenResp.expiresInSec ?: 3600L) - 30L) * 1000L
+        val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
+        val jwt = tokenResp.accessToken ?: error("Auth failed: no access_token returned")
+        val refresh = tokenResp.refreshToken ?: error("Auth failed: no refresh_token returned")
+        val expiresAtMillis = System.currentTimeMillis() + ((tokenResp.expiresInSec ?: 3600L) - 30L) * 1000L
+
+        // Decode JWT payload to extract sub/userId and email for admin gating
+        data class JwtBits(val sub: String?, val email: String?)
+        fun decodeJwt(jwt: String): JwtBits {
+            return try {
+                val parts = jwt.split('.')
+                if (parts.size < 2) return JwtBits(null, null)
+                val payload = parts[1]
+                val decoded = android.util.Base64.decode(
+                    payload,
+                    android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+                )
+                val json = String(decoded, Charsets.UTF_8)
+                // naive extraction of "sub" and "email"
+                fun extract(key: String): String? {
+                    val k = "\"$key\":"
+                    val idx = json.indexOf(k)
+                    if (idx < 0) return null
+                    val start = json.indexOf('"', idx + k.length)
+                    val end = json.indexOf('"', start + 1)
+                    return if (start >= 0 && end > start) json.substring(start + 1, end) else null
+                }
+                JwtBits(extract("sub"), extract("email"))
+            } catch (_: Throwable) { JwtBits(null, null) }
+        }
+        val jwtBits = decodeJwt(jwt)
+        val userId = jwtBits.sub
+        val userEmail = jwtBits.email ?: email // fallback to typed email
+        val isAdmin = run {
+            val configuredEmail = BuildConfig.ADMIN_EMAIL.takeIf { it.isNotBlank() }?.lowercase()
+            val configuredUuid = BuildConfig.ADMIN_UUID.takeIf { it.isNotBlank() }
+            val emailMatch = configuredEmail != null && userEmail.lowercase() == configuredEmail
+            val uuidMatch = configuredUuid != null && userId == configuredUuid
+            emailMatch || uuidMatch
+        }
 
         // 2) Ask DB who this user maps to (outlet)
         @Serializable
-        data class WhoAmI(@SerialName("outlet_id") val outletId: String, @SerialName("outlet_name") val outletName: String)
+    data class WhoAmI(@SerialName("outlet_id") val outletId: String, @SerialName("outlet_name") val outletName: String)
         val whoText = http.post("$supabaseUrl/rest/v1/rpc/whoami_outlet") {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -161,9 +196,9 @@ class SupabaseProvider(context: Context) {
             setBody("{}")
         }.bodyAsText()
 
-        val who = Json { ignoreUnknownKeys = true }
+        val whoList = Json { ignoreUnknownKeys = true }
             .decodeFromString(ListSerializer(WhoAmI.serializer()), whoText)
-            .firstOrNull() ?: error("No outlet mapping found for this user. Insert into public.outlet_users.")
+        val who = whoList.firstOrNull()
 
         // 3) Return the same shape the app expects
         @Serializable
@@ -172,11 +207,21 @@ class SupabaseProvider(context: Context) {
             @SerialName("refresh_token") val refreshToken: String,
             @SerialName("expires_at") val expiresAtMillis: Long,
             @SerialName("outlet_id") val outletId: String,
-            @SerialName("outlet_name") val outletName: String
+            @SerialName("outlet_name") val outletName: String,
+            @SerialName("user_id") val userId: String? = null,
+            val email: String? = null,
+            @SerialName("is_admin") val isAdmin: Boolean = false
         )
         return Json { encodeDefaults = true }.encodeToString(
             LoginPack.serializer(),
-            LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName)
+            if (who != null) {
+                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdmin)
+            } else if (isAdmin) {
+                // Allow admin to sign in without an outlet mapping; outlet-related actions stay disabled by UI
+                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdmin)
+            } else {
+                error("No outlet mapping found for this user. Please set outlets.email to the user email or add a row in public.outlet_users.")
+            }
         )
     }
 

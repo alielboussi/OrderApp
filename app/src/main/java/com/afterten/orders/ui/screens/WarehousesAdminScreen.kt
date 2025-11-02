@@ -33,8 +33,8 @@ fun WarehousesAdminScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(session?.token) {
-        val uid = session?.token?.let { jwtSub(it) }
-        if (session?.token != null && uid == allowedAdminUuid) {
+        val isAdmin = session?.isAdmin == true
+        if (session?.token != null && isAdmin) {
             runCatching {
                 outlets = root.supabaseProvider.listOutlets(session.token)
                 warehouses = root.supabaseProvider.listWarehouses(session.token)
@@ -52,8 +52,8 @@ fun WarehousesAdminScreen(
             MissingAuth()
             return@Scaffold
         }
-        val uid = jwtSub(session.token)
-        if (uid != allowedAdminUuid) {
+        val isAdmin = session.isAdmin
+        if (!isAdmin) {
             Unauthorized()
             return@Scaffold
         }
@@ -293,21 +293,4 @@ private fun WarehouseRow(
     }
 }
 
-// Extract user id (sub) from a Supabase JWT without verifying signature (for gating only)
-private fun jwtSub(jwt: String): String? {
-    return try {
-        val parts = jwt.split('.')
-        if (parts.size < 2) return null
-        val payload = parts[1]
-        val decoded = android.util.Base64.decode(payload, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
-        val json = String(decoded, Charsets.UTF_8)
-        val key = "\"sub\":"
-        val idx = json.indexOf(key)
-        if (idx < 0) return null
-        val start = json.indexOf('"', idx + key.length)
-        val end = json.indexOf('"', start + 1)
-        if (start >= 0 && end > start) json.substring(start + 1, end) else null
-    } catch (_: Throwable) {
-        null
-    }
-}
+// jwtSub helper removed; admin gating uses session.isAdmin from login

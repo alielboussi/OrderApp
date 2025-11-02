@@ -158,10 +158,14 @@ dependencies {
 // Inject Supabase env from gradle.properties (do not hardcode secrets in source)
 val supabaseUrl = (project.findProperty("SUPABASE_URL") as String?) ?: ""
 val supabaseAnonKey = (project.findProperty("SUPABASE_ANON_KEY") as String?) ?: ""
+val adminEmail = (project.findProperty("ADMIN_EMAIL") as String?) ?: ""
+val adminUuid = (project.findProperty("ADMIN_UUID") as String?) ?: ""
 
 android {
     defaultConfig {
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "ADMIN_EMAIL", "\"$adminEmail\"")
+        buildConfigField("String", "ADMIN_UUID", "\"$adminUuid\"")
     }
 }

@@ -14,7 +14,10 @@ class OutletRepository(private val provider: SupabaseProvider) {
         @SerialName("refresh_token") val refreshToken: String,
         @SerialName("expires_at") val expiresAtMillis: Long,
         @SerialName("outlet_id") val outletId: String,
-        @SerialName("outlet_name") val outletName: String
+        @SerialName("outlet_name") val outletName: String,
+        @SerialName("user_id") val userId: String? = null,
+        val email: String? = null,
+        @SerialName("is_admin") val isAdmin: Boolean = false
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -27,7 +30,10 @@ class OutletRepository(private val provider: SupabaseProvider) {
             refreshToken = parsed.refreshToken,
             expiresAtMillis = parsed.expiresAtMillis,
             outletId = parsed.outletId,
-            outletName = parsed.outletName
+            outletName = parsed.outletName,
+            userId = parsed.userId,
+            email = parsed.email,
+            isAdmin = parsed.isAdmin
         )
     }
 }
