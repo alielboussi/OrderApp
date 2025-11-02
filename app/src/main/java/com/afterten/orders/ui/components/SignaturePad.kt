@@ -29,6 +29,8 @@ class SignatureState {
     private var lastX: Float? = null
     private var lastY: Float? = null
     private var _distance: Float = 0f
+    // Tick to trigger Canvas redraws immediately on new points
+    var version by mutableStateOf(0L)
     private val paint = Paint().apply {
         style = Paint.Style.STROKE
         color = Color.WHITE
@@ -37,7 +39,7 @@ class SignatureState {
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
-    fun clear() { path.reset(); lastX = null; lastY = null; _distance = 0f }
+    fun clear() { path.reset(); lastX = null; lastY = null; _distance = 0f; version++ }
     fun drawOn(canvas: Canvas) { canvas.drawPath(path, paint) }
     fun addPoint(x: Float, y: Float, down: Boolean) {
         if (down) {
@@ -51,6 +53,7 @@ class SignatureState {
             }
             lastX = x; lastY = y
         }
+        version++
     }
     fun toBitmap(width: Int, height: Int): Bitmap {
         val bmp = createBitmap(width, height)
@@ -90,6 +93,8 @@ fun SignaturePad(modifier: Modifier = Modifier, state: SignatureState = remember
                 }
             }
     ) {
+        // Read the version to trigger redraws on new points without recomposition cost
+        val versionTick = state.version
         Canvas(modifier = Modifier.fillMaxWidth().height(180.dp)) {
             drawIntoCanvas { androidCanvas ->
                 state.drawOn(androidCanvas.nativeCanvas)

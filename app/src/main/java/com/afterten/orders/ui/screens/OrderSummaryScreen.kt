@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.ui.components.SignaturePad
 import com.afterten.orders.ui.components.rememberSignatureState
@@ -110,18 +111,29 @@ fun OrderSummaryScreen(
             val colWidth = 76.dp
             groups.entries.forEachIndexed { index, entry ->
                 val header = productsById[entry.key] ?: (entry.value.firstOrNull()?.name ?: "")
-                Text(text = header, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.Underline, color = Color.White)
+                // Main product header: larger and centered
+                Text(
+                    text = header,
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 48.sp),
+                    fontWeight = FontWeight.Bold,
+                    textDecoration = TextDecoration.Underline,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(6.dp))
                 // Column headers aligned to the right of the name
                 Row(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
-                    Text("UOM", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
-                    Text("Cost", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
-                    Text("Qty", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
-                    Text("Amount", modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.error)
+                    Text("UOM", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
+                    Text("Cost", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
+                    Text("Qty", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
+                    Text("Amount", modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
                 }
                 Spacer(Modifier.height(4.dp))
                 entry.value.forEach { item ->
+                    // Divider before each variance/item
+                    HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = item.name,
@@ -130,12 +142,14 @@ fun OrderSummaryScreen(
                             color = Color.White,
                             modifier = Modifier.weight(1f)
                         )
-                        Text(item.uom, modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
-                        Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
-                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
-                        Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.End, color = Color.White)
+                        Text(item.uom, modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
+                        Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
+                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
+                        Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                     }
                     Spacer(Modifier.height(6.dp))
+                    // Divider after each variance/item
+                    HorizontalDivider(color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                 }
                 if (index < groups.size - 1) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
@@ -150,28 +164,28 @@ fun OrderSummaryScreen(
                 Column(Modifier.weight(1f)) {
                     Text("First name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = Color.White)
                     Spacer(Modifier.height(4.dp))
-                AppOutlinedTextField(
-                    value = firstName,
-                    onValueChange = { firstName = it },
-                    label = "",
-                    modifier = Modifier.weight(1f),
-                    borderColor = MaterialTheme.colorScheme.error,
-                    borderThickness = 2.dp,
-                    shape = RoundedCornerShape(50)
-                )
+                    AppOutlinedTextField(
+                        value = firstName,
+                        onValueChange = { firstName = it },
+                        label = "",
+                        modifier = Modifier.fillMaxWidth(),
+                        borderColor = MaterialTheme.colorScheme.error,
+                        borderThickness = 2.dp,
+                        shape = RoundedCornerShape(50)
+                    )
                 }
                 Column(Modifier.weight(1f)) {
                     Text("Last name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = Color.White)
                     Spacer(Modifier.height(4.dp))
-                AppOutlinedTextField(
-                    value = lastName,
-                    onValueChange = { lastName = it },
-                    label = "",
-                    modifier = Modifier.weight(1f),
-                    borderColor = MaterialTheme.colorScheme.error,
-                    borderThickness = 2.dp,
-                    shape = RoundedCornerShape(50)
-                )
+                    AppOutlinedTextField(
+                        value = lastName,
+                        onValueChange = { lastName = it },
+                        label = "",
+                        modifier = Modifier.fillMaxWidth(),
+                        borderColor = MaterialTheme.colorScheme.error,
+                        borderThickness = 2.dp,
+                        shape = RoundedCornerShape(50)
+                    )
                 }
             }
 
@@ -192,7 +206,14 @@ fun OrderSummaryScreen(
             if (error != null) Text(text = error!!, color = MaterialTheme.colorScheme.error)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 OutlinedButton(onClick = onBack) { Text("Back") }
-                TextButton(onClick = { sigState.clear() }) { Text("Clear Signature", color = MaterialTheme.colorScheme.error) }
+                Button(
+                    onClick = { sigState.clear() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(50)
+                ) { Text("Clear Signature") }
                 Button(
                     onClick = {
                         placing = true
