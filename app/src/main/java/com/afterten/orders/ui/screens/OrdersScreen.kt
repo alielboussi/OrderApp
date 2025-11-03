@@ -5,10 +5,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.ui.platform.LocalContext
+import android.app.DownloadManager
+import android.os.Environment
+import androidx.core.net.toUri
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,12 +35,12 @@ fun OrdersScreen(
 ) {
     val session by root.session.collectAsState()
     val repo = remember { OrderRepository(root.supabaseProvider) }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf(listOf<OrderRepository.OrderRow>()) }
-
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(session?.token, session?.outletId) {
         val s = session
@@ -119,7 +125,38 @@ fun OrdersScreen(
             }
             else -> LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                 items(items) { row ->
-                    OrderRowCard(row)
+                    OrderRowCard(
+                        row = row,
+                        onDownload = {
+                            val ses = session ?: return@OrderRowCard
+                            scope.launch {
+                                val dateStr = try { java.time.OffsetDateTime.parse(row.createdAt).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) } catch (_: Throwable) { row.createdAt.take(10) }
+                                val safeOutlet = ses.outletName.replace(" ", "_").replace(Regex("[^A-Za-z0-9_-]"), "")
+                                val fileName = "${safeOutlet}_${row.orderNumber}_${dateStr}.pdf"
+                                val storagePath = "${ses.outletId}/$fileName"
+                                val url = runCatching {
+                                    // Prefer signed URL (works for private buckets)
+                                    root.supabaseProvider.createSignedUrl(
+                                        jwt = ses.token,
+                                        bucket = "orders",
+                                        path = storagePath,
+                                        expiresInSeconds = 3600,
+                                        downloadName = fileName
+                                    )
+                                }.getOrElse {
+                                    root.supabaseProvider.publicStorageUrl("orders", storagePath, fileName)
+                                }
+                                val dm = ctx.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as DownloadManager
+                                val req = DownloadManager.Request(url.toUri())
+                                    .setTitle(fileName)
+                                    .setMimeType("application/pdf")
+                                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                runCatching { dm.enqueue(req) }
+                            }
+                        }
+                    )
+                    // Show badge if modified by supervisor for outlet visibility, too
                     HorizontalDivider()
                 }
             }
@@ -128,7 +165,7 @@ fun OrdersScreen(
 }
 
 @Composable
-private fun OrderRowCard(row: OrderRepository.OrderRow) {
+private fun OrderRowCard(row: OrderRepository.OrderRow, onDownload: () -> Unit) {
     Card(modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -141,6 +178,9 @@ private fun OrderRowCard(row: OrderRepository.OrderRow) {
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = onDownload) {
+                    Icon(Icons.Filled.Download, contentDescription = "Download PDF")
+                }
                 StatusBadge(row.status)
             }
             Spacer(Modifier.height(4.dp))
@@ -155,6 +195,18 @@ private fun OrderRowCard(row: OrderRepository.OrderRow) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (row.modifiedBySupervisor == true || !row.modifiedBySupervisorName.isNullOrEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f), shape = MaterialTheme.shapes.small) {
+                    Text(
+                        text = "Updated by ${row.modifiedBySupervisorName ?: "Supervisor"}",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }

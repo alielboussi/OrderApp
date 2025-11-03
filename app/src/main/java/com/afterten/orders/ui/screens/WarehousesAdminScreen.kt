@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
 import kotlinx.coroutines.launch
@@ -29,6 +30,7 @@ fun WarehousesAdminScreen(
     var selectedOutletId by remember { mutableStateOf<String?>(null) }
     var selectedParentId by remember { mutableStateOf<String?>(null) }
     var newWarehouseName by remember { mutableStateOf("") }
+    var adminPassword by remember { mutableStateOf("") }
 
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -66,6 +68,41 @@ fun WarehousesAdminScreen(
             
             if (message != null) Text(text = message!!, color = MaterialTheme.colorScheme.primary)
             if (error != null) Text(text = error!!, color = MaterialTheme.colorScheme.error)
+
+            // Admin Tools: Reset Order Sequence (password protected)
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Admin Tools", style = MaterialTheme.typography.titleMedium)
+                    Text("Reset Order Number Sequence to OutletName_0000001", style = MaterialTheme.typography.bodyMedium)
+                    DropdownField(
+                        label = "Outlet",
+                        options = outlets.map { it.id to it.name },
+                        selectedId = selectedOutletId,
+                        onSelected = { selectedOutletId = it }
+                    )
+                    OutlinedTextField(
+                        value = adminPassword,
+                        onValueChange = { adminPassword = it },
+                        label = { Text("Password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                    Button(onClick = {
+                        error = null; message = null
+                        val jwt = session.token
+                        val outletId = selectedOutletId
+                        if (outletId.isNullOrEmpty()) { error = "Select an outlet"; return@Button }
+                        if (adminPassword != "Lebanon1111$") { error = "Incorrect password"; return@Button }
+                        scope.launch {
+                            runCatching {
+                                root.supabaseProvider.resetOrderSequence(jwt, outletId)
+                            }.onSuccess {
+                                message = "Order sequence reset for selected outlet"
+                            }.onFailure { t -> error = t.message }
+                        }
+                    }) { Text("Reset Order Sequence") }
+                }
+            }
 
             // Create new warehouse form
             Card {

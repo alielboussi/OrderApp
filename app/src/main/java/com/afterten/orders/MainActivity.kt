@@ -39,6 +39,10 @@ sealed class Routes(val route: String) {
     data object Orders : Routes("orders")
     data object Transfers : Routes("transfers")
     data object AdminWarehouses : Routes("admin_warehouses")
+    data object SupervisorOrders : Routes("supervisor_orders")
+    data object SupervisorOrderDetail : Routes("supervisor_order_detail/{orderId}") {
+        fun route(orderId: String) = "supervisor_order_detail/$orderId"
+    }
 }
 
 @Composable
@@ -55,7 +59,11 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         composable(Routes.Home.route) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
-                onViewOrders = { navController.navigate(Routes.Orders.route) },
+                onViewOrders = {
+                    val s = appViewModel.session.value
+                    if (s?.isSupervisor == true) navController.navigate(Routes.SupervisorOrders.route)
+                    else navController.navigate(Routes.Orders.route)
+                },
                 onTransfers = { navController.navigate(Routes.Transfers.route) },
                 onAdminWarehouses = { navController.navigate(Routes.AdminWarehouses.route) },
                 onLogout = {
@@ -92,6 +100,22 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             com.afterten.orders.ui.screens.OrdersScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.SupervisorOrders.route) {
+            com.afterten.orders.ui.screens.SupervisorOrdersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenOrder = { id -> navController.navigate(Routes.SupervisorOrderDetail.route(id)) }
+            )
+        }
+        composable(Routes.SupervisorOrderDetail.route) { backStackEntry ->
+            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
+            com.afterten.orders.ui.screens.SupervisorOrderDetailScreen(
+                root = appViewModel,
+                orderId = orderId,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() }
             )
         }
         composable(Routes.Transfers.route) {

@@ -94,17 +94,20 @@ class SupabaseProvider(context: Context) {
             // Provide JWT to this channel for RLS
             try { channel.updateAuth(jwt) } catch (t: Throwable) { Log.w("Realtime", "updateAuth initial failed: ${t.message}") }
             // Build a flow of changes filtered by outlet
-            val flow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+            val flowOrders = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "orders"
                 filter("outlet_id", FilterOperator.EQ, outletId)
+            }
+            // Also listen to order_items changes to reflect supervisor edits immediately
+            val flowItems = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+                table = "order_items"
+                // Optional: omit filter to let RLS scope events; or add a column outlet_id if present
             }
             // Subscribe and start collecting
             Log.d("Realtime", "Subscribing to orders changes for outlet=$outletId")
             channel.subscribe()
-            flow.collect {
-                Log.d("Realtime", "orders change event received (outlet=$outletId), triggering refresh")
-                onEvent()
-            }
+            launch { flowOrders.collect { Log.d("Realtime", "orders change event received (outlet=$outletId)"); onEvent() } }
+            launch { flowItems.collect { Log.d("Realtime", "order_items change event received"); onEvent() } }
         }
         return RealtimeSubscriptionHandle(job) {
             Log.d("Realtime", "Unsubscribing from orders (outlet=$outletId)")
@@ -125,6 +128,22 @@ class SupabaseProvider(context: Context) {
 
     fun emitOrdersChanged() {
         _ordersEvents.tryEmit(Unit)
+    }
+
+    // Optional: mark order modified by supervisor (server RPC sets flags/columns used for badge)
+    suspend fun markOrderModified(jwt: String, orderId: String, supervisorName: String) {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/mark_order_modified"
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("p_order_id" to orderId, "p_supervisor_name" to supervisorName))
+        }
+        val code = resp.status.value
+        if (code !in 200..299) {
+            val txt = runCatching { resp.bodyAsText() }.getOrNull()
+            throw IllegalStateException("mark_order_modified failed: HTTP $code ${txt ?: ""}")
+        }
     }
 
     suspend fun rpcLogin(email: String, password: String): String {
@@ -305,6 +324,20 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         return resp.bodyAsText()
+    }
+
+    suspend fun postWithJwt(pathAndQuery: String, jwt: String, bodyObj: Any, prefer: List<String> = emptyList()): Pair<Int, String?> {
+        val url = if (pathAndQuery.startsWith("http")) pathAndQuery else "$supabaseUrl$pathAndQuery"
+        val resp = http.post(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            if (prefer.isNotEmpty()) headers { prefer.forEach { append("Prefer", it) } }
+            contentType(ContentType.Application.Json)
+            setBody(bodyObj)
+        }
+        val code = resp.status.value
+        val text = runCatching { resp.bodyAsText() }.getOrNull()
+        return code to text
     }
 
     // Server-side order number generation via RPC (requires outlet id)
@@ -557,6 +590,49 @@ class SupabaseProvider(context: Context) {
         val u = if (url.startsWith("http")) url else "$supabaseUrl$url"
         val resp = http.get(u)
         return resp.body()
+    }
+
+    // Create a signed URL for a private Storage object
+    @Serializable
+    private data class SignedUrlResp(
+        @SerialName("signedURL") val signedURL: String? = null,
+        @SerialName("signedUrl") val signedUrl: String? = null
+    )
+
+    suspend fun createSignedUrl(jwt: String, bucket: String, path: String, expiresInSeconds: Int = 3600, downloadName: String? = null): String {
+        val endpoint = "$supabaseUrl/storage/v1/object/sign/$bucket/$path"
+        val body = buildMap<String, Any> {
+            put("expiresIn", expiresInSeconds)
+            if (downloadName != null) put("download", downloadName)
+        }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("createSignedUrl failed: HTTP $code $txt")
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(SignedUrlResp.serializer(), txt)
+        val rel = parsed.signedURL ?: parsed.signedUrl ?: throw IllegalStateException("createSignedUrl: no signed URL in response")
+        return if (rel.startsWith("http")) rel else "$supabaseUrl$rel"
+    }
+
+    // Admin: reset order sequence for an outlet back to 1 (server RPC required)
+    suspend fun resetOrderSequence(jwt: String, outletId: String) {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/reset_order_sequence"
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("p_outlet_id" to outletId))
+        }
+        val code = resp.status.value
+        if (code !in 200..299) {
+            val txt = runCatching { resp.bodyAsText() }.getOrNull()
+            throw IllegalStateException("reset_order_sequence failed: HTTP $code ${txt ?: ""}")
+        }
     }
 
     suspend fun orderItemsCount(jwt: String, orderId: String): Int {

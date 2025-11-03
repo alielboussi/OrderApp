@@ -385,8 +385,19 @@ fun OrderSummaryScreen(
                                         }
                                     }
 
-                                    // Prepare public URL and download the PDF via DownloadManager to keep the app in foreground
-                                    val publicUrl = root.supabaseProvider.publicStorageUrl("orders", storagePath, pdfFileName)
+                                    // Prepare a signed URL (works for private buckets) and download the PDF via DownloadManager
+                                    val publicUrl = try {
+                                        root.supabaseProvider.createSignedUrl(
+                                            jwt = ses.token,
+                                            bucket = "orders",
+                                            path = storagePath,
+                                            expiresInSeconds = 3600,
+                                            downloadName = pdfFileName
+                                        )
+                                    } catch (_: Throwable) {
+                                        // Fallback to public URL if signing fails and bucket is public
+                                        root.supabaseProvider.publicStorageUrl("orders", storagePath, pdfFileName)
+                                    }
                                     withContext(Dispatchers.Main) {
                                         if (placedRemotely) {
                                             // Proactively notify Orders screen to refresh now
