@@ -16,6 +16,11 @@ BEGIN
   BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_outlet_rw ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
   BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_insert_outlet_or_admin ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
   BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_update_admin_only ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  -- Drop consolidated policies if they already exist (idempotency)
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_select ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_insert ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_update ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_delete ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
 
   -- Create consolidated policies for orders (TO authenticated)
   EXECUTE $sql$
@@ -24,9 +29,7 @@ BEGIN
     FOR SELECT TO authenticated
     USING (
       public.is_admin((select auth.uid()))
-      OR outlet_id IN (
-        SELECT outlet_id FROM public.member_outlet_ids((select auth.uid()))
-      )
+      OR outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
     );
   $sql$;
 
@@ -36,9 +39,7 @@ BEGIN
     FOR INSERT TO authenticated
     WITH CHECK (
       public.is_admin((select auth.uid()))
-      OR outlet_id IN (
-        SELECT outlet_id FROM public.member_outlet_ids((select auth.uid()))
-      )
+      OR outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
     );
   $sql$;
 
@@ -67,6 +68,11 @@ BEGIN
   BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_update_supervisor_admin ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
   BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_delete_admin_only ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
   BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_outlet_rw ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  -- Drop consolidated policies if they already exist (idempotency)
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_select ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_insert ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_update ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_delete ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
 
   -- Create consolidated policies for order_items (TO authenticated)
   -- SELECT: admin OR member of the order's outlet
@@ -80,9 +86,7 @@ BEGIN
         SELECT 1
         FROM public.orders o
         WHERE o.id = order_id
-          AND o.outlet_id IN (
-            SELECT outlet_id FROM public.member_outlet_ids((select auth.uid()))
-          )
+          AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
       )
     );
   $sql$;
@@ -98,9 +102,7 @@ BEGIN
         SELECT 1
         FROM public.orders o
         WHERE o.id = order_id
-          AND o.outlet_id IN (
-            SELECT outlet_id FROM public.member_outlet_ids((select auth.uid()))
-          )
+          AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
       )
     );
   $sql$;
@@ -118,9 +120,7 @@ BEGIN
           SELECT 1
           FROM public.orders o
           WHERE o.id = order_id
-            AND o.outlet_id IN (
-              SELECT outlet_id FROM public.member_outlet_ids((select auth.uid()))
-            )
+            AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
         )
         AND (
           public.has_role_any_outlet((select auth.uid()), 'supervisor')
@@ -135,9 +135,7 @@ BEGIN
           SELECT 1
           FROM public.orders o
           WHERE o.id = order_id
-            AND o.outlet_id IN (
-              SELECT outlet_id FROM public.member_outlet_ids((select auth.uid()))
-            )
+            AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
         )
         AND (
           public.has_role_any_outlet((select auth.uid()), 'supervisor')

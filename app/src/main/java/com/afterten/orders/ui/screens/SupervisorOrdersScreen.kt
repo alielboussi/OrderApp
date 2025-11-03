@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Refresh
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.OrderRepository
 import com.afterten.orders.util.LogAnalytics
@@ -43,20 +44,7 @@ fun SupervisorOrdersScreen(
             .onFailure { t -> error = t.message; loading = false }
     }
 
-    // Realtime: refresh on orders and order_items changes
-    var sub by remember { mutableStateOf<com.afterten.orders.data.SupabaseProvider.RealtimeSubscriptionHandle?>(null) }
-    DisposableEffect(session?.token) {
-        val s = session
-        if (s != null) {
-            sub = root.supabaseProvider.subscribeOrders(s.token, outletId = "", onEvent = {
-                scope.launch {
-                    runCatching { repo.listOrdersForSupervisor(jwt = s.token, limit = 200) }
-                        .onSuccess { items = it }
-                }
-            })
-        }
-        onDispose { sub?.close(); sub = null }
-    }
+    // Removed Realtime subscription; use manual refresh instead
 
     Scaffold(topBar = {
         TopAppBar(
@@ -64,6 +52,21 @@ fun SupervisorOrdersScreen(
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            actions = {
+                IconButton(enabled = !loading, onClick = {
+                    scope.launch {
+                        val s = session ?: return@launch
+                        loading = true
+                        error = null
+                        runCatching { repo.listOrdersForSupervisor(jwt = s.token, limit = 200) }
+                            .onSuccess { items = it; LogAnalytics.event("supervisor_orders_refreshed", mapOf("count" to it.size)) }
+                            .onFailure { t -> error = t.message }
+                        loading = false
+                    }
+                }) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                 }
             }
         )

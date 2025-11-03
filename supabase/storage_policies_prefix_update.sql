@@ -29,8 +29,8 @@ BEGIN
         public.is_admin(auth.uid())
         OR EXISTS (
           SELECT 1
-          FROM public.member_outlet_ids(auth.uid()) AS o(outlet_id)
-          WHERE path_tokens[1] = o.outlet_id::text
+          FROM unnest(public.member_outlet_ids(auth.uid())) AS oid
+          WHERE path_tokens[1] = oid::text
         )
       )
       AND name ~ '^[0-9a-fA-F-]+/.+'
@@ -48,8 +48,8 @@ BEGIN
         public.is_admin(auth.uid())
         OR EXISTS (
           SELECT 1
-          FROM public.member_outlet_ids(auth.uid()) AS o(outlet_id)
-          WHERE path_tokens[1] = o.outlet_id::text
+          FROM unnest(public.member_outlet_ids(auth.uid())) AS oid
+          WHERE path_tokens[1] = oid::text
         )
       )
       AND name ~ '^[0-9a-fA-F-]+/.+'

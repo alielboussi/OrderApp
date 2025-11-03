@@ -9,6 +9,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.platform.LocalContext
 import android.app.DownloadManager
 import android.os.Environment
@@ -63,29 +64,7 @@ fun OrdersScreen(
         }
     }
 
-    // Realtime subscription for live updates
-    var subHandle by remember { mutableStateOf<com.afterten.orders.data.SupabaseProvider.RealtimeSubscriptionHandle?>(null) }
-    DisposableEffect(session?.token, session?.outletId) {
-        val s = session
-        if (s != null) {
-            subHandle = root.supabaseProvider.subscribeOrders(
-                jwt = s.token,
-                outletId = s.outletId
-            ) {
-                scope.launch {
-                    runCatching {
-                        val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
-                        items = newItems
-                        LogAnalytics.event("orders_refreshed", mapOf("count" to newItems.size))
-                    }
-                }
-            }
-        }
-        onDispose {
-            subHandle?.close()
-            subHandle = null
-        }
-    }
+    // Removed Realtime subscription; manual refresh below
 
     // Also refresh when we emit a local event (e.g., right after placing an order)
     LaunchedEffect(session?.token, session?.outletId) {
@@ -99,8 +78,6 @@ fun OrdersScreen(
         }
     }
 
-    val isLive = subHandle != null
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -111,7 +88,24 @@ fun OrdersScreen(
                     }
                 },
                 actions = {
-                    if (isLive) LiveIndicator()
+                    IconButton(enabled = !loading, onClick = {
+                        scope.launch {
+                            val s = session ?: return@launch
+                            loading = true
+                            error = null
+                            runCatching {
+                                val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                            }.onSuccess { new ->
+                                items = new
+                                LogAnalytics.event("orders_refreshed", mapOf("count" to new.size))
+                            }.onFailure { t ->
+                                error = t.message ?: t.toString()
+                            }
+                            loading = false
+                        }
+                    }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                    }
                 }
             )
         }
