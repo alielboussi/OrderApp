@@ -353,8 +353,7 @@ fun OrderSummaryScreen(
                                             root.supabaseProvider.insertOrderItems(
                                                 jwt = ses.token,
                                                 orderId = order.id,
-                                                items = itemsReq,
-                                                outletId = ses.outletId
+                                                items = itemsReq
                                             )
                                             // Approve, lock and allocate for fallback-created order as well
                                             root.supabaseProvider.approveLockAndAllocateOrder(

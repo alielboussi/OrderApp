@@ -694,8 +694,7 @@ class SupabaseProvider(context: Context) {
     suspend fun insertOrderItems(
         jwt: String,
         orderId: String,
-        items: List<PlaceOrderItem>,
-        outletId: String? = null
+        items: List<PlaceOrderItem>
     ) {
         val rows = items.map {
             mapOf(
@@ -708,7 +707,6 @@ class SupabaseProvider(context: Context) {
                 "qty" to it.qty,
                 "amount" to (it.cost * it.qty)
             )
-            .let { row -> if (outletId != null) row + ("outlet_id" to outletId) else row }
         }
         val resp = http.post("$supabaseUrl/rest/v1/order_items") {
             header("apikey", supabaseAnonKey)
