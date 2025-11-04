@@ -41,7 +41,11 @@ fun SupervisorOrdersScreen(
                 loading = false
                 LogAnalytics.event("supervisor_orders_loaded", mapOf("count" to it.size))
             }
-            .onFailure { t -> error = t.message; loading = false }
+            .onFailure { t ->
+                error = t.message ?: t.toString()
+                LogAnalytics.error("supervisor_orders_load_failed", error, t)
+                loading = false
+            }
     }
 
     // Removed Realtime subscription; use manual refresh instead
@@ -61,8 +65,14 @@ fun SupervisorOrdersScreen(
                         loading = true
                         error = null
                         runCatching { repo.listOrdersForSupervisor(jwt = s.token, limit = 200) }
-                            .onSuccess { items = it; LogAnalytics.event("supervisor_orders_refreshed", mapOf("count" to it.size)) }
-                            .onFailure { t -> error = t.message }
+                            .onSuccess {
+                                items = it
+                                LogAnalytics.event("supervisor_orders_refreshed", mapOf("count" to it.size))
+                            }
+                            .onFailure { t ->
+                                error = t.message ?: t.toString()
+                                LogAnalytics.error("supervisor_orders_refresh_failed", error, t)
+                            }
                         loading = false
                     }
                 }) {
@@ -73,7 +83,7 @@ fun SupervisorOrdersScreen(
     }) { padding ->
         when {
             loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Error: ${'$'}error") }
+            error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Error: $error") }
             else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
                 items(items) { row ->
                     SupervisorOrderRow(row = row, onClick = { onOpenOrder(row.id) })

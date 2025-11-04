@@ -94,10 +94,10 @@ fun OrdersScreen(
                             loading = true
                             error = null
                             runCatching {
-                                val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
-                            }.onSuccess { new ->
-                                items = new
-                                LogAnalytics.event("orders_refreshed", mapOf("count" to new.size))
+                                repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                            }.onSuccess { list ->
+                                items = list
+                                LogAnalytics.event("orders_refreshed", mapOf("count" to list.size))
                             }.onFailure { t ->
                                 error = t.message ?: t.toString()
                             }
@@ -115,7 +115,7 @@ fun OrdersScreen(
                 CircularProgressIndicator()
             }
             error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Error: ${'$'}error")
+                Text("Error: $error")
             }
             else -> LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                 items(items) { row ->

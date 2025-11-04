@@ -323,7 +323,12 @@ class SupabaseProvider(context: Context) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
-        return resp.bodyAsText()
+        val code = resp.status.value
+        val body = runCatching { resp.bodyAsText() }.getOrNull() ?: ""
+        if (code !in 200..299) {
+            throw IllegalStateException("GET failed: HTTP $code $body")
+        }
+        return body
     }
 
     suspend fun postWithJwt(pathAndQuery: String, jwt: String, bodyObj: Any, prefer: List<String> = emptyList()): Pair<Int, String?> {
