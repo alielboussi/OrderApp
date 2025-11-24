@@ -8,6 +8,43 @@ BEGIN
   ALTER TABLE IF EXISTS public.orders ENABLE ROW LEVEL SECURITY;
   ALTER TABLE IF EXISTS public.order_items ENABLE ROW LEVEL SECURITY;
 
+  -- Helper to evaluate whether a user can see an order's outlet without relying on nested
+  -- SELECTs that are themselves blocked by RLS. SECURITY DEFINER ensures it can fetch the
+  -- outlet id, while we still enforce per-outlet membership/roles inside the function.
+  EXECUTE $fn$
+    CREATE OR REPLACE FUNCTION public.order_is_accessible(p_order_id uuid, p_user_id uuid)
+    RETURNS boolean
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = pg_temp
+    AS $body$
+    DECLARE
+      target_outlet uuid;
+    BEGIN
+      IF p_order_id IS NULL OR p_user_id IS NULL THEN
+        RETURN FALSE;
+      END IF;
+      SELECT outlet_id INTO target_outlet FROM public.orders WHERE id = p_order_id;
+      IF target_outlet IS NULL THEN
+        RETURN FALSE;
+      END IF;
+      IF public.is_admin(p_user_id) THEN
+        RETURN TRUE;
+      END IF;
+      RETURN (
+        target_outlet = ANY(COALESCE(public.member_outlet_ids(p_user_id), ARRAY[]::uuid[]))
+        OR EXISTS (
+          SELECT 1
+          FROM public.outlet_users ou
+          WHERE ou.user_id = p_user_id AND ou.outlet_id = target_outlet
+        )
+        OR public.has_role_any_outlet(p_user_id, 'supervisor', target_outlet)
+        OR public.has_role_any_outlet(p_user_id, 'outlet', target_outlet)
+      );
+    END;
+    $body$;
+  $fn$;
+
   -- Drop existing overlapping policies on orders
   PERFORM 1;
   BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_select_access ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
@@ -30,6 +67,12 @@ BEGIN
     USING (
       public.is_admin((select auth.uid()))
       OR outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
+      OR EXISTS (
+        SELECT 1
+        FROM public.outlet_users ou
+        WHERE ou.user_id = (select auth.uid())
+          AND ou.outlet_id = public.orders.outlet_id
+      )
     );
   $sql$;
 
@@ -40,6 +83,12 @@ BEGIN
     WITH CHECK (
       public.is_admin((select auth.uid()))
       OR outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
+      OR EXISTS (
+        SELECT 1
+        FROM public.outlet_users ou
+        WHERE ou.user_id = (select auth.uid())
+          AND ou.outlet_id = public.orders.outlet_id
+      )
     );
   $sql$;
 
@@ -80,15 +129,7 @@ BEGIN
     CREATE POLICY order_items_policy_select
     ON public.order_items
     FOR SELECT TO authenticated
-    USING (
-      public.is_admin((select auth.uid()))
-      OR EXISTS (
-        SELECT 1
-        FROM public.orders o
-        WHERE o.id = order_id
-          AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
-      )
-    );
+    USING (public.order_is_accessible(order_id, (select auth.uid())));
   $sql$;
 
   -- INSERT: admin OR member of the order's outlet
@@ -96,15 +137,7 @@ BEGIN
     CREATE POLICY order_items_policy_insert
     ON public.order_items
     FOR INSERT TO authenticated
-    WITH CHECK (
-      public.is_admin((select auth.uid()))
-      OR EXISTS (
-        SELECT 1
-        FROM public.orders o
-        WHERE o.id = order_id
-          AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
-      )
-    );
+    WITH CHECK (public.order_is_accessible(order_id, (select auth.uid())));
   $sql$;
 
   -- UPDATE: admin OR (supervisor/outlet member of the order's outlet)
@@ -113,36 +146,8 @@ BEGIN
     CREATE POLICY order_items_policy_update
     ON public.order_items
     FOR UPDATE TO authenticated
-    USING (
-      public.is_admin((select auth.uid()))
-      OR (
-        EXISTS (
-          SELECT 1
-          FROM public.orders o
-          WHERE o.id = order_id
-            AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
-        )
-        AND (
-          public.has_role_any_outlet((select auth.uid()), 'supervisor')
-          OR public.has_role_any_outlet((select auth.uid()), 'outlet')
-        )
-      )
-    )
-    WITH CHECK (
-      public.is_admin((select auth.uid()))
-      OR (
-        EXISTS (
-          SELECT 1
-          FROM public.orders o
-          WHERE o.id = order_id
-            AND o.outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
-        )
-        AND (
-          public.has_role_any_outlet((select auth.uid()), 'supervisor')
-          OR public.has_role_any_outlet((select auth.uid()), 'outlet')
-        )
-      )
-    );
+    USING (public.order_is_accessible(order_id, (select auth.uid())))
+    WITH CHECK (public.order_is_accessible(order_id, (select auth.uid())));
   $sql$;
 
   -- DELETE: admin only

@@ -375,11 +375,22 @@ class SupabaseProvider(context: Context) {
         @SerialName("created_at") val createdAt: String
     )
 
+    @Serializable
+    data class PlaceOrderRequest(
+        @SerialName("p_outlet_id") val outletId: String,
+        @SerialName("p_items") val items: List<PlaceOrderItem>,
+        @SerialName("p_employee_name") val employeeName: String,
+        @SerialName("p_signature_path") val signaturePath: String? = null,
+        @SerialName("p_pdf_path") val pdfPath: String? = null
+    )
+
     suspend fun rpcPlaceOrder(
         jwt: String,
         outletId: String,
         items: List<PlaceOrderItem>,
-        employeeName: String
+        employeeName: String,
+        signaturePath: String? = null,
+        pdfPath: String? = null
     ): PlaceOrderResult {
         val endpoint = "$supabaseUrl/rest/v1/rpc/place_order"
         val response = http.post(endpoint) {
@@ -387,10 +398,12 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
             contentType(ContentType.Application.Json)
             setBody(
-                mapOf(
-                    "p_outlet_id" to outletId,
-                    "p_items" to items,
-                    "p_employee_name" to employeeName
+                PlaceOrderRequest(
+                    outletId = outletId,
+                    items = items,
+                    employeeName = employeeName,
+                    signaturePath = signaturePath,
+                    pdfPath = pdfPath
                 )
             )
         }
@@ -398,6 +411,87 @@ class SupabaseProvider(context: Context) {
         // RPC returning table comes back as a JSON array with one row
         val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(PlaceOrderResult.serializer()), text)
         return parsed.first()
+    }
+
+    suspend fun supervisorApproveOrder(
+        jwt: String,
+        orderId: String,
+        supervisorName: String?,
+        signaturePath: String?,
+        pdfPath: String?
+    ) {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/supervisor_approve_order"
+        val body = mapOf(
+            "p_order_id" to orderId,
+            "p_supervisor_name" to supervisorName,
+            "p_signature_path" to signaturePath,
+            "p_pdf_path" to pdfPath
+        )
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        if (code !in 200..299) {
+            val txt = runCatching { resp.bodyAsText() }.getOrNull()
+            throw IllegalStateException("supervisor_approve_order failed: HTTP $code ${txt ?: ""}")
+        }
+    }
+
+    suspend fun markOrderLoaded(
+        jwt: String,
+        orderId: String,
+        driverName: String,
+        signaturePath: String?,
+        pdfPath: String?
+    ) {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/mark_order_loaded"
+        val body = mapOf(
+            "p_order_id" to orderId,
+            "p_driver_name" to driverName,
+            "p_signature_path" to signaturePath,
+            "p_pdf_path" to pdfPath
+        )
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        if (code !in 200..299) {
+            val txt = runCatching { resp.bodyAsText() }.getOrNull()
+            throw IllegalStateException("mark_order_loaded failed: HTTP $code ${txt ?: ""}")
+        }
+    }
+
+    suspend fun markOrderOffloaded(
+        jwt: String,
+        orderId: String,
+        offloaderName: String,
+        signaturePath: String?,
+        pdfPath: String?
+    ) {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/mark_order_offloaded"
+        val body = mapOf(
+            "p_order_id" to orderId,
+            "p_offloader_name" to offloaderName,
+            "p_signature_path" to signaturePath,
+            "p_pdf_path" to pdfPath
+        )
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        if (code !in 200..299) {
+            val txt = runCatching { resp.bodyAsText() }.getOrNull()
+            throw IllegalStateException("mark_order_offloaded failed: HTTP $code ${txt ?: ""}")
+        }
     }
 
     // Approve, lock, and allocate an order from warehouse group (coldrooms) to outlet
@@ -656,6 +750,18 @@ class SupabaseProvider(context: Context) {
         return 0
     }
 
+    suspend fun ensureOrderItemsPersisted(
+        jwt: String,
+        orderId: String,
+        items: List<PlaceOrderItem>
+    ) {
+        if (items.isEmpty()) return
+        val existing = runCatching { orderItemsCount(jwt, orderId) }.getOrElse { 0 }
+        if (existing <= 0) {
+            insertOrderItems(jwt, orderId, items)
+        }
+    }
+
     // --- Fallback direct inserts when RPC is unavailable ---
     @Serializable
     data class OrderInsertRow(
@@ -665,6 +771,26 @@ class SupabaseProvider(context: Context) {
         val status: String
     )
 
+    @Serializable
+    data class OrderInsertPayload(
+        @SerialName("outlet_id") val outletId: String,
+        @SerialName("order_number") val orderNumber: String,
+        val status: String,
+        val tz: String
+    )
+
+    @Serializable
+    data class OrderItemInsertPayload(
+        @SerialName("order_id") val orderId: String,
+        @SerialName("product_id") val productId: String?,
+        @SerialName("variation_id") val variationId: String?,
+        val name: String,
+        val uom: String,
+        val cost: Double,
+        val qty: Double,
+        val amount: Double
+    )
+
     suspend fun insertOrder(
         jwt: String,
         outletId: String,
@@ -672,11 +798,11 @@ class SupabaseProvider(context: Context) {
         tz: String,
         status: String = "placed"
     ): OrderInsertRow {
-        val body = mapOf(
-            "outlet_id" to outletId,
-            "order_number" to orderNumber,
-            "status" to status,
-            "tz" to tz
+        val body = OrderInsertPayload(
+            outletId = outletId,
+            orderNumber = orderNumber,
+            status = status,
+            tz = tz
         )
         val resp = http.post("$supabaseUrl/rest/v1/orders") {
             header("apikey", supabaseAnonKey)
@@ -702,15 +828,15 @@ class SupabaseProvider(context: Context) {
         items: List<PlaceOrderItem>
     ) {
         val rows = items.map {
-            mapOf(
-                "order_id" to orderId,
-                "product_id" to it.productId,
-                "variation_id" to it.variationId,
-                "name" to it.name,
-                "uom" to it.uom,
-                "cost" to it.cost,
-                "qty" to it.qty,
-                "amount" to (it.cost * it.qty)
+            OrderItemInsertPayload(
+                orderId = orderId,
+                productId = it.productId,
+                variationId = it.variationId,
+                name = it.name,
+                uom = it.uom,
+                cost = it.cost,
+                qty = it.qty,
+                amount = it.cost * it.qty
             )
         }
         val resp = http.post("$supabaseUrl/rest/v1/order_items") {

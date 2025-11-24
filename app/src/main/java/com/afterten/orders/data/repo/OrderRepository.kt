@@ -22,6 +22,36 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     @Serializable
     data class OutletRef(@SerialName("name") val name: String? = null)
 
+    @Serializable
+    data class ProductRef(@SerialName("name") val name: String? = null)
+
+    @Serializable
+    data class OrderDetail(
+        val id: String,
+        @SerialName("order_number") val orderNumber: String,
+        @SerialName("created_at") val createdAt: String,
+        val status: String,
+        @SerialName("outlet_id") val outletId: String? = null,
+        @SerialName("tz") val timezone: String? = null,
+        @SerialName("pdf_path") val pdfPath: String? = null,
+        @SerialName("approved_pdf_path") val approvedPdfPath: String? = null,
+        @SerialName("loaded_pdf_path") val loadedPdfPath: String? = null,
+        @SerialName("offloaded_pdf_path") val offloadedPdfPath: String? = null,
+        @SerialName("employee_signed_name") val employeeName: String? = null,
+        @SerialName("employee_signature_path") val employeeSignaturePath: String? = null,
+        @SerialName("employee_signed_at") val employeeSignedAt: String? = null,
+        @SerialName("supervisor_signed_name") val supervisorName: String? = null,
+        @SerialName("supervisor_signature_path") val supervisorSignaturePath: String? = null,
+        @SerialName("supervisor_signed_at") val supervisorSignedAt: String? = null,
+        @SerialName("driver_signed_name") val driverName: String? = null,
+        @SerialName("driver_signature_path") val driverSignaturePath: String? = null,
+        @SerialName("driver_signed_at") val driverSignedAt: String? = null,
+        @SerialName("offloader_signed_name") val offloaderName: String? = null,
+        @SerialName("offloader_signature_path") val offloaderSignaturePath: String? = null,
+        @SerialName("offloader_signed_at") val offloaderSignedAt: String? = null,
+        @SerialName("outlets") val outlet: OutletRef? = null
+    )
+
     suspend fun listOrdersForOutlet(jwt: String, outletId: String, limit: Int = 100): List<OrderRow> {
         val path = "/rest/v1/orders" +
             "?select=id,order_number,created_at,status,modified_by_supervisor,modified_by_supervisor_name" +
@@ -45,16 +75,34 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     data class OrderItemRow(
         val id: String,
         @SerialName("order_id") val orderId: String,
+        @SerialName("product_id") val productId: String? = null,
         val name: String,
         val uom: String,
         val cost: Double,
-        val qty: Double
+        val qty: Double,
+        @SerialName("products") val product: ProductRef? = null
     )
 
     suspend fun listOrderItems(jwt: String, orderId: String): List<OrderItemRow> {
-        val path = "/rest/v1/order_items?select=id,order_id,name,uom,cost,qty&order_id=eq." + orderId + "&order=name.asc"
+        val select = encode("id,order_id,product_id,products(name),name,uom,cost,qty")
+        val groupedOrder = encode("products(name).asc")
+        val path = "/rest/v1/order_items?select=" + select + "&order_id=eq." + orderId + "&order=" + groupedOrder + "&order=name.asc"
         val text = supabase.getWithJwt(path, jwt)
         return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OrderItemRow.serializer()), text)
+    }
+
+    suspend fun fetchOrder(jwt: String, orderId: String): OrderDetail? {
+        val select = encode(
+            "id,order_number,created_at,status,outlet_id,outlets(name),tz,pdf_path,approved_pdf_path,loaded_pdf_path,offloaded_pdf_path," +
+                "employee_signed_name,employee_signature_path,employee_signed_at," +
+                "supervisor_signed_name,supervisor_signature_path,supervisor_signed_at," +
+                "driver_signed_name,driver_signature_path,driver_signed_at," +
+                "offloader_signed_name,offloader_signature_path,offloader_signed_at"
+        )
+        val path = "/rest/v1/orders?select=" + select + "&id=eq." + orderId + "&limit=1"
+        val text = supabase.getWithJwt(path, jwt)
+        val list = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OrderDetail.serializer()), text)
+        return list.firstOrNull()
     }
 
     suspend fun updateOrderItemQty(jwt: String, orderItemId: String, qty: Double) {

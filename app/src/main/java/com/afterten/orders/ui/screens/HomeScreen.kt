@@ -75,12 +75,12 @@ fun HomeScreen(
                 ) { Text("Stock Transfers") }
             }
             isSupervisor -> {
-                // Supervisor home: go to Supervisor Orders (multi-outlet)
+                // Supervisor home: go to Outlet Orders (multi-outlet)
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onViewOrders() },
                     enabled = session != null
-                ) { Text("Supervisor Orders") }
+                ) { Text("Outlet Orders") }
             }
             else -> {
                 // Regular outlet user: Create and Orders

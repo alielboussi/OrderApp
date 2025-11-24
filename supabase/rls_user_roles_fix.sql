@@ -3,17 +3,21 @@
 -- Users can read their own rows; writes are left to service roles (which bypass RLS) or future admin-specific policies.
 
 DO $$
+DECLARE
+  policy_record record;
 BEGIN
   -- Ensure RLS is enabled
   ALTER TABLE IF EXISTS public.user_roles ENABLE ROW LEVEL SECURITY;
 
-  -- Drop any existing policies to avoid recursion and duplication
-  BEGIN EXECUTE 'DROP POLICY IF EXISTS user_roles_select ON public.user_roles'; EXCEPTION WHEN undefined_object THEN NULL; END;
-  BEGIN EXECUTE 'DROP POLICY IF EXISTS user_roles_select_access ON public.user_roles'; EXCEPTION WHEN undefined_object THEN NULL; END;
-  BEGIN EXECUTE 'DROP POLICY IF EXISTS user_roles_rw ON public.user_roles'; EXCEPTION WHEN undefined_object THEN NULL; END;
-  BEGIN EXECUTE 'DROP POLICY IF EXISTS user_roles_update ON public.user_roles'; EXCEPTION WHEN undefined_object THEN NULL; END;
-  BEGIN EXECUTE 'DROP POLICY IF EXISTS user_roles_insert ON public.user_roles'; EXCEPTION WHEN undefined_object THEN NULL; END;
-  BEGIN EXECUTE 'DROP POLICY IF EXISTS user_roles_delete ON public.user_roles'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  -- Drop ALL existing policies dynamically to avoid recursion and name drift
+  FOR policy_record IN
+    SELECT policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_roles'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.user_roles', policy_record.policyname);
+  END LOOP;
 
   -- Minimal, non-recursive SELECT policy: a user can read their own role rows
   CREATE POLICY user_roles_select

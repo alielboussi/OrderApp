@@ -6,7 +6,6 @@ import android.content.Context
 import android.os.Environment
 import android.net.Uri
 import androidx.core.net.toUri
-import android.graphics.pdf.PdfDocument
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,13 +23,16 @@ import com.afterten.orders.ui.components.rememberSignatureState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.util.PdfLine
+import com.afterten.orders.util.PdfProductGroup
 import com.afterten.orders.util.formatMoney
+import com.afterten.orders.util.generateOrderPdf
+import com.afterten.orders.util.sanitizeForFile
+import com.afterten.orders.util.toBlackInk
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -252,7 +254,7 @@ fun OrderSummaryScreen(
                                         val sigBytes = baos.toByteArray()
                                         val capFn = fn.lowercase().replaceFirstChar { it.titlecase() }
                                         val capLn = ln.lowercase().replaceFirstChar { it.titlecase() }
-                                        val outletSafe = ses.outletName.replace(" ", "_").replace(Regex("[^A-Za-z0-9_-]"), "")
+                                        val outletSafe = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
                                         val sigDate = lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
                                         val sigFile = "${capFn}_${capLn}_${sigDate}_${outletSafe}.png"
                                         val sp = "${ses.outletId}/$sigFile"
@@ -285,20 +287,35 @@ fun OrderSummaryScreen(
                                         }
                                     }
 
-                                    // Build PDF including all item details (new grouped layout)
-                                    val pdf = generateFullPdf(
+                                    // Build PDF including grouped layout shared with supervisor/driver flows
+                                    val productNames = products.associateBy({ it.id }, { it.name })
+                                    val pdfGroups = cart.groupBy { it.productId }.map { entry ->
+                                        val header = productNames[entry.key] ?: entry.value.firstOrNull()?.name.orEmpty()
+                                        PdfProductGroup(
+                                            header = header,
+                                            lines = entry.value.map {
+                                                PdfLine(
+                                                    name = it.name,
+                                                    qty = it.qty.toDouble(),
+                                                    uom = it.uom,
+                                                    unitPrice = it.unitPrice
+                                                )
+                                            }
+                                        )
+                                    }
+                                    val pdf = generateOrderPdf(
                                         cacheDir = ctx.cacheDir,
                                         outletName = ses.outletName,
                                         orderNo = number,
                                         createdAt = lusakaNow,
-                                        items = cart,
-                                        employeeName = title,
+                                        groups = pdfGroups,
+                                        signerLabel = "Signed By Outlet Employee Name",
+                                        signerName = title,
                                         signatureBitmap = signatureBitmap
                                     )
                                     val pdfBytes = pdf.readBytes()
                                     val dateStr = lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                                    val safeOutlet = ses.outletName.replace(" ", "_")
-                                        .replace(Regex("[^A-Za-z0-9_-]"), "")
+                                    val safeOutlet = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
                                     val pdfFileName = "${safeOutlet}_${number}_${dateStr}.pdf"
                                     val storagePath = "${ses.outletId}/$pdfFileName"
 
@@ -329,7 +346,9 @@ fun OrderSummaryScreen(
                                             jwt = ses.token,
                                             outletId = ses.outletId,
                                             items = itemsReq,
-                                            employeeName = title
+                                            employeeName = title,
+                                            signaturePath = sigPath,
+                                            pdfPath = storagePath
                                         )
                                         placedRemotely = true
                                         // Immediately approve, lock and allocate from warehouses (coldrooms)
@@ -432,143 +451,4 @@ fun OrderSummaryScreen(
     }
 }
 
-private fun generateFullPdf(
-    cacheDir: File,
-    outletName: String,
-    orderNo: String,
-    createdAt: ZonedDateTime,
-    items: List<RootViewModel.CartItem>,
-    employeeName: String,
-    signatureBitmap: android.graphics.Bitmap
-): File {
-    val doc = PdfDocument()
-    val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 @ 72dpi
-    var page = doc.startPage(pageInfo)
-    var canvas = page.canvas
-    val paint = android.graphics.Paint().apply { textSize = 14f; color = android.graphics.Color.BLACK }
-    val headerPaint = android.graphics.Paint().apply { textSize = 24f; isFakeBoldText = true; color = android.graphics.Color.BLACK }
-    val underlinePaint = android.graphics.Paint().apply { strokeWidth = 2f; color = android.graphics.Color.BLACK }
-    val redPaint = android.graphics.Paint().apply { strokeWidth = 1.5f; color = android.graphics.Color.rgb(220, 20, 60) }
-
-    var y = 40f
-    canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
-    canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-    canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
-    canvas.drawText("Items:", 40f, y, paint); y += 10f
-
-    fun newPageIfNeeded(targetY: Float) {
-        if (targetY > 780f) {
-            doc.finishPage(page)
-            page = doc.startPage(pageInfo)
-            canvas = page.canvas
-            y = 40f
-            canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
-            canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-            canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
-            canvas.drawText("Items:", 40f, y, paint); y += 10f
-        }
-    }
-
-    val groups = items.groupBy { it.productId }
-    var subtotal = 0.0
-    groups.entries.forEachIndexed { idx, entry ->
-        val first = entry.value.firstOrNull()
-        val header = first?.name ?: ""
-        // Centered big header with explicit underline just below the text baseline
-        val headerWidth = headerPaint.measureText(header)
-        val centerX = (595 - 40 - 40) / 2f + 40
-        newPageIfNeeded(y + 64f)
-        val headerBaseline = y + 28f
-        canvas.drawText(header, centerX - headerWidth / 2f, headerBaseline, headerPaint)
-        // Underline directly beneath the text width
-        val ulY = headerBaseline + 4f
-        canvas.drawLine(centerX - headerWidth / 2f, ulY, centerX + headerWidth / 2f, ulY, underlinePaint)
-        // Additional divider for visual separation
-        y = ulY + 12f
-        canvas.drawLine(40f, y, 555f, y, redPaint)
-        y += 18f
-        // Column header (Qty, UOM, Cost, Amount) with extra spacing to avoid overlap
-        canvas.drawText("Qty", 300f, y, paint)
-        canvas.drawText("UOM", 340f, y, paint)
-        canvas.drawText("Cost", 400f, y, paint)
-        canvas.drawText("Amount", 470f, y, paint)
-        y += 16f
-        entry.value.forEach { it ->
-            newPageIfNeeded(y + 26f)
-            // Line before
-            canvas.drawLine(40f, y, 555f, y, redPaint); y += 14f
-            val amount = it.lineTotal
-            subtotal += amount
-            canvas.drawText(it.name.take(30), 40f, y, paint)
-            canvas.drawText(it.qty.toString(), 300f, y, paint)
-            canvas.drawText(it.uom, 340f, y, paint)
-            canvas.drawText(formatMoney(it.unitPrice), 400f, y, paint)
-            canvas.drawText(formatMoney(amount), 470f, y, paint)
-            y += 12f
-            // Line after
-            canvas.drawLine(40f, y, 555f, y, redPaint)
-            y += 4f
-        }
-        if (idx < groups.size - 1) {
-            y += 10f
-            canvas.drawLine(40f, y, 555f, y, paint)
-            y += 6f
-        }
-    }
-    y += 10f
-    canvas.drawLine(320f, y, 555f, y, paint); y += 18f
-    canvas.drawText("Subtotal: ${formatMoney(subtotal)}", 320f, y, paint); y += 24f
-    y += 20f
-    // Signature boxed in 6cm x 6cm, drawing scaled signature inside 5cm x 5cm
-    val sigBmp = signatureBitmap
-    val cm = 72f / 2.54f
-    val boxSize = 6f * cm              // 6cm box
-    val innerMax = 5f * cm             // signature area inside box
-    val boxLeft = 40f
-    // Ensure we have enough space for label + box; if not, new page
-    newPageIfNeeded(y + 18f + boxSize + 20f)
-    canvas.drawText("Signed by: $employeeName", boxLeft, y, paint)
-    y += 18f
-    // Draw signature box (6cm x 6cm)
-    val rectPaint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 1.5f; color = android.graphics.Color.BLACK }
-    canvas.drawRect(boxLeft, y, boxLeft + boxSize, y + boxSize, rectPaint)
-    // Scale bitmap to fit within inner 5cm x 5cm, centered with small padding
-    val pad = kotlin.math.max(2f, (boxSize - innerMax) / 2f) // center inner area
-    val availW = innerMax
-    val availH = innerMax
-    val scale = kotlin.math.min(availW / sigBmp.width, availH / sigBmp.height)
-    val drawW = sigBmp.width * scale
-    val drawH = sigBmp.height * scale
-    val dx = boxLeft + pad + (availW - drawW) / 2f
-    val dy = y + pad + (availH - drawH) / 2f
-    val dest = android.graphics.RectF(dx, dy, dx + drawW, dy + drawH)
-    canvas.drawBitmap(sigBmp, null, dest, null)
-    y += boxSize + 20f
-
-    doc.finishPage(page)
-
-    val out = File(cacheDir, "order-$orderNo.pdf")
-    FileOutputStream(out).use { doc.writeTo(it) }
-    doc.close()
-    return out
-}
-
-// Convert any drawn signature strokes to solid black for white-paper PDFs
-private fun android.graphics.Bitmap.toBlackInk(): android.graphics.Bitmap {
-    val w = width
-    val h = height
-    val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-    val pixels = IntArray(w * h)
-    getPixels(pixels, 0, w, 0, 0, w, h)
-    for (i in pixels.indices) {
-        val a = (pixels[i] ushr 24) and 0xFF
-        if (a > 8) {
-            // Keep alpha, render as black
-            pixels[i] = (a shl 24) or 0x000000
-        } else {
-            pixels[i] = 0x00000000.toInt()
-        }
-    }
-    out.setPixels(pixels, 0, w, 0, 0, w, h)
-    return out
-}
+// Legacy PDF helpers moved to com.afterten.orders.util.OrderPdf
