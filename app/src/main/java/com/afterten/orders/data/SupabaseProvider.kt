@@ -533,6 +533,54 @@ class SupabaseProvider(context: Context) {
         val name: String
     )
 
+    @Serializable
+    data class PackConsumptionRow(
+        val id: String,
+        @SerialName("order_id") val orderId: String,
+        @SerialName("order_number") val orderNumber: String,
+        @SerialName("outlet_id") val outletId: String,
+        @SerialName("outlet_name") val outletName: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("warehouse_name") val warehouseName: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("product_name") val productName: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variation_name") val variationName: String? = null,
+        @SerialName("pack_label") val packLabel: String,
+        @SerialName("packs_ordered") val packsOrdered: Double,
+        @SerialName("units_per_pack") val unitsPerPack: Double,
+        @SerialName("units_total") val unitsTotal: Double,
+        @SerialName("created_at") val createdAt: String,
+        val status: String
+    )
+
+    @Serializable
+    data class StocktakeResult(
+        val id: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("counted_qty") val countedQty: Double,
+        val delta: Double,
+        val note: String? = null,
+        @SerialName("recorded_by") val recordedBy: String,
+        @SerialName("recorded_at") val recordedAt: String
+    )
+
+    @Serializable
+    data class SimpleProduct(
+        val id: String,
+        val name: String,
+        val uom: String
+    )
+
+    @Serializable
+    data class SimpleVariation(
+        val id: String,
+        val name: String,
+        val uom: String
+    )
+
     suspend fun listOutlets(jwt: String): List<Outlet> {
         val url = "$supabaseUrl/rest/v1/outlets?select=id,name&order=name.asc"
         val resp = http.get(url) {
@@ -659,6 +707,80 @@ class SupabaseProvider(context: Context) {
             val txt = runCatching { resp.bodyAsText() }.getOrNull()
             throw IllegalStateException("setWarehouseActive failed: HTTP $code ${txt ?: ""}")
         }
+    }
+
+    suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
+        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom&order=name.asc"
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val txt = resp.bodyAsText()
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleProduct.serializer()), txt)
+    }
+
+    suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
+        val url = "$supabaseUrl/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,name,uom&order=name.asc"
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val txt = resp.bodyAsText()
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleVariation.serializer()), txt)
+    }
+
+    suspend fun reportPackConsumption(
+        jwt: String,
+        fromIso: String? = null,
+        toIso: String? = null,
+        outletId: String? = null,
+        warehouseId: String? = null
+    ): List<PackConsumptionRow> {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/report_pack_consumption"
+        val body = mutableMapOf<String, Any?>()
+        fromIso?.let { body["p_from"] = it }
+        toIso?.let { body["p_to"] = it }
+        outletId?.let { body["p_location"] = it }
+        warehouseId?.let { body["p_warehouse"] = it }
+        val payload: Map<String, Any?> = if (body.isEmpty()) emptyMap() else body
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("report_pack_consumption failed: HTTP $code $txt")
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(PackConsumptionRow.serializer()), txt)
+    }
+
+    suspend fun recordStocktake(
+        jwt: String,
+        warehouseId: String,
+        productId: String,
+        variationId: String?,
+        countedQty: Double,
+        note: String?
+    ): StocktakeResult {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/record_stocktake"
+        val body = mutableMapOf<String, Any?>(
+            "p_warehouse_id" to warehouseId,
+            "p_product_id" to productId,
+            "p_counted_qty" to countedQty
+        )
+        body["p_variation_id"] = variationId
+        note?.takeIf { it.isNotBlank() }?.let { body["p_note"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("record_stocktake failed: HTTP $code $txt")
+        return Json { ignoreUnknownKeys = true }.decodeFromString(StocktakeResult.serializer(), txt)
     }
 
     // Upload a file to Supabase Storage

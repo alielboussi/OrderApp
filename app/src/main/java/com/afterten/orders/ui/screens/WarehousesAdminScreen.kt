@@ -12,6 +12,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+import java.util.Locale
+import kotlin.math.abs
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,23 +30,55 @@ fun WarehousesAdminScreen(
 
     var outlets by remember { mutableStateOf<List<SupabaseProvider.Outlet>>(emptyList()) }
     var warehouses by remember { mutableStateOf<List<SupabaseProvider.Warehouse>>(emptyList()) }
+    var products by remember { mutableStateOf<List<SupabaseProvider.SimpleProduct>>(emptyList()) }
+    var variations by remember { mutableStateOf<List<SupabaseProvider.SimpleVariation>>(emptyList()) }
 
     var selectedOutletId by remember { mutableStateOf<String?>(null) }
     var selectedParentId by remember { mutableStateOf<String?>(null) }
     var newWarehouseName by remember { mutableStateOf("") }
     var adminPassword by remember { mutableStateOf("") }
+    var reportOutletId by remember { mutableStateOf<String?>(null) }
+    var reportWarehouseId by remember { mutableStateOf<String?>(null) }
+    var packReportResults by remember { mutableStateOf<List<SupabaseProvider.PackConsumptionRow>>(emptyList()) }
+    var reportLookbackDays by remember { mutableStateOf("3") }
+    var isReportLoading by remember { mutableStateOf(false) }
+    var stocktakeWarehouseId by remember { mutableStateOf<String?>(null) }
+    var stocktakeProductId by remember { mutableStateOf<String?>(null) }
+    var stocktakeVariationId by remember { mutableStateOf<String?>(null) }
+    var stocktakeQty by remember { mutableStateOf("") }
+    var stocktakeNote by remember { mutableStateOf("") }
+    var isStocktakeLoading by remember { mutableStateOf(false) }
+    var lastStocktake by remember { mutableStateOf<SupabaseProvider.StocktakeResult?>(null) }
 
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(session?.token) {
         val isAdmin = session?.isAdmin == true
-        if (session?.token != null && isAdmin) {
+        val jwt = session?.token
+        if (jwt != null && isAdmin) {
             runCatching {
-                outlets = root.supabaseProvider.listOutlets(session.token)
-                warehouses = root.supabaseProvider.listWarehouses(session.token)
+                outlets = root.supabaseProvider.listOutlets(jwt)
+                warehouses = root.supabaseProvider.listWarehouses(jwt)
+                products = root.supabaseProvider.listActiveProducts(jwt)
             }.onFailure { error = it.message }
         }
+    }
+
+    LaunchedEffect(stocktakeProductId, session?.token) {
+        val jwt = session?.token
+        val isAdmin = session?.isAdmin == true
+        if (stocktakeProductId.isNullOrBlank() || jwt == null || !isAdmin) {
+            variations = emptyList()
+            stocktakeVariationId = null
+            return@LaunchedEffect
+        }
+        runCatching {
+            root.supabaseProvider.listVariationsForProduct(jwt, stocktakeProductId!!)
+        }.onSuccess {
+            variations = it
+            stocktakeVariationId = null
+        }.onFailure { error = it.message }
     }
 
     Scaffold(topBar = {
@@ -258,6 +294,150 @@ fun WarehousesAdminScreen(
                     }
                 }
             }
+
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Pack Consumption Report", style = MaterialTheme.typography.titleMedium)
+                    Text("Preview pack expansions aggregated by order. Filters optional.")
+                    DropdownField(
+                        label = "Outlet Filter (optional)",
+                        options = listOf(null to "<all outlets>") + outlets.map { it.id to it.name },
+                        selectedId = reportOutletId,
+                        onSelected = { reportOutletId = it }
+                    )
+                    DropdownField(
+                        label = "Warehouse Filter (optional)",
+                        options = listOf(null to "<all warehouses>") + warehouses.map { it.id to it.name },
+                        selectedId = reportWarehouseId,
+                        onSelected = { reportWarehouseId = it }
+                    )
+                    OutlinedTextField(
+                        value = reportLookbackDays,
+                        onValueChange = { txt -> reportLookbackDays = txt.filter { it.isDigit() } },
+                        label = { Text("Lookback (days)") },
+                        singleLine = true
+                    )
+                    Button(
+                        enabled = !isReportLoading,
+                        onClick = {
+                            error = null; message = null
+                            val jwt = session.token
+                            scope.launch {
+                                isReportLoading = true
+                                runCatching {
+                                    val days = reportLookbackDays.toLongOrNull()?.coerceAtLeast(1) ?: 3L
+                                    val now = Instant.now()
+                                    val toIso = now.toIsoSeconds()
+                                    val fromIso = now.minus(days, ChronoUnit.DAYS).toIsoSeconds()
+                                    root.supabaseProvider.reportPackConsumption(
+                                        jwt = jwt,
+                                        fromIso = fromIso,
+                                        toIso = toIso,
+                                        outletId = reportOutletId,
+                                        warehouseId = reportWarehouseId
+                                    ).sortedByDescending { it.createdAt }
+                                }.onSuccess {
+                                    packReportResults = it
+                                    message = "Fetched ${it.size} pack rows"
+                                }.onFailure { error = it.message }
+                                isReportLoading = false
+                            }
+                        }
+                    ) { Text(if (isReportLoading) "Loading…" else "Fetch Report") }
+                    if (isReportLoading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    if (packReportResults.isNotEmpty()) {
+                        val preview = packReportResults.take(25)
+                        Text("Showing ${preview.size} of ${packReportResults.size} rows", style = MaterialTheme.typography.labelMedium)
+                        Divider()
+                        preview.forEach { row ->
+                            Text("${row.createdAt.take(16)} • ${row.orderNumber} • ${row.packLabel} ${row.packsOrdered.displayQty()} packs (${row.unitsTotal.displayQty()} units) @ ${row.warehouseName}")
+                        }
+                    }
+                }
+            }
+
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Warehouse Stocktake", style = MaterialTheme.typography.titleMedium)
+                    Text("Adjust warehouse stock ledger by recording a counted quantity.")
+                    DropdownField(
+                        label = "Warehouse",
+                        options = warehouses.map { it.id to it.name },
+                        selectedId = stocktakeWarehouseId,
+                        onSelected = { stocktakeWarehouseId = it }
+                    )
+                    if (products.isEmpty()) {
+                        Text("Loading products…")
+                    } else {
+                        DropdownField(
+                            label = "Product",
+                            options = products.map { it.id to "${it.name} (${it.uom})" },
+                            selectedId = stocktakeProductId,
+                            onSelected = {
+                                stocktakeProductId = it
+                            }
+                        )
+                    }
+                    if (variations.isNotEmpty()) {
+                        DropdownField(
+                            label = "Variation (optional)",
+                            options = listOf(null to "<base product>") + variations.map { it.id to "${it.name} (${it.uom})" },
+                            selectedId = stocktakeVariationId,
+                            onSelected = { stocktakeVariationId = it }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = stocktakeQty,
+                        onValueChange = { stocktakeQty = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = { Text("Counted Quantity") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = stocktakeNote,
+                        onValueChange = { stocktakeNote = it },
+                        label = { Text("Note (optional)") }
+                    )
+                    Button(
+                        enabled = !isStocktakeLoading,
+                        onClick = {
+                            error = null; message = null
+                            val jwt = session.token
+                            val wid = stocktakeWarehouseId
+                            val pid = stocktakeProductId
+                            val qty = stocktakeQty.toDoubleOrNull()
+                            if (wid.isNullOrEmpty()) { error = "Select a warehouse"; return@Button }
+                            if (pid.isNullOrEmpty()) { error = "Select a product"; return@Button }
+                            if (qty == null) { error = "Enter counted quantity"; return@Button }
+                            scope.launch {
+                                isStocktakeLoading = true
+                                runCatching {
+                                    root.supabaseProvider.recordStocktake(
+                                        jwt = jwt,
+                                        warehouseId = wid,
+                                        productId = pid,
+                                        variationId = stocktakeVariationId,
+                                        countedQty = qty,
+                                        note = stocktakeNote.takeIf { it.isNotBlank() }
+                                    )
+                                }.onSuccess {
+                                    lastStocktake = it
+                                    stocktakeQty = ""
+                                    message = "Stocktake saved (delta ${it.delta.displayQty()})"
+                                }.onFailure { error = it.message }
+                                isStocktakeLoading = false
+                            }
+                        }
+                    ) { Text(if (isStocktakeLoading) "Recording…" else "Record Stocktake") }
+                    if (isStocktakeLoading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    lastStocktake?.let {
+                        Text("Last adjustment: counted ${it.countedQty.displayQty()} (${it.delta.displayQty()} delta) at ${it.recordedAt}")
+                    }
+                }
+            }
         }
     }
 }
@@ -336,3 +516,8 @@ private fun WarehouseRow(
 }
 
 // jwtSub helper removed; admin gating uses session.isAdmin from login
+
+private fun Instant.toIsoSeconds(): String = this.truncatedTo(ChronoUnit.SECONDS).toString()
+
+private fun Double.displayQty(): String =
+    if (abs(this % 1.0) < 1e-6) this.toLong().toString() else String.format(Locale.US, "%.2f", this)
