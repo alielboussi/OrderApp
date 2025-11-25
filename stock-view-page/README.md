@@ -28,7 +28,7 @@ Open http://localhost:3000 on iOS/Android/desktop. The UI is touch friendly and 
 ### Deploying on Vercel
 
 1. Push this folder with the rest of the mono-repo.
-2. In Vercel, import the repository and set the project root to `Stock View Page`.
+2. In Vercel, import the repository and set the project root to `stock-view-page`.
 3. Add the environment variables above (Production + Preview).
 4. Deploy. Because of the middleware, attempts to browse to `/anything-else` always redirect back to `/`.
 
