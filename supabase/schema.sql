@@ -17,6 +17,10 @@ $$;
 -- Order workflow + signature pipeline enhancements (2025-11-24)
 -- ------------------------------------------------------------
 
+-- Ensure deprecated outlet login metadata is removed now that outlet_users controls mapping.
+ALTER TABLE IF EXISTS public.outlets
+  DROP COLUMN IF EXISTS email;
+
 -- New metadata required for multi-stage signing.
 ALTER TABLE IF EXISTS public.orders
   ADD COLUMN IF NOT EXISTS employee_signed_name text,
@@ -68,6 +72,7 @@ DECLARE
   v_employee_name text := nullif(btrim(coalesce(p_employee_name, '')), '');
   v_sig_path text := nullif(btrim(p_signature_path), '');
   v_pdf_path text := nullif(btrim(p_pdf_path), '');
+  v_primary_wh uuid;
 BEGIN
   IF p_outlet_id IS NULL THEN
     RAISE EXCEPTION 'p_outlet_id is required';
@@ -109,26 +114,58 @@ BEGIN
   RETURNING id, order_number, created_at
   INTO v_order_id, v_order_number, v_created_at;
 
+  SELECT warehouse_id INTO v_primary_wh
+  FROM public.outlet_primary_warehouse
+  WHERE outlet_id = p_outlet_id;
+
+  WITH payload AS (
+    SELECT
+      i.product_id,
+      i.variation_id,
+      i.name,
+      i.uom,
+      i.cost,
+      coalesce(i.qty_cases, i.qty, 0)::numeric AS qty_cases,
+      i.warehouse_id AS warehouse_override
+    FROM jsonb_to_recordset(p_items) AS i(
+      product_id uuid,
+      variation_id uuid,
+      name text,
+      uom text,
+      cost numeric,
+      qty numeric,
+      qty_cases numeric,
+      warehouse_id uuid
+    )
+  )
   INSERT INTO public.order_items (
-    order_id, product_id, variation_id, name, uom, cost, qty, amount
+    order_id,
+    product_id,
+    variation_id,
+    name,
+    uom,
+    cost,
+    qty_cases,
+    units_per_uom,
+    qty,
+    amount,
+    warehouse_id
   )
   SELECT
     v_order_id,
-    i.product_id,
-    i.variation_id,
-    i.name,
-    i.uom,
-    i.cost,
-    i.qty,
-    coalesce(i.cost, 0)::numeric * coalesce(i.qty, 0)::numeric
-  FROM jsonb_to_recordset(p_items) AS i(
-    product_id uuid,
-    variation_id uuid,
-    name text,
-    uom text,
-    cost numeric,
-    qty numeric
-  );
+    p_item.product_id,
+    p_item.variation_id,
+    p_item.name,
+    p_item.uom,
+    p_item.cost,
+    p_item.qty_cases,
+    coalesce(pv.units_per_uom, prod.units_per_uom, 1) AS units_per_uom,
+    p_item.qty_cases * coalesce(pv.units_per_uom, prod.units_per_uom, 1) AS qty_units,
+    coalesce(p_item.cost, 0)::numeric * (p_item.qty_cases * coalesce(pv.units_per_uom, prod.units_per_uom, 1)) AS amount,
+    coalesce(p_item.warehouse_override, pv.default_warehouse_id, prod.default_warehouse_id, v_primary_wh)
+  FROM payload p_item
+  LEFT JOIN public.products prod ON prod.id = p_item.product_id
+  LEFT JOIN public.product_variations pv ON pv.id = p_item.variation_id;
 
   RETURN QUERY SELECT v_order_id, v_order_number, v_created_at;
 END;
@@ -308,7 +345,7 @@ END;
 $$;
 
 -- ------------------------------------------------------------
--- Pack configuration + warehouse stocktake extensions (2025-11-24)
+-- Branch + standardized case sizing (2025-11-25)
 -- ------------------------------------------------------------
 
 -- Ensure products/variations can declare preferred source warehouse.
@@ -318,187 +355,106 @@ ALTER TABLE IF EXISTS public.products
 ALTER TABLE IF EXISTS public.product_variations
   ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id);
 
--- Configuration table describing how many base units live inside each pack per location.
-CREATE TABLE IF NOT EXISTS public.product_pack_configs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id uuid REFERENCES public.products(id),
-  variation_id uuid REFERENCES public.product_variations(id),
-  location_id uuid REFERENCES public.outlets(id),
-  pack_label text NOT NULL,
-  units_per_pack numeric NOT NULL CHECK (units_per_pack > 0),
-  active boolean NOT NULL DEFAULT true,
-  effective_from timestamptz NOT NULL DEFAULT now(),
-  effective_to timestamptz,
-  created_by uuid NOT NULL DEFAULT auth.uid(),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT product_pack_configs_target_chk CHECK (product_id IS NOT NULL OR variation_id IS NOT NULL)
-);
+ALTER TABLE IF EXISTS public.warehouses
+  DROP COLUMN IF EXISTS branch_id,
+  ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'child_coldroom'
+    CHECK (kind IN ('main_coldroom','child_coldroom','selling_depot','outlet_warehouse'));
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_product_pack_configs_scope
-ON public.product_pack_configs (
-  coalesce(product_id, variation_id),
-  coalesce(variation_id, '00000000-0000-0000-0000-000000000000'::uuid),
-  coalesce(location_id, '00000000-0000-0000-0000-000000000000'::uuid),
-  pack_label,
-  effective_from
-);
+DROP TABLE IF EXISTS public.branches;
 
--- Holds pack -> base unit expansion rows per order item.
-CREATE TABLE IF NOT EXISTS public.order_pack_expansions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
-  order_item_id uuid NOT NULL REFERENCES public.order_items(id) ON DELETE CASCADE,
-  location_id uuid NOT NULL REFERENCES public.outlets(id),
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id),
-  product_id uuid NOT NULL REFERENCES public.products(id),
-  variation_id uuid REFERENCES public.product_variations(id),
-  pack_config_id uuid REFERENCES public.product_pack_configs(id),
-  pack_label text NOT NULL,
-  packs_ordered numeric NOT NULL,
-  units_per_pack numeric NOT NULL,
-  units_total numeric NOT NULL,
-  recorded_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_order_pack_expansions_item
-ON public.order_pack_expansions(order_item_id);
-
-ALTER TABLE public.product_pack_configs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.order_pack_expansions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS product_pack_configs_select ON public.product_pack_configs;
-CREATE POLICY product_pack_configs_select ON public.product_pack_configs
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR location_id IS NULL
-    OR location_id = ANY(public.member_outlet_ids(auth.uid()))
-  );
-
-DROP POLICY IF EXISTS product_pack_configs_admin_rw ON public.product_pack_configs;
-CREATE POLICY product_pack_configs_admin_rw ON public.product_pack_configs
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-DROP POLICY IF EXISTS order_pack_expansions_select ON public.order_pack_expansions;
-CREATE POLICY order_pack_expansions_select ON public.order_pack_expansions
-  FOR SELECT
-  USING (public.order_is_accessible(order_id, auth.uid()));
-
--- Helper to compute expansion rows for a given order (idempotent).
-CREATE OR REPLACE FUNCTION public.refresh_order_pack_expansions(p_order_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_order public.orders%ROWTYPE;
-  v_outlet uuid;
-  v_primary uuid;
-  v_row record;
-  v_cfg record;
-  v_pack_label text;
-  v_units numeric;
-  v_wh uuid;
+DO $$
 BEGIN
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
+  UPDATE public.warehouses
+  SET kind = CASE
+    WHEN parent_warehouse_id IS NULL THEN 'main_coldroom'
+    ELSE coalesce(kind, 'child_coldroom')
+  END
+  WHERE kind IS NULL OR (parent_warehouse_id IS NULL AND kind <> 'main_coldroom');
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'case_size_units'
+  ) THEN
+    ALTER TABLE public.products RENAME COLUMN case_size_units TO units_per_uom;
   END IF;
 
-  v_outlet := v_order.outlet_id;
-  SELECT warehouse_id INTO v_primary FROM public.outlet_primary_warehouse WHERE outlet_id = v_outlet;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'product_variations' AND column_name = 'case_size_units'
+  ) THEN
+    ALTER TABLE public.product_variations RENAME COLUMN case_size_units TO units_per_uom;
+  END IF;
 
-  DELETE FROM public.order_pack_expansions WHERE order_id = p_order_id;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'case_size_units'
+  ) THEN
+    ALTER TABLE public.order_items RENAME COLUMN case_size_units TO units_per_uom;
+  END IF;
+END $$;
 
-  FOR v_row IN
-    SELECT oi.* FROM public.order_items oi WHERE oi.order_id = p_order_id
-  LOOP
-    SELECT cfg.*
-      INTO v_cfg
-      FROM public.product_pack_configs cfg
-     WHERE cfg.active
-       AND (cfg.product_id = v_row.product_id OR cfg.variation_id = v_row.variation_id)
-       AND (cfg.location_id = v_outlet OR cfg.location_id IS NULL)
-       AND cfg.effective_from <= now()
-       AND (cfg.effective_to IS NULL OR cfg.effective_to >= now())
-     ORDER BY (cfg.location_id = v_outlet) DESC,
-              (cfg.variation_id = v_row.variation_id) DESC,
-              cfg.effective_from DESC
-     LIMIT 1;
+ALTER TABLE IF EXISTS public.products
+  ADD COLUMN IF NOT EXISTS units_per_uom numeric NOT NULL DEFAULT 1 CHECK (units_per_uom > 0);
 
-    v_pack_label := coalesce(v_cfg.pack_label, v_row.uom, 'Pack');
-    v_units := coalesce(v_cfg.units_per_pack, 1) * coalesce(v_row.qty, 0);
-    v_wh := coalesce(
-      (SELECT pv.default_warehouse_id FROM public.product_variations pv WHERE pv.id = v_row.variation_id),
-      (SELECT p.default_warehouse_id FROM public.products p WHERE p.id = v_row.product_id),
-      v_primary
-    );
-    IF v_wh IS NULL THEN
-      RAISE NOTICE 'No warehouse mapping for order_item %, defaulting to outlet primary', v_row.id;
-      SELECT warehouse_id INTO v_wh FROM public.outlet_primary_warehouse WHERE outlet_id = v_outlet;
-      IF v_wh IS NULL THEN
-        RAISE EXCEPTION 'Warehouse mapping missing for order_item %', v_row.id;
-      END IF;
-    END IF;
+ALTER TABLE IF EXISTS public.product_variations
+  ADD COLUMN IF NOT EXISTS units_per_uom numeric NOT NULL DEFAULT 1 CHECK (units_per_uom > 0);
 
-    INSERT INTO public.order_pack_expansions (
-      order_id,
-      order_item_id,
-      location_id,
-      warehouse_id,
-      product_id,
-      variation_id,
-      pack_config_id,
-      pack_label,
-      packs_ordered,
-      units_per_pack,
-      units_total
-    ) VALUES (
-      p_order_id,
-      v_row.id,
-      v_outlet,
-      v_wh,
-      v_row.product_id,
-      v_row.variation_id,
-      v_cfg.id,
-      v_pack_label,
-      coalesce(v_row.qty, 0),
-      coalesce(v_cfg.units_per_pack, 1),
-      v_units
-    );
-  END LOOP;
-END;
-$$;
+ALTER TABLE IF EXISTS public.order_items
+  ADD COLUMN IF NOT EXISTS qty_cases numeric,
+  ADD COLUMN IF NOT EXISTS units_per_uom numeric NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS warehouse_id uuid REFERENCES public.warehouses(id);
 
--- View + RPC for pack consumption reporting.
+UPDATE public.order_items
+SET
+  qty_cases = coalesce(qty_cases, qty),
+  units_per_uom = coalesce(units_per_uom, 1)
+WHERE qty_cases IS NULL OR units_per_uom IS NULL;
+
+UPDATE public.order_items oi
+SET warehouse_id = coalesce(
+      oi.warehouse_id,
+      (SELECT pv.default_warehouse_id FROM public.product_variations pv WHERE pv.id = oi.variation_id),
+      (SELECT prod.default_warehouse_id FROM public.products prod WHERE prod.id = oi.product_id)
+    )
+WHERE oi.warehouse_id IS NULL;
+
+DROP FUNCTION IF EXISTS public.report_pack_consumption(timestamptz, timestamptz, uuid, uuid);
+DROP VIEW IF EXISTS public.order_pack_consumption;
+DROP FUNCTION IF EXISTS public.refresh_order_pack_expansions(uuid);
+DROP TABLE IF EXISTS public.order_pack_expansions CASCADE;
+DROP TABLE IF EXISTS public.product_pack_configs CASCADE;
+
+-- View + RPC for standardized pack/unit consumption reporting.
 CREATE OR REPLACE VIEW public.order_pack_consumption AS
 SELECT
-  ope.id,
-  ope.order_id,
+  oi.id,
+  oi.order_id,
   o.order_number,
   o.outlet_id,
   outlets.name AS outlet_name,
-  ope.warehouse_id,
-  w.name AS warehouse_name,
-  ope.product_id,
-  p.name AS product_name,
-  ope.variation_id,
+  warehouse_source.id AS warehouse_id,
+  warehouse_source.name AS warehouse_name,
+  oi.product_id,
+  prod.name AS product_name,
+  oi.variation_id,
   pv.name AS variation_name,
-  ope.pack_label,
-  ope.packs_ordered,
-  ope.units_per_pack,
-  ope.units_total,
+  coalesce(oi.uom, pv.uom, prod.uom, 'Case') AS pack_label,
+  coalesce(oi.qty_cases, oi.qty) AS packs_ordered,
+  coalesce(oi.units_per_uom, pv.units_per_uom, prod.units_per_uom, 1) AS units_per_pack,
+  oi.qty AS units_total,
   o.created_at,
   o.status
-FROM public.order_pack_expansions ope
-JOIN public.orders o ON o.id = ope.order_id
+FROM public.order_items oi
+JOIN public.orders o ON o.id = oi.order_id
 JOIN public.outlets ON outlets.id = o.outlet_id
-JOIN public.warehouses w ON w.id = ope.warehouse_id
-JOIN public.products p ON p.id = ope.product_id
-LEFT JOIN public.product_variations pv ON pv.id = ope.variation_id;
+LEFT JOIN public.products prod ON prod.id = oi.product_id
+LEFT JOIN public.product_variations pv ON pv.id = oi.variation_id
+LEFT JOIN public.outlet_primary_warehouse opw ON opw.outlet_id = o.outlet_id
+LEFT JOIN public.warehouses warehouse_source
+  ON warehouse_source.id = coalesce(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, opw.warehouse_id);
 
 CREATE OR REPLACE FUNCTION public.report_pack_consumption(
     p_from timestamptz,
@@ -629,60 +585,3 @@ BEGIN
 END;
 $$;
 
--- Recreate supervisor approval to refresh pack expansions after signing.
-CREATE OR REPLACE FUNCTION public.supervisor_approve_order(
-    p_order_id uuid,
-    p_supervisor_name text DEFAULT NULL,
-    p_signature_path text DEFAULT NULL,
-    p_pdf_path text DEFAULT NULL
-)
-RETURNS public.orders
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_order public.orders%ROWTYPE;
-  v_name text := nullif(btrim(coalesce(p_supervisor_name,
-                     (current_setting('request.jwt.claims', true)::jsonb ->> 'name'))), '');
-  v_sig text := nullif(btrim(p_signature_path), '');
-  v_pdf text := nullif(btrim(p_pdf_path), '');
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  IF NOT (public.is_admin(v_uid) OR public.has_role(v_uid, 'supervisor', v_order.outlet_id)) THEN
-    RAISE EXCEPTION 'not authorized to approve this order';
-  END IF;
-
-  UPDATE public.orders o
-     SET status = CASE
-           WHEN lower(coalesce(o.status, '')) IN ('loaded', 'offloaded') THEN o.status
-           ELSE 'Approved'
-         END,
-         locked = true,
-         approved_at = coalesce(o.approved_at, now()),
-         approved_by = coalesce(o.approved_by, v_uid),
-         supervisor_signed_name = coalesce(v_name, o.supervisor_signed_name),
-         supervisor_signature_path = coalesce(v_sig, o.supervisor_signature_path),
-         supervisor_signed_at = CASE
-             WHEN (v_name IS NOT NULL OR v_sig IS NOT NULL) THEN coalesce(o.supervisor_signed_at, now())
-             ELSE o.supervisor_signed_at
-         END,
-         pdf_path = coalesce(v_pdf, o.pdf_path),
-         approved_pdf_path = coalesce(v_pdf, o.approved_pdf_path)
-   WHERE o.id = p_order_id
-   RETURNING * INTO v_order;
-
-  PERFORM public.refresh_order_pack_expansions(p_order_id);
-
-  RETURN v_order;
-END;
-$$;

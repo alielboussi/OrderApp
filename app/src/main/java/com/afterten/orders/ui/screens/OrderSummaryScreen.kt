@@ -331,13 +331,18 @@ fun OrderSummaryScreen(
 
                                     // Place order on server with employee name
                                     val itemsReq = cart.map {
+                                        val qtyCases = it.qty.toDouble()
+                                        val unitsPerUom = it.unitsPerUom.takeIf { size -> size > 0 } ?: 1.0
+                                        val qtyUnits = qtyCases * unitsPerUom
                                         SupabaseProvider.PlaceOrderItem(
                                             productId = it.productId,
                                             variationId = it.variationId,
                                             name = it.name,
                                             uom = it.uom,
                                             cost = it.unitPrice,
-                                            qty = it.qty.toDouble()
+                                            qty = qtyUnits,
+                                            qtyCases = qtyCases,
+                                            unitsPerUom = unitsPerUom
                                         )
                                     }
                                     var placedRemotely = false

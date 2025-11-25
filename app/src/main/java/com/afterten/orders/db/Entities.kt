@@ -12,7 +12,9 @@ data class ProductEntity(
     val uom: String,
     val cost: Double,
     val hasVariations: Boolean,
-    val active: Boolean
+    val active: Boolean,
+    val unitsPerUom: Double,
+    val defaultWarehouseId: String?
 )
 
 @Entity(tableName = "product_variations")
@@ -23,7 +25,9 @@ data class VariationEntity(
     val imageUrl: String?,
     val uom: String,
     val cost: Double,
-    val active: Boolean
+    val active: Boolean,
+    val unitsPerUom: Double,
+    val defaultWarehouseId: String?
 )
 
 @Entity(tableName = "draft_cart")
@@ -34,7 +38,8 @@ data class DraftCartItemEntity(
     val name: String,
     val uom: String,
     val unitPrice: Double,
-    val qty: Int
+    val qty: Int,
+    val unitsPerUom: Double
 )
 
 @Entity(tableName = "pending_orders")

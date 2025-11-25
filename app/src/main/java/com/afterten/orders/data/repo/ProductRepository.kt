@@ -42,7 +42,11 @@ class ProductRepository(
     fun listenProducts(): Flow<List<ProductEntity>> = db.productDao().listenProducts()
 
     suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
-        val raw = provider.getWithJwt("/rest/v1/products?active=eq.true&select=id,sku,name,image_url,uom,cost,has_variations,active", jwt)
+        val raw = provider.getWithJwt(
+            "/rest/v1/products?active=eq.true&select=" +
+                "id,sku,name,image_url,uom,cost,has_variations,active,units_per_uom,default_warehouse_id",
+            jwt
+        )
         // If Supabase returns an error object, surface a friendly message instead of a JSON parse crash
         throwIfError(raw)
         val items = json.decodeFromString<List<ProductDto>>(raw)
@@ -55,7 +59,9 @@ class ProductRepository(
                 uom = it.uom,
                 cost = it.cost,
                 hasVariations = it.hasVariations,
-                active = it.active
+                active = it.active,
+                unitsPerUom = it.unitsPerUom,
+                defaultWarehouseId = it.defaultWarehouseId
             )
         }
         db.productDao().upsertAll(mapped)
@@ -68,7 +74,11 @@ class ProductRepository(
         db.variationDao().listenAll()
 
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
-        val raw = provider.getWithJwt("/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,product_id,name,image_url,uom,cost,active", jwt)
+        val raw = provider.getWithJwt(
+            "/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=" +
+                "id,product_id,name,image_url,uom,cost,active,units_per_uom,default_warehouse_id",
+            jwt
+        )
         throwIfError(raw)
         val items = json.decodeFromString<List<VariationDto>>(raw)
         val mapped = items.map {
@@ -79,7 +89,9 @@ class ProductRepository(
                 imageUrl = it.imageUrl,
                 uom = it.uom,
                 cost = it.cost,
-                active = it.active
+                active = it.active,
+                unitsPerUom = it.unitsPerUom,
+                defaultWarehouseId = it.defaultWarehouseId
             )
         }
         db.variationDao().clearForProduct(productId)
@@ -87,7 +99,11 @@ class ProductRepository(
     }
 
     suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
-        val raw = provider.getWithJwt("/rest/v1/product_variations?active=eq.true&select=id,product_id,name,image_url,uom,cost,active", jwt)
+        val raw = provider.getWithJwt(
+            "/rest/v1/product_variations?active=eq.true&select=" +
+                "id,product_id,name,image_url,uom,cost,active,units_per_uom,default_warehouse_id",
+            jwt
+        )
         throwIfError(raw)
         val items = json.decodeFromString<List<VariationDto>>(raw)
         val mapped = items.map {
@@ -98,7 +114,9 @@ class ProductRepository(
                 imageUrl = it.imageUrl,
                 uom = it.uom,
                 cost = it.cost,
-                active = it.active
+                active = it.active,
+                unitsPerUom = it.unitsPerUom,
+                defaultWarehouseId = it.defaultWarehouseId
             )
         }
         db.variationDao().clearAll()

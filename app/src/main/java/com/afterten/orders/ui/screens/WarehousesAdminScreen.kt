@@ -350,7 +350,7 @@ fun WarehousesAdminScreen(
                     if (packReportResults.isNotEmpty()) {
                         val preview = packReportResults.take(25)
                         Text("Showing ${preview.size} of ${packReportResults.size} rows", style = MaterialTheme.typography.labelMedium)
-                        Divider()
+                        HorizontalDivider()
                         preview.forEach { row ->
                             Text("${row.createdAt.take(16)} • ${row.orderNumber} • ${row.packLabel} ${row.packsOrdered.displayQty()} packs (${row.unitsTotal.displayQty()} units) @ ${row.warehouseName}")
                         }

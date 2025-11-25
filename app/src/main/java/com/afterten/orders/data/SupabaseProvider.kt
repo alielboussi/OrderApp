@@ -20,6 +20,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.builtins.ListSerializer
 import io.ktor.client.statement.HttpResponse
 import io.github.jan.supabase.createSupabaseClient
@@ -294,7 +295,7 @@ class SupabaseProvider(context: Context) {
                 // Allow admin and transfer managers to sign in without an outlet mapping; outlet-specific actions should request context in UI
                 LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor)
             } else {
-                error("No outlet mapping found for this user. Please set outlets.email to the user email or add a row in public.outlet_users.")
+                error("No outlet mapping found for this user. Please add the user to public.outlet_users or assign them a role via whoami_roles.")
             }
         )
     }
@@ -365,7 +366,10 @@ class SupabaseProvider(context: Context) {
         val name: String,
         val uom: String,
         val cost: Double,
-        val qty: Double
+        val qty: Double,
+        @SerialName("qty_cases") val qtyCases: Double? = null,
+        @SerialName("warehouse_id") val warehouseId: String? = null,
+        @Transient val unitsPerUom: Double = 1.0
     )
 
     @Serializable
@@ -910,6 +914,9 @@ class SupabaseProvider(context: Context) {
         val uom: String,
         val cost: Double,
         val qty: Double,
+        @SerialName("qty_cases") val qtyCases: Double?,
+        @SerialName("units_per_uom") val unitsPerUom: Double,
+        @SerialName("warehouse_id") val warehouseId: String?,
         val amount: Double
     )
 
@@ -950,6 +957,11 @@ class SupabaseProvider(context: Context) {
         items: List<PlaceOrderItem>
     ) {
         val rows = items.map {
+            val unitsPerUom = it.unitsPerUom.takeIf { size -> size > 0 } ?: 1.0
+            val qtyCases = it.qtyCases ?: run {
+                if (unitsPerUom > 0) it.qty / unitsPerUom else it.qty
+            }
+            val qtyUnits = qtyCases * unitsPerUom
             OrderItemInsertPayload(
                 orderId = orderId,
                 productId = it.productId,
@@ -957,8 +969,11 @@ class SupabaseProvider(context: Context) {
                 name = it.name,
                 uom = it.uom,
                 cost = it.cost,
-                qty = it.qty,
-                amount = it.cost * it.qty
+                qty = qtyUnits,
+                qtyCases = qtyCases,
+                unitsPerUom = unitsPerUom,
+                warehouseId = it.warehouseId,
+                amount = it.cost * qtyUnits
             )
         }
         val resp = http.post("$supabaseUrl/rest/v1/order_items") {

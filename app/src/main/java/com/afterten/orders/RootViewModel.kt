@@ -67,7 +67,8 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         val name: String,
         val uom: String,
         val unitPrice: Double,
-        val qty: Int
+        val qty: Int,
+        val unitsPerUom: Double
     ) {
         val key: String get() = "$productId:${variationId ?: ""}"
         val lineTotal: Double get() = unitPrice * qty
@@ -84,19 +85,24 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         uom: String,
         unitPrice: Double,
-        qty: Int
+        qty: Int,
+        unitsPerUom: Double = 1.0
     ) {
+        val k = key(productId, variationId)
+        val normalizedCaseSize = when {
+            unitsPerUom > 0 -> unitsPerUom
+            _cart.value[k]?.unitsPerUom?.let { it > 0 } == true -> _cart.value[k]!!.unitsPerUom
+            else -> 1.0
+        }
         _cart.value = _cart.value.toMutableMap().also { m ->
-            val k = key(productId, variationId)
             if (qty <= 0) {
                 m.remove(k)
             } else {
-                m[k] = CartItem(productId, variationId, name, uom, unitPrice, qty)
+                m[k] = CartItem(productId, variationId, name, uom, unitPrice, qty, normalizedCaseSize)
             }
         }
         // Persist to DB
         viewModelScope.launch {
-            val k = key(productId, variationId)
             if (qty <= 0) cartDao.deleteByKey(k) else cartDao.upsert(
                 DraftCartItemEntity(
                     key = k,
@@ -105,22 +111,47 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
                     name = name,
                     uom = uom,
                     unitPrice = unitPrice,
-                    qty = qty
+                    qty = qty,
+                    unitsPerUom = normalizedCaseSize
                 )
             )
         }
     }
 
-    fun inc(productId: String, variationId: String?, name: String, uom: String, unitPrice: Double) {
+    fun inc(
+        productId: String,
+        variationId: String?,
+        name: String,
+        uom: String,
+        unitPrice: Double,
+        unitsPerUom: Double = 1.0
+    ) {
         val k = key(productId, variationId)
         val curr = _cart.value[k]?.qty ?: 0
-        setQty(productId, variationId, name, uom, unitPrice, curr + 1)
+        val normalized = when {
+            unitsPerUom > 0 -> unitsPerUom
+            _cart.value[k]?.unitsPerUom?.let { it > 0 } == true -> _cart.value[k]!!.unitsPerUom
+            else -> 1.0
+        }
+        setQty(productId, variationId, name, uom, unitPrice, curr + 1, normalized)
     }
 
-    fun dec(productId: String, variationId: String?, name: String, uom: String, unitPrice: Double) {
+    fun dec(
+        productId: String,
+        variationId: String?,
+        name: String,
+        uom: String,
+        unitPrice: Double,
+        unitsPerUom: Double = 1.0
+    ) {
         val k = key(productId, variationId)
         val curr = _cart.value[k]?.qty ?: 0
-        setQty(productId, variationId, name, uom, unitPrice, (curr - 1).coerceAtLeast(0))
+        val normalized = when {
+            unitsPerUom > 0 -> unitsPerUom
+            _cart.value[k]?.unitsPerUom?.let { it > 0 } == true -> _cart.value[k]!!.unitsPerUom
+            else -> 1.0
+        }
+        setQty(productId, variationId, name, uom, unitPrice, (curr - 1).coerceAtLeast(0), normalized)
     }
 
     fun qty(productId: String, variationId: String?): Int = _cart.value[key(productId, variationId)]?.qty ?: 0
@@ -136,7 +167,17 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
             cartDao.listenAll().collect { list ->
                 _cart.value = list.associateBy(
                     keySelector = { it.key },
-                    valueTransform = { CartItem(it.productId, it.variationId, it.name, it.uom, it.unitPrice, it.qty) }
+                    valueTransform = {
+                        CartItem(
+                            it.productId,
+                            it.variationId,
+                            it.name,
+                            it.uom,
+                            it.unitPrice,
+                            it.qty,
+                            (it.unitsPerUom.takeIf { size -> size > 0 } ?: 1.0)
+                        )
+                    }
                 )
             }
         }

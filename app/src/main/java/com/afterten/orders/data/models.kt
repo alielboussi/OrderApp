@@ -12,7 +12,9 @@ data class ProductDto(
     val uom: String,
     val cost: Double,
     @SerialName("has_variations") val hasVariations: Boolean,
-    val active: Boolean = true
+    val active: Boolean = true,
+    @SerialName("units_per_uom") val unitsPerUom: Double = 1.0,
+    @SerialName("default_warehouse_id") val defaultWarehouseId: String? = null
 )
 
 @Serializable
@@ -23,5 +25,7 @@ data class VariationDto(
     @SerialName("image_url") val imageUrl: String? = null,
     val uom: String,
     val cost: Double,
-    val active: Boolean = true
+    val active: Boolean = true,
+    @SerialName("units_per_uom") val unitsPerUom: Double = 1.0,
+    @SerialName("default_warehouse_id") val defaultWarehouseId: String? = null
 )

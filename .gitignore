@@ -36,3 +36,5 @@ $RECYCLE.BIN/
 /out/
 /.settings/
 /node_modules/
+**/node_modules/
+**/.next/

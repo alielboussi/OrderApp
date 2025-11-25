@@ -256,9 +256,9 @@ private fun ProductCard(root: RootViewModel, item: ProductEntity, minVariationCo
                         val qty = cart["${item.id}:"]?.qty ?: 0
                         QuantityStepper(
                             qty = qty,
-                            onDec = { root.dec(item.id, null, item.name, item.uom, item.cost) },
-                            onInc = { root.inc(item.id, null, item.name, item.uom, item.cost) },
-                            onChange = { n -> root.setQty(item.id, null, item.name, item.uom, item.cost, n) }
+                            onDec = { root.dec(item.id, null, item.name, item.uom, item.cost, item.unitsPerUom) },
+                            onInc = { root.inc(item.id, null, item.name, item.uom, item.cost, item.unitsPerUom) },
+                            onChange = { n -> root.setQty(item.id, null, item.name, item.uom, item.cost, n, item.unitsPerUom) }
                         )
                     }
                 }
@@ -416,9 +416,9 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity) {
         VariationQtyControls(
             uom = v.uom,
             qty = qty,
-            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost) },
-            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost) },
-            onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n) }
+            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost, v.unitsPerUom) },
+            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost, v.unitsPerUom) },
+            onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n, v.unitsPerUom) }
         )
     }
 }
