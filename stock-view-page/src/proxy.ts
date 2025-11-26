@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 const ALLOWED_PREFIXES = ['/api', '/_next', '/favicon.ico', '/manifest.webmanifest'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAllowed = pathname === '/' || ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
