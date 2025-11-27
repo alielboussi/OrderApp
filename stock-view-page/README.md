@@ -1,40 +1,66 @@
 ## Stock View Page
 
-Single-page Next.js dashboard that prompts the user to pick a warehouse, enter an optional search term, and then displays the live stock (including descendant warehouses) by reading from Supabase.
+Single-page Next.js dashboard that prompts the user to pick a warehouse, enter an optional search term, and then displays the live stock (including descendant warehouses) by reading from Supabase Edge Functions. The site is now fully static, so it can be hosted directly from Supabase Web Hosting or any static CDN.
 
 ### Prerequisites
 
-- Supabase project with the `warehouse_stock_current` view exposed through PostgREST.
-- Service Role key (used server-side in the Vercel/Next.js API routes).
+- Supabase project with the `warehouse_stock_current` view (or any equivalent materialized view) available.
+- Supabase CLI (`npm install -g supabase`) so you can deploy edge functions and static assets.
+- Two Supabase Edge Functions (`stock` and `warehouses`) that live in `supabase/functions/*` inside this repo.
 
 ### Local setup
 
 ```bash
-cp .env.example .env.local   # fill in Supabase values
+cp .env.example .env.local   # set NEXT_PUBLIC_SUPABASE_FUNCTION_URL
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000 on iOS/Android/desktop. The UI is touch friendly and prevents navigation to other routes via middleware.
+The `.env.local` file should point to your project’s function gateway, e.g. `https://abc123.supabase.co/functions/v1`. Local development proxies every fetch directly to the deployed edge functions.
 
 ### Environment variables
 
 | Name | Description |
 | --- | --- |
-| `SUPABASE_URL` | Base URL of the Supabase project. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service key with RLS bypass for server-side aggregation. |
-| `WAREHOUSE_STOCK_VIEW` (optional) | Override if the view name differs between environments. Defaults to `warehouse_stock_current`. |
+| `NEXT_PUBLIC_SUPABASE_FUNCTION_URL` | Public base URL for Supabase Edge Functions (no trailing slash). |
 
-### Deploying on Vercel
+Edge Functions themselves need the usual server-side secrets; push them with:
 
-1. Push this folder with the rest of the mono-repo.
-2. In Vercel, import the repository and set the project root to `stock-view-page`.
-3. Add the environment variables above (Production + Preview).
-4. Deploy. Because of the middleware, attempts to browse to `/anything-else` always redirect back to `/`.
+```bash
+supabase functions secrets set SUPABASE_URL=... \
+  SUPABASE_SERVICE_ROLE_KEY=... \
+  WAREHOUSE_STOCK_VIEW=warehouse_stock_current
+```
 
-### API surface
+### Deploying to Supabase Hosting
 
-- `GET /api/warehouses` – returns active warehouses for the selector.
-- `POST /api/stock` – accepts `{ warehouseId, search }`, gathers descendants, queries `warehouse_stock_current`, and responds with both the raw rows and aggregated totals used by the UI.
+1. **Link the project**
+	```bash
+	supabase init                # only once per repository
+	supabase link --project-ref <your-project-ref>
+	```
+2. **Deploy the edge functions**
+	```bash
+	supabase functions deploy warehouses --no-verify-jwt
+	supabase functions deploy stock --no-verify-jwt
+	```
+3. **Build the static site**
+	```bash
+	cd stock-view-page
+	npm run build                # emits ./out because next.config.ts -> output: 'export'
+	```
+4. **Upload the static assets**
+	```bash
+	supabase web deploy ./stock-view-page/out
+	```
+	The command prints the production URL (e.g. `https://abc123.supabase.co`). Share that link with stakeholders.
 
-Both routes run entirely on the server and never expose the service role key to the browser.
+Whenever the client code changes, repeat steps 3–4. Whenever the data logic changes, redeploy the relevant edge function.
+
+### Architecture
+
+- `supabase/functions/warehouses` – returns the active warehouse tree used to populate the selector.
+- `supabase/functions/stock` – accepts `{ warehouseId, search }`, gathers descendants, queries `warehouse_stock_current`, and responds with raw rows plus aggregates.
+- `src/app/page.tsx` – purely client-side React component that calls the two functions via `NEXT_PUBLIC_SUPABASE_FUNCTION_URL`. Because everything runs client-side, the service-role key never touches the browser; only the Edge Functions read it server-side.
+
+The project purposely avoids internal Next.js API routes so that static exports remain possible.
