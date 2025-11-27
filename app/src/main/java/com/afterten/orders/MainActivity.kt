@@ -15,6 +15,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.afterten.orders.ui.screens.HomeScreen
 import com.afterten.orders.ui.screens.LoginScreen
+import com.afterten.orders.ui.screens.StockDashboardScreen
+import com.afterten.orders.ui.screens.StockInjectionLogScreen
 import com.afterten.orders.ui.theme.AppTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +41,8 @@ sealed class Routes(val route: String) {
     data object Orders : Routes("orders")
     data object Transfers : Routes("transfers")
     data object AdminWarehouses : Routes("admin_warehouses")
+    data object StockDashboard : Routes("stock_dashboard")
+    data object StockInjectionLog : Routes("stock_injection_log")
     data object SupervisorOrders : Routes("supervisor_orders")
     data object SupervisorOrderDetail : Routes("supervisor_order_detail/{orderId}") {
         fun route(orderId: String) = "supervisor_order_detail/$orderId"
@@ -66,6 +70,8 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 },
                 onTransfers = { navController.navigate(Routes.Transfers.route) },
                 onAdminWarehouses = { navController.navigate(Routes.AdminWarehouses.route) },
+                onStockDashboard = { navController.navigate(Routes.StockDashboard.route) },
+                onStockLog = { navController.navigate(Routes.StockInjectionLog.route) },
                 onLogout = {
                     appViewModel.setSession(null)
                     navController.navigate(Routes.Login.route) {
@@ -140,6 +146,19 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                         popUpTo(Routes.Home.route) { inclusive = true }
                     }
                 }
+            )
+        }
+        composable(Routes.StockDashboard.route) {
+            StockDashboardScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenLog = { navController.navigate(Routes.StockInjectionLog.route) }
+            )
+        }
+        composable(Routes.StockInjectionLog.route) {
+            StockInjectionLogScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
             )
         }
     }

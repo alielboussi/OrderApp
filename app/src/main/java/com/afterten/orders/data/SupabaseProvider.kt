@@ -575,7 +575,8 @@ class SupabaseProvider(context: Context) {
     data class SimpleProduct(
         val id: String,
         val name: String,
-        val uom: String
+        val uom: String,
+        @SerialName("has_variations") val hasVariations: Boolean = false
     )
 
     @Serializable
@@ -583,6 +584,99 @@ class SupabaseProvider(context: Context) {
         val id: String,
         val name: String,
         val uom: String
+    )
+
+    @Serializable
+    data class WarehouseStockRowDto(
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("warehouse_name") val warehouseName: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("product_name") val productName: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variation_name") val variationName: String? = null,
+        val qty: Double = 0.0
+    )
+
+    @Serializable
+    data class WarehouseStockAggregateWarehouse(
+        @SerialName("warehouseId") val warehouseId: String,
+        @SerialName("warehouseName") val warehouseName: String,
+        val qty: Double = 0.0
+    )
+
+    @Serializable
+    data class WarehouseStockAggregateRow(
+        @SerialName("productId") val productId: String,
+        @SerialName("productName") val productName: String,
+        @SerialName("variationId") val variationId: String? = null,
+        @SerialName("variationName") val variationName: String? = null,
+        @SerialName("totalQty") val totalQty: Double = 0.0,
+        val warehouses: List<WarehouseStockAggregateWarehouse> = emptyList()
+    )
+
+    @Serializable
+    data class WarehouseStockResponse(
+        val rows: List<WarehouseStockRowDto> = emptyList(),
+        val aggregates: List<WarehouseStockAggregateRow> = emptyList(),
+        @SerialName("warehouseCount") val warehouseCount: Int = 0
+    )
+
+    @Serializable
+    data class StockNameLabel(@SerialName("name") val name: String? = null)
+
+    @Serializable
+    data class StocktakeLogRow(
+        val id: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("counted_qty") val countedQty: Double,
+        val delta: Double,
+        val note: String? = null,
+        @SerialName("recorded_by") val recordedBy: String,
+        @SerialName("recorded_at") val recordedAt: String,
+        val product: StockNameLabel? = null,
+        val variation: StockNameLabel? = null
+    )
+
+    enum class StockEntryKind(val apiValue: String, val label: String) {
+        INITIAL("initial", "Initial Stock"),
+        PURCHASE("purchase", "Purchase Stock"),
+        CLOSING("closing", "Closing Stock");
+
+        companion object {
+            fun fromApi(value: String?): StockEntryKind? = values().firstOrNull { it.apiValue.equals(value, ignoreCase = true) }
+        }
+    }
+
+    @Serializable
+    data class StockEntryRow(
+        val id: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("entry_kind") val entryKind: String,
+        val qty: Double,
+        val note: String? = null,
+        @SerialName("recorded_by") val recordedBy: String,
+        @SerialName("recorded_at") val recordedAt: String,
+        val product: StockNameLabel? = null,
+        val variation: StockNameLabel? = null,
+        val warehouse: StockNameLabel? = null
+    )
+
+    @Serializable
+    data class StockEntryReportRow(
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("warehouse_name") val warehouseName: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("product_name") val productName: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variation_name") val variationName: String? = null,
+        @SerialName("initial_qty") val initialQty: Double = 0.0,
+        @SerialName("purchase_qty") val purchaseQty: Double = 0.0,
+        @SerialName("closing_qty") val closingQty: Double = 0.0,
+        @SerialName("current_stock") val currentStock: Double = 0.0
     )
 
     suspend fun listOutlets(jwt: String): List<Outlet> {
@@ -714,7 +808,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom,has_variations&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -731,6 +825,126 @@ class SupabaseProvider(context: Context) {
         }
         val txt = resp.bodyAsText()
         return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleVariation.serializer()), txt)
+    }
+
+    suspend fun fetchWarehouseStock(jwt: String, warehouseId: String, search: String? = null): WarehouseStockResponse {
+        val payload = mutableMapOf<String, Any>("warehouseId" to warehouseId)
+        val trimmedSearch = search?.trim().orEmpty()
+        if (trimmedSearch.isNotEmpty()) {
+            payload["search"] = trimmedSearch
+        }
+        val resp = http.post("$supabaseUrl/functions/v1/stock") {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) {
+            throw IllegalStateException("stock function failed: HTTP $code $txt")
+        }
+        return Json { ignoreUnknownKeys = true }.decodeFromString(WarehouseStockResponse.serializer(), txt)
+    }
+
+    suspend fun fetchStocktakeLog(jwt: String, warehouseId: String?, limit: Int = 200): List<StocktakeLogRow> {
+        val urlBuilder = StringBuilder()
+        urlBuilder.append("$supabaseUrl/rest/v1/warehouse_stocktakes")
+        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,counted_qty,delta,note,recorded_by,recorded_at,product:products(name),variation:product_variations(name)")
+        urlBuilder.append("&order=recorded_at.desc")
+        urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
+        warehouseId?.let { urlBuilder.append("&warehouse_id=eq.").append(it) }
+        val resp = http.get(urlBuilder.toString()) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) {
+            throw IllegalStateException("stocktake log failed: HTTP $code $txt")
+        }
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StocktakeLogRow.serializer()), txt)
+    }
+
+    suspend fun fetchStockEntries(
+        jwt: String,
+        warehouseId: String?,
+        entryKind: StockEntryKind?,
+        limit: Int = 200
+    ): List<StockEntryRow> {
+        val urlBuilder = StringBuilder()
+        urlBuilder.append("$supabaseUrl/rest/v1/warehouse_stock_entries")
+        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,entry_kind,qty,note,recorded_by,recorded_at,product:products(name),variation:product_variations(name),warehouse:warehouses(name)")
+        urlBuilder.append("&order=recorded_at.desc")
+        urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
+        warehouseId?.let { urlBuilder.append("&warehouse_id=eq.").append(it) }
+        entryKind?.let { urlBuilder.append("&entry_kind=eq.").append(it.apiValue) }
+        val resp = http.get(urlBuilder.toString()) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) {
+            throw IllegalStateException("stock entry log failed: HTTP $code $txt")
+        }
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StockEntryRow.serializer()), txt)
+    }
+
+    suspend fun recordStockEntry(
+        jwt: String,
+        warehouseId: String,
+        productId: String,
+        variationId: String?,
+        entryKind: StockEntryKind,
+        units: Double,
+        note: String?
+    ): StockEntryRow {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/record_stock_entry"
+        val body = mutableMapOf<String, Any?>(
+            "p_warehouse_id" to warehouseId,
+            "p_product_id" to productId,
+            "p_entry_kind" to entryKind.apiValue,
+            "p_units" to units
+        )
+        variationId?.let { body["p_variation_id"] = it }
+        note?.takeIf { it.isNotBlank() }?.let { body["p_note"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("record_stock_entry failed: HTTP $code $txt")
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StockEntryRow.serializer()), txt)
+        return parsed.first()
+    }
+
+    suspend fun fetchStockEntryReport(
+        jwt: String,
+        search: String?,
+        warehouseId: String?,
+        productId: String?,
+        variationId: String?
+    ): List<StockEntryReportRow> {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/report_stock_entry_balances"
+        val payload = mutableMapOf<String, Any?>()
+        search?.takeIf { it.isNotBlank() }?.let { payload["p_search"] = it }
+        warehouseId?.let { payload["p_warehouse_id"] = it }
+        productId?.let { payload["p_product_id"] = it }
+        variationId?.let { payload["p_variation_id"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("report_stock_entry_balances failed: HTTP $code $txt")
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StockEntryReportRow.serializer()), txt)
     }
 
     suspend fun reportPackConsumption(

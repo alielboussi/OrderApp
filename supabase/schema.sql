@@ -399,8 +399,300 @@ END $$;
 ALTER TABLE IF EXISTS public.products
   ADD COLUMN IF NOT EXISTS units_per_uom numeric NOT NULL DEFAULT 1 CHECK (units_per_uom > 0);
 
+-- ------------------------------------------------------------
+-- Stock entry logging + warehouse transfer portal (2025-11-27)
+-- ------------------------------------------------------------
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type WHERE typname = 'stock_entry_kind'
+  ) THEN
+    CREATE TYPE public.stock_entry_kind AS ENUM ('initial','purchase','closing');
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.warehouse_stock_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
+  entry_kind public.stock_entry_kind NOT NULL,
+  qty numeric NOT NULL CHECK (qty > 0),
+  note text,
+  recorded_by uuid NOT NULL DEFAULT auth.uid(),
+  recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wse_warehouse ON public.warehouse_stock_entries(warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_wse_product ON public.warehouse_stock_entries(product_id);
+CREATE INDEX IF NOT EXISTS idx_wse_variation ON public.warehouse_stock_entries(variation_id);
+
+ALTER TABLE public.warehouse_stock_entries ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS wse_select_admin ON public.warehouse_stock_entries;
+CREATE POLICY wse_select_admin
+  ON public.warehouse_stock_entries
+  FOR SELECT
+  USING (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+  );
+
+DROP POLICY IF EXISTS wse_write_admin ON public.warehouse_stock_entries;
+CREATE POLICY wse_write_admin
+  ON public.warehouse_stock_entries
+  FOR INSERT
+  WITH CHECK (
+    recorded_by = auth.uid()
+    AND (
+      public.is_admin(auth.uid())
+      OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+    )
+  );
+
+DROP POLICY IF EXISTS wse_update_admin ON public.warehouse_stock_entries;
+CREATE POLICY wse_update_admin
+  ON public.warehouse_stock_entries
+  FOR UPDATE
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+CREATE OR REPLACE FUNCTION public.record_stock_entry(
+  p_warehouse_id uuid,
+  p_product_id uuid,
+  p_entry_kind public.stock_entry_kind,
+  p_units numeric,
+  p_variation_id uuid DEFAULT NULL,
+  p_note text DEFAULT NULL
+)
+RETURNS public.warehouse_stock_entries
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_entry public.warehouse_stock_entries%ROWTYPE;
+  v_current numeric := 0;
+  v_target numeric := p_units;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
+  END IF;
+  IF NOT (
+    public.is_admin(v_uid)
+    OR public.has_role_any_outlet(v_uid, 'transfer_manager')
+  ) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+  IF p_units IS NULL OR p_units <= 0 THEN
+    RAISE EXCEPTION 'quantity must be positive';
+  END IF;
+
+  INSERT INTO public.warehouse_stock_entries(
+    warehouse_id,
+    product_id,
+    variation_id,
+    entry_kind,
+    qty,
+    note,
+    recorded_by
+  ) VALUES (
+    p_warehouse_id,
+    p_product_id,
+    p_variation_id,
+    p_entry_kind,
+    p_units,
+    p_note,
+    v_uid
+  ) RETURNING * INTO v_entry;
+
+  IF p_entry_kind = 'purchase' THEN
+    SELECT coalesce(qty, 0)
+      INTO v_current
+      FROM public.warehouse_stock_current
+     WHERE warehouse_id = p_warehouse_id
+       AND product_id = p_product_id
+       AND (variation_id IS NOT DISTINCT FROM p_variation_id);
+    v_target := v_current + p_units;
+  ELSE
+    v_target := p_units;
+  END IF;
+
+  PERFORM public.record_stocktake(
+    p_warehouse_id,
+    p_product_id,
+    v_target,
+    p_variation_id,
+    coalesce(p_note, p_entry_kind::text)
+  );
+
+  RETURN v_entry;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.report_stock_entry_balances(
+    p_warehouse_id uuid DEFAULT NULL,
+    p_product_id uuid DEFAULT NULL,
+    p_variation_id uuid DEFAULT NULL,
+    p_search text DEFAULT NULL
+)
+RETURNS TABLE(
+    warehouse_id uuid,
+    warehouse_name text,
+    product_id uuid,
+    product_name text,
+    variation_id uuid,
+    variation_name text,
+    initial_qty numeric,
+    purchase_qty numeric,
+    closing_qty numeric,
+    current_stock numeric
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_query text := coalesce(p_search, '');
+BEGIN
+  IF v_uid IS NULL OR NOT public.is_admin(v_uid) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    e.warehouse_id,
+    w.name AS warehouse_name,
+    e.product_id,
+    p.name AS product_name,
+    e.variation_id,
+    pv.name AS variation_name,
+    SUM(CASE WHEN e.entry_kind = 'initial' THEN e.qty ELSE 0 END) AS initial_qty,
+    SUM(CASE WHEN e.entry_kind = 'purchase' THEN e.qty ELSE 0 END) AS purchase_qty,
+    SUM(CASE WHEN e.entry_kind = 'closing' THEN e.qty ELSE 0 END) AS closing_qty,
+    SUM(CASE WHEN e.entry_kind = 'initial' THEN e.qty ELSE 0 END)
+      + SUM(CASE WHEN e.entry_kind = 'purchase' THEN e.qty ELSE 0 END)
+      - SUM(CASE WHEN e.entry_kind = 'closing' THEN e.qty ELSE 0 END) AS current_stock
+  FROM public.warehouse_stock_entries e
+  JOIN public.warehouses w ON w.id = e.warehouse_id
+  JOIN public.products p ON p.id = e.product_id
+  LEFT JOIN public.product_variations pv ON pv.id = e.variation_id
+  WHERE (p_warehouse_id IS NULL OR e.warehouse_id = p_warehouse_id)
+    AND (p_product_id IS NULL OR e.product_id = p_product_id)
+    AND (p_variation_id IS NULL OR e.variation_id = p_variation_id)
+    AND (
+      v_query = ''
+      OR p.name ILIKE '%' || v_query || '%'
+      OR coalesce(pv.name, '') ILIKE '%' || v_query || '%'
+    )
+  GROUP BY e.warehouse_id, w.name, e.product_id, p.name, e.variation_id, pv.name
+  ORDER BY p.name, COALESCE(pv.name, ''), w.name;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(
+    p_source uuid,
+    p_destination uuid,
+    p_items jsonb,
+    p_note text DEFAULT NULL
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_src_outlet uuid;
+  v_dest_outlet uuid;
+  v_mov_id uuid;
+  v_items jsonb := COALESCE(p_items, '[]'::jsonb);
+  v_item record;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
+  END IF;
+  IF p_source IS NULL OR p_destination IS NULL OR p_source = p_destination THEN
+    RAISE EXCEPTION 'source and destination warehouses are required';
+  END IF;
+
+  SELECT outlet_id INTO v_src_outlet FROM public.warehouses WHERE id = p_source;
+  SELECT outlet_id INTO v_dest_outlet FROM public.warehouses WHERE id = p_destination;
+  IF v_src_outlet IS NULL OR v_dest_outlet IS NULL THEN
+    RAISE EXCEPTION 'warehouse not found';
+  END IF;
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR public.has_role(v_uid, 'transfer_manager', v_src_outlet)
+    OR public.has_role(v_uid, 'transfer_manager', v_dest_outlet)
+  ) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF jsonb_array_length(v_items) = 0 THEN
+    RAISE EXCEPTION 'at least one line item is required';
+  END IF;
+
+  INSERT INTO public.stock_movements(
+    status,
+    source_location_type,
+    source_location_id,
+    dest_location_type,
+    dest_location_id,
+    note
+  ) VALUES (
+    'approved',
+    'warehouse',
+    p_source,
+    'warehouse',
+    p_destination,
+    p_note
+  ) RETURNING id INTO v_mov_id;
+
+  FOR v_item IN
+    SELECT
+      (item->>'product_id')::uuid AS product_id,
+      (item->>'variation_id')::uuid AS variation_id,
+      COALESCE((item->>'qty')::numeric, 0) AS qty
+    FROM jsonb_array_elements(v_items) AS item
+  LOOP
+    IF v_item.product_id IS NULL OR v_item.qty <= 0 THEN
+      RAISE EXCEPTION 'each item requires product_id and positive qty';
+    END IF;
+
+    INSERT INTO public.stock_movement_items(
+      movement_id,
+      product_id,
+      variation_id,
+      qty
+    ) VALUES (
+      v_mov_id,
+      v_item.product_id,
+      v_item.variation_id,
+      v_item.qty
+    );
+  END LOOP;
+
+  PERFORM public.complete_stock_movement(v_mov_id);
+  RETURN v_mov_id;
+END;
+$$;
+
 ALTER TABLE IF EXISTS public.product_variations
   ADD COLUMN IF NOT EXISTS units_per_uom numeric NOT NULL DEFAULT 1 CHECK (units_per_uom > 0);
+
+-- Allow catalog admins to edit variation-level size/pack metadata via Supabase UI.
+ALTER TABLE IF EXISTS public.product_variations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS product_variations_admin_rw ON public.product_variations;
+CREATE POLICY product_variations_admin_rw ON public.product_variations
+  FOR ALL
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
 
 ALTER TABLE IF EXISTS public.order_items
   ADD COLUMN IF NOT EXISTS qty_cases numeric,

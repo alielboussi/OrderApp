@@ -3,6 +3,8 @@ package com.afterten.orders.ui.screens
 import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
@@ -52,6 +54,7 @@ fun WarehousesAdminScreen(
 
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val logBringIntoViewRequester = remember { BringIntoViewRequester() }
 
     LaunchedEffect(session?.token) {
         val isAdmin = session?.isAdmin == true
@@ -355,6 +358,35 @@ fun WarehousesAdminScreen(
                             Text("${row.createdAt.take(16)} • ${row.orderNumber} • ${row.packLabel} ${row.packsOrdered.displayQty()} packs (${row.unitsTotal.displayQty()} units) @ ${row.warehouseName}")
                         }
                     }
+                }
+            }
+
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Embedded Stock Dashboard", style = MaterialTheme.typography.titleMedium)
+                    Text("Record initial, purchase, and closing entries without leaving the admin workspace.", style = MaterialTheme.typography.bodyMedium)
+                    StockDashboardScreen(
+                        root = root,
+                        onBack = {},
+                        onOpenLog = {
+                            scope.launch { logBringIntoViewRequester.bringIntoView() }
+                        },
+                        embedded = true
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.bringIntoViewRequester(logBringIntoViewRequester)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Stock Entry Log", style = MaterialTheme.typography.titleMedium)
+                    Text("Review initial, purchase, and closing submissions per warehouse.", style = MaterialTheme.typography.bodyMedium)
+                    StockInjectionLogScreen(
+                        root = root,
+                        onBack = {},
+                        embedded = true
+                    )
                 }
             }
 
