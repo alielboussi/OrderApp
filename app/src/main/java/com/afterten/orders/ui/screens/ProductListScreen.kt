@@ -39,6 +39,8 @@ import com.afterten.orders.db.ProductEntity
 import com.afterten.orders.db.VariationEntity
 import com.afterten.orders.util.formatMoney
 import com.afterten.orders.util.formatPackageUnits
+import com.afterten.orders.util.ScreenLogger
+import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -67,18 +69,35 @@ fun ProductListScreen(
     var syncing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    val logger = rememberScreenLogger("ProductList")
+
+    LaunchedEffect(Unit) { logger.enter() }
+    LaunchedEffect(products.size, allVariations.size) {
+        logger.state(
+            "CatalogSnapshot",
+            mapOf("products" to products.size, "variations" to allVariations.size)
+        )
+    }
+    LaunchedEffect(error) { error?.let { logger.warn("InlineError", mapOf("message" to it.take(80))) } }
+    LaunchedEffect(query) {
+        logger.state("SearchQueryChanged", mapOf("length" to query.length))
+    }
 
     LaunchedEffect(session?.token) {
         if (session?.token != null) {
             syncing = true
             error = null
+            logger.state("InitialSyncStart", mapOf("hasSession" to true))
             try {
                 repo.syncProducts(session.token)
-                // fetch all variations once to power search and dialogs
                 repo.syncAllVariations(session.token)
+                logger.state("InitialSyncSuccess")
             } catch (t: Throwable) {
                 error = t.message
-            } finally { syncing = false }
+                logger.error("InitialSyncFailed", t)
+            } finally {
+                syncing = false
+            }
         }
     }
 
@@ -87,12 +106,20 @@ fun ProductListScreen(
             TopAppBar(
                 title = { Text("Products") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = {
+                        logger.event("BackTapped")
+                        onBack()
+                    }) { Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
                     IconButton(enabled = !syncing && session != null, onClick = {
+                        logger.event("ManualSyncTapped")
                         scope.launch {
-                            try { repo.syncProducts(session!!.token) } catch (_: Throwable) {}
+                            val token = session?.token ?: return@launch
+                            logger.state("ManualSyncStart")
+                            runCatching { repo.syncProducts(token) }
+                                .onSuccess { logger.state("ManualSyncSuccess") }
+                                .onFailure { logger.error("ManualSyncFailed", it) }
                         }
                     }) {
                         Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Refresh")
@@ -117,13 +144,23 @@ fun ProductListScreen(
                         Text(text = "$count items", style = MaterialTheme.typography.bodyMedium)
                         Text(text = "Subtotal: ${formatMoney(subtotal)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     }
-                    Button(onClick = onContinue, enabled = count > 0) { Text("Continue") }
+                    Button(
+                        onClick = {
+                            logger.event("ContinueTapped", mapOf("items" to count))
+                            onContinue()
+                        },
+                        enabled = count > 0
+                    ) { Text("Continue") }
                 }
             }
         },
         contentWindowInsets = WindowInsets.safeDrawing
     ) { padding ->
         var showVariationsFor by remember { mutableStateOf<ProductEntity?>(null) }
+        LaunchedEffect(showVariationsFor?.id) {
+            showVariationsFor?.let { logger.state("VariationsDialogOpened", mapOf("productId" to it.id)) }
+                ?: logger.state("VariationsDialogClosed")
+        }
 
         Column(
             modifier = Modifier
@@ -189,7 +226,11 @@ fun ProductListScreen(
                         root = root,
                         item = item,
                         minVariationCost = minCostByProduct[item.id],
-                        onOpenVariations = { showVariationsFor = item }
+                        logger = logger,
+                        onOpenVariations = {
+                            logger.event("VariationsTapped", mapOf("productId" to item.id))
+                            showVariationsFor = item
+                        }
                     )
                 }
             }
@@ -201,14 +242,24 @@ fun ProductListScreen(
                 product = productForDialog,
                 root = root,
                 repo = repo,
-                onDismiss = { showVariationsFor = null }
+                logger = logger,
+                onDismiss = {
+                    logger.event("VariationsDialogDismissed", mapOf("productId" to productForDialog.id))
+                    showVariationsFor = null
+                }
             )
         }
     }
 }
 
 @Composable
-private fun ProductCard(root: RootViewModel, item: ProductEntity, minVariationCost: Double?, onOpenVariations: () -> Unit) {
+private fun ProductCard(
+    root: RootViewModel,
+    item: ProductEntity,
+    minVariationCost: Double?,
+    logger: ScreenLogger,
+    onOpenVariations: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -271,9 +322,18 @@ private fun ProductCard(root: RootViewModel, item: ProductEntity, minVariationCo
                         val qty = cart["${item.id}:"]?.qty ?: 0
                         QuantityStepper(
                             qty = qty,
-                            onDec = { root.dec(item.id, null, item.name, item.uom, item.cost, item.packageContains) },
-                            onInc = { root.inc(item.id, null, item.name, item.uom, item.cost, item.packageContains) },
-                            onChange = { n -> root.setQty(item.id, null, item.name, item.uom, item.cost, n, item.packageContains) }
+                            onDec = {
+                                logger.event("QtyDecrement", mapOf("productId" to item.id))
+                                root.dec(item.id, null, item.name, item.uom, item.cost, item.packageContains)
+                            },
+                            onInc = {
+                                logger.event("QtyIncrement", mapOf("productId" to item.id))
+                                root.inc(item.id, null, item.name, item.uom, item.cost, item.packageContains)
+                            },
+                            onChange = { n ->
+                                logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
+                                root.setQty(item.id, null, item.name, item.uom, item.cost, n, item.packageContains)
+                            }
                         )
                     }
                 }
@@ -340,14 +400,23 @@ fun QuantityStepper(qty: Int, onDec: () -> Unit, onInc: () -> Unit, onChange: (I
 }
 
 @Composable
-private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: ProductRepository, onDismiss: () -> Unit) {
+private fun VariationsDialog(
+    product: ProductEntity,
+    root: RootViewModel,
+    repo: ProductRepository,
+    logger: ScreenLogger,
+    onDismiss: () -> Unit
+) {
     val variations by repo.listenVariations(product.id).collectAsState(initial = emptyList())
     val session = root.session.collectAsState().value
     var loading by remember { mutableStateOf(false) }
     LaunchedEffect(product.id, session?.token) {
         if (session?.token != null) {
             loading = true
+            logger.state("VariationSyncStart", mapOf("productId" to product.id))
             runCatching { repo.syncVariations(session.token, product.id) }
+                .onSuccess { logger.state("VariationSyncSuccess", mapOf("productId" to product.id)) }
+                .onFailure { logger.error("VariationSyncFailed", it, mapOf("productId" to product.id)) }
             loading = false
         }
     }
@@ -368,7 +437,7 @@ private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: 
                 } else {
                     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                         variations.forEachIndexed { index, v ->
-                            VariationRow(root = root, v = v)
+                            VariationRow(root = root, v = v, logger = logger)
                             if (index < variations.lastIndex) {
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                             }
@@ -385,7 +454,7 @@ private fun VariationsDialog(product: ProductEntity, root: RootViewModel, repo: 
 }
 
 @Composable
-private fun VariationRow(root: RootViewModel, v: VariationEntity) {
+private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: ScreenLogger) {
     val cart = root.cart.collectAsState().value
     val qty = cart["${v.productId}:${v.id}"]?.qty ?: 0
     Row(
@@ -438,9 +507,21 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity) {
         VariationQtyControls(
             uom = v.uom,
             qty = qty,
-            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains) },
-            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains) },
-            onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n, v.packageContains) }
+            onDec = {
+                logger.event("VariationQtyDecrement", mapOf("productId" to v.productId, "variationId" to v.id))
+                root.dec(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains)
+            },
+            onInc = {
+                logger.event("VariationQtyIncrement", mapOf("productId" to v.productId, "variationId" to v.id))
+                root.inc(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains)
+            },
+            onChange = { n ->
+                logger.event(
+                    "VariationQtyChanged",
+                    mapOf("productId" to v.productId, "variationId" to v.id, "newQty" to n)
+                )
+                root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n, v.packageContains)
+            }
         )
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -30,6 +31,9 @@ fun WarehousesAdminScreen(
 ) {
     val session = root.session.collectAsState().value
     val scope = rememberCoroutineScope()
+    val logger = rememberScreenLogger("WarehousesAdmin")
+
+    LaunchedEffect(Unit) { logger.enter(mapOf("isAdmin" to (session?.isAdmin == true))) }
 
     var outlets by remember { mutableStateOf<List<SupabaseProvider.Outlet>>(emptyList()) }
     var warehouses by remember { mutableStateOf<List<SupabaseProvider.Warehouse>>(emptyList()) }
@@ -172,11 +176,13 @@ fun WarehousesAdminScreen(
         )
     }) { padding ->
         if (session == null) {
+            logger.warn("MissingSession")
             MissingAuth()
             return@Scaffold
         }
         val isAdmin = session.isAdmin
         if (!isAdmin) {
+            logger.warn("UnauthorizedAccess")
             Unauthorized()
             return@Scaffold
         }
@@ -209,16 +215,29 @@ fun WarehousesAdminScreen(
                     )
                     Button(onClick = {
                         error = null; message = null
+                        logger.event("ResetOrderSequenceTapped", mapOf("outletId" to (selectedOutletId ?: "")))
                         val jwt = session.token
                         val outletId = selectedOutletId
-                        if (outletId.isNullOrEmpty()) { error = "Select an outlet"; return@Button }
-                        if (adminPassword != "Lebanon1111$") { error = "Incorrect password"; return@Button }
+                        if (outletId.isNullOrEmpty()) {
+                            error = "Select an outlet"
+                            logger.warn("ResetSequenceValidation", mapOf("reason" to "missing_outlet"))
+                            return@Button
+                        }
+                        if (adminPassword != "Lebanon1111$") {
+                            error = "Incorrect password"
+                            logger.warn("ResetSequenceValidation", mapOf("reason" to "bad_password"))
+                            return@Button
+                        }
                         scope.launch {
                             runCatching {
                                 root.supabaseProvider.resetOrderSequence(jwt, outletId)
                             }.onSuccess {
                                 message = "Order sequence reset for selected outlet"
-                            }.onFailure { t -> error = t.message }
+                                logger.state("ResetOrderSequenceSuccess", mapOf("outletId" to outletId))
+                            }.onFailure { t ->
+                                error = t.message
+                                logger.error("ResetOrderSequenceFailed", t, mapOf("outletId" to outletId))
+                            }
                         }
                     }) { Text("Reset Order Sequence") }
                 }
@@ -243,11 +262,13 @@ fun WarehousesAdminScreen(
                     )
                     Button(onClick = {
                         error = null; message = null
+                        logger.event("CreateWarehouseTapped", mapOf("outletId" to (selectedOutletId ?: "")))
                         val jwt = session.token
                         val outletId = selectedOutletId
                         val name = newWarehouseName.trim()
                         if (jwt.isEmpty() || outletId.isNullOrEmpty() || name.isEmpty()) {
                             error = "Provide name and outlet"
+                            logger.warn("CreateWarehouseValidation", mapOf("hasOutlet" to !outletId.isNullOrEmpty(), "hasName" to name.isNotEmpty()))
                             return@Button
                         }
                         scope.launch {
@@ -257,7 +278,11 @@ fun WarehousesAdminScreen(
                                 message = "Warehouse created"
                                 newWarehouseName = ""
                                 warehouses = root.supabaseProvider.listWarehouses(jwt)
-                            }.onFailure { error = it.message }
+                                logger.state("CreateWarehouseSuccess", mapOf("outletId" to outletId))
+                            }.onFailure {
+                                error = it.message
+                                logger.error("CreateWarehouseFailed", it)
+                            }
                         }
                     }) { Text("Create") }
                 }
@@ -282,15 +307,26 @@ fun WarehousesAdminScreen(
                     )
                     Button(onClick = {
                         error = null; message = null
+                        logger.event("SetPrimaryWarehouseTapped", mapOf("outletId" to (selectedOutletId ?: "")))
                         val jwt = session.token
                         val outletId = selectedOutletId
                         val wid = primaryWarehouseId
-                        if (outletId.isNullOrEmpty() || wid.isNullOrEmpty()) { error = "Select outlet and warehouse"; return@Button }
+                        if (outletId.isNullOrEmpty() || wid.isNullOrEmpty()) {
+                            error = "Select outlet and warehouse"
+                            logger.warn("SetPrimaryValidation", mapOf("hasOutlet" to !outletId.isNullOrEmpty(), "hasWarehouse" to !wid.isNullOrEmpty()))
+                            return@Button
+                        }
                         scope.launch {
                             runCatching {
                                 root.supabaseProvider.setPrimaryWarehouseForOutlet(jwt, outletId, wid)
-                            }.onSuccess { message = "Primary warehouse set" }
-                             .onFailure { error = it.message }
+                            }.onSuccess {
+                                message = "Primary warehouse set"
+                                logger.state("SetPrimaryWarehouseSuccess", mapOf("outletId" to outletId, "warehouseId" to wid))
+                            }
+                             .onFailure {
+                                 error = it.message
+                                 logger.error("SetPrimaryWarehouseFailed", it)
+                             }
                         }
                     }) { Text("Set Primary") }
                 }
@@ -323,10 +359,15 @@ fun WarehousesAdminScreen(
                     }
                     Button(onClick = {
                         error = null; message = null
+                        logger.event("CreateMainWarehouseTapped", mapOf("outletId" to (mainOutletId ?: selectedOutletId ?: "")))
                         val jwt = session.token
                         val outletId = mainOutletId ?: selectedOutletId
                         val name = mainName.trim()
-                        if (outletId.isNullOrEmpty() || name.isEmpty()) { error = "Provide name and outlet"; return@Button }
+                        if (outletId.isNullOrEmpty() || name.isEmpty()) {
+                            error = "Provide name and outlet"
+                            logger.warn("CreateMainValidation", mapOf("hasOutlet" to !outletId.isNullOrEmpty(), "hasName" to name.isNotEmpty()))
+                            return@Button
+                        }
                         scope.launch {
                             runCatching {
                                 val parent = root.supabaseProvider.createWarehouse(jwt, outletId, name, parentWarehouseId = null)
@@ -339,7 +380,11 @@ fun WarehousesAdminScreen(
                                 warehouses = root.supabaseProvider.listWarehouses(session.token)
                                 mainName = ""
                                 selectedChildren.clear()
-                            }.onFailure { error = it.message }
+                                logger.state("CreateMainWarehouseSuccess", mapOf("childCount" to selectedChildren.count { it.value }))
+                            }.onFailure {
+                                error = it.message
+                                logger.error("CreateMainWarehouseFailed", it)
+                            }
                         }
                     }) { Text("Create and Link") }
                 }
@@ -355,24 +400,34 @@ fun WarehousesAdminScreen(
                             allWarehouses = warehouses,
                             onToggleActive = { active ->
                                 error = null; message = null
+                                logger.event("WarehouseToggleActive", mapOf("warehouseId" to w.id, "active" to active))
                                 scope.launch {
                                     runCatching { root.supabaseProvider.setWarehouseActive(session.token, w.id, active) }
                                         .onSuccess {
                                             message = if (active) "Activated ${w.name}" else "Deactivated ${w.name}"
                                             warehouses = root.supabaseProvider.listWarehouses(session.token)
+                                            logger.state("WarehouseToggleSuccess", mapOf("warehouseId" to w.id, "active" to active))
                                         }
-                                        .onFailure { error = it.message }
+                                        .onFailure {
+                                            error = it.message
+                                            logger.error("WarehouseToggleFailed", it, mapOf("warehouseId" to w.id))
+                                        }
                                 }
                             }
                         ) { newParent ->
                             error = null; message = null
+                            logger.event("WarehouseParentChange", mapOf("warehouseId" to w.id, "parentId" to (newParent ?: "")))
                             scope.launch {
                                 runCatching {
                                     root.supabaseProvider.updateWarehouseParent(session.token, w.id, newParent)
                                 }.onSuccess {
                                     message = "Updated ${w.name}"
                                     warehouses = root.supabaseProvider.listWarehouses(session.token)
-                                }.onFailure { error = it.message }
+                                    logger.state("WarehouseParentChangeSuccess")
+                                }.onFailure {
+                                    error = it.message
+                                    logger.error("WarehouseParentChangeFailed", it)
+                                }
                             }
                         }
                     }

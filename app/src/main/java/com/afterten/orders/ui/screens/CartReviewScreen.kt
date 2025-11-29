@@ -8,6 +8,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.util.formatMoney
 import com.afterten.orders.util.formatPackageUnits
+import com.afterten.orders.util.rememberScreenLogger
 import androidx.compose.material3.HorizontalDivider
 
 @Composable
@@ -42,13 +44,32 @@ fun CartReviewScreen(
     val ctx = LocalContext.current
     val repo = remember { ProductRepository(root.supabaseProvider, AppDatabase.get(ctx)) }
     val products by repo.listenProducts().collectAsState(initial = emptyList())
+    val logger = rememberScreenLogger("CartReview")
+
+    LaunchedEffect(Unit) { logger.enter(mapOf("initialItems" to cart.size)) }
+    LaunchedEffect(cart) {
+        logger.state(
+            "CartChanged",
+            mapOf(
+                "lines" to cart.size,
+                "totalQty" to cart.sumOf { it.qty },
+                "subtotal" to cart.sumOf { it.lineTotal }
+            )
+        )
+    }
+    LaunchedEffect(products.size) {
+        logger.state("ProductsLoaded", mapOf("count" to products.size))
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Review Order") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        logger.event("BackTapped")
+                        onBack()
+                    }) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
@@ -69,7 +90,13 @@ fun CartReviewScreen(
                         Text(text = "Items: ${cart.sumOf { it.qty }}", color = Color.White)
                         Text(text = "Subtotal: ${formatMoney(subtotal)}", fontWeight = FontWeight.SemiBold, color = Color.White)
                     }
-                    Button(onClick = onContinue, enabled = cart.isNotEmpty()) { Text("Continue") }
+                    Button(
+                        onClick = {
+                            logger.event("ContinueTapped", mapOf("hasItems" to cart.isNotEmpty()))
+                            onContinue()
+                        },
+                        enabled = cart.isNotEmpty()
+                    ) { Text("Continue") }
                 }
             }
         },
@@ -142,9 +169,25 @@ fun CartReviewScreen(
                                     ReviewQtyControls(
                                         uom = item.uom,
                                         qty = item.qty,
-                                        onDec = { root.dec(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains) },
-                                        onInc = { root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains) },
-                                        onChange = { n -> root.setQty(item.productId, item.variationId, item.name, item.uom, item.unitPrice, n, item.packageContains) }
+                                        onDec = {
+                                            logger.event("QtyDecrement", mapOf("productId" to item.productId, "variationId" to (item.variationId ?: "")))
+                                            root.dec(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains)
+                                        },
+                                        onInc = {
+                                            logger.event("QtyIncrement", mapOf("productId" to item.productId, "variationId" to (item.variationId ?: "")))
+                                            root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains)
+                                        },
+                                        onChange = { n ->
+                                            logger.event(
+                                                "QtyChanged",
+                                                mapOf(
+                                                    "productId" to item.productId,
+                                                    "variationId" to (item.variationId ?: ""),
+                                                    "newQty" to n
+                                                )
+                                            )
+                                            root.setQty(item.productId, item.variationId, item.name, item.uom, item.unitPrice, n, item.packageContains)
+                                        }
                                     )
                                 }
                             }

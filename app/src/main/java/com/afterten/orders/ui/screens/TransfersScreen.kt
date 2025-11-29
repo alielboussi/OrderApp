@@ -18,6 +18,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
+import com.afterten.orders.util.rememberScreenLogger
 
 @Composable
 fun TransfersScreen(
@@ -33,6 +35,9 @@ fun TransfersScreen(
     onLogout: () -> Unit
 ) {
     val session by root.session.collectAsState()
+    val logger = rememberScreenLogger("Transfers")
+
+    LaunchedEffect(Unit) { logger.enter(mapOf("hasSession" to (session != null))) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val maxContentWidth = 900.dp
         val contentWidth = if (this.maxWidth < maxContentWidth) this.maxWidth else maxContentWidth
@@ -46,7 +51,14 @@ fun TransfersScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = onLogout, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors()) {
+                    Button(
+                        onClick = {
+                            logger.event("LogoutTapped")
+                            onLogout()
+                        },
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors()
+                    ) {
                         Text("Log out")
                     }
                 }
@@ -63,7 +75,10 @@ fun TransfersScreen(
                 // Placeholder content sized comfortably for 1024x768 window
                 Text("Coming soon: list transfers, create new transfer, approve/complete.")
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = onBack) { Text("Back") }
+                Button(onClick = {
+                    logger.event("BackTapped")
+                    onBack()
+                }) { Text("Back") }
                 Spacer(Modifier.height(24.dp))
             }
         }

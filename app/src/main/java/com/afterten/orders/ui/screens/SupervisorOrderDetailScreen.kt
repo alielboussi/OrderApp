@@ -1,7 +1,6 @@
 package com.afterten.orders.ui.screens
 
 import android.graphics.Bitmap
-import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +31,7 @@ import com.afterten.orders.util.LogAnalytics
 import com.afterten.orders.util.formatMoney
 import com.afterten.orders.util.formatPackageUnits
 import com.afterten.orders.util.generateOrderPdf
+import com.afterten.orders.util.rememberScreenLogger
 import com.afterten.orders.util.sanitizeForFile
 import com.afterten.orders.util.toPdfGroups
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +68,15 @@ fun SupervisorOrderDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val variationsByProduct = remember { mutableStateMapOf<String, List<SupabaseProvider.SimpleVariation>>() }
+    val logger = rememberScreenLogger("SupervisorOrderDetail")
+
+    LaunchedEffect(Unit) { logger.enter(mapOf("orderId" to orderId)) }
+    LaunchedEffect(showApprovalDialog) {
+        logger.state("ApprovalDialogVisibility", mapOf("visible" to showApprovalDialog))
+    }
+    LaunchedEffect(showDriverDialog) {
+        logger.state("DriverDialogVisibility", mapOf("visible" to showDriverDialog))
+    }
 
     val supervisorNameSuggestion = remember(session) {
         session?.email
@@ -96,11 +105,12 @@ fun SupervisorOrderDetailScreen(
                 "supervisor_order_items_loaded",
                 mapOf("orderId" to orderId, "count" to items.size, "status" to (detail?.status ?: "unknown"))
             )
+            logger.state("OrderLoaded", mapOf("items" to items.size, "status" to (detail?.status ?: "unknown")))
         }.onFailure { t ->
             error = t.message
             loading = false
-            LogAnalytics.error("supervisor_order_items_failed", t.message, t)
-            Log.e(SUPERVISOR_DETAIL_TAG, "Failed to load order $orderId", t)
+            logger.error("OrderLoadFailed", t, mapOf("orderId" to orderId))
+            LogAnalytics.error("supervisor_order_items_failed", t.message ?: "Unknown error", t)
         }
     }
 
@@ -119,13 +129,14 @@ fun SupervisorOrderDetailScreen(
                         .onSuccess { list -> variationsByProduct[productId] = list }
                         .onFailure {
                             variationsByProduct[productId] = emptyList()
-                            Log.w(SUPERVISOR_DETAIL_TAG, "Failed to load variations for $productId", it)
+                            logger.warn("VariationLoadFailed", mapOf("productId" to productId), it)
                         }
                 }
             }
     }
 
     suspend fun submitApproval(name: String, signatureBitmap: Bitmap) {
+        logger.event("SupervisorApprovalStart", mapOf("orderId" to orderId))
         val detail = order ?: error("Order not loaded")
         val s = session ?: error("Session expired")
         val pdfGroups = rows.toPdfGroups()
@@ -183,9 +194,11 @@ fun SupervisorOrderDetailScreen(
                 pdfPath = pdfPath
             )
         }
+        logger.state("SupervisorApprovalSuccess", mapOf("orderId" to orderId))
     }
 
     suspend fun submitDriverLoaded(name: String, signatureBitmap: Bitmap) {
+        logger.event("DriverLoadedStart", mapOf("orderId" to orderId))
         val detail = order ?: error("Order not loaded")
         val s = session ?: error("Session expired")
         val pdfGroups = rows.toPdfGroups()
@@ -243,6 +256,7 @@ fun SupervisorOrderDetailScreen(
                 pdfPath = pdfPath
             )
         }
+        logger.state("DriverLoadedSuccess", mapOf("orderId" to orderId))
     }
 
     val statusLower = order?.status?.lowercase(Locale.US)
@@ -297,7 +311,7 @@ fun SupervisorOrderDetailScreen(
                 root.supabaseProvider.emitOrdersChanged()
             }.onFailure { t ->
                 error = t.message
-                Log.e(SUPERVISOR_DETAIL_TAG, "Variation update failed", t)
+                logger.error("VariationUpdateFailed", t, mapOf("orderItemId" to rowItem.id))
             }
         }
     }
@@ -308,7 +322,10 @@ fun SupervisorOrderDetailScreen(
             TopAppBar(
                 title = { Text("Order Details") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        logger.event("BackTapped")
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
@@ -386,7 +403,7 @@ fun SupervisorOrderDetailScreen(
                                         }
                                         .onFailure { t ->
                                             error = t.message
-                                            Log.e(SUPERVISOR_DETAIL_TAG, "Failed to update qty for ${rowItem.id}", t)
+                                            logger.error("QtyUpdateFailed", t, mapOf("orderItemId" to rowItem.id))
                                         }
                                 }
                             }
@@ -418,7 +435,10 @@ fun SupervisorOrderDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Button(
-                            onClick = { showApprovalDialog = true },
+                            onClick = {
+                                logger.event("ApprovalDialogOpened")
+                                showApprovalDialog = true
+                            },
                             enabled = canApprove && !isBusy,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier.weight(1f)
@@ -432,7 +452,10 @@ fun SupervisorOrderDetailScreen(
                             )
                         }
                         Button(
-                            onClick = { showDriverDialog = true },
+                            onClick = {
+                                logger.event("DriverDialogOpened")
+                                showDriverDialog = true
+                            },
                             enabled = canMarkLoaded && !isBusy,
                             modifier = Modifier.weight(1f)
                         ) {
@@ -471,7 +494,7 @@ fun SupervisorOrderDetailScreen(
                         }
                         .onFailure { t ->
                             error = t.message
-                            Log.e(SUPERVISOR_DETAIL_TAG, "Supervisor approval failed", t)
+                            logger.error("SupervisorApprovalFailed", t)
                             snackbarHostState.showSnackbar(
                                 message = t.message ?: "Approval failed",
                                 withDismissAction = true,
@@ -501,14 +524,14 @@ fun SupervisorOrderDetailScreen(
                         .onSuccess {
                             session?.token?.let { token ->
                                 runCatching { loadOrder(token) }
-                                    .onFailure { Log.w(SUPERVISOR_DETAIL_TAG, "Refresh after driver mark failed", it) }
+                                    .onFailure { logger.warn("PostDriverRefreshFailed", throwable = it) }
                             }
                             root.supabaseProvider.emitOrdersChanged()
                             scope.launch { snackbarHostState.showSnackbar("Driver signature captured") }
                         }
                         .onFailure { t ->
                             error = t.message
-                            Log.e(SUPERVISOR_DETAIL_TAG, "Driver load failed", t)
+                            logger.error("DriverLoadFailed", t)
                             snackbarHostState.showSnackbar(
                                 message = t.message ?: "Driver step failed",
                                 withDismissAction = true,
@@ -821,4 +844,3 @@ private fun formatSupervisorQty(value: Double): String {
     }
 }
 
-private const val SUPERVISOR_DETAIL_TAG = "SupervisorOrderDetailDebug"

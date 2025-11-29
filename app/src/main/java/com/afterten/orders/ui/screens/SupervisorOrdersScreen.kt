@@ -16,6 +16,7 @@ import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.OrderRepository
 import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.util.LogAnalytics
+import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,19 +32,25 @@ fun SupervisorOrdersScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf(listOf<OrderRepository.OrderRow>()) }
     val scope = rememberCoroutineScope()
+    val logger = rememberScreenLogger("SupervisorOrders")
+
+    LaunchedEffect(Unit) { logger.enter() }
 
     suspend fun refreshOrders(jwt: String, showSpinner: Boolean, analyticsEvent: String = "supervisor_orders_loaded") {
         if (showSpinner) loading = true
         error = null
+        logger.state("RefreshStart", mapOf("event" to analyticsEvent))
         runCatching { repo.listOrdersForSupervisor(jwt = jwt, limit = 200) }
             .onSuccess {
                 items = it
                 LogAnalytics.event(analyticsEvent, mapOf("count" to it.size))
+                logger.state("RefreshSuccess", mapOf("count" to it.size, "event" to analyticsEvent))
             }
             .onFailure { t ->
                 val msg = t.message ?: t.toString()
                 error = msg
                 LogAnalytics.error("supervisor_orders_load_failed", msg, t)
+                logger.error("RefreshFailed", t, mapOf("event" to analyticsEvent))
             }
         if (showSpinner) loading = false
     }
@@ -56,6 +63,7 @@ fun SupervisorOrdersScreen(
     LaunchedEffect(session?.token) {
         val s = session ?: return@LaunchedEffect
         root.supabaseProvider.ordersEvents.collect {
+            logger.event("RealtimeOrdersEvent")
             refreshOrders(jwt = s.token, showSpinner = false, analyticsEvent = "supervisor_orders_synced")
         }
     }
@@ -67,6 +75,7 @@ fun SupervisorOrdersScreen(
                 jwt = s.token,
                 outletId = null
             ) {
+                logger.event("RealtimeOrdersEmitRequested")
                 root.supabaseProvider.emitOrdersChanged()
             }
             onDispose { handle.close() }
@@ -81,7 +90,10 @@ fun SupervisorOrdersScreen(
         TopAppBar(
             title = { Text("Supervisor Orders") },
             navigationIcon = {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = {
+                    logger.event("BackTapped")
+                    onBack()
+                }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             },
@@ -89,6 +101,7 @@ fun SupervisorOrdersScreen(
                 IconButton(enabled = !loading, onClick = {
                     scope.launch {
                         val s = session ?: return@launch
+                        logger.event("ManualRefreshTapped")
                         refreshOrders(jwt = s.token, showSpinner = true, analyticsEvent = "supervisor_orders_refreshed")
                     }
                 }) {
@@ -102,7 +115,13 @@ fun SupervisorOrdersScreen(
             error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Error: $error") }
             else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
                 items(items) { row ->
-                    SupervisorOrderRow(row = row, onClick = { onOpenOrder(row.id) })
+                    SupervisorOrderRow(
+                        row = row,
+                        onClick = {
+                            logger.event("OrderTapped", mapOf("orderId" to row.id, "status" to row.status))
+                            onOpenOrder(row.id)
+                        }
+                    )
                     HorizontalDivider()
                 }
             }

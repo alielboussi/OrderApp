@@ -15,7 +15,6 @@ import androidx.compose.ui.platform.LocalContext
 import android.app.DownloadManager
 import android.graphics.Bitmap
 import android.os.Environment
-import android.util.Log
 import androidx.core.net.toUri
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
@@ -30,6 +29,7 @@ import com.afterten.orders.data.repo.OrderRepository
 import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.ui.components.SignatureCaptureDialog
 import com.afterten.orders.util.LogAnalytics
+import com.afterten.orders.util.rememberScreenLogger
 import com.afterten.orders.util.generateOrderPdf
 import com.afterten.orders.util.sanitizeForFile
 import com.afterten.orders.util.toPdfGroups
@@ -54,6 +54,20 @@ fun OrdersScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val logger = rememberScreenLogger("Orders")
+
+    LaunchedEffect(Unit) {
+        logger.enter(mapOf("hasSession" to (session != null)))
+    }
+    LaunchedEffect(session?.outletId) {
+        logger.state(
+            "SessionContext",
+            mapOf(
+                "outletId" to (session?.outletId ?: ""),
+                "hasSession" to (session != null)
+            )
+        )
+    }
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -64,6 +78,21 @@ fun OrdersScreen(
     var deliveryPrefillName by remember { mutableStateOf("") }
     var deliverySubmitting by remember { mutableStateOf(false) }
 
+    LaunchedEffect(items.size) {
+        logger.state("OrdersListUpdated", mapOf("count" to items.size))
+    }
+    LaunchedEffect(statusFilter) {
+        logger.state("FilterChanged", mapOf("filter" to statusFilter.name))
+    }
+    LaunchedEffect(deliveryTarget?.id) {
+        deliveryTarget?.let { target ->
+            logger.state(
+                "DeliveryDialogTarget",
+                mapOf("orderId" to target.id, "status" to target.status)
+            )
+        } ?: logger.state("DeliveryDialogCleared")
+    }
+
     LaunchedEffect(session?.token, session?.outletId) {
         val s = session
         if (s == null) {
@@ -73,17 +102,17 @@ fun OrdersScreen(
         }
         loading = true
         error = null
-        Log.d(ORDERS_SCREEN_TAG, "Loading orders for outlet ${s.outletId}")
+        logger.state("InitialLoadStart", mapOf("outletId" to s.outletId))
         try {
             // Initial load
             items = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
             LogAnalytics.event("orders_loaded", mapOf("count" to items.size))
-            Log.d(ORDERS_SCREEN_TAG, "Loaded ${items.size} orders for outlet ${s.outletId}")
+            logger.state("InitialLoadSuccess", mapOf("count" to items.size))
             loading = false
         } catch (t: Throwable) {
             error = t.message ?: t.toString()
             LogAnalytics.error("orders_load_failed", error, t)
-            Log.e(ORDERS_SCREEN_TAG, "Failed to load orders: ${t.message}", t)
+            logger.error("InitialLoadFailed", t, mapOf("outletId" to s.outletId))
             loading = false
         }
     }
@@ -95,11 +124,11 @@ fun OrdersScreen(
         val s = session ?: return@LaunchedEffect
         root.supabaseProvider.ordersEvents.collect {
             runCatching {
-                Log.d(ORDERS_SCREEN_TAG, "ordersEvents emission received; refreshing list")
+                logger.event("RealtimeOrdersEvent", mapOf("outletId" to s.outletId))
                 val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
                 items = newItems
                 LogAnalytics.event("orders_refreshed_local", mapOf("count" to newItems.size))
-                Log.d(ORDERS_SCREEN_TAG, "ordersEvents refresh completed with ${newItems.size} rows")
+                logger.state("RealtimeRefreshSuccess", mapOf("count" to newItems.size))
             }
         }
     }
@@ -126,6 +155,10 @@ fun OrdersScreen(
         signerName: String,
         signatureBitmap: Bitmap
     ) {
+        logger.event(
+            "DeliverySubmissionStart",
+            mapOf("orderId" to row.id, "cachedDetail" to (cachedDetail != null))
+        )
         val s = session ?: error("No active session")
         val detail = cachedDetail
             ?: repo.fetchOrder(jwt = s.token, orderId = row.id)
@@ -186,6 +219,7 @@ fun OrdersScreen(
                 pdfPath = pdfPath
             )
         }
+        logger.state("DeliverySubmissionComplete", mapOf("orderId" to row.id))
     }
 
     val statusCounts = remember(items) { countStatuses(items) }
@@ -202,7 +236,7 @@ fun OrdersScreen(
                 deliveryPrefillName = detail?.offloaderName.orEmpty()
             }
             .onFailure { t ->
-                Log.w(ORDERS_SCREEN_TAG, "Failed to load order detail for delivery", t)
+                logger.warn("DeliveryDetailLoadFailed", mapOf("orderId" to target.id), t)
                 snackbarHostState.showSnackbar(
                     message = t.message ?: "Unable to load order detail",
                     withDismissAction = true
@@ -225,16 +259,16 @@ fun OrdersScreen(
                             val s = session ?: return@launch
                             loading = true
                             error = null
-                            Log.d(ORDERS_SCREEN_TAG, "Manual refresh triggered for outlet ${s.outletId}")
+                            logger.event("ManualRefreshStart", mapOf("outletId" to s.outletId))
                             runCatching {
                                 repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
                             }.onSuccess { list ->
                                 items = list
                                 LogAnalytics.event("orders_refreshed", mapOf("count" to list.size))
-                                Log.d(ORDERS_SCREEN_TAG, "Manual refresh loaded ${list.size} orders")
+                                logger.state("ManualRefreshSuccess", mapOf("count" to list.size))
                             }.onFailure { t ->
                                 error = t.message ?: t.toString()
-                                Log.e(ORDERS_SCREEN_TAG, "Manual refresh failed: ${t.message}", t)
+                                logger.error("ManualRefreshFailed", t, mapOf("outletId" to s.outletId))
                             }
                             loading = false
                         }
@@ -270,6 +304,7 @@ fun OrdersScreen(
                         OrderRowCard(
                             row = row,
                             onDownload = {
+                                logger.event("DownloadTapped", mapOf("orderId" to row.id))
                                 val ses = session ?: return@OrderRowCard
                                 scope.launch {
                                     val dateStr = try { java.time.OffsetDateTime.parse(row.createdAt).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) } catch (_: Throwable) { row.createdAt.take(10) }
@@ -297,7 +332,10 @@ fun OrdersScreen(
                                 }
                             },
                             onDeliver = if (row.status.equals("loaded", true) || row.status.equals("delivered", true)) {
-                                { deliveryTarget = row }
+                                {
+                                    logger.event("DeliverTapped", mapOf("orderId" to row.id, "status" to row.status))
+                                    deliveryTarget = row
+                                }
                             } else null
                         )
                         HorizontalDivider()
@@ -316,6 +354,10 @@ fun OrdersScreen(
             onDismiss = { if (!deliverySubmitting) deliveryTarget = null },
             onConfirm = { name, bitmap ->
                 scope.launch {
+                    logger.event(
+                        "DeliveryDialogConfirmed",
+                        mapOf("orderId" to (deliveryTarget?.id ?: ""), "nameProvided" to name.isNotBlank())
+                    )
                     deliverySubmitting = true
                     val currentTarget = deliveryTarget
                     val result = runCatching {
@@ -332,12 +374,21 @@ fun OrdersScreen(
                                 }.onSuccess { refreshed -> items = refreshed }
                             }
                             root.supabaseProvider.emitOrdersChanged()
+                            logger.state("DeliveryMarkedDelivered", mapOf("orderId" to (currentTarget?.id ?: "")))
                             snackbarHostState.showSnackbar("Order delivered")
                             deliveryTarget = null
                         }
                         .onFailure { t ->
                             error = t.message
-                            Log.e(ORDERS_SCREEN_TAG, "Delivery submission failed", t)
+                            logger.error(
+                                "DeliverySubmissionFailed",
+                                t,
+                                mapOf(
+                                    "orderId" to (currentTarget?.id ?: ""),
+                                    "status" to (currentTarget?.status ?: ""),
+                                    "hasDetail" to (deliveryDetail != null)
+                                )
+                            )
                             snackbarHostState.showSnackbar(
                                 message = t.message ?: "Delivery failed",
                                 withDismissAction = true,
@@ -564,4 +615,3 @@ private fun displayOrderNumber(raw: String): String {
     return if (digits.isNotEmpty()) digits else raw
 }
 
-private const val ORDERS_SCREEN_TAG = "OrdersScreenDebug"

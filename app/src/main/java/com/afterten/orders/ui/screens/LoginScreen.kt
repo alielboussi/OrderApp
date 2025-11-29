@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,7 @@ import com.afterten.orders.R
 import com.afterten.orders.ui.components.AppOutlinedTextField
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.OutletRepository
+import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,27 +57,54 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
+    val logger = rememberScreenLogger("Login")
+
+    LaunchedEffect(Unit) { logger.enter() }
+    LaunchedEffect(error) {
+        error?.let { logger.warn("ValidationErrorVisible", mapOf("message" to it.take(80))) }
+    }
 
     fun submit() {
         error = null
+        logger.event("SubmitTapped")
         if (email.isBlank() || !email.contains("@")) {
             error = "Enter a valid email"
+            logger.warn("InvalidEmail", mapOf("isBlank" to email.isBlank()))
             return
         }
         if (password.length < 6) {
             error = "Password must be at least 6 characters"
+            logger.warn("PasswordTooShort", mapOf("length" to password.length))
             return
         }
         loading = true
+        val emailDomain = email.substringAfter('@', missingDelimiterValue = "unknown")
+        logger.state(
+            "LoginAttempt",
+            mapOf(
+                "emailDomain" to emailDomain,
+                "hasExistingSession" to (viewModel.session.value != null)
+            )
+        )
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 val session = repo.login(email, password)
                 viewModel.setSession(session)
+                logger.event(
+                    "LoginSuccess",
+                    mapOf(
+                        "outletId" to session.outletId,
+                        "isAdmin" to session.isAdmin,
+                        "canTransfer" to session.canTransfer
+                    )
+                )
                 onLoggedIn()
             } catch (t: Throwable) {
                 error = t.message ?: "Login failed"
+                logger.error("LoginFailed", t, mapOf("emailDomain" to emailDomain))
             } finally {
                 loading = false
+                logger.state("LoadingState", mapOf("loading" to loading))
             }
         }
     }

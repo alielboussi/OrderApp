@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -50,12 +51,17 @@ fun StockDashboardScreen(
 ) {
     val session by root.session.collectAsState()
     val scope = rememberCoroutineScope()
+    val logger = rememberScreenLogger("StockDashboard")
+
+    LaunchedEffect(Unit) { logger.enter() }
 
     if (session == null) {
+        logger.warn("MissingSession")
         MissingAuth()
         return
     }
     if (session?.isAdmin != true) {
+        logger.warn("UnauthorizedAccess")
         Unauthorized()
         return
     }
@@ -86,6 +92,7 @@ fun StockDashboardScreen(
 
     LaunchedEffect(session?.token) {
         val jwt = session?.token ?: return@LaunchedEffect
+        logger.state("BootstrapStart")
         runCatching {
             val warehouseList = root.supabaseProvider.listWarehouses(jwt)
             val productList = root.supabaseProvider.listActiveProducts(jwt)
@@ -97,7 +104,14 @@ fun StockDashboardScreen(
             if (injectProductId == null) {
                 injectProductId = productList.firstOrNull()?.id
             }
-        }.onFailure { stockError = it.message }
+            logger.state(
+                "BootstrapSuccess",
+                mapOf("warehouses" to warehouseList.size, "products" to productList.size)
+            )
+        }.onFailure {
+            stockError = it.message
+            logger.error("BootstrapFailed", it)
+        }
     }
 
     LaunchedEffect(injectProductId, session?.token) {
@@ -110,12 +124,15 @@ fun StockDashboardScreen(
             return@LaunchedEffect
         }
         runCatching {
+            logger.state("VariationLoadStart", mapOf("productId" to productId))
             root.supabaseProvider.listVariationsForProduct(jwt, productId)
         }.onSuccess {
             activeVariations = it
+            logger.state("VariationLoadSuccess", mapOf("count" to it.size))
         }.onFailure {
             injectError = it.message
             activeVariations = emptyList()
+            logger.error("VariationLoadFailed", it, mapOf("productId" to productId))
         }
     }
 
@@ -124,36 +141,60 @@ fun StockDashboardScreen(
         val warehouseId = selectedWarehouseId ?: return@LaunchedEffect
         isStockLoading = true
         stockError = null
+        logger.state(
+            "StockQueryStart",
+            mapOf("warehouseId" to warehouseId, "search" to appliedSearch.takeIf { it.isNotBlank() })
+        )
         runCatching {
             root.supabaseProvider.fetchWarehouseStock(jwt, warehouseId, appliedSearch.takeIf { it.isNotBlank() })
-        }.onSuccess { stockData = it }
-            .onFailure { stockError = it.message }
+        }.onSuccess {
+            stockData = it
+            logger.state("StockQuerySuccess", mapOf("rows" to it.rows.size))
+        }
+            .onFailure {
+                stockError = it.message
+                logger.error("StockQueryFailed", it, mapOf("warehouseId" to warehouseId))
+            }
         isStockLoading = false
     }
 
     fun submitStockEntry(kind: SupabaseProvider.StockEntryKind) {
+        logger.event("StockEntrySubmitTapped", mapOf("kind" to kind.name))
         val jwt = session?.token ?: return
         val wid = selectedWarehouseId ?: run {
             injectError = "Select a warehouse"
+            logger.warn("StockEntryValidation", mapOf("reason" to "missing_warehouse"))
             return
         }
         val pid = injectProductId ?: run {
             injectError = "Select a product"
+            logger.warn("StockEntryValidation", mapOf("reason" to "missing_product"))
             return
         }
         val qtyDouble = injectQty.toDoubleOrNull()
         if (qtyDouble == null || qtyDouble <= 0) {
             injectError = "Enter a positive quantity"
+            logger.warn("StockEntryValidation", mapOf("reason" to "invalid_qty", "input" to injectQty))
             return
         }
         val needsVariation = products.firstOrNull { it.id == pid }?.hasVariations == true
         if (needsVariation && injectVariationId.isNullOrBlank()) {
             injectError = "Select a variation"
+            logger.warn("StockEntryValidation", mapOf("reason" to "missing_variation"))
             return
         }
         scope.launch {
             isInjecting = true
             injectError = null
+            logger.state(
+                "StockEntrySubmitStart",
+                mapOf(
+                    "kind" to kind.name,
+                    "warehouseId" to wid,
+                    "productId" to pid,
+                    "variationId" to injectVariationId
+                )
+            )
             runCatching {
                 root.supabaseProvider.recordStockEntry(
                     jwt = jwt,
@@ -169,7 +210,11 @@ fun StockDashboardScreen(
                 injectQty = ""
                 injectNote = ""
                 refreshTick++
-            }.onFailure { injectError = it.message }
+                logger.state("StockEntrySubmitSuccess")
+            }.onFailure {
+                injectError = it.message
+                logger.error("StockEntrySubmitFailed", it)
+            }
             isInjecting = false
         }
     }
@@ -195,11 +240,18 @@ fun StockDashboardScreen(
             onWarehouseSelected = { id ->
                 selectedWarehouseId = id
                 injectMessage = null
+                logger.state("WarehouseSelected", mapOf("warehouseId" to id))
             },
             searchText = searchText,
             onSearchChanged = { searchText = it },
-            onApplySearch = { appliedSearch = searchText.trim() },
-            onRefresh = { refreshTick++ },
+            onApplySearch = {
+                logger.event("StockSearchApplied", mapOf("query" to searchText))
+                appliedSearch = searchText.trim()
+            },
+            onRefresh = {
+                logger.event("StockRefreshTriggered")
+                refreshTick++
+            },
             warehouseCount = stockData?.warehouseCount ?: 0
         )
         val selectedWarehouseName = warehouses.firstOrNull { it.id == selectedWarehouseId }?.name
@@ -212,11 +264,13 @@ fun StockDashboardScreen(
                 injectVariationId = null
                 injectMessage = null
                 injectError = null
+                logger.state("InjectionProductSelected", mapOf("productId" to it))
             },
             selectedVariationId = injectVariationId,
             onVariationSelected = {
                 injectVariationId = it
                 injectMessage = null
+                logger.state("InjectionVariationSelected", mapOf("variationId" to it))
             },
             qtyText = injectQty,
             onQtyChanged = { injectQty = it.filter { ch -> ch.isDigit() || ch == '.' } },
@@ -247,8 +301,18 @@ fun StockDashboardScreen(
             topBar = {
                 TopAppBar(
                     title = { Text("Stock Dashboard") },
-                    navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
-                    actions = { TextButton(onClick = onOpenLog) { Text("Injection Log") } }
+                    navigationIcon = {
+                        TextButton(onClick = {
+                            logger.event("BackTapped")
+                            onBack()
+                        }) { Text("Back") }
+                    },
+                    actions = {
+                        TextButton(onClick = {
+                            logger.event("OpenLogTapped")
+                            onOpenLog()
+                        }) { Text("Injection Log") }
+                    }
                 )
             }
         ) { padding ->

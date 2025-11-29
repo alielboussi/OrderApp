@@ -13,6 +13,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
+import com.afterten.orders.util.rememberScreenLogger
 
 @Composable
 fun HomeScreen(
@@ -38,6 +40,23 @@ fun HomeScreen(
     val canTransfer = session?.canTransfer == true
     val isTransferManager = session?.isTransferManager == true
     val isSupervisor = session?.isSupervisor == true
+    val logger = rememberScreenLogger("Home")
+
+    LaunchedEffect(Unit) {
+        logger.enter(mapOf("hasSession" to (session != null)))
+    }
+    LaunchedEffect(session?.outletId, isAdmin, canTransfer, isTransferManager, isSupervisor) {
+        logger.state(
+            state = "SessionChanged",
+            props = mapOf(
+                "outletId" to (session?.outletId ?: ""),
+                "isAdmin" to isAdmin,
+                "canTransfer" to canTransfer,
+                "isTransferManager" to isTransferManager,
+                "isSupervisor" to isSupervisor
+            )
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -49,7 +68,10 @@ fun HomeScreen(
         // Top-right logout pill
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Button(
-                onClick = onLogout,
+                onClick = {
+                    logger.event("LogoutTapped")
+                    onLogout()
+                },
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors()
             ) {
@@ -64,19 +86,28 @@ fun HomeScreen(
                 // Admin home: expose stock tools and warehouse admin panel
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onStockDashboard() },
+                    onClick = {
+                        logger.event("StockDashboardTapped")
+                        onStockDashboard()
+                    },
                     enabled = session != null
                 ) { Text("Stock Dashboard") }
                 Spacer(Modifier.height(12.dp))
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onStockLog() },
+                    onClick = {
+                        logger.event("StockLogTapped")
+                        onStockLog()
+                    },
                     enabled = session != null
                 ) { Text("Stock Injection Log") }
                 Spacer(Modifier.height(12.dp))
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onAdminWarehouses() },
+                    onClick = {
+                        logger.event("WarehousesAdminTapped")
+                        onAdminWarehouses()
+                    },
                     enabled = session != null
                 ) { Text("Warehouses Admin") }
             }
@@ -84,7 +115,10 @@ fun HomeScreen(
                 // TM home: only Transfers
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onTransfers() },
+                    onClick = {
+                        logger.event("TransfersTapped")
+                        onTransfers()
+                    },
                     enabled = session != null
                 ) { Text("Stock Transfers") }
             }
@@ -92,7 +126,10 @@ fun HomeScreen(
                 // Supervisor home: go to Outlet Orders (multi-outlet)
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onViewOrders() },
+                    onClick = {
+                        logger.event("SupervisorOrdersTapped")
+                        onViewOrders()
+                    },
                     enabled = session != null
                 ) { Text("Outlet Orders") }
             }
@@ -100,22 +137,31 @@ fun HomeScreen(
                 // Regular outlet user: Create and Orders
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onCreateOrder() },
+                    onClick = {
+                        logger.event("CreateOrderTapped")
+                        onCreateOrder()
+                    },
                     enabled = (session?.outletId?.isNotEmpty() == true)
                 ) { Text("Create New Order") }
                 Spacer(Modifier.height(12.dp))
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onViewOrders() },
+                    onClick = {
+                        logger.event("OrdersTapped")
+                        onViewOrders()
+                    },
                     enabled = (session?.outletId?.isNotEmpty() == true)
                 ) { Text("Orders") }
                 if (canTransfer) {
                     Spacer(Modifier.height(12.dp))
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { onTransfers() },
-                        enabled = session != null
-                    ) { Text("Stock Transfers") }
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                logger.event("TransfersTapped")
+                                onTransfers()
+                            },
+                            enabled = session != null
+                        ) { Text("Stock Transfers") }
                 }
             }
         }

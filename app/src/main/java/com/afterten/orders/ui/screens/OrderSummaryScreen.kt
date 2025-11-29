@@ -31,6 +31,7 @@ import com.afterten.orders.util.PdfLine
 import com.afterten.orders.util.PdfProductGroup
 import com.afterten.orders.util.formatMoney
 import com.afterten.orders.util.generateOrderPdf
+import com.afterten.orders.util.rememberScreenLogger
 import com.afterten.orders.util.sanitizeForFile
 import com.afterten.orders.util.toBlackInk
 import androidx.compose.foundation.border
@@ -84,12 +85,38 @@ fun OrderSummaryScreen(
     val scope = rememberCoroutineScope()
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
+    val logger = rememberScreenLogger("OrderSummary")
+
+    LaunchedEffect(Unit) {
+        logger.enter(mapOf("cartLines" to cart.size))
+    }
+    LaunchedEffect(cart) {
+        logger.state(
+            "CartSnapshot",
+            mapOf(
+                "lines" to cart.size,
+                "qty" to cart.sumOf { it.qty },
+                "subtotal" to cart.sumOf { it.lineTotal }
+            )
+        )
+    }
+    LaunchedEffect(orderNumber) {
+        orderNumber?.let { logger.state("OrderNumberAssigned", mapOf("value" to it)) }
+    }
+    LaunchedEffect(error) {
+        error?.let { logger.warn("InlineError", mapOf("message" to it.take(80))) }
+    }
 
     LaunchedEffect(session?.token) {
         if (session?.token != null) {
             try {
+                logger.state("FetchingOrderNumber", mapOf("outletId" to session.outletId))
                 orderNumber = root.supabaseProvider.rpcNextOrderNumber(session.token, session.outletId)
-            } catch (t: Throwable) { error = t.message }
+                logger.state("OrderNumberFetched")
+            } catch (t: Throwable) {
+                error = t.message
+                logger.error("OrderNumberFailed", t)
+            }
         }
     }
 
@@ -227,18 +254,44 @@ fun OrderSummaryScreen(
                 ) { Text("Clear Signature") }
                 Button(
                     onClick = {
+                        logger.event(
+                            "PlaceOrderTapped",
+                            mapOf(
+                                "cartLines" to cart.size,
+                                "hasOrderNumber" to (orderNumber != null)
+                            )
+                        )
                         placing = true
                         error = null
                         scope.launch {
+                            logger.state(
+                                "PlaceOrderCoroutineStart",
+                                mapOf(
+                                    "cartLines" to cart.size,
+                                    "subtotal" to cart.sumOf { it.lineTotal }
+                                )
+                            )
                             try {
-                                val ses = session ?: error("No active session")
-                                val number = orderNumber ?: error("No order number")
+                                val ses = session ?: run {
+                                    logger.error("MissingSessionDuringOrder")
+                                    error("No active session")
+                                }
+                                val number = orderNumber ?: run {
+                                    logger.error("MissingOrderNumber")
+                                    error("No order number")
+                                }
                                 // Validate employee name and signature
                                 val fn = firstName.trim()
                                 val ln = lastName.trim()
-                                if (fn.isEmpty() || ln.isEmpty()) error("Please enter first and last name")
+                                if (fn.isEmpty() || ln.isEmpty()) {
+                                    logger.warn("ValidationFailed", mapOf("reason" to "missing_employee_name"))
+                                    error("Please enter first and last name")
+                                }
                                 val title = fn.lowercase().replaceFirstChar { it.titlecase() } + " " + ln.lowercase().replaceFirstChar { it.titlecase() }
-                                if (!sigState.isMeaningful()) error("Please provide a valid signature")
+                                if (!sigState.isMeaningful()) {
+                                    logger.warn("ValidationFailed", mapOf("reason" to "missing_signature"))
+                                    error("Please provide a valid signature")
+                                }
 
                                 // Build signature bitmap (PNG) with actual canvas size
                                 val sigW = sigSize.width.coerceAtLeast(500)
@@ -268,6 +321,7 @@ fun OrderSummaryScreen(
                                         )
                                         sp
                                     }.getOrElse { "${ses.outletId}/signature-${number}.png" }
+                                    logger.state("SignatureUploaded", mapOf("path" to sigPath))
 
                                     // Build PDF including signature fetched from bucket (ensures the stored one is used)
                                     // Poll up to 5 times for eventual consistency
@@ -318,6 +372,7 @@ fun OrderSummaryScreen(
                                     val safeOutlet = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
                                     val pdfFileName = "${safeOutlet}_${number}_${dateStr}.pdf"
                                     val storagePath = "${ses.outletId}/$pdfFileName"
+                                    logger.state("PdfGenerated", mapOf("fileName" to pdfFileName))
 
                                     // Upload PDF to storage (orders bucket)
                                     root.supabaseProvider.uploadToStorage(
@@ -356,6 +411,7 @@ fun OrderSummaryScreen(
                                             pdfPath = storagePath
                                         )
                                         placedRemotely = true
+                                        logger.state("OrderRpcSuccess", mapOf("orderId" to rpcRes.orderId))
                                         // Immediately approve, lock and allocate from warehouses (coldrooms)
                                         runCatching {
                                             root.supabaseProvider.approveLockAndAllocateOrder(
@@ -387,6 +443,7 @@ fun OrderSummaryScreen(
                                             )
                                         }.onSuccess {
                                             placedRemotely = true
+                                            logger.state("OrderFallbackSuccess")
                                         }.onFailure {
                                             // Queue for background sync
                                             val itemsJson = Json.encodeToString(
@@ -402,6 +459,7 @@ fun OrderSummaryScreen(
                                                 )
                                             )
                                             OrderSyncWorker.enqueue(ctx)
+                                            logger.warn("OrderQueuedForSync", mapOf("outletId" to ses.outletId))
                                             withContext(Dispatchers.Main) {
                                                 error = "Order queued for sync and will be sent when online."
                                             }
@@ -425,10 +483,13 @@ fun OrderSummaryScreen(
                                         if (placedRemotely) {
                                             // Proactively notify Orders screen to refresh now
                                             root.supabaseProvider.emitOrdersChanged()
+                                            logger.state("OrdersChangeEmitted")
                                         }
                                         // Clear cart and navigate home BEFORE kicking off download
                                         root.clearCart()
+                                        logger.state("CartClearedAfterOrder")
                                         onFinished(pdf.absolutePath)
+                                        logger.state("OrderSummaryFinished", mapOf("pdf" to pdf.absolutePath))
 
                                         // Enqueue download
                                         val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -438,12 +499,15 @@ fun OrderSummaryScreen(
                                             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                             .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, pdfFileName)
                                         runCatching { dm.enqueue(req) }
+                                            .onSuccess { logger.state("PdfDownloadEnqueued") }
                                     }
                                 }
                             } catch (t: Throwable) {
                                 error = t.message
+                                logger.error("PlaceOrderFlowFailed", t)
                             } finally {
                                 placing = false
+                                logger.state("PlaceOrderCoroutineEnd")
                             }
                         }
                     },

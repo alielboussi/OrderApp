@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -51,12 +52,17 @@ fun StockInjectionLogScreen(
 ) {
     val session by root.session.collectAsState()
     val scope = rememberCoroutineScope()
+    val logger = rememberScreenLogger("StockInjectionLog")
+
+    LaunchedEffect(Unit) { logger.enter() }
 
     if (session == null) {
+        logger.warn("MissingSession")
         MissingAuthMessage()
         return
     }
     if (session?.isAdmin != true) {
+        logger.warn("UnauthorizedAccess")
         UnauthorizedMessage()
         return
     }
@@ -71,27 +77,49 @@ fun StockInjectionLogScreen(
     var refreshKey by remember { mutableStateOf(0) }
     var selectedEntryKind by remember { mutableStateOf<SupabaseProvider.StockEntryKind?>(null) }
 
+    LaunchedEffect(selectedWarehouseId) {
+        logger.state("WarehouseFilterChanged", mapOf("warehouseId" to selectedWarehouseId))
+    }
+    LaunchedEffect(selectedEntryKind?.name) {
+        logger.state("EntryKindFilterChanged", mapOf("kind" to selectedEntryKind?.name))
+    }
+
     fun refreshEntries(jwt: String, warehouseId: String?, entryKind: SupabaseProvider.StockEntryKind?) {
         scope.launch {
             isLoading = true
             error = null
+            logger.state(
+                "LogFetchStart",
+                mapOf("warehouseId" to warehouseId, "kind" to entryKind?.name)
+            )
             runCatching { root.supabaseProvider.fetchStockEntries(jwt, warehouseId, entryKind) }
-                .onSuccess { entries = it }
-                .onFailure { error = it.message }
+                .onSuccess {
+                    entries = it
+                    logger.state("LogFetchSuccess", mapOf("rows" to it.size))
+                }
+                .onFailure {
+                    error = it.message
+                    logger.error("LogFetchFailed", it)
+                }
             isLoading = false
         }
     }
 
     LaunchedEffect(session?.token) {
         val jwt = session?.token ?: return@LaunchedEffect
+        logger.state("WarehousesLoadStart")
         runCatching { root.supabaseProvider.listWarehouses(jwt) }
             .onSuccess { list ->
                 warehouses = list.filter { it.active }
                 if (selectedWarehouseId == null && list.isNotEmpty()) {
                     selectedWarehouseId = list.first().id
                 }
+                logger.state("WarehousesLoadSuccess", mapOf("count" to list.size))
             }
-            .onFailure { error = it.message }
+            .onFailure {
+                error = it.message
+                logger.error("WarehousesLoadFailed", it)
+            }
     }
 
     LaunchedEffect(session?.token, selectedWarehouseId, refreshKey, selectedEntryKind) {
@@ -137,8 +165,14 @@ fun StockInjectionLogScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { appliedSearch = searchText.trim() }) { Text("Apply Search") }
-                        OutlinedButton(onClick = { refreshKey++ }) { Text("Refresh") }
+                        Button(onClick = {
+                            logger.event("LogSearchApplied", mapOf("query" to searchText))
+                            appliedSearch = searchText.trim()
+                        }) { Text("Apply Search") }
+                        OutlinedButton(onClick = {
+                            logger.event("LogRefreshTriggered")
+                            refreshKey++
+                        }) { Text("Refresh") }
                     }
                 }
             }
