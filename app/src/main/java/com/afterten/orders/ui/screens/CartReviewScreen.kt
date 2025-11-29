@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.util.formatMoney
+import com.afterten.orders.util.formatPackageUnits
 import androidx.compose.material3.HorizontalDivider
 
 @Composable
@@ -87,6 +88,14 @@ fun CartReviewScreen(
             contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            item(key = "package_contains_note") {
+                Text(
+                    text = "Quantities below are in cases. Package Contains tells you how many individual units will be deducted per case.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                )
+            }
             groups.forEachIndexed { gIndex, entry ->
                 val items = entry.value
                 item(key = "group_${entry.key}") {
@@ -121,14 +130,21 @@ fun CartReviewScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = Color.White.copy(alpha = 0.9f)
                                         )
+                                        formatPackageUnits(item.packageContains)?.let { units ->
+                                            Text(
+                                                text = "Package Contains: $units units",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.White.copy(alpha = 0.85f)
+                                            )
+                                        }
                                     }
 
                                     ReviewQtyControls(
                                         uom = item.uom,
                                         qty = item.qty,
-                                        onDec = { root.dec(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.unitsPerUom) },
-                                        onInc = { root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.unitsPerUom) },
-                                        onChange = { n -> root.setQty(item.productId, item.variationId, item.name, item.uom, item.unitPrice, n, item.unitsPerUom) }
+                                        onDec = { root.dec(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains) },
+                                        onInc = { root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains) },
+                                        onChange = { n -> root.setQty(item.productId, item.variationId, item.name, item.uom, item.unitPrice, n, item.packageContains) }
                                     )
                                 }
                             }

@@ -44,7 +44,7 @@ class ProductRepository(
     suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
             "/rest/v1/products?active=eq.true&select=" +
-                "id,sku,name,image_url,uom,cost,has_variations,active,units_per_uom,default_warehouse_id",
+                "id,sku,name,image_url,uom,cost,has_variations,active,package_contains,default_warehouse_id",
             jwt
         )
         // If Supabase returns an error object, surface a friendly message instead of a JSON parse crash
@@ -60,7 +60,7 @@ class ProductRepository(
                 cost = it.cost,
                 hasVariations = it.hasVariations,
                 active = it.active,
-                unitsPerUom = it.unitsPerUom,
+                packageContains = it.packageContains,
                 defaultWarehouseId = it.defaultWarehouseId
             )
         }
@@ -76,7 +76,7 @@ class ProductRepository(
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
             "/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=" +
-                "id,product_id,name,image_url,uom,cost,active,units_per_uom,default_warehouse_id",
+                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id",
             jwt
         )
         throwIfError(raw)
@@ -90,7 +90,7 @@ class ProductRepository(
                 uom = it.uom,
                 cost = it.cost,
                 active = it.active,
-                unitsPerUom = it.unitsPerUom,
+                packageContains = it.packageContains,
                 defaultWarehouseId = it.defaultWarehouseId
             )
         }
@@ -101,7 +101,7 @@ class ProductRepository(
     suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
             "/rest/v1/product_variations?active=eq.true&select=" +
-                "id,product_id,name,image_url,uom,cost,active,units_per_uom,default_warehouse_id",
+                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id",
             jwt
         )
         throwIfError(raw)
@@ -115,7 +115,7 @@ class ProductRepository(
                 uom = it.uom,
                 cost = it.cost,
                 active = it.active,
-                unitsPerUom = it.unitsPerUom,
+                packageContains = it.packageContains,
                 defaultWarehouseId = it.defaultWarehouseId
             )
         }

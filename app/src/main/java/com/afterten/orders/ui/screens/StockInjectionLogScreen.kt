@@ -14,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +42,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockInjectionLogScreen(
     root: RootViewModel,

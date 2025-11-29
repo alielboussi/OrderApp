@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.ExperimentalFoundationApi
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
 import kotlinx.coroutines.launch
@@ -20,7 +21,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 fun WarehousesAdminScreen(
     root: RootViewModel,
     allowedAdminUuid: String = "d86e2ce6-13a3-4bd9-a174-9f18f6f8a035",
@@ -33,7 +34,9 @@ fun WarehousesAdminScreen(
     var outlets by remember { mutableStateOf<List<SupabaseProvider.Outlet>>(emptyList()) }
     var warehouses by remember { mutableStateOf<List<SupabaseProvider.Warehouse>>(emptyList()) }
     var products by remember { mutableStateOf<List<SupabaseProvider.SimpleProduct>>(emptyList()) }
-    var variations by remember { mutableStateOf<List<SupabaseProvider.SimpleVariation>>(emptyList()) }
+    var warehouseVariations by remember { mutableStateOf<List<SupabaseProvider.SimpleVariation>>(emptyList()) }
+    var posVariations by remember { mutableStateOf<List<SupabaseProvider.SimpleVariation>>(emptyList()) }
+    var outletStocktakeVariations by remember { mutableStateOf<List<SupabaseProvider.SimpleVariation>>(emptyList()) }
 
     var selectedOutletId by remember { mutableStateOf<String?>(null) }
     var selectedParentId by remember { mutableStateOf<String?>(null) }
@@ -51,6 +54,29 @@ fun WarehousesAdminScreen(
     var stocktakeNote by remember { mutableStateOf("") }
     var isStocktakeLoading by remember { mutableStateOf(false) }
     var lastStocktake by remember { mutableStateOf<SupabaseProvider.StocktakeResult?>(null) }
+
+    var posOutletId by remember { mutableStateOf<String?>(null) }
+    var posProductId by remember { mutableStateOf<String?>(null) }
+    var posVariationId by remember { mutableStateOf<String?>(null) }
+    var posQty by remember { mutableStateOf("") }
+    var posQtyMode by remember { mutableStateOf("auto") }
+    var posReference by remember { mutableStateOf("") }
+    var posSource by remember { mutableStateOf("POS") }
+    var isPosSubmitting by remember { mutableStateOf(false) }
+
+    var stockPeriodOutletId by remember { mutableStateOf<String?>(null) }
+    var outletPeriods by remember { mutableStateOf<List<SupabaseProvider.OutletStockPeriod>>(emptyList()) }
+    var isPeriodLoading by remember { mutableStateOf(false) }
+    var isStartPeriodLoading by remember { mutableStateOf(false) }
+    var isClosePeriodLoading by remember { mutableStateOf(false) }
+    var outletStocktakePeriodId by remember { mutableStateOf<String?>(null) }
+    var outletStocktakeProductId by remember { mutableStateOf<String?>(null) }
+    var outletStocktakeVariationId by remember { mutableStateOf<String?>(null) }
+    var outletStocktakeQty by remember { mutableStateOf("") }
+    var outletStocktakeMode by remember { mutableStateOf("auto") }
+    var outletStocktakeKind by remember { mutableStateOf("spot") }
+    var outletStocktakeNote by remember { mutableStateOf("") }
+    var isOutletStocktakeLoading by remember { mutableStateOf(false) }
 
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -72,16 +98,71 @@ fun WarehousesAdminScreen(
         val jwt = session?.token
         val isAdmin = session?.isAdmin == true
         if (stocktakeProductId.isNullOrBlank() || jwt == null || !isAdmin) {
-            variations = emptyList()
+            warehouseVariations = emptyList()
             stocktakeVariationId = null
             return@LaunchedEffect
         }
         runCatching {
             root.supabaseProvider.listVariationsForProduct(jwt, stocktakeProductId!!)
         }.onSuccess {
-            variations = it
+            warehouseVariations = it
             stocktakeVariationId = null
         }.onFailure { error = it.message }
+    }
+
+    LaunchedEffect(posProductId, session?.token) {
+        val jwt = session?.token
+        val isAdmin = session?.isAdmin == true
+        if (posProductId.isNullOrBlank() || jwt == null || !isAdmin) {
+            posVariations = emptyList()
+            posVariationId = null
+            return@LaunchedEffect
+        }
+        runCatching {
+            root.supabaseProvider.listVariationsForProduct(jwt, posProductId!!)
+        }.onSuccess { list ->
+            posVariations = list
+            if (list.none { it.id == posVariationId }) posVariationId = null
+        }.onFailure { error = it.message }
+    }
+
+    LaunchedEffect(outletStocktakeProductId, session?.token) {
+        val jwt = session?.token
+        val isAdmin = session?.isAdmin == true
+        if (outletStocktakeProductId.isNullOrBlank() || jwt == null || !isAdmin) {
+            outletStocktakeVariations = emptyList()
+            outletStocktakeVariationId = null
+            return@LaunchedEffect
+        }
+        runCatching {
+            root.supabaseProvider.listVariationsForProduct(jwt, outletStocktakeProductId!!)
+        }.onSuccess { list ->
+            outletStocktakeVariations = list
+            if (list.none { it.id == outletStocktakeVariationId }) outletStocktakeVariationId = null
+        }.onFailure { error = it.message }
+    }
+
+    LaunchedEffect(stockPeriodOutletId, session?.token) {
+        val jwt = session?.token
+        val outletId = stockPeriodOutletId
+        val isAdmin = session?.isAdmin == true
+        if (outletId.isNullOrBlank() || jwt == null || !isAdmin) {
+            outletPeriods = emptyList()
+            outletStocktakePeriodId = null
+            return@LaunchedEffect
+        }
+        isPeriodLoading = true
+        runCatching {
+            root.supabaseProvider.listOutletStockPeriods(jwt, outletId)
+        }.onSuccess { periods ->
+            outletPeriods = periods
+            val current = outletStocktakePeriodId
+            if (current == null || periods.none { it.id == current }) {
+                outletStocktakePeriodId = periods.firstOrNull { it.status.equals("open", ignoreCase = true) }
+                    ?.id ?: periods.firstOrNull()?.id
+            }
+        }.onFailure { error = it.message }
+        isPeriodLoading = false
     }
 
     Scaffold(topBar = {
@@ -362,6 +443,274 @@ fun WarehousesAdminScreen(
             }
 
             Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Record POS Sale", style = MaterialTheme.typography.titleMedium)
+                    Text("Log front-of-house sales so ingredient deductions stay in sync with Supabase recipes.")
+                    DropdownField(
+                        label = "Outlet",
+                        options = outlets.map { it.id to it.name },
+                        selectedId = posOutletId,
+                        onSelected = { posOutletId = it }
+                    )
+                    if (products.isEmpty()) {
+                        Text("Loading products…")
+                    } else {
+                        DropdownField(
+                            label = "Product",
+                            options = products.map { it.id to "${it.name} (${it.uom})" },
+                            selectedId = posProductId,
+                            onSelected = { posProductId = it }
+                        )
+                    }
+                    if (posVariations.isNotEmpty()) {
+                        DropdownField(
+                            label = "Variation (optional)",
+                            options = listOf(null to "<base product>") + posVariations.map { it.id to "${it.name} (${it.uom})" },
+                            selectedId = posVariationId,
+                            onSelected = { posVariationId = it }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = posQty,
+                        onValueChange = { txt -> posQty = txt.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = { Text("Quantity") },
+                        singleLine = true
+                    )
+                    DropdownField(
+                        label = "Quantity Input",
+                        options = listOf(
+                            "auto" to "Auto (by pack size)",
+                            "units" to "Units",
+                            "cases" to "Cases"
+                        ),
+                        selectedId = posQtyMode,
+                        onSelected = { posQtyMode = it ?: "auto" }
+                    )
+                    OutlinedTextField(
+                        value = posReference,
+                        onValueChange = { posReference = it },
+                        label = { Text("Sale Reference (optional)") }
+                    )
+                    OutlinedTextField(
+                        value = posSource,
+                        onValueChange = { posSource = it },
+                        label = { Text("Source / Register") }
+                    )
+                    Button(
+                        enabled = !isPosSubmitting,
+                        onClick = {
+                            error = null; message = null
+                            val outletId = posOutletId
+                            val productId = posProductId
+                            val qty = posQty.toDoubleOrNull()
+                            if (outletId.isNullOrEmpty()) { error = "Select an outlet"; return@Button }
+                            if (productId.isNullOrEmpty()) { error = "Select a product"; return@Button }
+                            if (qty == null || qty <= 0) { error = "Enter quantity"; return@Button }
+                            scope.launch {
+                                isPosSubmitting = true
+                                runCatching {
+                                    root.supabaseProvider.recordPosSale(
+                                        jwt = session.token,
+                                        outletId = outletId,
+                                        productId = productId,
+                                        qty = qty,
+                                        variationId = posVariationId,
+                                        saleReference = posReference.takeIf { it.isNotBlank() },
+                                        saleSource = posSource.takeIf { it.isNotBlank() },
+                                        qtyInputMode = posQtyMode
+                                    )
+                                }.onSuccess { sale ->
+                                    message = "POS sale recorded (${sale.qtyUnits.displayQty()} units)"
+                                    posQty = ""
+                                    posReference = ""
+                                }.onFailure { error = it.message }
+                                isPosSubmitting = false
+                            }
+                        }
+                    ) { Text(if (isPosSubmitting) "Recording…" else "Record POS Sale") }
+                    if (isPosSubmitting) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Outlet Stock Periods", style = MaterialTheme.typography.titleMedium)
+                    Text("Start and close outlet stock periods before running opening/closing counts.")
+                    DropdownField(
+                        label = "Outlet",
+                        options = outlets.map { it.id to it.name },
+                        selectedId = stockPeriodOutletId,
+                        onSelected = { stockPeriodOutletId = it }
+                    )
+                    if (stockPeriodOutletId.isNullOrBlank()) {
+                        Text("Select an outlet to view periods.")
+                    } else if (isPeriodLoading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        val openPeriod = outletPeriods.firstOrNull { it.status.equals("open", ignoreCase = true) }
+                        when {
+                            openPeriod != null -> Text("Open since ${openPeriod.periodStart.take(16)}", style = MaterialTheme.typography.bodyMedium)
+                            outletPeriods.isNotEmpty() -> {
+                                val last = outletPeriods.first()
+                                val ended = last.periodEnd ?: last.periodStart
+                                Text("Last closed ${ended.take(16)}", style = MaterialTheme.typography.bodyMedium)
+                            }
+                            else -> Text("No stock periods recorded yet.")
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            enabled = !isStartPeriodLoading && stockPeriodOutletId != null && outletPeriods.none { it.status.equals("open", ignoreCase = true) },
+                            onClick = {
+                                val outletId = stockPeriodOutletId ?: run { error = "Select an outlet"; return@Button }
+                                error = null; message = null
+                                scope.launch {
+                                    isStartPeriodLoading = true
+                                    runCatching {
+                                        root.supabaseProvider.startOutletStockPeriod(session.token, outletId)
+                                    }.onSuccess {
+                                        message = "Started stock period (${it.periodStart.take(16)})"
+                                        outletPeriods = root.supabaseProvider.listOutletStockPeriods(session.token, outletId)
+                                    }.onFailure { error = it.message }
+                                    isStartPeriodLoading = false
+                                }
+                            }
+                        ) { Text(if (isStartPeriodLoading) "Starting…" else "Start Period") }
+                        Button(
+                            enabled = !isClosePeriodLoading && outletPeriods.any { it.status.equals("open", ignoreCase = true) },
+                            onClick = {
+                                val period = outletPeriods.firstOrNull { it.status.equals("open", ignoreCase = true) }
+                                    ?: run { error = "No open period"; return@Button }
+                                error = null; message = null
+                                scope.launch {
+                                    isClosePeriodLoading = true
+                                    runCatching {
+                                        root.supabaseProvider.closeOutletStockPeriod(session.token, period.id)
+                                    }.onSuccess {
+                                        message = "Closed stock period"
+                                        outletPeriods = stockPeriodOutletId?.let { outlet ->
+                                            root.supabaseProvider.listOutletStockPeriods(session.token, outlet)
+                                        } ?: emptyList()
+                                    }.onFailure { error = it.message }
+                                    isClosePeriodLoading = false
+                                }
+                            }
+                        ) { Text(if (isClosePeriodLoading) "Closing…" else "Close Period") }
+                    }
+                }
+            }
+
+            Card {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Outlet Stocktake", style = MaterialTheme.typography.titleMedium)
+                    Text("Capture opening/closing counts directly from the outlet before comparing to balances.")
+                    DropdownField(
+                        label = "Outlet",
+                        options = outlets.map { it.id to it.name },
+                        selectedId = stockPeriodOutletId,
+                        onSelected = { stockPeriodOutletId = it }
+                    )
+                    if (outletPeriods.isNotEmpty()) {
+                        DropdownField(
+                            label = "Stock Period",
+                            options = outletPeriods.map {
+                                it.id to "${it.status.uppercase(Locale.US)} • ${it.periodStart.take(10)}"
+                            },
+                            selectedId = outletStocktakePeriodId,
+                            onSelected = { outletStocktakePeriodId = it }
+                        )
+                    }
+                    if (products.isEmpty()) {
+                        Text("Loading products…")
+                    } else {
+                        DropdownField(
+                            label = "Product",
+                            options = products.map { it.id to "${it.name} (${it.uom})" },
+                            selectedId = outletStocktakeProductId,
+                            onSelected = { outletStocktakeProductId = it }
+                        )
+                    }
+                    if (outletStocktakeVariations.isNotEmpty()) {
+                        DropdownField(
+                            label = "Variation (optional)",
+                            options = listOf(null to "<base product>") + outletStocktakeVariations.map { it.id to "${it.name} (${it.uom})" },
+                            selectedId = outletStocktakeVariationId,
+                            onSelected = { outletStocktakeVariationId = it }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = outletStocktakeQty,
+                        onValueChange = { outletStocktakeQty = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = { Text("Counted Quantity") },
+                        singleLine = true
+                    )
+                    DropdownField(
+                        label = "Quantity Input",
+                        options = listOf(
+                            "auto" to "Auto (by pack size)",
+                            "units" to "Units",
+                            "cases" to "Cases"
+                        ),
+                        selectedId = outletStocktakeMode,
+                        onSelected = { outletStocktakeMode = it ?: "auto" }
+                    )
+                    DropdownField(
+                        label = "Snapshot Kind",
+                        options = listOf(
+                            "spot" to "Spot",
+                            "opening" to "Opening",
+                            "closing" to "Closing"
+                        ),
+                        selectedId = outletStocktakeKind,
+                        onSelected = { outletStocktakeKind = it ?: "spot" }
+                    )
+                    OutlinedTextField(
+                        value = outletStocktakeNote,
+                        onValueChange = { outletStocktakeNote = it },
+                        label = { Text("Note (optional)") }
+                    )
+                    Button(
+                        enabled = !isOutletStocktakeLoading,
+                        onClick = {
+                            error = null; message = null
+                            val outletId = stockPeriodOutletId
+                            val productId = outletStocktakeProductId
+                            val qty = outletStocktakeQty.toDoubleOrNull()
+                            if (outletId.isNullOrEmpty()) { error = "Select an outlet"; return@Button }
+                            if (productId.isNullOrEmpty()) { error = "Select a product"; return@Button }
+                            if (qty == null) { error = "Enter counted quantity"; return@Button }
+                            scope.launch {
+                                isOutletStocktakeLoading = true
+                                runCatching {
+                                    root.supabaseProvider.recordOutletStocktake(
+                                        jwt = session.token,
+                                        outletId = outletId,
+                                        productId = productId,
+                                        countedQty = qty,
+                                        variationId = outletStocktakeVariationId,
+                                        periodId = outletStocktakePeriodId,
+                                        snapshotKind = outletStocktakeKind,
+                                        note = outletStocktakeNote.takeIf { it.isNotBlank() },
+                                        qtyInputMode = outletStocktakeMode
+                                    )
+                                }.onSuccess {
+                                    message = "Outlet stocktake saved (${it.countedQty.displayQty()} units)"
+                                    outletStocktakeQty = ""
+                                    outletStocktakeNote = ""
+                                }.onFailure { error = it.message }
+                                isOutletStocktakeLoading = false
+                            }
+                        }
+                    ) { Text(if (isOutletStocktakeLoading) "Recording…" else "Record Stocktake") }
+                    if (isOutletStocktakeLoading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+
+            Card {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Embedded Stock Dashboard", style = MaterialTheme.typography.titleMedium)
                     Text("Record initial, purchase, and closing entries without leaving the admin workspace.", style = MaterialTheme.typography.bodyMedium)
@@ -412,10 +761,10 @@ fun WarehousesAdminScreen(
                             }
                         )
                     }
-                    if (variations.isNotEmpty()) {
+                    if (warehouseVariations.isNotEmpty()) {
                         DropdownField(
                             label = "Variation (optional)",
-                            options = listOf(null to "<base product>") + variations.map { it.id to "${it.name} (${it.uom})" },
+                            options = listOf(null to "<base product>") + warehouseVariations.map { it.id to "${it.name} (${it.uom})" },
                             selectedId = stocktakeVariationId,
                             onSelected = { stocktakeVariationId = it }
                         )

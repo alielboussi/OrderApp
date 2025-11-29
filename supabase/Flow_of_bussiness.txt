@@ -1,0 +1,15 @@
+Does the current schematic and app meet the requirements of 
+~Outlet Placing Order with status update and locking order for replacements , addition updates or deletion of products or variances.
+~Supervisor replacing variances and approving order with status update and deduction of stock from product or variation related warehouse. Order locked for edits or replacements of variances from supervisor dashboard
+~Driver icon appearing on order in supervisor dashboard only, When pressed driver name and signature entered with success, status update.
+~Offloader icon appearing on order only accessible at outlet when driver adds name and signature. When offloader adds signature and name the entire pdf is generated with all the names and all the signatures and the order cart with qtys , amount and grand ttal cost. and order locked completely from any further edits of order or signature or names. and order status updated to delivered and all cart items deducted from assigned warehouse according to the size pack units and then once order is placed and deducted written to a table to hold the actually deducted values of order cart because if order makes order of 1 case which has 12 bottles we must send them 1 case and supervisor will send them 1 case but the case conatins 12 bottles so if sale is recieved later from point of sale api with 1 drink it should deduct only 1 drink from the case which was sent.
+~Then on stocktake entry when entering stocks we should be able to enter stocks in cases and packages and units depending on type of product so if product has a package or size set stock entry on that product should be on package or size and if it doesnt then on the product itself.
+~Then make sure the schema is capable of assigning warehouse products to sold products so that when product is sold and recieved on api it deducts the assigned recipe of the product from the warehouse.
+~so rename tables to meet the flow or Products Sold
+Variances Sld
+Product Recipe
+
+Then create appropriate relationshsips so that in product recipe you can select product or variance then assign to it ingredients from the warehouse products then assign deduction qtys and units of measure wether its Kilograms, Miligrams, Grams, Mililitres, Litres
+
+So that when product or variance is sold it will see the product or variance recipe see which warehouse they are located in then deduct qtys from that warehouse so that in reports we can see remaining stocks of products and variances and the transfer page will show current available stock available in current warehouse.
+

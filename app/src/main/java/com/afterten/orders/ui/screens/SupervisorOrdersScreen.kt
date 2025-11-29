@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Refresh
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.OrderRepository
+import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.util.LogAnalytics
 import kotlinx.coroutines.launch
 
@@ -31,24 +32,50 @@ fun SupervisorOrdersScreen(
     var items by remember { mutableStateOf(listOf<OrderRepository.OrderRow>()) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(session?.token) {
-        val s = session ?: return@LaunchedEffect
-        loading = true
+    suspend fun refreshOrders(jwt: String, showSpinner: Boolean, analyticsEvent: String = "supervisor_orders_loaded") {
+        if (showSpinner) loading = true
         error = null
-        runCatching { repo.listOrdersForSupervisor(jwt = s.token, limit = 200) }
+        runCatching { repo.listOrdersForSupervisor(jwt = jwt, limit = 200) }
             .onSuccess {
                 items = it
-                loading = false
-                LogAnalytics.event("supervisor_orders_loaded", mapOf("count" to it.size))
+                LogAnalytics.event(analyticsEvent, mapOf("count" to it.size))
             }
             .onFailure { t ->
-                error = t.message ?: t.toString()
-                LogAnalytics.error("supervisor_orders_load_failed", error, t)
-                loading = false
+                val msg = t.message ?: t.toString()
+                error = msg
+                LogAnalytics.error("supervisor_orders_load_failed", msg, t)
             }
+        if (showSpinner) loading = false
     }
 
-    // Removed Realtime subscription; use manual refresh instead
+    LaunchedEffect(session?.token) {
+        val s = session ?: return@LaunchedEffect
+        refreshOrders(jwt = s.token, showSpinner = true)
+    }
+
+    LaunchedEffect(session?.token) {
+        val s = session ?: return@LaunchedEffect
+        root.supabaseProvider.ordersEvents.collect {
+            refreshOrders(jwt = s.token, showSpinner = false, analyticsEvent = "supervisor_orders_synced")
+        }
+    }
+
+    DisposableEffect(session?.token) {
+        val s = session
+        if (s != null) {
+            val handle = root.supabaseProvider.subscribeOrders(
+                jwt = s.token,
+                outletId = null
+            ) {
+                root.supabaseProvider.emitOrdersChanged()
+            }
+            onDispose { handle.close() }
+        } else {
+            onDispose { }
+        }
+    }
+
+    // Manual refresh button remains for backup, but realtime now keeps this list warm
 
     Scaffold(topBar = {
         TopAppBar(
@@ -62,18 +89,7 @@ fun SupervisorOrdersScreen(
                 IconButton(enabled = !loading, onClick = {
                     scope.launch {
                         val s = session ?: return@launch
-                        loading = true
-                        error = null
-                        runCatching { repo.listOrdersForSupervisor(jwt = s.token, limit = 200) }
-                            .onSuccess {
-                                items = it
-                                LogAnalytics.event("supervisor_orders_refreshed", mapOf("count" to it.size))
-                            }
-                            .onFailure { t ->
-                                error = t.message ?: t.toString()
-                                LogAnalytics.error("supervisor_orders_refresh_failed", error, t)
-                            }
-                        loading = false
+                        refreshOrders(jwt = s.token, showSpinner = true, analyticsEvent = "supervisor_orders_refreshed")
                     }
                 }) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
@@ -99,6 +115,7 @@ private fun SupervisorOrderRow(row: OrderRepository.OrderRow, onClick: () -> Uni
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                OrderStatusIcon(status = row.status, modifier = Modifier.padding(end = 8.dp))
                 Text(
                     text = "Order #${row.orderNumber}",
                     style = MaterialTheme.typography.titleMedium,
@@ -124,3 +141,4 @@ private fun SupervisorOrderRow(row: OrderRepository.OrderRow, onClick: () -> Uni
         }
     }
 }
+

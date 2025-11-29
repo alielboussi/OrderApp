@@ -38,6 +38,7 @@ import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.db.ProductEntity
 import com.afterten.orders.db.VariationEntity
 import com.afterten.orders.util.formatMoney
+import com.afterten.orders.util.formatPackageUnits
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -137,6 +138,13 @@ fun ProductListScreen(
                 modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            Text(
+                text = "Package Contains shows how many units are in one case. Ordering 1 case deducts that many units from the warehouse.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
 
             val minCostByProduct = remember(allVariations) {
@@ -247,6 +255,13 @@ private fun ProductCard(root: RootViewModel, item: ProductEntity, minVariationCo
                                 fontWeight = FontWeight.Medium,
                                 color = Color.White.copy(alpha = 0.95f)
                             )
+                            formatPackageUnits(item.packageContains)?.let { units ->
+                                Text(
+                                    text = "Package Contains: $units units",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
                         }
                     }
                     if (item.hasVariations) {
@@ -256,9 +271,9 @@ private fun ProductCard(root: RootViewModel, item: ProductEntity, minVariationCo
                         val qty = cart["${item.id}:"]?.qty ?: 0
                         QuantityStepper(
                             qty = qty,
-                            onDec = { root.dec(item.id, null, item.name, item.uom, item.cost, item.unitsPerUom) },
-                            onInc = { root.inc(item.id, null, item.name, item.uom, item.cost, item.unitsPerUom) },
-                            onChange = { n -> root.setQty(item.id, null, item.name, item.uom, item.cost, n, item.unitsPerUom) }
+                            onDec = { root.dec(item.id, null, item.name, item.uom, item.cost, item.packageContains) },
+                            onInc = { root.inc(item.id, null, item.name, item.uom, item.cost, item.packageContains) },
+                            onChange = { n -> root.setQty(item.id, null, item.name, item.uom, item.cost, n, item.packageContains) }
                         )
                     }
                 }
@@ -408,6 +423,13 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity) {
                 fontWeight = FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.95f)
             )
+            formatPackageUnits(v.packageContains)?.let { units ->
+                Text(
+                    text = "Package Contains: $units units",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
         }
 
         Spacer(Modifier.width(16.dp))
@@ -416,9 +438,9 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity) {
         VariationQtyControls(
             uom = v.uom,
             qty = qty,
-            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost, v.unitsPerUom) },
-            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost, v.unitsPerUom) },
-            onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n, v.unitsPerUom) }
+            onDec = { root.dec(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains) },
+            onInc = { root.inc(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains) },
+            onChange = { n -> root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n, v.packageContains) }
         )
     }
 }

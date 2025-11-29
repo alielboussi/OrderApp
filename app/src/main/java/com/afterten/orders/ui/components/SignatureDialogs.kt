@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -38,6 +39,11 @@ fun SignatureCaptureDialog(
     onConfirm: (String, Bitmap) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
+    LaunchedEffect(initialName) {
+        if (initialName.isNotBlank() && name.isBlank()) {
+            name = initialName
+        }
+    }
     val signatureState = rememberSignatureState()
     var padSize by remember { mutableStateOf(IntSize.Zero) }
     var validationError by remember { mutableStateOf<String?>(null) }

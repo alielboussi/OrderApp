@@ -84,11 +84,12 @@ class SupabaseProvider(context: Context) {
     /** Subscribe to Postgres changes on public.orders for the outlet; triggers on any insert/update */
     fun subscribeOrders(
         jwt: String,
-        outletId: String,
+        outletId: String?,
         onEvent: () -> Unit
     ): RealtimeSubscriptionHandle {
         val scope = CoroutineScope(Dispatchers.IO)
-        val channel = realtimeClient.realtime.channel("orders")
+        val channelName = outletId?.takeIf { it.isNotBlank() }?.let { "orders_$it" } ?: "orders_all"
+        val channel = realtimeClient.realtime.channel(channelName)
         ordersChannel = channel
         currentJwt = jwt
         val job = scope.launch {
@@ -97,7 +98,7 @@ class SupabaseProvider(context: Context) {
             // Build a flow of changes filtered by outlet
             val flowOrders = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                 table = "orders"
-                filter("outlet_id", FilterOperator.EQ, outletId)
+                outletId?.takeIf { it.isNotBlank() }?.let { filter("outlet_id", FilterOperator.EQ, it) }
             }
             // Also listen to order_items changes to reflect supervisor edits immediately
             val flowItems = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
@@ -105,10 +106,20 @@ class SupabaseProvider(context: Context) {
                 // Optional: omit filter to let RLS scope events; or add a column outlet_id if present
             }
             // Subscribe and start collecting
-            Log.d("Realtime", "Subscribing to orders changes for outlet=$outletId")
+            Log.d("Realtime", "Subscribing to orders changes for outlet=${outletId ?: "<all>"}")
             channel.subscribe()
-            launch { flowOrders.collect { Log.d("Realtime", "orders change event received (outlet=$outletId)"); onEvent() } }
-            launch { flowItems.collect { Log.d("Realtime", "order_items change event received"); onEvent() } }
+            launch {
+                flowOrders.collect {
+                    Log.d("Realtime", "orders change event received (outlet=${outletId ?: "<all>"})")
+                    onEvent()
+                }
+            }
+            launch {
+                flowItems.collect {
+                    Log.d("Realtime", "order_items change event received")
+                    onEvent()
+                }
+            }
         }
         return RealtimeSubscriptionHandle(job) {
             Log.d("Realtime", "Unsubscribing from orders (outlet=$outletId)")
@@ -369,7 +380,7 @@ class SupabaseProvider(context: Context) {
         val qty: Double,
         @SerialName("qty_cases") val qtyCases: Double? = null,
         @SerialName("warehouse_id") val warehouseId: String? = null,
-        @Transient val unitsPerUom: Double = 1.0
+        @Transient val packageContains: Double = 1.0
     )
 
     @Serializable
@@ -498,6 +509,22 @@ class SupabaseProvider(context: Context) {
         }
     }
 
+    suspend fun markOrderDelivered(
+        jwt: String,
+        orderId: String,
+        recipientName: String,
+        signaturePath: String?,
+        pdfPath: String?
+    ) {
+        markOrderOffloaded(
+            jwt = jwt,
+            orderId = orderId,
+            offloaderName = recipientName,
+            signaturePath = signaturePath,
+            pdfPath = pdfPath
+        )
+    }
+
     // Approve, lock, and allocate an order from warehouse group (coldrooms) to outlet
     suspend fun approveLockAndAllocateOrder(
         jwt: String,
@@ -572,18 +599,74 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    data class PosSale(
+        val id: String,
+        @SerialName("outlet_id") val outletId: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("qty_units") val qtyUnits: Double,
+        @SerialName("qty_cases") val qtyCases: Double? = null,
+        @SerialName("sale_reference") val saleReference: String? = null,
+        @SerialName("sale_source") val saleSource: String? = null,
+        @SerialName("sold_at") val soldAt: String,
+        @SerialName("recorded_at") val recordedAt: String
+    )
+
+    @Serializable
+    data class OutletStockPeriod(
+        val id: String,
+        @SerialName("outlet_id") val outletId: String,
+        @SerialName("period_start") val periodStart: String,
+        @SerialName("period_end") val periodEnd: String? = null,
+        val status: String,
+        @SerialName("created_at") val createdAt: String,
+        @SerialName("closed_at") val closedAt: String? = null
+    )
+
+    @Serializable
+    data class OutletStockBalance(
+        val id: String,
+        @SerialName("period_id") val periodId: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("opening_qty") val openingQty: Double = 0.0,
+        @SerialName("ordered_qty") val orderedQty: Double = 0.0,
+        @SerialName("pos_sales_qty") val posSalesQty: Double = 0.0,
+        @SerialName("expected_qty") val expectedQty: Double = 0.0,
+        @SerialName("actual_qty") val actualQty: Double? = null,
+        @SerialName("variance_qty") val varianceQty: Double? = null,
+        @SerialName("closing_qty") val closingQty: Double? = null
+    )
+
+    @Serializable
+    data class OutletStocktake(
+        val id: String,
+        @SerialName("outlet_id") val outletId: String,
+        @SerialName("period_id") val periodId: String? = null,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("counted_qty") val countedQty: Double,
+        @SerialName("snapshot_kind") val snapshotKind: String,
+        val note: String? = null,
+        @SerialName("recorded_at") val recordedAt: String
+    )
+
+    @Serializable
     data class SimpleProduct(
         val id: String,
         val name: String,
         val uom: String,
-        @SerialName("has_variations") val hasVariations: Boolean = false
+        @SerialName("has_variations") val hasVariations: Boolean = false,
+        @SerialName("package_contains") val packageContains: Double? = null
     )
 
     @Serializable
     data class SimpleVariation(
         val id: String,
         val name: String,
-        val uom: String
+        val uom: String,
+        val cost: Double? = null,
+        @SerialName("package_contains") val packageContains: Double? = null
     )
 
     @Serializable
@@ -808,7 +891,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom,has_variations&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom,has_variations,package_contains&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -818,7 +901,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,name,uom&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,name,uom,cost,package_contains&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1001,6 +1084,144 @@ class SupabaseProvider(context: Context) {
         return Json { ignoreUnknownKeys = true }.decodeFromString(StocktakeResult.serializer(), txt)
     }
 
+    suspend fun recordPosSale(
+        jwt: String,
+        outletId: String,
+        productId: String,
+        qty: Double,
+        variationId: String? = null,
+        saleReference: String? = null,
+        saleSource: String? = null,
+        qtyInputMode: String = "auto",
+        soldAtIso: String? = null
+    ): PosSale {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/record_pos_sale"
+        val body = mutableMapOf<String, Any?>(
+            "p_outlet_id" to outletId,
+            "p_product_id" to productId,
+            "p_qty" to qty,
+            "p_qty_input_mode" to qtyInputMode.lowercase()
+        )
+        variationId?.let { body["p_variation_id"] = it }
+        saleReference?.takeIf { it.isNotBlank() }?.let { body["p_sale_reference"] = it }
+        saleSource?.takeIf { it.isNotBlank() }?.let { body["p_sale_source"] = it }
+        soldAtIso?.takeIf { it.isNotBlank() }?.let { body["p_sold_at"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("record_pos_sale failed: HTTP $code $txt")
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(PosSale.serializer()), txt)
+        return parsed.first()
+    }
+
+    suspend fun listOutletStockPeriods(
+        jwt: String,
+        outletId: String,
+        limit: Int = 50
+    ): List<OutletStockPeriod> {
+        val url = buildString {
+            append("$supabaseUrl/rest/v1/outlet_stock_periods")
+            append("?select=id,outlet_id,period_start,period_end,status,created_at,closed_at")
+            append("&outlet_id=eq.").append(outletId)
+            append("&order=period_start.desc")
+            append("&limit=").append(limit.coerceAtMost(100))
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("listOutletStockPeriods failed: HTTP $code $txt")
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
+    }
+
+    suspend fun startOutletStockPeriod(
+        jwt: String,
+        outletId: String,
+        periodStartIso: String? = null
+    ): OutletStockPeriod {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/start_outlet_stock_period"
+        val body = mutableMapOf<String, Any?>(
+            "p_outlet_id" to outletId
+        )
+        periodStartIso?.takeIf { it.isNotBlank() }?.let { body["p_period_start"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("start_outlet_stock_period failed: HTTP $code $txt")
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
+        return parsed.first()
+    }
+
+    suspend fun closeOutletStockPeriod(
+        jwt: String,
+        periodId: String,
+        periodEndIso: String? = null
+    ): OutletStockPeriod {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/close_outlet_stock_period"
+        val body = mutableMapOf<String, Any?>(
+            "p_period_id" to periodId
+        )
+        periodEndIso?.takeIf { it.isNotBlank() }?.let { body["p_period_end"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("close_outlet_stock_period failed: HTTP $code $txt")
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
+        return parsed.first()
+    }
+
+    suspend fun recordOutletStocktake(
+        jwt: String,
+        outletId: String,
+        productId: String,
+        countedQty: Double,
+        variationId: String? = null,
+        periodId: String? = null,
+        snapshotKind: String = "spot",
+        note: String? = null,
+        qtyInputMode: String = "auto"
+    ): OutletStocktake {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/record_outlet_stocktake"
+        val body = mutableMapOf<String, Any?>(
+            "p_outlet_id" to outletId,
+            "p_product_id" to productId,
+            "p_counted_qty" to countedQty,
+            "p_snapshot_kind" to snapshotKind.lowercase(),
+            "p_qty_input_mode" to qtyInputMode.lowercase()
+        )
+        variationId?.let { body["p_variation_id"] = it }
+        periodId?.let { body["p_period_id"] = it }
+        note?.takeIf { it.isNotBlank() }?.let { body["p_note"] = it }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("record_outlet_stocktake failed: HTTP $code $txt")
+        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStocktake.serializer()), txt)
+        return parsed.first()
+    }
+
     // Upload a file to Supabase Storage
     suspend fun uploadToStorage(
         jwt: String,
@@ -1129,7 +1350,7 @@ class SupabaseProvider(context: Context) {
         val cost: Double,
         val qty: Double,
         @SerialName("qty_cases") val qtyCases: Double?,
-        @SerialName("units_per_uom") val unitsPerUom: Double,
+        @SerialName("package_contains") val packageContains: Double,
         @SerialName("warehouse_id") val warehouseId: String?,
         val amount: Double
     )
@@ -1171,11 +1392,11 @@ class SupabaseProvider(context: Context) {
         items: List<PlaceOrderItem>
     ) {
         val rows = items.map {
-            val unitsPerUom = it.unitsPerUom.takeIf { size -> size > 0 } ?: 1.0
+            val packageContains = it.packageContains.takeIf { size -> size > 0 } ?: 1.0
             val qtyCases = it.qtyCases ?: run {
-                if (unitsPerUom > 0) it.qty / unitsPerUom else it.qty
+                if (packageContains > 0) it.qty / packageContains else it.qty
             }
-            val qtyUnits = qtyCases * unitsPerUom
+            val qtyUnits = qtyCases * packageContains
             OrderItemInsertPayload(
                 orderId = orderId,
                 productId = it.productId,
@@ -1185,7 +1406,7 @@ class SupabaseProvider(context: Context) {
                 cost = it.cost,
                 qty = qtyUnits,
                 qtyCases = qtyCases,
-                unitsPerUom = unitsPerUom,
+                packageContains = packageContains,
                 warehouseId = it.warehouseId,
                 amount = it.cost * qtyUnits
             )

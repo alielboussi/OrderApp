@@ -13,6 +13,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         @SerialName("order_number") val orderNumber: String,
         @SerialName("created_at") val createdAt: String,
         val status: String,
+        @SerialName("locked") val locked: Boolean = false,
         @SerialName("outlet_id") val outletId: String? = null,
         @SerialName("outlets") val outlet: OutletRef? = null,
         @SerialName("modified_by_supervisor") val modifiedBySupervisor: Boolean? = null,
@@ -26,11 +27,18 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     data class ProductRef(@SerialName("name") val name: String? = null)
 
     @Serializable
+    data class VariationRef(
+        @SerialName("name") val name: String? = null,
+        val uom: String? = null
+    )
+
+    @Serializable
     data class OrderDetail(
         val id: String,
         @SerialName("order_number") val orderNumber: String,
         @SerialName("created_at") val createdAt: String,
         val status: String,
+        @SerialName("locked") val locked: Boolean = false,
         @SerialName("outlet_id") val outletId: String? = null,
         @SerialName("tz") val timezone: String? = null,
         @SerialName("pdf_path") val pdfPath: String? = null,
@@ -54,7 +62,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
 
     suspend fun listOrdersForOutlet(jwt: String, outletId: String, limit: Int = 100): List<OrderRow> {
         val path = "/rest/v1/orders" +
-            "?select=id,order_number,created_at,status,modified_by_supervisor,modified_by_supervisor_name" +
+            "?select=id,order_number,created_at,status,locked,modified_by_supervisor,modified_by_supervisor_name" +
             "&outlet_id=eq." + outletId +
             "&order=created_at.desc" +
             "&limit=" + limit
@@ -64,7 +72,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     }
 
     suspend fun listOrdersForSupervisor(jwt: String, limit: Int = 200): List<OrderRow> {
-        val select = "id,order_number,created_at,status,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name"
+        val select = "id,order_number,created_at,status,locked,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name"
         val path = "/rest/v1/orders?select=" + encode(select) + "&order=created_at.desc&limit=" + limit
         val text = supabase.getWithJwt(path, jwt)
         return Json { ignoreUnknownKeys = true }
@@ -76,15 +84,21 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         val id: String,
         @SerialName("order_id") val orderId: String,
         @SerialName("product_id") val productId: String? = null,
+        @SerialName("variation_id") val variationId: String? = null,
         val name: String,
         val uom: String,
         val cost: Double,
         val qty: Double,
-        @SerialName("products") val product: ProductRef? = null
+        @SerialName("package_contains") val packageContains: Double? = null,
+        @SerialName("qty_cases") val qtyCases: Double? = null,
+        @SerialName("products") val product: ProductRef? = null,
+        @SerialName("product_variations") val variation: VariationRef? = null
     )
 
     suspend fun listOrderItems(jwt: String, orderId: String): List<OrderItemRow> {
-        val select = encode("id,order_id,product_id,products(name),name,uom,cost,qty")
+        val select = encode(
+            "id,order_id,product_id,variation_id,products(name),product_variations(name,uom),name,uom,cost,qty,package_contains,qty_cases"
+        )
         val groupedOrder = encode("products(name).asc")
         val path = "/rest/v1/order_items?select=" + select + "&order_id=eq." + orderId + "&order=" + groupedOrder + "&order=name.asc"
         val text = supabase.getWithJwt(path, jwt)
@@ -93,7 +107,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
 
     suspend fun fetchOrder(jwt: String, orderId: String): OrderDetail? {
         val select = encode(
-            "id,order_number,created_at,status,outlet_id,outlets(name),tz,pdf_path,approved_pdf_path,loaded_pdf_path,offloaded_pdf_path," +
+            "id,order_number,created_at,status,locked,outlet_id,outlets(name),tz,pdf_path,approved_pdf_path,loaded_pdf_path,offloaded_pdf_path," +
                 "employee_signed_name,employee_signature_path,employee_signed_at," +
                 "supervisor_signed_name,supervisor_signature_path,supervisor_signed_at," +
                 "driver_signed_name,driver_signature_path,driver_signed_at," +
@@ -111,6 +125,38 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         val resp = supabase.postWithJwt(url, jwt, body, prefer = listOf("resolution=merge-duplicates", "return=minimal"))
         val code = resp.first
         if (code !in 200..299) throw IllegalStateException("updateOrderItemQty failed: HTTP ${code} ${resp.second}")
+    }
+
+    suspend fun updateOrderItemVariation(
+        jwt: String,
+        orderItemId: String,
+        variationId: String,
+        name: String,
+        uom: String,
+        cost: Double,
+        packageContains: Double?,
+        qtyUnits: Double
+    ) {
+        val body = mutableMapOf<String, Any?>(
+            "id" to orderItemId,
+            "variation_id" to variationId,
+            "name" to name,
+            "uom" to uom,
+            "cost" to cost,
+            "amount" to cost * qtyUnits
+        )
+        packageContains?.takeIf { it > 0 }?.let {
+            body["package_contains"] = it
+            body["qty_cases"] = qtyUnits / it
+        }
+        val resp = supabase.postWithJwt(
+            "/rest/v1/order_items?on_conflict=id",
+            jwt,
+            body,
+            prefer = listOf("resolution=merge-duplicates", "return=minimal")
+        )
+        val code = resp.first
+        if (code !in 200..299) throw IllegalStateException("updateOrderItemVariation failed: HTTP ${code} ${resp.second}")
     }
 
     private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")

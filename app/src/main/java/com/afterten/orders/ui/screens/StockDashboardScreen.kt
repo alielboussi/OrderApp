@@ -2,6 +2,7 @@ package com.afterten.orders.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -38,6 +40,7 @@ import com.afterten.orders.data.SupabaseProvider
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockDashboardScreen(
     root: RootViewModel,
@@ -199,6 +202,7 @@ fun StockDashboardScreen(
             onRefresh = { refreshTick++ },
             warehouseCount = stockData?.warehouseCount ?: 0
         )
+        val selectedWarehouseName = warehouses.firstOrNull { it.id == selectedWarehouseId }?.name
         InjectionCard(
             products = products,
             variations = activeVariations,
@@ -224,7 +228,8 @@ fun StockDashboardScreen(
             helperMessage = injectMessage,
             errorMessage = injectError,
             currentQty = currentQty,
-            productLookup = productLookup
+            productLookup = productLookup,
+            warehouseLabel = selectedWarehouseName
         )
         StockSummary(isLoading = isStockLoading, error = stockError, hasRows = productCards.isNotEmpty())
         productCards.forEach { ProductCard(it) }
@@ -238,9 +243,7 @@ fun StockDashboardScreen(
             content()
         }
     } else {
-                label = { Text("Quantity to add") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+        Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text("Stock Dashboard") },
@@ -372,11 +375,15 @@ private fun InjectionCard(
     helperMessage: String?,
     errorMessage: String?,
     currentQty: Double,
-    productLookup: Map<String, SupabaseProvider.SimpleProduct>
+    productLookup: Map<String, SupabaseProvider.SimpleProduct>,
+    warehouseLabel: String?
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Stock Injection", style = MaterialTheme.typography.titleMedium)
+            warehouseLabel?.let {
+                Text("Target Warehouse: $it", style = MaterialTheme.typography.bodySmall)
+            }
             SelectorField(
                 label = "Product",
                 options = products.map { it.id to it.name },
@@ -396,6 +403,9 @@ private fun InjectionCard(
                 value = qtyText,
                 onValueChange = onQtyChanged,
                 label = { Text("Quantity to add") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
             Text(
                 text = "Choose the type of stock entry. Initial and closing set an absolute count; purchase adds units.",
                 style = MaterialTheme.typography.bodySmall

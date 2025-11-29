@@ -1,11 +1,11 @@
 package com.afterten.orders.ui.screens
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.background
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
@@ -21,12 +21,13 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.OrderRepository
+import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.ui.components.SignatureCaptureDialog
 import com.afterten.orders.util.LogAnalytics
 import com.afterten.orders.util.generateOrderPdf
@@ -58,8 +59,10 @@ fun OrdersScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf(listOf<OrderRepository.OrderRow>()) }
     var statusFilter by remember { mutableStateOf(OrderFilter.All) }
-    var offloadTarget by remember { mutableStateOf<OrderRepository.OrderRow?>(null) }
-    var offloadSubmitting by remember { mutableStateOf(false) }
+    var deliveryTarget by remember { mutableStateOf<OrderRepository.OrderRow?>(null) }
+    var deliveryDetail by remember { mutableStateOf<OrderRepository.OrderDetail?>(null) }
+    var deliveryPrefillName by remember { mutableStateOf("") }
+    var deliverySubmitting by remember { mutableStateOf(false) }
 
     LaunchedEffect(session?.token, session?.outletId) {
         val s = session
@@ -85,7 +88,7 @@ fun OrdersScreen(
         }
     }
 
-    // Removed Realtime subscription; manual refresh below
+    // Realtime subscription below pushes into ordersEvents so every device refreshes automatically
 
     // Also refresh when we emit a local event (e.g., right after placing an order)
     LaunchedEffect(session?.token, session?.outletId) {
@@ -101,12 +104,35 @@ fun OrdersScreen(
         }
     }
 
-    suspend fun submitOffload(row: OrderRepository.OrderRow, signerName: String, signatureBitmap: Bitmap) {
+    DisposableEffect(session?.token, session?.outletId) {
+        val s = session
+        val outletId = s?.outletId?.takeIf { it.isNotBlank() }
+        if (s != null && outletId != null) {
+            val handle = root.supabaseProvider.subscribeOrders(
+                jwt = s.token,
+                outletId = outletId
+            ) {
+                root.supabaseProvider.emitOrdersChanged()
+            }
+            onDispose { handle.close() }
+        } else {
+            onDispose { }
+        }
+    }
+
+    suspend fun submitDelivery(
+        row: OrderRepository.OrderRow,
+        cachedDetail: OrderRepository.OrderDetail?,
+        signerName: String,
+        signatureBitmap: Bitmap
+    ) {
         val s = session ?: error("No active session")
-        val detail = repo.fetchOrder(jwt = s.token, orderId = row.id) ?: error("Order not found")
+        val detail = cachedDetail
+            ?: repo.fetchOrder(jwt = s.token, orderId = row.id)
+            ?: error("Order not found")
         val itemsForPdf = repo.listOrderItems(jwt = s.token, orderId = row.id)
         val pdfGroups = itemsForPdf.toPdfGroups()
-        if (pdfGroups.isEmpty()) error("Order has no items to offload")
+        if (pdfGroups.isEmpty()) error("Order has no items to deliver")
         val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Lusaka"
         val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Lusaka") }
         val now = ZonedDateTime.now(zone)
@@ -115,8 +141,8 @@ fun OrdersScreen(
         val safeOutlet = outletName.sanitizeForFile()
         val safeOrder = detail.orderNumber.sanitizeForFile()
         val dateStr = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-        val signaturePath = "${outletFolder}/offloads/${safeOrder}_Offload_${dateStr}.png"
-        val pdfPath = "${outletFolder}/offloads/${safeOutlet}_${safeOrder}_${dateStr}_offloaded.pdf"
+        val signaturePath = "${outletFolder}/deliveries/${safeOrder}_Delivery_${dateStr}.png"
+        val pdfPath = "${outletFolder}/deliveries/${safeOutlet}_${safeOrder}_${dateStr}_delivered.pdf"
 
         withContext(Dispatchers.IO) {
             ByteArrayOutputStream().use { baos ->
@@ -137,7 +163,7 @@ fun OrdersScreen(
                 orderNo = detail.orderNumber,
                 createdAt = now,
                 groups = pdfGroups,
-                signerLabel = "Offloaded / Received By",
+                signerLabel = "Delivered / Received By",
                 signerName = signerName,
                 signatureBitmap = signatureBitmap
             )
@@ -152,10 +178,10 @@ fun OrdersScreen(
                 upsert = true
             )
 
-            root.supabaseProvider.markOrderOffloaded(
+            root.supabaseProvider.markOrderDelivered(
                 jwt = s.token,
                 orderId = row.id,
-                offloaderName = signerName,
+                recipientName = signerName,
                 signaturePath = signaturePath,
                 pdfPath = pdfPath
             )
@@ -164,6 +190,25 @@ fun OrdersScreen(
 
     val statusCounts = remember(items) { countStatuses(items) }
     val filteredItems = remember(items, statusFilter) { items.filter { statusFilter.matches(it.status) } }
+
+    LaunchedEffect(session?.token, deliveryTarget?.id) {
+        deliveryDetail = null
+        deliveryPrefillName = ""
+        val s = session ?: return@LaunchedEffect
+        val target = deliveryTarget ?: return@LaunchedEffect
+        runCatching { repo.fetchOrder(jwt = s.token, orderId = target.id) }
+            .onSuccess { detail ->
+                deliveryDetail = detail
+                deliveryPrefillName = detail?.offloaderName.orEmpty()
+            }
+            .onFailure { t ->
+                Log.w(ORDERS_SCREEN_TAG, "Failed to load order detail for delivery", t)
+                snackbarHostState.showSnackbar(
+                    message = t.message ?: "Unable to load order detail",
+                    withDismissAction = true
+                )
+            }
+    }
 
     Scaffold(
         topBar = {
@@ -251,8 +296,8 @@ fun OrdersScreen(
                                     runCatching { dm.enqueue(req) }
                                 }
                             },
-                            onOffload = if (row.status.equals("loaded", true) || row.status.equals("offloaded", true)) {
-                                { offloadTarget = row }
+                            onDeliver = if (row.status.equals("loaded", true) || row.status.equals("delivered", true)) {
+                                { deliveryTarget = row }
                             } else null
                         )
                         HorizontalDivider()
@@ -262,18 +307,20 @@ fun OrdersScreen(
         }
     }
 
-    if (offloadTarget != null) {
+    if (deliveryTarget != null) {
         SignatureCaptureDialog(
-            title = "Offload Delivery",
+            title = "Mark Delivery",
             nameLabel = "Received By",
-            confirmLabel = if (offloadSubmitting) "Submitting…" else "Sign & Offload",
-            onDismiss = { if (!offloadSubmitting) offloadTarget = null },
+            confirmLabel = if (deliverySubmitting) "Submitting…" else "Sign & Deliver",
+            initialName = deliveryPrefillName,
+            onDismiss = { if (!deliverySubmitting) deliveryTarget = null },
             onConfirm = { name, bitmap ->
                 scope.launch {
-                    offloadSubmitting = true
-                    val currentTarget = offloadTarget
+                    deliverySubmitting = true
+                    val currentTarget = deliveryTarget
                     val result = runCatching {
-                        currentTarget?.let { submitOffload(it, name, bitmap) } ?: error("No order selected")
+                        currentTarget?.let { submitDelivery(it, deliveryDetail, name, bitmap) }
+                            ?: error("No order selected")
                     }
                     bitmap.recycle()
                     result
@@ -285,19 +332,19 @@ fun OrdersScreen(
                                 }.onSuccess { refreshed -> items = refreshed }
                             }
                             root.supabaseProvider.emitOrdersChanged()
-                            snackbarHostState.showSnackbar("Order offloaded")
-                            offloadTarget = null
+                            snackbarHostState.showSnackbar("Order delivered")
+                            deliveryTarget = null
                         }
                         .onFailure { t ->
                             error = t.message
-                            Log.e(ORDERS_SCREEN_TAG, "Offload failed", t)
+                            Log.e(ORDERS_SCREEN_TAG, "Delivery submission failed", t)
                             snackbarHostState.showSnackbar(
-                                message = t.message ?: "Offload failed",
+                                message = t.message ?: "Delivery failed",
                                 withDismissAction = true,
                                 duration = SnackbarDuration.Long
                             )
                         }
-                    offloadSubmitting = false
+                    deliverySubmitting = false
                 }
             }
         )
@@ -305,13 +352,18 @@ fun OrdersScreen(
 }
 
 @Composable
-private fun OrderRowCard(row: OrderRepository.OrderRow, onDownload: () -> Unit, onOffload: (() -> Unit)? = null) {
+private fun OrderRowCard(
+    row: OrderRepository.OrderRow,
+    onDownload: () -> Unit,
+    onDeliver: (() -> Unit)? = null
+) {
     Card(modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                OrderStatusIcon(status = row.status, modifier = Modifier.padding(end = 8.dp))
                 Text(
                     text = "Order #${displayOrderNumber(row.orderNumber)}",
                     style = MaterialTheme.typography.titleMedium,
@@ -347,14 +399,14 @@ private fun OrderRowCard(row: OrderRepository.OrderRow, onDownload: () -> Unit, 
                     )
                 }
             }
-            if (onOffload != null) {
+            if (onDeliver != null) {
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    onClick = onOffload,
+                    onClick = onDeliver,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text(if (row.status.equals("offloaded", true)) "Re-sign Delivery" else "Offload Delivery")
+                    Text(if (row.status.equals("delivered", true)) "Re-sign Delivery" else "Mark Delivered")
                 }
             }
         }
@@ -370,7 +422,7 @@ private fun OrderStatusSummary(statusCounts: StatusCounts) {
         SummaryStat(label = "Total", value = statusCounts.total, color = MaterialTheme.colorScheme.primary)
         SummaryStat(label = "Pending", value = statusCounts.pending, color = MaterialTheme.colorScheme.tertiary)
         SummaryStat(label = "Loaded", value = statusCounts.loaded, color = MaterialTheme.colorScheme.secondary)
-        SummaryStat(label = "Offloaded", value = statusCounts.offloaded, color = MaterialTheme.colorScheme.onSurface)
+        SummaryStat(label = "Delivered", value = statusCounts.delivered, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -408,7 +460,7 @@ private data class StatusCounts(
     val total: Int,
     val pending: Int,
     val loaded: Int,
-    val offloaded: Int
+    val delivered: Int
 )
 
 private val PendingStatuses = setOf("placed", "order placed", "approved", "processing")
@@ -417,23 +469,23 @@ private fun countStatuses(rows: List<OrderRepository.OrderRow>): StatusCounts {
     val total = rows.size
     var pending = 0
     var loaded = 0
-    var offloaded = 0
+    var delivered = 0
     rows.forEach { row ->
         val status = row.status.lowercase(Locale.US)
         when {
             status == "loaded" -> loaded += 1
-            status == "offloaded" -> offloaded += 1
+            status == "delivered" || status == "offloaded" -> delivered += 1
             status in PendingStatuses -> pending += 1
         }
     }
-    return StatusCounts(total = total, pending = pending, loaded = loaded, offloaded = offloaded)
+    return StatusCounts(total = total, pending = pending, loaded = loaded, delivered = delivered)
 }
 
 private enum class OrderFilter(val label: String) {
     All("All"),
     Pending("Pending"),
     Loaded("Loaded"),
-    Offloaded("Offloaded");
+    Delivered("Delivered");
 
     fun matches(status: String): Boolean {
         val key = status.lowercase(Locale.US)
@@ -441,7 +493,7 @@ private enum class OrderFilter(val label: String) {
             All -> true
             Pending -> key in PendingStatuses
             Loaded -> key == "loaded"
-            Offloaded -> key == "offloaded"
+            Delivered -> key == "delivered" || key == "offloaded"
         }
     }
 }
@@ -452,7 +504,7 @@ private fun StatusBadge(status: String) {
         "order placed", "placed", "approved" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
         "processing" -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
         "loaded" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
-        "offloaded", "completed" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+        "offloaded", "delivered", "completed" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
         "cancelled", "canceled" -> MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
@@ -460,7 +512,7 @@ private fun StatusBadge(status: String) {
         "order placed", "placed", "approved" -> MaterialTheme.colorScheme.primary
         "processing" -> MaterialTheme.colorScheme.tertiary
         "loaded" -> MaterialTheme.colorScheme.secondary
-        "offloaded", "completed" -> MaterialTheme.colorScheme.secondary
+        "offloaded", "delivered", "completed" -> MaterialTheme.colorScheme.secondary
         "cancelled", "canceled" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }

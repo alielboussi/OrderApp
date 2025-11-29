@@ -1,5 +1,6 @@
 package com.afterten.orders.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -13,7 +14,7 @@ data class ProductEntity(
     val cost: Double,
     val hasVariations: Boolean,
     val active: Boolean,
-    val unitsPerUom: Double,
+    @ColumnInfo(name = "unitsPerUom") val packageContains: Double,
     val defaultWarehouseId: String?
 )
 
@@ -26,7 +27,7 @@ data class VariationEntity(
     val uom: String,
     val cost: Double,
     val active: Boolean,
-    val unitsPerUom: Double,
+    @ColumnInfo(name = "unitsPerUom") val packageContains: Double,
     val defaultWarehouseId: String?
 )
 
@@ -39,7 +40,7 @@ data class DraftCartItemEntity(
     val uom: String,
     val unitPrice: Double,
     val qty: Int,
-    val unitsPerUom: Double
+    @ColumnInfo(name = "unitsPerUom") val packageContains: Double
 )
 
 @Entity(tableName = "pending_orders")
