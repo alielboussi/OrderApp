@@ -18,13 +18,13 @@
 - The helper function `recipe_deductions_for_product(product_id, variation_id, qty_units)` emits the exact ingredient totals to subtract from warehouses, so future order flows can call it right after booking an order item.
 - Recipes are RLS-protected: admins can edit, while transfer managers get read-only access for transparency when balancing stock across depots.
 
-## Supabase Edge Functions
-All functions are deployed under `https://pojjgbezmwonjzwxspyt.supabase.co/functions/v1/{name}` and require the standard Supabase service role key or a valid JWT depending on usage.
+## Vercel Routes (replacing Supabase Edge Functions)
+The `stock-view-page` Next.js app now hosts the HTTP routes that previously lived on Supabase Edge. Once deployed to Vercel, replace `<your-vercel-domain>` with the project domain (for example `afterten-stock.vercel.app`).
 
-| Function | URL | Purpose |
+| Route | URL template | Purpose |
 | --- | --- | --- |
-| `stock` | `https://pojjgbezmwonjzwxspyt.supabase.co/functions/v1/stock` | Embedded stock dashboard + stock injection endpoints used inside the Android admin experience. Handles initial, purchase, and closing entries plus log queries. |
-| `warehouses` | `https://pojjgbezmwonjzwxspyt.supabase.co/functions/v1/warehouses` | Warehouse/outlet admin utilities: listing warehouses, pulling product catalogs, and resolving default warehouse assignments. |
-| `transfer_portal` | `https://pojjgbezmwonjzwxspyt.supabase.co/functions/v1/transfer_portal` | Chrome-friendly portal for outlet transfer requests/testing. Mirrors the Supabase auth + row-level security expectations so QA can verify realtime updates outside the Android app. |
+| `GET /api/warehouses` | `https://<your-vercel-domain>/api/warehouses` | Returns the active warehouse tree for dashboards, supervisors, and the transfer portal. |
+| `POST /api/stock` | `https://<your-vercel-domain>/api/stock` | Mirrors the legacy `stock` function: aggregates unit counts for a warehouse + descendants with optional search filtering. |
+| `GET /transfer-portal` | `https://<your-vercel-domain>/transfer-portal` | Serves the Supabase-authenticated transfer UI used by outlet teams for ad-hoc unit movements. |
 
-Use these links to verify deployments or trigger curl-based smoke tests when diagnosing Supabase-side issues.
+Deploying a new build to Vercel is now the only step needed to update these endpoints.

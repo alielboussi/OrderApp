@@ -4,18 +4,8 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import type { AggregatedStockRow, Warehouse } from '@/types/warehouse';
 
-const FUNCTIONS_BASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_FUNCTION_URL ?? '').replace(/\/$/, '');
-
-function ensureFunctionsUrl(): string {
-  if (!FUNCTIONS_BASE_URL) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_FUNCTION_URL is not set.');
-  }
-  return FUNCTIONS_BASE_URL;
-}
-
 const warehouseFetcher = async () => {
-  const baseUrl = ensureFunctionsUrl();
-  const res = await fetch(`${baseUrl}/warehouses`);
+  const res = await fetch('/api/warehouses');
   if (!res.ok) {
     throw new Error('Failed to load warehouses');
   }
@@ -23,8 +13,7 @@ const warehouseFetcher = async () => {
 };
 
 const stockFetcher = async ([, warehouseId, search]: [string, string, string]) => {
-  const baseUrl = ensureFunctionsUrl();
-  const res = await fetch(`${baseUrl}/stock`, {
+  const res = await fetch('/api/stock', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ warehouseId, search }),

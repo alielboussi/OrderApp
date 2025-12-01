@@ -1,66 +1,49 @@
 ## Stock View Page
 
-Single-page Next.js dashboard that prompts the user to pick a warehouse, enter an optional search term, and then displays the live stock (including descendant warehouses) by reading from Supabase Edge Functions. The site is now fully static, so it can be hosted directly from Supabase Web Hosting or any static CDN.
+Single-page Next.js dashboard plus transfer portal now hosted entirely on Vercel. Instead of Supabase Edge Functions, the app exposes `app/api/*` routes that query Supabase with the service-role key, while the browser interacts only with Vercel endpoints.
 
 ### Prerequisites
 
-- Supabase project with the `warehouse_stock_current` view (or any equivalent materialized view) available.
-- Supabase CLI (`npm install -g supabase`) so you can deploy edge functions and static assets.
-- Two Supabase Edge Functions (`stock` and `warehouses`) that live in `supabase/functions/*` inside this repo.
+- Supabase project with the `warehouse_stock_current` view (or equivalent) plus the `transfer_units_between_warehouses` RPC, `warehouses`, `products`, and `product_variations` tables.
+- Vercel account (or any Next.js-compatible host) for deploying `stock-view-page`.
+- Supabase service-role key so the Vercel API routes can read warehouse/product data.
 
 ### Local setup
 
 ```bash
-cp .env.example .env.local   # set NEXT_PUBLIC_SUPABASE_FUNCTION_URL
+cp stock-view-page/.env.example stock-view-page/.env.local
+cd stock-view-page
 npm install
 npm run dev
 ```
 
-The `.env.local` file should point to your project’s function gateway, e.g. `https://abc123.supabase.co/functions/v1`. Local development proxies every fetch directly to the deployed edge functions.
+Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 
 ### Environment variables
 
 | Name | Description |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_FUNCTION_URL` | Public base URL for Supabase Edge Functions (no trailing slash). |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL exposed to the browser (used by the transfer portal). |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key used by the portal for user authentication + RPC calls. |
+| `SUPABASE_URL` | (Optional) Explicit server-side Supabase URL; defaults to `NEXT_PUBLIC_SUPABASE_URL` when omitted. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key used **only** inside Next.js API routes to fetch warehouses, stock, and products. Keep this secret. |
+| `STOCK_VIEW_NAME` | Optional override of the warehouse stock view name. Defaults to `warehouse_stock_current`. |
 
-Edge Functions themselves need the usual server-side secrets; push them with:
+### Deploying to Vercel
 
-```bash
-supabase functions secrets set SUPABASE_URL=... \
-  SUPABASE_SERVICE_ROLE_KEY=... \
-  WAREHOUSE_STOCK_VIEW=warehouse_stock_current
-```
-
-### Deploying to Supabase Hosting
-
-1. **Link the project**
-	```bash
-	supabase init                # only once per repository
-	supabase link --project-ref <your-project-ref>
-	```
-2. **Deploy the edge functions**
-	```bash
-	supabase functions deploy warehouses --no-verify-jwt
-	supabase functions deploy stock --no-verify-jwt
-	```
-3. **Build the static site**
-	```bash
-	cd stock-view-page
-	npm run build                # emits ./out because next.config.ts -> output: 'export'
-	```
-4. **Upload the static assets**
-	```bash
-	supabase web deploy ./stock-view-page/out
-	```
-	The command prints the production URL (e.g. `https://abc123.supabase.co`). Share that link with stakeholders.
-
-Whenever the client code changes, repeat steps 3–4. Whenever the data logic changes, redeploy the relevant edge function.
+1. **Configure environment variables** in the Vercel project settings (same names as above). Commit `.env.example` updates to help future teammates.
+2. **Push the repo to GitHub** (or keep using `alielboussi/OrderApp`). Connect the Vercel project to that repo.
+3. **Trigger a deployment** – every push to the default branch will build the Next.js app. The resulting URLs are:
+   - `https://<vercel-domain>/` → stock dashboard UI.
+   - `https://<vercel-domain>/api/warehouses` → JSON warehouse list.
+   - `https://<vercel-domain>/api/stock` → JSON stock aggregation endpoint.
+   - `https://<vercel-domain>/transfer-portal` → Supabase-authenticated transfer UI.
 
 ### Architecture
 
-- `supabase/functions/warehouses` – returns the active warehouse tree used to populate the selector.
-- `supabase/functions/stock` – accepts `{ warehouseId, search }`, gathers descendants, queries `warehouse_stock_current`, and responds with raw rows plus aggregates.
-- `src/app/page.tsx` – purely client-side React component that calls the two functions via `NEXT_PUBLIC_SUPABASE_FUNCTION_URL`. Because everything runs client-side, the service-role key never touches the browser; only the Edge Functions read it server-side.
+- `src/app/api/warehouses/route.ts` – Vercel API route replacing the former Supabase `warehouses` function.
+- `src/app/api/stock/route.ts` – Aggregates descendant warehouse stock, mirroring the old `stock` function logic.
+- `src/app/transfer-portal/route.ts` – Serves the HTML/JS portal that talks to Supabase directly with the anon key.
+- `src/app/page.tsx` – Client-side React dashboard that now fetches `/api/warehouses` and `/api/stock` from the same origin, so no cross-origin configuration is required.
 
-The project purposely avoids internal Next.js API routes so that static exports remain possible.
+Updating data logic now happens inside the Vercel API routes; deploy via Vercel to release both UI and API changes simultaneously.
