@@ -28,6 +28,16 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 | `SUPABASE_URL` | (Optional) Explicit server-side Supabase URL; defaults to `NEXT_PUBLIC_SUPABASE_URL` when omitted. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key used **only** inside Next.js API routes to fetch warehouses, stock, and products. Keep this secret. |
 | `STOCK_VIEW_NAME` | Optional override of the warehouse stock view name. Defaults to `warehouse_stock_current`. |
+| `TWILIO_ACCOUNT_SID` | Twilio Project SID used for the WhatsApp API (sandbox or production sender). |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token; rotate it if it ever leaks. |
+| `TWILIO_WHATSAPP_NUMBER` | WhatsApp-enabled Twilio sender (sandbox number or approved business number). |
+| `WHATSAPP_TO_NUMBER` | Comma separated list of recipient numbers that will receive transfer alerts. |
+
+### WhatsApp notifications (Twilio)
+
+- For quick tests, use the Twilio WhatsApp Sandbox. Every recipient must text `join <code>` to the sandbox number and Twilio automatically removes them after roughly 72 hours of inactivity. That re-opt-in cycle is a sandbox limitation and cannot be disabled.
+- To avoid rejoining, request a production WhatsApp sender inside Twilio Console → **Messaging → Senders → WhatsApp Senders** and complete the Meta Business verification + template approval.
+- Once the sender is approved, update `TWILIO_WHATSAPP_NUMBER` with the new number and keep the recipient list in `WHATSAPP_TO_NUMBER` (or store the list in Supabase if you need per-user preferences).
 
 ### Deploying to Vercel
 
@@ -44,6 +54,7 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 - `src/app/api/warehouses/route.ts` – Vercel API route replacing the former Supabase `warehouses` function.
 - `src/app/api/stock/route.ts` – Aggregates descendant warehouse stock, mirroring the old `stock` function logic.
 - `src/app/transfer-portal/route.ts` – Serves the HTML/JS portal that talks to Supabase directly with the anon key.
+- `src/app/api/notify-whatsapp/route.ts` – Pushes transfer summaries to WhatsApp (Meta Cloud API) once a move is recorded.
 - `src/app/page.tsx` – Client-side React dashboard that now fetches `/api/warehouses` and `/api/stock` from the same origin, so no cross-origin configuration is required.
 
 Updating data logic now happens inside the Vercel API routes; deploy via Vercel to release both UI and API changes simultaneously.

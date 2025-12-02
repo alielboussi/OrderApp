@@ -14,6 +14,276 @@ AS $$
 $$;
 
 -- ------------------------------------------------------------
+-- Role directory + assignment overhaul (2025-12-02)
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug text NOT NULL UNIQUE,
+  display_name text NOT NULL,
+  description text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.roles (slug, display_name, description)
+VALUES
+  ('admin', 'Administrator', 'Full access to every resource'),
+  ('supervisor', 'Outlet Supervisor', 'Approves and reviews outlet orders'),
+  ('outlet', 'Outlet Operator', 'Places orders on behalf of an outlet'),
+  ('transfer_manager', 'Transfer Manager', 'Controls warehouse transfers'),
+  ('warehouse_transfers', 'Warehouse Transfers', 'Night-shift transfer console operator')
+ON CONFLICT (slug) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  description = EXCLUDED.description;
+
+ALTER TABLE IF EXISTS public.user_roles
+  DROP CONSTRAINT IF EXISTS user_roles_outlet_required_chk;
+
+DROP VIEW IF EXISTS public.current_user_roles;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'user_roles'
+      AND column_name = 'role'
+      AND udt_name = 'role_type'
+  ) THEN
+    ALTER TABLE public.user_roles
+      ALTER COLUMN role TYPE text USING role::text;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.user_roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role text NOT NULL,
+  outlet_id uuid REFERENCES public.outlets(id) ON DELETE CASCADE,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.roles (slug, display_name)
+SELECT DISTINCT ur.role, initcap(replace(ur.role, '_', ' '))
+FROM public.user_roles ur
+LEFT JOIN public.roles r ON r.slug = ur.role
+WHERE r.slug IS NULL;
+
+ALTER TABLE IF EXISTS public.user_roles
+  DROP CONSTRAINT IF EXISTS user_roles_outlet_required_chk;
+
+ALTER TABLE public.user_roles
+  DROP CONSTRAINT IF EXISTS user_roles_role_slug_fkey;
+
+ALTER TABLE public.user_roles
+  ADD CONSTRAINT user_roles_role_slug_fkey
+  FOREIGN KEY (role) REFERENCES public.roles(slug) ON DELETE RESTRICT;
+
+DROP INDEX IF EXISTS ux_user_roles_user_role_outlet;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_user_roles_user_role_outlet
+  ON public.user_roles (user_id, role, COALESCE(outlet_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  WHERE active;
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_active_role_user
+  ON public.user_roles (role, user_id)
+  WHERE active;
+
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS user_roles_select ON public.user_roles;
+CREATE POLICY user_roles_select ON public.user_roles
+  FOR SELECT
+  TO authenticated
+  USING (user_roles.user_id = auth.uid());
+
+DROP FUNCTION IF EXISTS public.has_role(public.role_type, uuid);
+DROP FUNCTION IF EXISTS public.has_role(public.role_type);
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_type
+    WHERE typname = 'role_type'
+      AND typnamespace = 'public'::regnamespace
+  ) THEN
+    DROP TYPE public.role_type;
+  END IF;
+END $$;
+
+CREATE OR REPLACE VIEW public.current_user_roles AS
+SELECT
+  ur.role,
+  ur.outlet_id,
+  o.name AS outlet_name
+FROM public.user_roles ur
+LEFT JOIN public.outlets o ON o.id = ur.outlet_id
+WHERE ur.user_id = auth.uid()
+  AND ur.active;
+
+CREATE OR REPLACE FUNCTION public.has_role(
+  p_user_id uuid,
+  p_role text,
+  p_outlet_id uuid DEFAULT NULL
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT CASE
+    WHEN p_user_id IS NULL OR p_role IS NULL THEN FALSE
+    ELSE EXISTS (
+      SELECT 1
+      FROM public.user_roles ur
+      WHERE ur.user_id = p_user_id
+        AND ur.active
+        AND lower(ur.role) = lower(p_role)
+        AND (
+          p_outlet_id IS NULL
+          OR ur.outlet_id IS NOT DISTINCT FROM p_outlet_id
+        )
+    )
+  END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.has_role(
+  p_user_id uuid,
+  p_role text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT public.has_role(p_user_id, p_role, NULL::uuid);
+$$;
+
+CREATE OR REPLACE FUNCTION public.has_role(
+  p_role text,
+  p_outlet_id uuid DEFAULT NULL
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT public.has_role(auth.uid(), p_role, p_outlet_id);
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_admin(
+  p_user_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT public.has_role(p_user_id, 'admin', NULL::uuid);
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT public.is_admin(auth.uid());
+$$;
+
+CREATE OR REPLACE FUNCTION public.tm_for_outlet(p_outlet_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public', 'auth'
+AS $$
+  SELECT public.has_role('transfer_manager', p_outlet_id);
+$$;
+
+CREATE OR REPLACE FUNCTION public.tm_for_warehouse(p_warehouse_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public', 'auth'
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.warehouses w
+    WHERE w.id = p_warehouse_id
+      AND public.has_role('transfer_manager', w.outlet_id)
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.whoami_roles()
+RETURNS TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'auth'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_email text;
+  v_is_admin boolean := false;
+  v_roles text[] := '{}';
+  v_outlets jsonb := '[]'::jsonb;
+BEGIN
+  IF v_uid IS NULL THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::text, FALSE, ARRAY[]::text[], '[]'::jsonb;
+    RETURN;
+  END IF;
+
+  SELECT u.email INTO v_email
+  FROM auth.users u
+  WHERE u.id = v_uid;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_roles ur
+    WHERE ur.user_id = v_uid
+      AND ur.active
+      AND lower(ur.role) = 'admin'
+  ) INTO v_is_admin;
+
+  SELECT COALESCE(
+    ARRAY(
+      SELECT DISTINCT ur.role
+      FROM public.user_roles ur
+      WHERE ur.user_id = v_uid
+        AND ur.active
+      ORDER BY ur.role
+    ), '{}'
+  ) INTO v_roles;
+
+  SELECT COALESCE(
+    (
+      SELECT jsonb_agg(jsonb_build_object(
+        'outlet_id', o.id,
+        'outlet_name', o.name,
+        'roles', ARRAY(SELECT DISTINCT ur_inner.role
+                       FROM public.user_roles ur_inner
+                       WHERE ur_inner.user_id = v_uid
+                         AND ur_inner.active
+                         AND ur_inner.outlet_id = o.id
+                       ORDER BY ur_inner.role))
+      )
+      FROM public.outlets o
+      WHERE EXISTS (
+        SELECT 1
+        FROM public.user_roles ur
+        WHERE ur.user_id = v_uid
+          AND ur.active
+          AND ur.outlet_id = o.id
+      )
+    ), '[]'::jsonb
+  ) INTO v_outlets;
+
+  RETURN QUERY SELECT v_uid, v_email, COALESCE(v_is_admin, FALSE), COALESCE(v_roles, '{}'), COALESCE(v_outlets, '[]'::jsonb);
+END;
+$$;
+
+-- ------------------------------------------------------------
 -- Order workflow + signature pipeline enhancements (2025-11-24)
 -- ------------------------------------------------------------
 
@@ -591,7 +861,7 @@ BEGIN
     WHERE o.id = NEW.order_id
       AND ur.user_id = auth.uid()
       AND ur.active
-      AND ur.role = 'supervisor'::public.role_type
+      AND ur.role = 'supervisor'
   ) INTO v_same_outlet;
 
   IF NOT v_same_outlet THEN

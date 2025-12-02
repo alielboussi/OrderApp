@@ -4336,17 +4336,6 @@
         {
             "kind": "f",
             "name": "has_role",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_role text, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select exists (\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = auth.uid()\r\n      and ur.active\r\n      and ur.role = p_role::public.role_type\r\n      and (\r\n        (p_role = 'admin') or\r\n        (p_role in ('supervisor','outlet','transfer_manager') and (p_outlet_id is null or ur.outlet_id = p_outlet_id))\r\n      )\r\n  );\r\n$function$\n",
-            "returns": "boolean",
-            "language": "sql",
-            "arg_count": 2,
-            "arguments": "p_role text, p_outlet_id uuid",
-            "volatility": "s",
-            "security_definer": false
-        },
-        {
-            "kind": "f",
-            "name": "has_role",
             "source": "CREATE OR REPLACE FUNCTION public.has_role(p_role role_type, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select exists(\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = auth.uid()\r\n      and ur.role = p_role\r\n      and ur.active\r\n      and (\r\n        (p_outlet_id is null and ur.outlet_id is null)\r\n        or (p_outlet_id is not null and ur.outlet_id = p_outlet_id)\r\n      )\r\n  );\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
@@ -4354,6 +4343,17 @@
             "arguments": "p_role role_type, p_outlet_id uuid",
             "volatility": "s",
             "security_definer": true
+        },
+        {
+            "kind": "f",
+            "name": "has_role",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_role text, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select exists (\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = auth.uid()\r\n      and ur.active\r\n      and ur.role = p_role::public.role_type\r\n      and (\r\n        (p_role = 'admin') or\r\n        (p_role in ('supervisor','outlet','transfer_manager') and (p_outlet_id is null or ur.outlet_id = p_outlet_id))\r\n      )\r\n  );\r\n$function$\n",
+            "returns": "boolean",
+            "language": "sql",
+            "arg_count": 2,
+            "arguments": "p_role text, p_outlet_id uuid",
+            "volatility": "s",
+            "security_definer": false
         },
         {
             "kind": "f",
@@ -4468,22 +4468,22 @@
         {
             "kind": "f",
             "name": "member_outlet_ids",
-            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select ur.outlet_id\r\n  from public.user_roles ur\r\n  where ur.user_id = auth.uid()\r\n    and ur.active\r\n    and ur.role in ('supervisor','outlet','transfer_manager');\r\n$function$\n",
-            "returns": "SETOF uuid",
+            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select coalesce(array_agg(distinct ur.outlet_id), '{}')\r\n  from public.user_roles ur\r\n  where ur.user_id = p_user_id\r\n    and ur.active is true\r\n    and ur.outlet_id is not null;\r\n$function$\n",
+            "returns": "uuid[]",
             "language": "sql",
-            "arg_count": 0,
-            "arguments": "",
+            "arg_count": 1,
+            "arguments": "p_user_id uuid",
             "volatility": "s",
             "security_definer": false
         },
         {
             "kind": "f",
             "name": "member_outlet_ids",
-            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select coalesce(array_agg(distinct ur.outlet_id), '{}')\r\n  from public.user_roles ur\r\n  where ur.user_id = p_user_id\r\n    and ur.active is true\r\n    and ur.outlet_id is not null;\r\n$function$\n",
-            "returns": "uuid[]",
+            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select ur.outlet_id\r\n  from public.user_roles ur\r\n  where ur.user_id = auth.uid()\r\n    and ur.active\r\n    and ur.role in ('supervisor','outlet','transfer_manager');\r\n$function$\n",
+            "returns": "SETOF uuid",
             "language": "sql",
-            "arg_count": 1,
-            "arguments": "p_user_id uuid",
+            "arg_count": 0,
+            "arguments": "",
             "volatility": "s",
             "security_definer": false
         },
@@ -4655,22 +4655,22 @@
         {
             "kind": "f",
             "name": "reset_order_sequence",
-            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid, p_next_seq bigint DEFAULT 1)\n RETURNS bigint\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\ndeclare\r\n  v_uid uuid := auth.uid();\r\n  v_next bigint;\r\nbegin\r\n  if v_uid is null then\r\n    raise exception 'not authenticated';\r\n  end if;\r\n  if not public.is_admin(v_uid) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  insert into public.outlet_sequences(outlet_id, next_seq)\r\n  values(p_outlet_id, p_next_seq)\r\n  on conflict (outlet_id)\r\n  do update set next_seq = excluded.next_seq;\r\n\r\n  select next_seq into v_next from public.outlet_sequences where outlet_id = p_outlet_id;\r\n  return v_next;\r\nend;\r\n$function$\n",
-            "returns": "bigint",
+            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\nbegin\r\n  -- TODO: Implement to match your next_order_number generator, e.g.:\r\n  -- update public.order_number_counters set next_val = 1 where outlet_id = p_outlet_id;\r\n  null;\r\nend;\r\n$function$\n",
+            "returns": "void",
             "language": "plpgsql",
-            "arg_count": 2,
-            "arguments": "p_outlet_id uuid, p_next_seq bigint",
+            "arg_count": 1,
+            "arguments": "p_outlet_id uuid",
             "volatility": "v",
             "security_definer": true
         },
         {
             "kind": "f",
             "name": "reset_order_sequence",
-            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\nbegin\r\n  -- TODO: Implement to match your next_order_number generator, e.g.:\r\n  -- update public.order_number_counters set next_val = 1 where outlet_id = p_outlet_id;\r\n  null;\r\nend;\r\n$function$\n",
-            "returns": "void",
+            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid, p_next_seq bigint DEFAULT 1)\n RETURNS bigint\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\ndeclare\r\n  v_uid uuid := auth.uid();\r\n  v_next bigint;\r\nbegin\r\n  if v_uid is null then\r\n    raise exception 'not authenticated';\r\n  end if;\r\n  if not public.is_admin(v_uid) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  insert into public.outlet_sequences(outlet_id, next_seq)\r\n  values(p_outlet_id, p_next_seq)\r\n  on conflict (outlet_id)\r\n  do update set next_seq = excluded.next_seq;\r\n\r\n  select next_seq into v_next from public.outlet_sequences where outlet_id = p_outlet_id;\r\n  return v_next;\r\nend;\r\n$function$\n",
+            "returns": "bigint",
             "language": "plpgsql",
-            "arg_count": 1,
-            "arguments": "p_outlet_id uuid",
+            "arg_count": 2,
+            "arguments": "p_outlet_id uuid, p_next_seq bigint",
             "volatility": "v",
             "security_definer": true
         },
@@ -6184,17 +6184,17 @@
             "name": "products_case_size_units_check",
             "type": "CHECK",
             "table": "products",
-            "columns": [
-                null
-            ],
-            "check_definition": null
+            "columns": null,
+            "check_definition": "CHECK ((package_contains > (0)::numeric))"
         },
         {
             "name": "products_case_size_units_check",
             "type": "CHECK",
             "table": "products",
-            "columns": null,
-            "check_definition": "CHECK ((package_contains > (0)::numeric))"
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "products_default_warehouse_id_fkey",
@@ -6708,7 +6708,7 @@
             "type": "CHECK",
             "table": "user_roles",
             "columns": null,
-            "check_definition": "CHECK ((((role = 'admin'::role_type) AND (outlet_id IS NULL)) OR ((role = ANY (ARRAY['supervisor'::role_type, 'outlet'::role_type, 'transfer_manager'::role_type])) AND (outlet_id IS NOT NULL))))"
+            "check_definition": "CHECK ((((role = 'admin'::role_type) AND (outlet_id IS NULL)) OR (((role)::text = ANY (ARRAY['supervisor'::text, 'outlet'::text, 'transfer_manager'::text, 'warehouse_transfers'::text])) AND (outlet_id IS NOT NULL))))"
         },
         {
             "name": "user_roles_outlet_id_fkey",
@@ -8106,7 +8106,7 @@
             "command": "SELECT",
             "permissive": "PERMISSIVE",
             "check_expression": null,
-            "using_expression": "(user_id = ( SELECT auth.uid() AS uid))"
+            "using_expression": "(user_id = auth.uid())"
         },
         {
             "roles": [
