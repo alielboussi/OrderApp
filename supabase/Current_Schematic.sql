@@ -2,7 +2,7 @@
     "views": [
         {
             "name": "current_user_roles",
-            "definition": " SELECT (ur.role)::text AS role,\n    ur.outlet_id,\n    o.name AS outlet_name\n   FROM (user_roles ur\n     LEFT JOIN outlets o ON ((o.id = ur.outlet_id)))\n  WHERE ((ur.user_id = auth.uid()) AND ur.active);"
+            "definition": " SELECT ur.role,\n    ur.outlet_id,\n    o.name AS outlet_name\n   FROM (user_roles ur\n     LEFT JOIN outlets o ON ((o.id = ur.outlet_id)))\n  WHERE ((ur.user_id = auth.uid()) AND ur.active);"
         },
         {
             "name": "order_pack_consumption",
@@ -2726,6 +2726,71 @@
             "identity_generation": null
         },
         {
+            "table": "roles",
+            "column": "id",
+            "comment": null,
+            "default": "gen_random_uuid()",
+            "ordinal": 1,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "roles",
+            "column": "slug",
+            "comment": null,
+            "default": null,
+            "ordinal": 2,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "roles",
+            "column": "display_name",
+            "comment": null,
+            "default": null,
+            "ordinal": 3,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "roles",
+            "column": "description",
+            "comment": null,
+            "default": null,
+            "ordinal": 4,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "roles",
+            "column": "created_at",
+            "comment": null,
+            "default": "now()",
+            "ordinal": 5,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
             "table": "stock_ledger",
             "column": "id",
             "comment": null,
@@ -3108,8 +3173,8 @@
             "comment": null,
             "default": null,
             "ordinal": 3,
-            "udt_name": "role_type",
-            "data_type": "USER-DEFINED",
+            "udt_name": "text",
+            "data_type": "text",
             "is_identity": "NO",
             "is_nullable": "NO",
             "is_generated": "NEVER",
@@ -4066,6 +4131,20 @@
             "is_primary": true
         },
         {
+            "name": "roles_pkey",
+            "table": "roles",
+            "is_unique": true,
+            "definition": "CREATE UNIQUE INDEX roles_pkey ON public.roles USING btree (id)",
+            "is_primary": true
+        },
+        {
+            "name": "roles_slug_key",
+            "table": "roles",
+            "is_unique": true,
+            "definition": "CREATE UNIQUE INDEX roles_slug_key ON public.roles USING btree (slug)",
+            "is_primary": false
+        },
+        {
             "name": "idx_stock_ledger_loc_prod_var",
             "table": "stock_ledger",
             "is_unique": false,
@@ -4094,6 +4173,13 @@
             "is_primary": true
         },
         {
+            "name": "idx_user_roles_active_role_user",
+            "table": "user_roles",
+            "is_unique": false,
+            "definition": "CREATE INDEX idx_user_roles_active_role_user ON public.user_roles USING btree (role, user_id) WHERE active",
+            "is_primary": false
+        },
+        {
             "name": "user_roles_pkey",
             "table": "user_roles",
             "is_unique": true,
@@ -4104,7 +4190,7 @@
             "name": "ux_user_roles_user_role_outlet",
             "table": "user_roles",
             "is_unique": true,
-            "definition": "CREATE UNIQUE INDEX ux_user_roles_user_role_outlet ON public.user_roles USING btree (user_id, role, COALESCE(outlet_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE (active IS TRUE)",
+            "definition": "CREATE UNIQUE INDEX ux_user_roles_user_role_outlet ON public.user_roles USING btree (user_id, role, COALESCE(outlet_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE active",
             "is_primary": false
         },
         {
@@ -4314,55 +4400,33 @@
         {
             "kind": "f",
             "name": "has_role",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_user_id uuid, p_role text, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.user_roles ur\r\n    where ur.user_id = p_user_id\r\n      and ur.active is true\r\n      and ur.role::text = p_role\r\n      and (p_outlet_id is null or ur.outlet_id = p_outlet_id)\r\n  );\r\n$function$\n",
-            "returns": "boolean",
-            "language": "sql",
-            "arg_count": 3,
-            "arguments": "p_user_id uuid, p_role text, p_outlet_id uuid",
-            "volatility": "s",
-            "security_definer": false
-        },
-        {
-            "kind": "f",
-            "name": "has_role",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_user_id uuid, p_role text)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\ndeclare\r\n  v_exists boolean := false;\r\nbegin\r\n  if to_regclass('public.user_roles') is null then\r\n    return false;\r\n  end if;\r\n  execute 'select exists(\r\n      select 1 from public.user_roles ur\r\n       where ur.user_id = $1\r\n         and lower(ur.role::text) = lower($2)\r\n    )'\r\n    into v_exists using p_user_id, p_role;\r\n  return v_exists;\r\nend;\r\n$function$\n",
-            "returns": "boolean",
-            "language": "plpgsql",
-            "arg_count": 2,
-            "arguments": "p_user_id uuid, p_role text",
-            "volatility": "v",
-            "security_definer": true
-        },
-        {
-            "kind": "f",
-            "name": "has_role",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_role role_type, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select exists(\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = auth.uid()\r\n      and ur.role = p_role\r\n      and ur.active\r\n      and (\r\n        (p_outlet_id is null and ur.outlet_id is null)\r\n        or (p_outlet_id is not null and ur.outlet_id = p_outlet_id)\r\n      )\r\n  );\r\n$function$\n",
-            "returns": "boolean",
-            "language": "sql",
-            "arg_count": 2,
-            "arguments": "p_role role_type, p_outlet_id uuid",
-            "volatility": "s",
-            "security_definer": true
-        },
-        {
-            "kind": "f",
-            "name": "has_role",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_role text, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select exists (\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = auth.uid()\r\n      and ur.active\r\n      and ur.role = p_role::public.role_type\r\n      and (\r\n        (p_role = 'admin') or\r\n        (p_role in ('supervisor','outlet','transfer_manager') and (p_outlet_id is null or ur.outlet_id = p_outlet_id))\r\n      )\r\n  );\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_role text, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(auth.uid(), p_role, p_outlet_id);\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
             "arg_count": 2,
             "arguments": "p_role text, p_outlet_id uuid",
             "volatility": "s",
+            "security_definer": true
+        },
+        {
+            "kind": "f",
+            "name": "has_role",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_user_id uuid, p_role text)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user_id, p_role, NULL::uuid);\r\n$function$\n",
+            "returns": "boolean",
+            "language": "sql",
+            "arg_count": 2,
+            "arguments": "p_user_id uuid, p_role text",
+            "volatility": "s",
             "security_definer": false
         },
         {
             "kind": "f",
-            "name": "has_role_any_outlet",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role_any_outlet(p_user uuid, p_role text)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user, p_role, NULL::uuid);\r\n$function$\n",
+            "name": "has_role",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role(p_user_id uuid, p_role text, p_outlet_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT CASE\r\n    WHEN p_user_id IS NULL OR p_role IS NULL THEN FALSE\r\n    ELSE EXISTS (\r\n      SELECT 1\r\n      FROM public.user_roles ur\r\n      WHERE ur.user_id = p_user_id\r\n        AND ur.active\r\n        AND lower(ur.role) = lower(p_role)\r\n        AND (\r\n          p_outlet_id IS NULL\r\n          OR ur.outlet_id IS NOT DISTINCT FROM p_outlet_id\r\n        )\r\n    )\r\n  END;\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
-            "arg_count": 2,
-            "arguments": "p_user uuid, p_role text",
+            "arg_count": 3,
+            "arguments": "p_user_id uuid, p_role text, p_outlet_id uuid",
             "volatility": "s",
             "security_definer": false
         },
@@ -4374,6 +4438,17 @@
             "language": "sql",
             "arg_count": 3,
             "arguments": "p_user uuid, p_role text, p_outlet uuid",
+            "volatility": "s",
+            "security_definer": false
+        },
+        {
+            "kind": "f",
+            "name": "has_role_any_outlet",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role_any_outlet(p_user uuid, p_role text)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user, p_role, NULL::uuid);\r\n$function$\n",
+            "returns": "boolean",
+            "language": "sql",
+            "arg_count": 2,
+            "arguments": "p_user uuid, p_role text",
             "volatility": "s",
             "security_definer": false
         },
@@ -4391,7 +4466,7 @@
         {
             "kind": "f",
             "name": "is_admin",
-            "source": "CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select public.has_role(p_user_id, 'admin', null);\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user_id, 'admin', NULL::uuid);\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
             "arg_count": 1,
@@ -4402,7 +4477,7 @@
         {
             "kind": "f",
             "name": "is_admin",
-            "source": "CREATE OR REPLACE FUNCTION public.is_admin()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select public.has_role('admin'::public.role_type, null);\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.is_admin()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.is_admin(auth.uid());\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
             "arg_count": 0,
@@ -4468,22 +4543,22 @@
         {
             "kind": "f",
             "name": "member_outlet_ids",
-            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select coalesce(array_agg(distinct ur.outlet_id), '{}')\r\n  from public.user_roles ur\r\n  where ur.user_id = p_user_id\r\n    and ur.active is true\r\n    and ur.outlet_id is not null;\r\n$function$\n",
-            "returns": "uuid[]",
+            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select ur.outlet_id\r\n  from public.user_roles ur\r\n  where ur.user_id = auth.uid()\r\n    and ur.active\r\n    and ur.role in ('supervisor','outlet','transfer_manager');\r\n$function$\n",
+            "returns": "SETOF uuid",
             "language": "sql",
-            "arg_count": 1,
-            "arguments": "p_user_id uuid",
+            "arg_count": 0,
+            "arguments": "",
             "volatility": "s",
             "security_definer": false
         },
         {
             "kind": "f",
             "name": "member_outlet_ids",
-            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select ur.outlet_id\r\n  from public.user_roles ur\r\n  where ur.user_id = auth.uid()\r\n    and ur.active\r\n    and ur.role in ('supervisor','outlet','transfer_manager');\r\n$function$\n",
-            "returns": "SETOF uuid",
+            "source": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  select coalesce(array_agg(distinct ur.outlet_id), '{}')\r\n  from public.user_roles ur\r\n  where ur.user_id = p_user_id\r\n    and ur.active is true\r\n    and ur.outlet_id is not null;\r\n$function$\n",
+            "returns": "uuid[]",
             "language": "sql",
-            "arg_count": 0,
-            "arguments": "",
+            "arg_count": 1,
+            "arguments": "p_user_id uuid",
             "volatility": "s",
             "security_definer": false
         },
@@ -4578,17 +4653,6 @@
         {
             "kind": "f",
             "name": "record_stock_entry",
-            "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text, p_qty_input_mode text DEFAULT 'auto'::text)\n RETURNS warehouse_stock_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_entry public.warehouse_stock_entries%ROWTYPE;\r\n  v_current numeric := 0;\r\n  v_target numeric := 0;\r\n  v_pkg numeric := 1;\r\n  v_qty_units numeric := 0;\r\n  v_qty_cases numeric := NULL;\r\n  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR public.has_role_any_outlet(v_uid, 'transfer_manager')\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n  IF p_qty IS NULL OR p_qty <= 0 THEN\r\n    RAISE EXCEPTION 'quantity must be positive';\r\n  END IF;\r\n\r\n  SELECT coalesce(\r\n           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),\r\n           (SELECT package_contains FROM public.products WHERE id = p_product_id),\r\n           1\r\n         )\r\n    INTO v_pkg;\r\n\r\n  IF v_mode NOT IN ('auto','units','cases') THEN\r\n    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;\r\n  END IF;\r\n  IF v_mode = 'auto' THEN\r\n    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;\r\n  END IF;\r\n\r\n  IF v_mode = 'cases' THEN\r\n    v_qty_cases := p_qty;\r\n    v_qty_units := p_qty * v_pkg;\r\n  ELSE\r\n    v_qty_units := p_qty;\r\n    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;\r\n  END IF;\r\n  v_target := v_qty_units;\r\n\r\n  INSERT INTO public.warehouse_stock_entries(\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    entry_kind,\r\n    qty,\r\n    qty_cases,\r\n    package_contains,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    p_entry_kind,\r\n    v_qty_units,\r\n    v_qty_cases,\r\n    v_pkg,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_entry;\r\n\r\n  IF p_entry_kind = 'purchase' THEN\r\n    SELECT coalesce(qty, 0)\r\n      INTO v_current\r\n      FROM public.warehouse_stock_current\r\n     WHERE warehouse_id = p_warehouse_id\r\n       AND product_id = p_product_id\r\n       AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n    v_target := v_current + v_qty_units;\r\n  END IF;\r\n\r\n  PERFORM public.record_stocktake(\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    v_target,\r\n    p_variation_id,\r\n    coalesce(p_note, p_entry_kind::text),\r\n    'units'\r\n  );\r\n\r\n  RETURN v_entry;\r\nEND;\r\n$function$\n",
-            "returns": "warehouse_stock_entries",
-            "language": "plpgsql",
-            "arg_count": 7,
-            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text",
-            "volatility": "v",
-            "security_definer": true
-        },
-        {
-            "kind": "f",
-            "name": "record_stock_entry",
             "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_units numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stock_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_entry public.warehouse_stock_entries%ROWTYPE;\r\n  v_current numeric := 0;\r\n  v_target numeric := p_units;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR public.has_role_any_outlet(v_uid, 'transfer_manager')\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n  IF p_units IS NULL OR p_units <= 0 THEN\r\n    RAISE EXCEPTION 'quantity must be positive';\r\n  END IF;\r\n\r\n  INSERT INTO public.warehouse_stock_entries(\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    entry_kind,\r\n    qty,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    p_entry_kind,\r\n    p_units,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_entry;\r\n\r\n  IF p_entry_kind = 'purchase' THEN\r\n    SELECT coalesce(qty, 0)\r\n      INTO v_current\r\n      FROM public.warehouse_stock_current\r\n     WHERE warehouse_id = p_warehouse_id\r\n       AND product_id = p_product_id\r\n       AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n    v_target := v_current + p_units;\r\n  ELSE\r\n    v_target := p_units;\r\n  END IF;\r\n\r\n  PERFORM public.record_stocktake(\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    v_target,\r\n    p_variation_id,\r\n    coalesce(p_note, p_entry_kind::text)\r\n  );\r\n\r\n  RETURN v_entry;\r\nEND;\r\n$function$\n",
             "returns": "warehouse_stock_entries",
             "language": "plpgsql",
@@ -4599,12 +4663,12 @@
         },
         {
             "kind": "f",
-            "name": "record_stocktake",
-            "source": "CREATE OR REPLACE FUNCTION public.record_stocktake(p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stocktakes\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_current numeric := 0;\r\n  v_delta numeric := 0;\r\n  v_row public.warehouse_stocktakes%ROWTYPE;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n\r\n  SELECT coalesce(qty, 0)\r\n    INTO v_current\r\n    FROM public.warehouse_stock_current\r\n   WHERE warehouse_id = p_warehouse_id\r\n     AND product_id = p_product_id\r\n     AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n\r\n  v_delta := coalesce(p_counted_qty, 0) - v_current;\r\n\r\n  INSERT INTO public.warehouse_stocktakes (\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    counted_qty,\r\n    delta,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    coalesce(p_counted_qty, 0),\r\n    v_delta,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_row;\r\n\r\n  IF v_delta <> 0 THEN\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      location_id,\r\n      product_id,\r\n      variation_id,\r\n      qty_change,\r\n      reason,\r\n      ref_order_id,\r\n      note\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_product_id,\r\n      p_variation_id,\r\n      v_delta,\r\n      'stocktake_adjustment',\r\n      NULL,\r\n      p_note\r\n    );\r\n  END IF;\r\n\r\n  RETURN v_row;\r\nEND;\r\n$function$\n",
-            "returns": "warehouse_stocktakes",
+            "name": "record_stock_entry",
+            "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text, p_qty_input_mode text DEFAULT 'auto'::text)\n RETURNS warehouse_stock_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_entry public.warehouse_stock_entries%ROWTYPE;\r\n  v_current numeric := 0;\r\n  v_target numeric := 0;\r\n  v_pkg numeric := 1;\r\n  v_qty_units numeric := 0;\r\n  v_qty_cases numeric := NULL;\r\n  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR public.has_role_any_outlet(v_uid, 'transfer_manager')\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n  IF p_qty IS NULL OR p_qty <= 0 THEN\r\n    RAISE EXCEPTION 'quantity must be positive';\r\n  END IF;\r\n\r\n  SELECT coalesce(\r\n           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),\r\n           (SELECT package_contains FROM public.products WHERE id = p_product_id),\r\n           1\r\n         )\r\n    INTO v_pkg;\r\n\r\n  IF v_mode NOT IN ('auto','units','cases') THEN\r\n    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;\r\n  END IF;\r\n  IF v_mode = 'auto' THEN\r\n    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;\r\n  END IF;\r\n\r\n  IF v_mode = 'cases' THEN\r\n    v_qty_cases := p_qty;\r\n    v_qty_units := p_qty * v_pkg;\r\n  ELSE\r\n    v_qty_units := p_qty;\r\n    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;\r\n  END IF;\r\n  v_target := v_qty_units;\r\n\r\n  INSERT INTO public.warehouse_stock_entries(\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    entry_kind,\r\n    qty,\r\n    qty_cases,\r\n    package_contains,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    p_entry_kind,\r\n    v_qty_units,\r\n    v_qty_cases,\r\n    v_pkg,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_entry;\r\n\r\n  IF p_entry_kind = 'purchase' THEN\r\n    SELECT coalesce(qty, 0)\r\n      INTO v_current\r\n      FROM public.warehouse_stock_current\r\n     WHERE warehouse_id = p_warehouse_id\r\n       AND product_id = p_product_id\r\n       AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n    v_target := v_current + v_qty_units;\r\n  END IF;\r\n\r\n  PERFORM public.record_stocktake(\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    v_target,\r\n    p_variation_id,\r\n    coalesce(p_note, p_entry_kind::text),\r\n    'units'\r\n  );\r\n\r\n  RETURN v_entry;\r\nEND;\r\n$function$\n",
+            "returns": "warehouse_stock_entries",
             "language": "plpgsql",
-            "arg_count": 5,
-            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid, p_note text",
+            "arg_count": 7,
+            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text",
             "volatility": "v",
             "security_definer": true
         },
@@ -4616,6 +4680,17 @@
             "language": "plpgsql",
             "arg_count": 6,
             "arguments": "p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text",
+            "volatility": "v",
+            "security_definer": true
+        },
+        {
+            "kind": "f",
+            "name": "record_stocktake",
+            "source": "CREATE OR REPLACE FUNCTION public.record_stocktake(p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stocktakes\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_current numeric := 0;\r\n  v_delta numeric := 0;\r\n  v_row public.warehouse_stocktakes%ROWTYPE;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n\r\n  SELECT coalesce(qty, 0)\r\n    INTO v_current\r\n    FROM public.warehouse_stock_current\r\n   WHERE warehouse_id = p_warehouse_id\r\n     AND product_id = p_product_id\r\n     AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n\r\n  v_delta := coalesce(p_counted_qty, 0) - v_current;\r\n\r\n  INSERT INTO public.warehouse_stocktakes (\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    counted_qty,\r\n    delta,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    coalesce(p_counted_qty, 0),\r\n    v_delta,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_row;\r\n\r\n  IF v_delta <> 0 THEN\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      location_id,\r\n      product_id,\r\n      variation_id,\r\n      qty_change,\r\n      reason,\r\n      ref_order_id,\r\n      note\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_product_id,\r\n      p_variation_id,\r\n      v_delta,\r\n      'stocktake_adjustment',\r\n      NULL,\r\n      p_note\r\n    );\r\n  END IF;\r\n\r\n  RETURN v_row;\r\nEND;\r\n$function$\n",
+            "returns": "warehouse_stocktakes",
+            "language": "plpgsql",
+            "arg_count": 5,
+            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid, p_note text",
             "volatility": "v",
             "security_definer": true
         },
@@ -4655,22 +4730,22 @@
         {
             "kind": "f",
             "name": "reset_order_sequence",
-            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\nbegin\r\n  -- TODO: Implement to match your next_order_number generator, e.g.:\r\n  -- update public.order_number_counters set next_val = 1 where outlet_id = p_outlet_id;\r\n  null;\r\nend;\r\n$function$\n",
-            "returns": "void",
+            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid, p_next_seq bigint DEFAULT 1)\n RETURNS bigint\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\ndeclare\r\n  v_uid uuid := auth.uid();\r\n  v_next bigint;\r\nbegin\r\n  if v_uid is null then\r\n    raise exception 'not authenticated';\r\n  end if;\r\n  if not public.is_admin(v_uid) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  insert into public.outlet_sequences(outlet_id, next_seq)\r\n  values(p_outlet_id, p_next_seq)\r\n  on conflict (outlet_id)\r\n  do update set next_seq = excluded.next_seq;\r\n\r\n  select next_seq into v_next from public.outlet_sequences where outlet_id = p_outlet_id;\r\n  return v_next;\r\nend;\r\n$function$\n",
+            "returns": "bigint",
             "language": "plpgsql",
-            "arg_count": 1,
-            "arguments": "p_outlet_id uuid",
+            "arg_count": 2,
+            "arguments": "p_outlet_id uuid, p_next_seq bigint",
             "volatility": "v",
             "security_definer": true
         },
         {
             "kind": "f",
             "name": "reset_order_sequence",
-            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid, p_next_seq bigint DEFAULT 1)\n RETURNS bigint\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\ndeclare\r\n  v_uid uuid := auth.uid();\r\n  v_next bigint;\r\nbegin\r\n  if v_uid is null then\r\n    raise exception 'not authenticated';\r\n  end if;\r\n  if not public.is_admin(v_uid) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  insert into public.outlet_sequences(outlet_id, next_seq)\r\n  values(p_outlet_id, p_next_seq)\r\n  on conflict (outlet_id)\r\n  do update set next_seq = excluded.next_seq;\r\n\r\n  select next_seq into v_next from public.outlet_sequences where outlet_id = p_outlet_id;\r\n  return v_next;\r\nend;\r\n$function$\n",
-            "returns": "bigint",
+            "source": "CREATE OR REPLACE FUNCTION public.reset_order_sequence(p_outlet_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_temp'\nAS $function$\r\nbegin\r\n  -- TODO: Implement to match your next_order_number generator, e.g.:\r\n  -- update public.order_number_counters set next_val = 1 where outlet_id = p_outlet_id;\r\n  null;\r\nend;\r\n$function$\n",
+            "returns": "void",
             "language": "plpgsql",
-            "arg_count": 2,
-            "arguments": "p_outlet_id uuid, p_next_seq bigint",
+            "arg_count": 1,
+            "arguments": "p_outlet_id uuid",
             "volatility": "v",
             "security_definer": true
         },
@@ -4710,7 +4785,7 @@
         {
             "kind": "f",
             "name": "tg_order_items_supervisor_qty_only",
-            "source": "CREATE OR REPLACE FUNCTION public.tg_order_items_supervisor_qty_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_temp'\nAS $function$\r\nDECLARE\r\n  v_role text := coalesce((current_setting('request.jwt.claims', true)::jsonb ->> 'role'),'');\r\n  v_same_outlet boolean := false;\r\nBEGIN\r\n  IF v_role <> 'supervisor' THEN\r\n    RETURN NEW;\r\n  END IF;\r\n\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.orders o\r\n    JOIN public.user_roles ur ON ur.outlet_id = o.outlet_id\r\n    WHERE o.id = NEW.order_id\r\n      AND ur.user_id = auth.uid()\r\n      AND ur.active\r\n      AND ur.role = 'supervisor'::public.role_type\r\n  ) INTO v_same_outlet;\r\n\r\n  IF NOT v_same_outlet THEN\r\n    RAISE EXCEPTION 'not allowed: supervisor not linked to this outlet';\r\n  END IF;\r\n\r\n  IF (NEW.order_id       IS DISTINCT FROM OLD.order_id) OR\r\n     (NEW.product_id     IS DISTINCT FROM OLD.product_id) OR\r\n     (NEW.variation_id   IS DISTINCT FROM OLD.variation_id) OR\r\n     (NEW.name           IS DISTINCT FROM OLD.name) OR\r\n     (NEW.uom            IS DISTINCT FROM OLD.uom) OR\r\n     (NEW.cost           IS DISTINCT FROM OLD.cost) OR\r\n     (NEW.amount         IS DISTINCT FROM OLD.amount) THEN\r\n    RAISE EXCEPTION 'supervisors may only update qty';\r\n  END IF;\r\n\r\n  IF NEW.qty IS NULL THEN\r\n    RAISE EXCEPTION 'qty cannot be null';\r\n  END IF;\r\n\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.tg_order_items_supervisor_qty_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_temp'\nAS $function$\r\nDECLARE\r\n  v_role text := lower(coalesce((current_setting('request.jwt.claims', true)::jsonb ->> 'role'), ''));\r\n  v_same_outlet boolean := false;\r\nBEGIN\r\n  IF v_role <> 'supervisor' THEN\r\n    RETURN NEW;\r\n  END IF;\r\n\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.orders o\r\n    JOIN public.user_roles ur ON ur.outlet_id = o.outlet_id\r\n    WHERE o.id = NEW.order_id\r\n      AND ur.user_id = auth.uid()\r\n      AND ur.active\r\n      AND lower(ur.role) = 'supervisor'\r\n  ) INTO v_same_outlet;\r\n\r\n  IF NOT v_same_outlet THEN\r\n    RAISE EXCEPTION 'not allowed: supervisor not linked to this outlet';\r\n  END IF;\r\n\r\n  IF (NEW.order_id       IS DISTINCT FROM OLD.order_id) OR\r\n     (NEW.product_id     IS DISTINCT FROM OLD.product_id) OR\r\n     (NEW.variation_id   IS DISTINCT FROM OLD.variation_id) OR\r\n     (NEW.name           IS DISTINCT FROM OLD.name) OR\r\n     (NEW.uom            IS DISTINCT FROM OLD.uom) OR\r\n     (NEW.cost           IS DISTINCT FROM OLD.cost) OR\r\n     (NEW.amount         IS DISTINCT FROM OLD.amount) THEN\r\n    RAISE EXCEPTION 'supervisors may only update qty';\r\n  END IF;\r\n\r\n  IF NEW.qty IS NULL THEN\r\n    RAISE EXCEPTION 'qty cannot be null';\r\n  END IF;\r\n\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
             "returns": "trigger",
             "language": "plpgsql",
             "arg_count": 0,
@@ -4721,7 +4796,7 @@
         {
             "kind": "f",
             "name": "tm_for_outlet",
-            "source": "CREATE OR REPLACE FUNCTION public.tm_for_outlet(p_outlet_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'auth'\nAS $function$\r\n  select public.has_role('transfer_manager'::public.role_type, p_outlet_id);\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.tm_for_outlet(p_outlet_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'auth'\nAS $function$\r\n  SELECT public.has_role('transfer_manager', p_outlet_id);\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
             "arg_count": 1,
@@ -4732,7 +4807,7 @@
         {
             "kind": "f",
             "name": "tm_for_warehouse",
-            "source": "CREATE OR REPLACE FUNCTION public.tm_for_warehouse(p_warehouse_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'auth'\nAS $function$\r\n  select exists(\r\n    select 1\r\n    from public.warehouses w\r\n    where w.id = p_warehouse_id\r\n      and public.has_role('transfer_manager'::public.role_type, w.outlet_id)\r\n  );\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.tm_for_warehouse(p_warehouse_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'auth'\nAS $function$\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.warehouses w\r\n    WHERE w.id = p_warehouse_id\r\n      AND public.has_role('transfer_manager', w.outlet_id)\r\n  );\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
             "arg_count": 1,
@@ -4798,8 +4873,8 @@
         {
             "kind": "f",
             "name": "whoami_roles",
-            "source": "CREATE OR REPLACE FUNCTION public.whoami_roles()\n RETURNS TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'auth'\nAS $function$\r\ndeclare\r\n  v_uid uuid := auth.uid();\r\n  v_email text;\r\n  v_is_admin boolean := false;\r\n  v_roles text[] := '{}';\r\n  v_outlets jsonb := '[]'::jsonb;\r\nbegin\r\n  -- email from auth.users\r\n  select u.email into v_email\r\n  from auth.users u\r\n  where u.id = v_uid;\r\n\r\n  -- admin flag from user_roles\r\n  select exists(\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = v_uid and ur.role = 'admin'::public.role_type and ur.active\r\n  ) into v_is_admin;\r\n\r\n  -- flat roles set for this user\r\n  select coalesce(array(select distinct ur.role::text\r\n                        from public.user_roles ur\r\n                        where ur.user_id = v_uid and ur.active), '{}')\r\n    into v_roles;\r\n\r\n  -- per-outlet roles aggregation\r\n  select coalesce(\r\n    (\r\n      select jsonb_agg(jsonb_build_object(\r\n        'outlet_id', o.id,\r\n        'outlet_name', o.name,\r\n        'roles', x.roles\r\n      ))\r\n      from (\r\n        select ur.outlet_id, array_agg(distinct ur.role::text) as roles\r\n        from public.user_roles ur\r\n        where ur.user_id = v_uid and ur.active and ur.outlet_id is not null\r\n        group by ur.outlet_id\r\n      ) x\r\n      join public.outlets o on o.id = x.outlet_id\r\n    ), '[]'::jsonb)\r\n  into v_outlets;\r\n\r\n  return query select v_uid, v_email, coalesce(v_is_admin, false), coalesce(v_roles, '{}'), coalesce(v_outlets, '[]'::jsonb);\r\nend;\r\n$function$\n",
-            "returns": "TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb)",
+            "source": "CREATE OR REPLACE FUNCTION public.whoami_roles()\n RETURNS TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb, role_catalog jsonb)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'auth'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_email text;\r\n  v_is_admin boolean := false;\r\n  v_roles text[] := '{}';\r\n  v_outlets jsonb := '[]'::jsonb;\r\n  v_role_catalog jsonb := '[]'::jsonb;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RETURN QUERY SELECT NULL::uuid, NULL::text, FALSE, ARRAY[]::text[], '[]'::jsonb, '[]'::jsonb;\r\n    RETURN;\r\n  END IF;\r\n\r\n  SELECT u.email INTO v_email\r\n  FROM auth.users u\r\n  WHERE u.id = v_uid;\r\n\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.user_roles ur\r\n    WHERE ur.user_id = v_uid\r\n      AND ur.active\r\n      AND lower(ur.role) = 'admin'\r\n  ) INTO v_is_admin;\r\n\r\n  SELECT COALESCE(\r\n    ARRAY(\r\n      SELECT DISTINCT lower(ur.role)\r\n      FROM public.user_roles ur\r\n      WHERE ur.user_id = v_uid\r\n        AND ur.active\r\n      ORDER BY lower(ur.role)\r\n    ), '{}'\r\n  ) INTO v_roles;\r\n\r\n  SELECT COALESCE(\r\n    (\r\n      SELECT jsonb_agg(\r\n        jsonb_build_object(\r\n          'outlet_id', o.id,\r\n          'outlet_name', o.name,\r\n          'roles', ARRAY(\r\n            SELECT DISTINCT lower(ur_inner.role)\r\n            FROM public.user_roles ur_inner\r\n            WHERE ur_inner.user_id = v_uid\r\n              AND ur_inner.active\r\n              AND ur_inner.outlet_id = o.id\r\n            ORDER BY lower(ur_inner.role)\r\n          )\r\n        )\r\n      )\r\n      FROM public.outlets o\r\n      WHERE EXISTS (\r\n        SELECT 1\r\n        FROM public.user_roles ur\r\n        WHERE ur.user_id = v_uid\r\n          AND ur.active\r\n          AND ur.outlet_id = o.id\r\n      )\r\n    ),\r\n    '[]'::jsonb\r\n  ) INTO v_outlets;\r\n\r\n  SELECT COALESCE(\r\n    (\r\n      SELECT jsonb_agg(\r\n        jsonb_build_object(\r\n          'id', r.id,\r\n          'slug', r.slug,\r\n          'normalized_slug', r.slug_lower,\r\n          'display_name', r.display_name\r\n        )\r\n      )\r\n      FROM (\r\n        SELECT DISTINCT r.id, r.slug, lower(r.slug) AS slug_lower, r.display_name\r\n        FROM public.roles r\r\n        JOIN public.user_roles ur\r\n          ON lower(ur.role) = lower(r.slug)\r\n        WHERE ur.user_id = v_uid\r\n          AND ur.active\r\n      ) AS r\r\n    ),\r\n    '[]'::jsonb\r\n  ) INTO v_role_catalog;\r\n\r\n  RETURN QUERY\r\n    SELECT\r\n      v_uid,\r\n      v_email,\r\n      COALESCE(v_is_admin, FALSE),\r\n      COALESCE(v_roles, '{}'),\r\n      COALESCE(v_outlets, '[]'::jsonb),\r\n      COALESCE(v_role_catalog, '[]'::jsonb);\r\nEND;\r\n$function$\n",
+            "returns": "TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb, role_catalog jsonb)",
             "language": "plpgsql",
             "arg_count": 0,
             "arguments": "",
@@ -4894,17 +4969,17 @@
             "name": "order_item_allocations_qty_check",
             "type": "CHECK",
             "table": "order_item_allocations",
-            "columns": null,
-            "check_definition": "CHECK ((qty > (0)::numeric))"
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "order_item_allocations_qty_check",
             "type": "CHECK",
             "table": "order_item_allocations",
-            "columns": [
-                null
-            ],
-            "check_definition": null
+            "columns": null,
+            "check_definition": "CHECK ((qty > (0)::numeric))"
         },
         {
             "name": "order_item_allocations_order_id_fkey",
@@ -5557,11 +5632,20 @@
             "name": "outlet_stocktakes_package_contains_check",
             "type": "CHECK",
             "table": "outlet_stocktakes",
+            "columns": [
+                null
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "outlet_stocktakes_package_contains_check",
+            "type": "CHECK",
+            "table": "outlet_stocktakes",
             "columns": null,
             "check_definition": "CHECK ((package_contains > (0)::numeric))"
         },
         {
-            "name": "outlet_stocktakes_package_contains_check",
+            "name": "outlet_stocktakes_snapshot_kind_check",
             "type": "CHECK",
             "table": "outlet_stocktakes",
             "columns": [
@@ -5575,15 +5659,6 @@
             "table": "outlet_stocktakes",
             "columns": null,
             "check_definition": "CHECK ((snapshot_kind = ANY (ARRAY['opening'::text, 'closing'::text, 'spot'::text])))"
-        },
-        {
-            "name": "outlet_stocktakes_snapshot_kind_check",
-            "type": "CHECK",
-            "table": "outlet_stocktakes",
-            "columns": [
-                null
-            ],
-            "check_definition": null
         },
         {
             "name": "outlet_stocktakes_outlet_id_fkey",
@@ -5733,20 +5808,11 @@
             "name": "pos_sales_package_contains_check",
             "type": "CHECK",
             "table": "pos_sales",
-            "columns": [
-                null
-            ],
-            "check_definition": null
-        },
-        {
-            "name": "pos_sales_package_contains_check",
-            "type": "CHECK",
-            "table": "pos_sales",
             "columns": null,
             "check_definition": "CHECK ((package_contains > (0)::numeric))"
         },
         {
-            "name": "pos_sales_qty_units_check",
+            "name": "pos_sales_package_contains_check",
             "type": "CHECK",
             "table": "pos_sales",
             "columns": [
@@ -5760,6 +5826,15 @@
             "table": "pos_sales",
             "columns": null,
             "check_definition": "CHECK ((qty_units > (0)::numeric))"
+        },
+        {
+            "name": "pos_sales_qty_units_check",
+            "type": "CHECK",
+            "table": "pos_sales",
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "pos_sales_outlet_id_fkey",
@@ -6418,6 +6493,60 @@
             "check_definition": null
         },
         {
+            "name": "2200_53638_1_not_null",
+            "type": "CHECK",
+            "table": "roles",
+            "columns": [
+                null
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "2200_53638_2_not_null",
+            "type": "CHECK",
+            "table": "roles",
+            "columns": [
+                null
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "2200_53638_3_not_null",
+            "type": "CHECK",
+            "table": "roles",
+            "columns": [
+                null
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "2200_53638_5_not_null",
+            "type": "CHECK",
+            "table": "roles",
+            "columns": [
+                null
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "roles_pkey",
+            "type": "PRIMARY KEY",
+            "table": "roles",
+            "columns": [
+                "id"
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "roles_slug_key",
+            "type": "UNIQUE",
+            "table": "roles",
+            "columns": [
+                "slug"
+            ],
+            "check_definition": null
+        },
+        {
             "name": "2200_22070_1_not_null",
             "type": "CHECK",
             "table": "stock_ledger",
@@ -6695,27 +6824,20 @@
             "check_definition": null
         },
         {
-            "name": "user_roles_outlet_required_chk",
-            "type": "CHECK",
-            "table": "user_roles",
-            "columns": [
-                null
-            ],
-            "check_definition": null
-        },
-        {
-            "name": "user_roles_outlet_required_chk",
-            "type": "CHECK",
-            "table": "user_roles",
-            "columns": null,
-            "check_definition": "CHECK ((((role = 'admin'::role_type) AND (outlet_id IS NULL)) OR (((role)::text = ANY (ARRAY['supervisor'::text, 'outlet'::text, 'transfer_manager'::text, 'warehouse_transfers'::text])) AND (outlet_id IS NOT NULL))))"
-        },
-        {
             "name": "user_roles_outlet_id_fkey",
             "type": "FOREIGN KEY",
             "table": "user_roles",
             "columns": [
                 "outlet_id"
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "user_roles_role_slug_fkey",
+            "type": "FOREIGN KEY",
+            "table": "user_roles",
+            "columns": [
+                "role"
             ],
             "check_definition": null
         },
@@ -6804,17 +6926,17 @@
             "name": "warehouse_stock_entries_qty_check",
             "type": "CHECK",
             "table": "warehouse_stock_entries",
-            "columns": [
-                null
-            ],
-            "check_definition": null
+            "columns": null,
+            "check_definition": "CHECK ((qty > (0)::numeric))"
         },
         {
             "name": "warehouse_stock_entries_qty_check",
             "type": "CHECK",
             "table": "warehouse_stock_entries",
-            "columns": null,
-            "check_definition": "CHECK ((qty > (0)::numeric))"
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "warehouse_stock_entries_product_id_fkey",
@@ -7009,17 +7131,17 @@
             "name": "warehouses_kind_check",
             "type": "CHECK",
             "table": "warehouses",
-            "columns": null,
-            "check_definition": "CHECK ((kind = ANY (ARRAY['main_coldroom'::text, 'child_coldroom'::text, 'selling_depot'::text, 'outlet_warehouse'::text])))"
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "warehouses_kind_check",
             "type": "CHECK",
             "table": "warehouses",
-            "columns": [
-                null
-            ],
-            "check_definition": null
+            "columns": null,
+            "check_definition": "CHECK ((kind = ANY (ARRAY['main_coldroom'::text, 'child_coldroom'::text, 'selling_depot'::text, 'outlet_warehouse'::text])))"
         },
         {
             "name": "warehouses_outlet_id_fkey",
@@ -7557,6 +7679,17 @@
             ]
         },
         {
+            "name": "user_roles_role_slug_fkey",
+            "source_table": "user_roles",
+            "target_table": "roles",
+            "source_columns": [
+                "role"
+            ],
+            "target_columns": [
+                "slug"
+            ]
+        },
+        {
             "name": "warehouse_stock_entries_product_id_fkey",
             "source_table": "warehouse_stock_entries",
             "target_table": "products",
@@ -7941,7 +8074,7 @@
             "command": "SELECT",
             "permissive": "PERMISSIVE",
             "check_expression": null,
-            "using_expression": "((EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE (o.auth_user_id = auth.uid()))) AND active)"
+            "using_expression": "(((EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE (o.auth_user_id = auth.uid()))) OR has_role_any_outlet(auth.uid(), 'transfers'::text)) AND active)"
         },
         {
             "roles": [
@@ -7952,7 +8085,7 @@
             "command": "SELECT",
             "permissive": "PERMISSIVE",
             "check_expression": null,
-            "using_expression": "((EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE (o.auth_user_id = auth.uid()))) AND active)"
+            "using_expression": "(((EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE (o.auth_user_id = auth.uid()))) OR has_role_any_outlet(auth.uid(), 'transfers'::text)) AND active)"
         },
         {
             "roles": [
@@ -8172,7 +8305,7 @@
             "command": "SELECT",
             "permissive": "PERMISSIVE",
             "check_expression": null,
-            "using_expression": "(EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE ((o.id = warehouses.outlet_id) AND (o.auth_user_id = auth.uid()))))"
+            "using_expression": "((EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE ((o.id = warehouses.outlet_id) AND (o.auth_user_id = auth.uid())))) OR has_role_any_outlet(auth.uid(), 'transfers'::text))"
         },
         {
             "roles": [

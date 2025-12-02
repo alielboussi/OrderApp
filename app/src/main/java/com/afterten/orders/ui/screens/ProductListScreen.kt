@@ -97,20 +97,19 @@ fun ProductListScreen(
     }
 
     LaunchedEffect(session?.token) {
-        if (session?.token != null) {
-            syncing = true
-            error = null
-            logger.state("InitialSyncStart", mapOf("hasSession" to true))
-            try {
-                repo.syncProducts(session.token)
-                repo.syncAllVariations(session.token)
-                logger.state("InitialSyncSuccess")
-            } catch (t: Throwable) {
-                error = t.message
-                logger.error("InitialSyncFailed", t)
-            } finally {
-                syncing = false
-            }
+        val currentSession = session ?: return@LaunchedEffect
+        syncing = true
+        error = null
+        logger.state("InitialSyncStart", mapOf("hasSession" to true))
+        try {
+            repo.syncProducts(currentSession.token)
+            repo.syncAllVariations(currentSession.token)
+            logger.state("InitialSyncSuccess")
+        } catch (t: Throwable) {
+            error = t.message
+            logger.error("InitialSyncFailed", t)
+        } finally {
+            syncing = false
         }
     }
 

@@ -991,8 +991,11 @@ CREATE POLICY product_variations_outlet_read ON public.product_variations
   FOR SELECT
   TO public
   USING (
-    EXISTS (
-      SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
+    (
+      EXISTS (
+        SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
+      )
+      OR public.has_role_any_outlet(auth.uid(), 'transfers')
     )
     AND active
   );
@@ -1002,8 +1005,11 @@ CREATE POLICY products_outlet_read ON public.products
   FOR SELECT
   TO public
   USING (
-    EXISTS (
-      SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
+    (
+      EXISTS (
+        SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
+      )
+      OR public.has_role_any_outlet(auth.uid(), 'transfers')
     )
     AND active
   );
@@ -1457,6 +1463,21 @@ END $$;
 
 ALTER TABLE IF EXISTS public.products
   ADD COLUMN IF NOT EXISTS package_contains numeric NOT NULL DEFAULT 1 CHECK (package_contains > 0);
+
+-- Ensure products and variations expose unique SKU barcodes (2025-12-02)
+ALTER TABLE IF EXISTS public.products
+  ADD COLUMN IF NOT EXISTS sku text;
+
+ALTER TABLE IF EXISTS public.product_variations
+  ADD COLUMN IF NOT EXISTS sku text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_unique
+  ON public.products ((lower(sku)))
+  WHERE sku IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variations_sku_unique
+  ON public.product_variations ((lower(sku)))
+  WHERE sku IS NOT NULL;
 
 -- ------------------------------------------------------------
 -- Stock entry logging + warehouse transfer portal (2025-11-27)

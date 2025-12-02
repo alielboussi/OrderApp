@@ -659,6 +659,7 @@ class SupabaseProvider(context: Context) {
         val id: String,
         val name: String,
         val uom: String,
+        val sku: String? = null,
         @SerialName("has_variations") val hasVariations: Boolean = false,
         @SerialName("package_contains") val packageContains: Double? = null
     )
@@ -666,10 +667,12 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class SimpleVariation(
         val id: String,
+        @SerialName("product_id") val productId: String,
         val name: String,
         val uom: String,
         val cost: Double? = null,
-        @SerialName("package_contains") val packageContains: Double? = null
+        @SerialName("package_contains") val packageContains: Double? = null,
+        val sku: String? = null
     )
 
     @Serializable
@@ -894,7 +897,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom,has_variations,package_contains&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom,sku,has_variations,package_contains&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -904,7 +907,17 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,name,uom,cost,package_contains&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,product_id,name,uom,cost,package_contains,sku&order=name.asc"
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val txt = resp.bodyAsText()
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleVariation.serializer()), txt)
+    }
+
+    suspend fun listAllVariations(jwt: String): List<SimpleVariation> {
+        val url = "$supabaseUrl/rest/v1/product_variations?active=eq.true&select=id,product_id,name,uom,cost,package_contains,sku&order=product_id.asc,name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")

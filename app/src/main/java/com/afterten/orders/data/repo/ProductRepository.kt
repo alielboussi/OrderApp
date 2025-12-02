@@ -76,7 +76,7 @@ class ProductRepository(
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
             "/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=" +
-                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id",
+                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -101,7 +101,7 @@ class ProductRepository(
     suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
             "/rest/v1/product_variations?active=eq.true&select=" +
-                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id",
+                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)

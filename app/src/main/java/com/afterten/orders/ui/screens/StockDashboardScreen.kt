@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -25,20 +27,24 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
 import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
@@ -70,7 +76,7 @@ fun StockDashboardScreen(
 
     var warehouses by remember { mutableStateOf(emptyList<SupabaseProvider.Warehouse>()) }
     var products by remember { mutableStateOf(emptyList<SupabaseProvider.SimpleProduct>()) }
-    var activeVariations by remember { mutableStateOf(emptyList<SupabaseProvider.SimpleVariation>()) }
+    var allVariations by remember { mutableStateOf(emptyList<SupabaseProvider.SimpleVariation>()) }
 
     var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
     var searchText by remember { mutableStateOf("") }
@@ -84,13 +90,18 @@ fun StockDashboardScreen(
     var injectMessage by remember { mutableStateOf<String?>(null) }
     var injectError by remember { mutableStateOf<String?>(null) }
     var isInjecting by remember { mutableStateOf(false) }
+    var barcodeInput by remember { mutableStateOf("") }
 
     var stockData by remember { mutableStateOf<SupabaseProvider.WarehouseStockResponse?>(null) }
     var stockError by remember { mutableStateOf<String?>(null) }
     var isStockLoading by remember { mutableStateOf(false) }
 
-    val productLookup = remember(products) { products.associateBy { it.id } }
     val productCards = remember(stockData) { buildProductCards(stockData) }
+    val selectedProduct = remember(products, injectProductId) { products.firstOrNull { it.id == injectProductId } }
+    val selectedVariation = remember(allVariations, injectVariationId) {
+        allVariations.firstOrNull { it.id == injectVariationId }
+    }
+    val qtyFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(session?.token) {
         val jwt = session?.token ?: return@LaunchedEffect
@@ -98,43 +109,24 @@ fun StockDashboardScreen(
         runCatching {
             val warehouseList = root.supabaseProvider.listWarehouses(jwt)
             val productList = root.supabaseProvider.listActiveProducts(jwt)
+            val variationList = root.supabaseProvider.listAllVariations(jwt)
             warehouses = warehouseList
             products = productList
+            allVariations = variationList
             if (selectedWarehouseId == null) {
                 selectedWarehouseId = warehouseList.firstOrNull()?.id
             }
-            if (injectProductId == null) {
-                injectProductId = productList.firstOrNull()?.id
-            }
             logger.state(
                 "BootstrapSuccess",
-                mapOf("warehouses" to warehouseList.size, "products" to productList.size)
+                mapOf(
+                    "warehouses" to warehouseList.size,
+                    "products" to productList.size,
+                    "variations" to variationList.size
+                )
             )
         }.onFailure {
             stockError = it.message
             logger.error("BootstrapFailed", it)
-        }
-    }
-
-    LaunchedEffect(injectProductId, session?.token) {
-        val jwt = session?.token ?: return@LaunchedEffect
-        val productId = injectProductId ?: return@LaunchedEffect
-        val selectedProduct = products.firstOrNull { it.id == productId } ?: return@LaunchedEffect
-        if (!selectedProduct.hasVariations) {
-            activeVariations = emptyList()
-            injectVariationId = null
-            return@LaunchedEffect
-        }
-        runCatching {
-            logger.state("VariationLoadStart", mapOf("productId" to productId))
-            root.supabaseProvider.listVariationsForProduct(jwt, productId)
-        }.onSuccess {
-            activeVariations = it
-            logger.state("VariationLoadSuccess", mapOf("count" to it.size))
-        }.onFailure {
-            injectError = it.message
-            activeVariations = emptyList()
-            logger.error("VariationLoadFailed", it, mapOf("productId" to productId))
         }
     }
 
@@ -169,8 +161,8 @@ fun StockDashboardScreen(
             return
         }
         val pid = injectProductId ?: run {
-            injectError = "Select a product"
-            logger.warn("StockEntryValidation", mapOf("reason" to "missing_product"))
+            injectError = "Scan a product or variation barcode"
+            logger.warn("StockEntryValidation", mapOf("reason" to "missing_selection"))
             return
         }
         val qtyDouble = injectQty.toDoubleOrNull()
@@ -181,7 +173,7 @@ fun StockDashboardScreen(
         }
         val needsVariation = products.firstOrNull { it.id == pid }?.hasVariations == true
         if (needsVariation && injectVariationId.isNullOrBlank()) {
-            injectError = "Select a variation"
+            injectError = "Scan the correct variation barcode"
             logger.warn("StockEntryValidation", mapOf("reason" to "missing_variation"))
             return
         }
@@ -211,6 +203,7 @@ fun StockDashboardScreen(
                 injectMessage = "${kind.label} recorded for ${qtyDouble.displayQty()} units"
                 injectQty = ""
                 injectNote = ""
+                barcodeInput = ""
                 refreshTick++
                 logger.state("StockEntrySubmitSuccess")
             }.onFailure {
@@ -233,6 +226,76 @@ fun StockDashboardScreen(
                 }
                 ?.sumOf { it.qty } ?: 0.0
         }
+    }
+
+    fun matchSku(value: String?, code: String): Boolean {
+        if (value.isNullOrBlank()) return false
+        return value.trim().equals(code, ignoreCase = true)
+    }
+
+    fun handleBarcodeMatch(raw: String) {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return
+        val normalized = trimmed.lowercase()
+        val variationHit = allVariations.firstOrNull { variation ->
+            matchSku(variation.sku, normalized) || variation.id.equals(trimmed, ignoreCase = true)
+        }
+        if (variationHit != null) {
+            injectProductId = variationHit.productId
+            injectVariationId = variationHit.id
+            injectMessage = "Selected ${variationHit.name} via scan"
+            injectError = null
+            injectQty = ""
+            scope.launch {
+                delay(50)
+                qtyFocusRequester.requestFocus()
+            }
+            return
+        }
+
+        val productHit = products.firstOrNull { product ->
+            matchSku(product.sku, normalized) || product.id.equals(trimmed, ignoreCase = true)
+        }
+        if (productHit != null) {
+            injectProductId = productHit.id
+            injectVariationId = null
+            injectMessage = "Selected ${productHit.name} via scan"
+            injectQty = ""
+            injectError = if (productHit.hasVariations) {
+                "Scan a variation barcode for ${productHit.name}"
+            } else null
+            scope.launch {
+                delay(50)
+                qtyFocusRequester.requestFocus()
+            }
+            return
+        }
+
+        injectMessage = null
+        injectError = "No product or variation matched '$trimmed'"
+    }
+
+    fun onBarcodeValueChange(input: String) {
+        var remaining = input.replace("\r", "")
+        while (true) {
+            val newlineIndex = remaining.indexOf('\n')
+            if (newlineIndex < 0) break
+            val token = remaining.substring(0, newlineIndex)
+            handleBarcodeMatch(token)
+            remaining = if (newlineIndex + 1 < remaining.length) {
+                remaining.substring(newlineIndex + 1)
+            } else {
+                ""
+            }
+        }
+        barcodeInput = remaining
+    }
+
+    fun commitBarcodeInput() {
+        if (barcodeInput.isBlank()) return
+        val payload = barcodeInput
+        barcodeInput = ""
+        handleBarcodeMatch(payload)
     }
 
     val content: @Composable ColumnScope.() -> Unit = {
@@ -258,34 +321,30 @@ fun StockDashboardScreen(
         )
         val selectedWarehouseName = warehouses.firstOrNull { it.id == selectedWarehouseId }?.name
         InjectionCard(
-            products = products,
-            variations = activeVariations,
-            selectedProductId = injectProductId,
-            onProductSelected = {
-                injectProductId = it
+            barcodeValue = barcodeInput,
+            onBarcodeChange = ::onBarcodeValueChange,
+            onBarcodeSubmit = ::commitBarcodeInput,
+            selectedProduct = selectedProduct,
+            selectedVariation = selectedVariation,
+            onClearSelection = {
+                injectProductId = null
                 injectVariationId = null
                 injectMessage = null
                 injectError = null
-                logger.state("InjectionProductSelected", mapOf("productId" to it))
-            },
-            selectedVariationId = injectVariationId,
-            onVariationSelected = {
-                injectVariationId = it
-                injectMessage = null
-                logger.state("InjectionVariationSelected", mapOf("variationId" to it))
+                logger.event("InjectionSelectionCleared")
             },
             qtyText = injectQty,
             onQtyChanged = { injectQty = it.filter { ch -> ch.isDigit() || ch == '.' } },
             noteText = injectNote,
             onNoteChanged = { injectNote = it },
-            requiresVariation = products.firstOrNull { it.id == injectProductId }?.hasVariations == true,
+            requiresVariation = selectedProduct?.hasVariations == true,
             onSubmit = ::submitStockEntry,
             isSubmitting = isInjecting,
             helperMessage = injectMessage,
             errorMessage = injectError,
             currentQty = currentQty,
-            productLookup = productLookup,
-            warehouseLabel = selectedWarehouseName
+            warehouseLabel = selectedWarehouseName,
+            qtyFocusRequester = qtyFocusRequester
         )
         StockSummary(isLoading = isStockLoading, error = stockError, hasRows = productCards.isNotEmpty())
         productCards.forEach { ProductCard(it) }
@@ -425,12 +484,12 @@ private fun FilterCard(
 
 @Composable
 private fun InjectionCard(
-    products: List<SupabaseProvider.SimpleProduct>,
-    variations: List<SupabaseProvider.SimpleVariation>,
-    selectedProductId: String?,
-    onProductSelected: (String) -> Unit,
-    selectedVariationId: String?,
-    onVariationSelected: (String?) -> Unit,
+    barcodeValue: String,
+    onBarcodeChange: (String) -> Unit,
+    onBarcodeSubmit: () -> Unit,
+    selectedProduct: SupabaseProvider.SimpleProduct?,
+    selectedVariation: SupabaseProvider.SimpleVariation?,
+    onClearSelection: () -> Unit,
     qtyText: String,
     onQtyChanged: (String) -> Unit,
     noteText: String,
@@ -441,8 +500,8 @@ private fun InjectionCard(
     helperMessage: String?,
     errorMessage: String?,
     currentQty: Double,
-    productLookup: Map<String, SupabaseProvider.SimpleProduct>,
-    warehouseLabel: String?
+    warehouseLabel: String?,
+    qtyFocusRequester: FocusRequester
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -450,26 +509,62 @@ private fun InjectionCard(
             warehouseLabel?.let {
                 Text("Target Warehouse: $it", style = MaterialTheme.typography.bodySmall)
             }
-            SelectorField(
-                label = "Product",
-                options = products.map { it.id to it.name },
-                selectedId = selectedProductId,
-                onSelected = { id -> id?.let(onProductSelected) }
+            OutlinedTextField(
+                value = barcodeValue,
+                onValueChange = onBarcodeChange,
+                label = { Text("Scan or type barcode") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onBarcodeSubmit() })
             )
-            if (requiresVariation) {
-                SelectorField(
-                    label = "Variation",
-                    options = listOf(null to "<Select variation>") + variations.map { it.id to it.name },
-                    selectedId = selectedVariationId,
-                    onSelected = onVariationSelected,
-                    enabled = variations.isNotEmpty()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(onClick = onBarcodeSubmit, enabled = barcodeValue.isNotBlank()) {
+                    Text("Lookup")
+                }
+                OutlinedButton(onClick = onClearSelection, enabled = selectedProduct != null) {
+                    Text("Clear selection")
+                }
+            }
+            if (selectedProduct != null) {
+                Text(
+                    text = buildString {
+                        append(selectedProduct.name)
+                        selectedVariation?.let { variation ->
+                            append(" – ")
+                            append(variation.name)
+                        }
+                        val skuLabel = selectedVariation?.sku?.takeIf { it.isNotBlank() }
+                            ?: selectedProduct.sku?.takeIf { it.isNotBlank() }
+                        skuLabel?.let { sku ->
+                            append(" (SKU: $sku)")
+                        }
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Text(
+                    "Scan a product or variation barcode to begin",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (requiresVariation && selectedVariation == null) {
+                Text(
+                    "This product requires a variation scan before recording stock.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
             OutlinedTextField(
                 value = qtyText,
                 onValueChange = onQtyChanged,
                 label = { Text("Quantity to add") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(qtyFocusRequester),
                 singleLine = true
             )
             Text(
@@ -482,15 +577,15 @@ private fun InjectionCard(
             ) {
                 Button(
                     onClick = { onSubmit(SupabaseProvider.StockEntryKind.INITIAL) },
-                    enabled = !isSubmitting && !selectedProductId.isNullOrBlank()
+                    enabled = !isSubmitting && selectedProduct != null
                 ) { Text("Save Initial") }
                 Button(
                     onClick = { onSubmit(SupabaseProvider.StockEntryKind.PURCHASE) },
-                    enabled = !isSubmitting && !selectedProductId.isNullOrBlank()
+                    enabled = !isSubmitting && selectedProduct != null
                 ) { Text("Save Purchase") }
                 Button(
                     onClick = { onSubmit(SupabaseProvider.StockEntryKind.CLOSING) },
-                    enabled = !isSubmitting && !selectedProductId.isNullOrBlank()
+                    enabled = !isSubmitting && selectedProduct != null
                 ) { Text("Save Closing") }
             }
             OutlinedTextField(
@@ -500,7 +595,7 @@ private fun InjectionCard(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                text = "Current Qty: ${currentQty.displayQty()} ${productLookup[selectedProductId]?.uom.orEmpty()}",
+                text = "Current Qty: ${currentQty.displayQty()} ${selectedProduct?.uom.orEmpty()}",
                 style = MaterialTheme.typography.bodySmall
             )
             if (!errorMessage.isNullOrEmpty()) {

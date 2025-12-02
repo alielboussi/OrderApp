@@ -121,15 +121,15 @@ fun OrderSummaryScreen(
     }
 
     LaunchedEffect(session?.token) {
-        if (session?.token != null) {
-            try {
-                logger.state("FetchingOrderNumber", mapOf("outletId" to session.outletId))
-                orderNumber = root.supabaseProvider.rpcNextOrderNumber(session.token, session.outletId)
-                logger.state("OrderNumberFetched")
-            } catch (t: Throwable) {
-                error = t.message
-                logger.error("OrderNumberFailed", t)
-            }
+        val currentSession = session
+        val jwt = currentSession?.token ?: return@LaunchedEffect
+        try {
+            logger.state("FetchingOrderNumber", mapOf("outletId" to currentSession.outletId))
+            orderNumber = root.supabaseProvider.rpcNextOrderNumber(jwt, currentSession.outletId)
+            logger.state("OrderNumberFetched")
+        } catch (t: Throwable) {
+            error = t.message
+            logger.error("OrderNumberFailed", t)
         }
     }
 

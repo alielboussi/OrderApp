@@ -27,5 +27,6 @@ data class VariationDto(
     val cost: Double,
     val active: Boolean = true,
     @SerialName("package_contains") val packageContains: Double = 1.0,
-    @SerialName("default_warehouse_id") val defaultWarehouseId: String? = null
+    @SerialName("default_warehouse_id") val defaultWarehouseId: String? = null,
+    val sku: String? = null
 )

@@ -1,0 +1,7 @@
+AfterTen Web Entry Points (updated 2025-12-02)
+
+https://aftertentransfers.app/                      # Stock Snapshot dashboard
+https://aftertentransfers.app/transfer-portal        # Warehouse Transfer Console
+https://aftertentransfers.app/api/warehouses         # JSON feed of warehouses
+https://aftertentransfers.app/api/stock              # JSON stock aggregation view
+https://aftertentransfers.app/api/notify-whatsapp    # WhatsApp alert webhook (POST)

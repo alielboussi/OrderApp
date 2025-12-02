@@ -43,6 +43,7 @@ fun HomeScreen(
     val hasTransferRole = session.hasRole(RoleGuards.Transfers)
     val hasSupervisorRole = session.hasRole(RoleGuards.Supervisor)
     val hasOutletRole = session.hasRole(RoleGuards.Outlet)
+    val canAccessTransfers = hasTransferRole || hasWarehouseAdmin
     val logger = rememberScreenLogger("Home")
 
     LaunchedEffect(Unit) {
@@ -126,6 +127,17 @@ fun HomeScreen(
                     },
                     enabled = session != null
                 ) { Text("Warehouses Admin") }
+                Spacer(Modifier.height(12.dp))
+                if (canAccessTransfers) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            logger.event("TransfersTapped")
+                            onTransfers()
+                        },
+                        enabled = session != null
+                    ) { Text("Stock Transfers") }
+                }
             }
             hasSupervisorRole -> {
                 // Supervisor home: go to Outlet Orders (multi-outlet)
@@ -157,7 +169,7 @@ fun HomeScreen(
                     },
                     enabled = (session?.outletId?.isNotEmpty() == true)
                 ) { Text("Orders") }
-                if (hasTransferRole) {
+                if (canAccessTransfers) {
                     Spacer(Modifier.height(12.dp))
                     Button(
                         modifier = Modifier.fillMaxWidth(),
