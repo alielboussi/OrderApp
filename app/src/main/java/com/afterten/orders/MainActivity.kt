@@ -18,6 +18,8 @@ import com.afterten.orders.ui.screens.LoginScreen
 import com.afterten.orders.ui.screens.StockDashboardScreen
 import com.afterten.orders.ui.screens.StockInjectionLogScreen
 import com.afterten.orders.ui.theme.AppTheme
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +67,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onViewOrders = {
                     val s = appViewModel.session.value
-                    if (s?.isSupervisor == true) navController.navigate(Routes.SupervisorOrders.route)
+                    if (s.hasRole(RoleGuards.Supervisor)) navController.navigate(Routes.SupervisorOrders.route)
                     else navController.navigate(Routes.Orders.route)
                 },
                 onTransfers = { navController.navigate(Routes.Transfers.route) },

@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.SupabaseProvider
 import com.afterten.orders.util.rememberScreenLogger
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -61,7 +63,7 @@ fun StockInjectionLogScreen(
         MissingAuthMessage()
         return
     }
-    if (session?.isAdmin != true) {
+    if (!session.hasRole(RoleGuards.WarehouseAdmin)) {
         logger.warn("UnauthorizedAccess")
         UnauthorizedMessage()
         return
@@ -280,7 +282,7 @@ private fun MissingAuthMessage() {
 @Composable
 private fun UnauthorizedMessage() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Admins only", color = MaterialTheme.colorScheme.error)
+        Text("Warehouse admin role required", color = MaterialTheme.colorScheme.error)
     }
 }
 

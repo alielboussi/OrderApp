@@ -45,6 +45,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +72,16 @@ fun SupervisorOrderDetailScreen(
     val scope = rememberCoroutineScope()
     val variationsByProduct = remember { mutableStateMapOf<String, List<SupabaseProvider.SimpleVariation>>() }
     val logger = rememberScreenLogger("SupervisorOrderDetail")
+
+    if (!session.hasRole(RoleGuards.Supervisor)) {
+        AccessDeniedCard(
+            title = "Supervisor access required",
+            message = "Only Main Branch Order Supervisors can edit orders, approve variances, or capture driver signatures.",
+            primaryLabel = "Back to Home",
+            onPrimary = onBack
+        )
+        return
+    }
 
     LaunchedEffect(Unit) { logger.enter(mapOf("orderId" to orderId)) }
     LaunchedEffect(showApprovalDialog) {

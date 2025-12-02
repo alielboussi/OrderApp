@@ -62,6 +62,9 @@ import kotlinx.coroutines.withContext
 import android.graphics.BitmapFactory
 // Use fully qualified android.graphics.Color where needed to avoid Compose Color conflict
 import kotlinx.coroutines.delay
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,7 +73,7 @@ fun OrderSummaryScreen(
     onBack: () -> Unit,
     onFinished: (pdfPath: String) -> Unit
 ) {
-    val session = root.session.collectAsState().value
+    val session by root.session.collectAsState()
     val cartMap = root.cart.collectAsState().value
     val cart = cartMap.values.toList()
     val ctx = LocalContext.current
@@ -86,6 +89,16 @@ fun OrderSummaryScreen(
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     val logger = rememberScreenLogger("OrderSummary")
+
+    if (!session.hasRole(RoleGuards.Outlet)) {
+        AccessDeniedCard(
+            title = "Outlet access required",
+            message = "Only outlet operators can capture employee, driver, and offloader signatures.",
+            primaryLabel = "Back to Home",
+            onPrimary = onBack
+        )
+        return
+    }
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("cartLines" to cart.size))

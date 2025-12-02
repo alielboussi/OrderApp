@@ -217,7 +217,7 @@ AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION public.whoami_roles()
-RETURNS TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb)
+RETURNS TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb, role_catalog jsonb)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'auth'
@@ -228,6 +228,7 @@ DECLARE
   v_is_admin boolean := false;
   v_roles text[] := '{}';
   v_outlets jsonb := '[]'::jsonb;
+  v_role_catalog jsonb := '[]'::jsonb;
 BEGIN
   IF v_uid IS NULL THEN
     RETURN QUERY SELECT NULL::uuid, NULL::text, FALSE, ARRAY[]::text[], '[]'::jsonb;
@@ -279,7 +280,26 @@ BEGIN
     ), '[]'::jsonb
   ) INTO v_outlets;
 
-  RETURN QUERY SELECT v_uid, v_email, COALESCE(v_is_admin, FALSE), COALESCE(v_roles, '{}'), COALESCE(v_outlets, '[]'::jsonb);
+  SELECT COALESCE(
+    (
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', row_data.id,
+        'slug', row_data.slug,
+        'display_name', row_data.display_name
+      ))
+      FROM (
+        SELECT DISTINCT r.id, r.slug, r.display_name
+        FROM public.roles r
+        JOIN public.user_roles ur
+          ON lower(ur.role) = lower(r.slug)
+        WHERE ur.user_id = v_uid
+          AND ur.active
+      ) AS row_data
+    ),
+    '[]'::jsonb
+  ) INTO v_role_catalog;
+
+  RETURN QUERY SELECT v_uid, v_email, COALESCE(v_is_admin, FALSE), COALESCE(v_roles, '{}'), COALESCE(v_outlets, '[]'::jsonb), COALESCE(v_role_catalog, '[]'::jsonb);
 END;
 $$;
 

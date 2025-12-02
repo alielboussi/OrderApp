@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.util.rememberScreenLogger
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @Composable
 fun HomeScreen(
@@ -36,26 +39,39 @@ fun HomeScreen(
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
-    val isAdmin = session?.isAdmin == true
-    val canTransfer = session?.canTransfer == true
-    val isTransferManager = session?.isTransferManager == true
-    val isSupervisor = session?.isSupervisor == true
+    val hasWarehouseAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
+    val hasTransferRole = session.hasRole(RoleGuards.Transfers)
+    val hasSupervisorRole = session.hasRole(RoleGuards.Supervisor)
+    val hasOutletRole = session.hasRole(RoleGuards.Outlet)
     val logger = rememberScreenLogger("Home")
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))
     }
-    LaunchedEffect(session?.outletId, isAdmin, canTransfer, isTransferManager, isSupervisor) {
+    LaunchedEffect(session?.outletId, hasWarehouseAdmin, hasTransferRole, hasSupervisorRole, hasOutletRole) {
         logger.state(
             state = "SessionChanged",
             props = mapOf(
                 "outletId" to (session?.outletId ?: ""),
-                "isAdmin" to isAdmin,
-                "canTransfer" to canTransfer,
-                "isTransferManager" to isTransferManager,
-                "isSupervisor" to isSupervisor
+                "hasWarehouseAdmin" to hasWarehouseAdmin,
+                "hasTransferRole" to hasTransferRole,
+                "hasSupervisorRole" to hasSupervisorRole,
+                "hasOutletRole" to hasOutletRole
             )
         )
+    }
+
+    if (session != null && !hasWarehouseAdmin && !hasTransferRole && !hasSupervisorRole && !hasOutletRole) {
+        AccessDeniedCard(
+            title = "No roles assigned",
+            message = "Your account does not have access to any dashboards. Ask an administrator to assign a role.",
+            primaryLabel = "Log out",
+            onPrimary = {
+                logger.event("LogoutNoRole")
+                onLogout()
+            }
+        )
+        return
     }
 
     Column(
@@ -82,7 +98,7 @@ fun HomeScreen(
         Text(text = session?.outletName ?: "", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
         when {
-            isAdmin -> {
+            hasWarehouseAdmin -> {
                 // Admin home: expose stock tools and warehouse admin panel
                 Button(
                     modifier = Modifier.fillMaxWidth(),
@@ -111,18 +127,7 @@ fun HomeScreen(
                     enabled = session != null
                 ) { Text("Warehouses Admin") }
             }
-            isTransferManager -> {
-                // TM home: only Transfers
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("TransfersTapped")
-                        onTransfers()
-                    },
-                    enabled = session != null
-                ) { Text("Stock Transfers") }
-            }
-            isSupervisor -> {
+            hasSupervisorRole -> {
                 // Supervisor home: go to Outlet Orders (multi-outlet)
                 Button(
                     modifier = Modifier.fillMaxWidth(),
@@ -133,7 +138,7 @@ fun HomeScreen(
                     enabled = session != null
                 ) { Text("Outlet Orders") }
             }
-            else -> {
+            hasOutletRole -> {
                 // Regular outlet user: Create and Orders
                 Button(
                     modifier = Modifier.fillMaxWidth(),
@@ -152,17 +157,39 @@ fun HomeScreen(
                     },
                     enabled = (session?.outletId?.isNotEmpty() == true)
                 ) { Text("Orders") }
-                if (canTransfer) {
+                if (hasTransferRole) {
                     Spacer(Modifier.height(12.dp))
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                logger.event("TransfersTapped")
-                                onTransfers()
-                            },
-                            enabled = session != null
-                        ) { Text("Stock Transfers") }
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            logger.event("TransfersTapped")
+                            onTransfers()
+                        },
+                        enabled = session != null
+                    ) { Text("Stock Transfers") }
                 }
+            }
+            hasTransferRole -> {
+                // TM home: only Transfers
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        logger.event("TransfersTapped")
+                        onTransfers()
+                    },
+                    enabled = session != null
+                ) { Text("Stock Transfers") }
+            }
+            else -> {
+                AccessDeniedCard(
+                    title = "No roles assigned",
+                    message = "Your account does not have access to any dashboards. Ask an administrator to assign a role.",
+                    primaryLabel = "Log out",
+                    onPrimary = {
+                        logger.event("LogoutNoRole")
+                        onLogout()
+                    }
+                )
             }
         }
     }

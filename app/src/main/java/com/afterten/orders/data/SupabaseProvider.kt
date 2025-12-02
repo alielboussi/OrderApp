@@ -40,6 +40,7 @@ import io.ktor.client.call.body
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import com.afterten.orders.data.RoleGuards
 
 class SupabaseProvider(context: Context) {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
@@ -252,7 +253,8 @@ class SupabaseProvider(context: Context) {
             val email: String? = null,
             @SerialName("is_admin") val isAdmin: Boolean = false,
             val roles: List<String> = emptyList(),
-            val outlets: List<OutletRoleInfo> = emptyList()
+            val outlets: List<OutletRoleInfo> = emptyList(),
+            @SerialName("role_catalog") val roleCatalog: List<RoleDescriptor> = emptyList()
         )
         val rolesText = http.post("$supabaseUrl/rest/v1/rpc/whoami_roles") {
             header("apikey", supabaseAnonKey)
@@ -269,19 +271,19 @@ class SupabaseProvider(context: Context) {
                 .decodeFromString(ListSerializer(WhoRoles.serializer()), rolesText)
         }
         val whoRoles = rolesList.firstOrNull()
+        val roleDescriptors = when {
+            whoRoles?.roleCatalog?.isNotEmpty() == true -> whoRoles.roleCatalog
+            else -> (whoRoles?.roles ?: emptyList()).map { RoleDescriptor(slug = it) }
+        }
 
         // Effective admin: BuildConfig gate OR DB role
-        val isAdminEff = isAdmin || (whoRoles?.isAdmin == true)
-        // Can transfer if admin or has transfer_manager on any outlet
-        val hasTransferRole = (whoRoles?.outlets ?: emptyList()).any { o ->
-            o.roles.any { it.equals("transfer_manager", ignoreCase = true) }
-        } || (whoRoles?.roles?.any { it.equals("transfer_manager", ignoreCase = true) } == true)
-        val canTransfer = isAdminEff || hasTransferRole
-        val isTransferManager = hasTransferRole
-        // Is supervisor if role present either globally or per outlet
-        val isSupervisor = (whoRoles?.outlets ?: emptyList()).any { o ->
-            o.roles.any { it.equals("supervisor", ignoreCase = true) }
-        } || (whoRoles?.roles?.any { it.equals("supervisor", ignoreCase = true) } == true)
+        val hasWarehouseAdminRole = roleDescriptors.any { RoleGuards.WarehouseAdmin.matches(it) } || isAdmin || (whoRoles?.isAdmin == true)
+        val hasTransferRole = roleDescriptors.any { RoleGuards.Transfers.matches(it) } || hasWarehouseAdminRole
+        val hasSupervisorRole = roleDescriptors.any { RoleGuards.Supervisor.matches(it) } || hasWarehouseAdminRole
+        val canTransfer = hasTransferRole
+        val isTransferManager = roleDescriptors.any { RoleGuards.Transfers.matches(it) } || hasWarehouseAdminRole
+        val isAdminEff = hasWarehouseAdminRole
+        val isSupervisor = hasSupervisorRole
 
         // 4) Return the same shape the app expects
         @Serializable
@@ -296,15 +298,16 @@ class SupabaseProvider(context: Context) {
             @SerialName("is_admin") val isAdmin: Boolean = false,
             @SerialName("can_transfer") val canTransfer: Boolean = false,
             @SerialName("is_transfer_manager") val isTransferManager: Boolean = false,
-            @SerialName("is_supervisor") val isSupervisor: Boolean = false
+            @SerialName("is_supervisor") val isSupervisor: Boolean = false,
+            val roles: List<RoleDescriptor> = emptyList()
         )
         return Json { encodeDefaults = true }.encodeToString(
             LoginPack.serializer(),
             if (who != null) {
-                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor)
+                LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor, roleDescriptors)
             } else if (isAdminEff || canTransfer) {
                 // Allow admin and transfer managers to sign in without an outlet mapping; outlet-specific actions should request context in UI
-                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor)
+                LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor, roleDescriptors)
             } else {
                 error("No outlet mapping found for this user. Please add the user to public.outlet_users or assign them a role via whoami_roles.")
             }

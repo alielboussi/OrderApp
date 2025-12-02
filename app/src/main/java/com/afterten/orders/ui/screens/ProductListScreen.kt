@@ -51,6 +51,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.afterten.orders.ui.components.AppOutlinedTextField
 import androidx.compose.ui.platform.LocalContext
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,7 +65,17 @@ fun ProductListScreen(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val repo = remember { ProductRepository(root.supabaseProvider, AppDatabase.get(ctx)) }
     val scope = rememberCoroutineScope()
-    val session = root.session.collectAsState().value
+    val session by root.session.collectAsState()
+
+    if (!session.hasRole(RoleGuards.Outlet)) {
+        AccessDeniedCard(
+            title = "Outlet access required",
+            message = "Only outlet operators can browse and place orders.",
+            primaryLabel = "Back to Home",
+            onPrimary = onBack
+        )
+        return
+    }
 
     val products by repo.listenProducts().collectAsState(initial = emptyList())
     val allVariations by repo.listenAllVariations().collectAsState(initial = emptyList())

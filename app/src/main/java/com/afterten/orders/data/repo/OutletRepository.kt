@@ -1,6 +1,7 @@
 package com.afterten.orders.data.repo
 
 import com.afterten.orders.data.OutletSession
+import com.afterten.orders.data.RoleDescriptor
 import com.afterten.orders.data.SupabaseProvider
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -17,6 +18,7 @@ class OutletRepository(private val provider: SupabaseProvider) {
         @SerialName("outlet_name") val outletName: String,
         @SerialName("user_id") val userId: String? = null,
         val email: String? = null,
+        val roles: List<RoleDescriptor> = emptyList(),
         @SerialName("is_admin") val isAdmin: Boolean = false,
         @SerialName("can_transfer") val canTransfer: Boolean = false,
         @SerialName("is_transfer_manager") val isTransferManager: Boolean = false,
@@ -36,6 +38,7 @@ class OutletRepository(private val provider: SupabaseProvider) {
             outletName = parsed.outletName,
             userId = parsed.userId,
             email = parsed.email,
+            roles = parsed.roles,
             isAdmin = parsed.isAdmin,
             canTransfer = parsed.canTransfer,
             isTransferManager = parsed.isTransferManager,

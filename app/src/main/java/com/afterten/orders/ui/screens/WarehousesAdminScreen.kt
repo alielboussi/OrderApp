@@ -20,6 +20,9 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.abs
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -33,7 +36,21 @@ fun WarehousesAdminScreen(
     val scope = rememberCoroutineScope()
     val logger = rememberScreenLogger("WarehousesAdmin")
 
-    LaunchedEffect(Unit) { logger.enter(mapOf("isAdmin" to (session?.isAdmin == true))) }
+    LaunchedEffect(Unit) {
+        logger.enter(mapOf("hasWarehouseAdminRole" to session.hasRole(RoleGuards.WarehouseAdmin)))
+    }
+
+    if (!session.hasRole(RoleGuards.WarehouseAdmin)) {
+        AccessDeniedCard(
+            title = "Warehouse admin role required",
+            message = "Only authorized warehouse admins can manage stock, outlets, and warehouse settings.",
+            primaryLabel = "Back",
+            onPrimary = onBack,
+            secondaryLabel = "Log out",
+            onSecondary = onLogout
+        )
+        return
+    }
 
     var outlets by remember { mutableStateOf<List<SupabaseProvider.Outlet>>(emptyList()) }
     var warehouses by remember { mutableStateOf<List<SupabaseProvider.Warehouse>>(emptyList()) }
@@ -87,7 +104,7 @@ fun WarehousesAdminScreen(
     val logBringIntoViewRequester = remember { BringIntoViewRequester() }
 
     LaunchedEffect(session?.token) {
-        val isAdmin = session?.isAdmin == true
+        val isAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
         val jwt = session?.token
         if (jwt != null && isAdmin) {
             runCatching {
@@ -100,7 +117,7 @@ fun WarehousesAdminScreen(
 
     LaunchedEffect(stocktakeProductId, session?.token) {
         val jwt = session?.token
-        val isAdmin = session?.isAdmin == true
+        val isAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
         if (stocktakeProductId.isNullOrBlank() || jwt == null || !isAdmin) {
             warehouseVariations = emptyList()
             stocktakeVariationId = null
@@ -116,7 +133,7 @@ fun WarehousesAdminScreen(
 
     LaunchedEffect(posProductId, session?.token) {
         val jwt = session?.token
-        val isAdmin = session?.isAdmin == true
+        val isAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
         if (posProductId.isNullOrBlank() || jwt == null || !isAdmin) {
             posVariations = emptyList()
             posVariationId = null
@@ -132,7 +149,7 @@ fun WarehousesAdminScreen(
 
     LaunchedEffect(outletStocktakeProductId, session?.token) {
         val jwt = session?.token
-        val isAdmin = session?.isAdmin == true
+        val isAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
         if (outletStocktakeProductId.isNullOrBlank() || jwt == null || !isAdmin) {
             outletStocktakeVariations = emptyList()
             outletStocktakeVariationId = null
@@ -149,7 +166,7 @@ fun WarehousesAdminScreen(
     LaunchedEffect(stockPeriodOutletId, session?.token) {
         val jwt = session?.token
         val outletId = stockPeriodOutletId
-        val isAdmin = session?.isAdmin == true
+        val isAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
         if (outletId.isNullOrBlank() || jwt == null || !isAdmin) {
             outletPeriods = emptyList()
             outletStocktakePeriodId = null
@@ -180,7 +197,7 @@ fun WarehousesAdminScreen(
             MissingAuth()
             return@Scaffold
         }
-        val isAdmin = session.isAdmin
+        val isAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
         if (!isAdmin) {
             logger.warn("UnauthorizedAccess")
             Unauthorized()
@@ -951,7 +968,7 @@ private fun WarehouseRow(
     }
 }
 
-// jwtSub helper removed; admin gating uses session.isAdmin from login
+// jwtSub helper removed; admin gating relies on RoleGuards.WarehouseAdmin
 
 private fun Instant.toIsoSeconds(): String = this.truncatedTo(ChronoUnit.SECONDS).toString()
 

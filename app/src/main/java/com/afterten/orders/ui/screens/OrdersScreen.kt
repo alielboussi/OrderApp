@@ -33,6 +33,9 @@ import com.afterten.orders.util.rememberScreenLogger
 import com.afterten.orders.util.generateOrderPdf
 import com.afterten.orders.util.sanitizeForFile
 import com.afterten.orders.util.toPdfGroups
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,6 +58,16 @@ fun OrdersScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val logger = rememberScreenLogger("Orders")
+
+    if (!session.hasRole(RoleGuards.Outlet)) {
+        AccessDeniedCard(
+            title = "Outlet access required",
+            message = "Only outlet operators can review placed orders or submit offloader signatures.",
+            primaryLabel = "Back to Home",
+            onPrimary = onBack
+        )
+        return
+    }
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))

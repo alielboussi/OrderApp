@@ -32,6 +32,9 @@ import com.afterten.orders.util.formatMoney
 import com.afterten.orders.util.formatPackageUnits
 import com.afterten.orders.util.rememberScreenLogger
 import androidx.compose.material3.HorizontalDivider
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,11 +43,22 @@ fun CartReviewScreen(
     onBack: () -> Unit,
     onContinue: () -> Unit
 ) {
+    val session by root.session.collectAsState()
     val cart = root.cart.collectAsState().value.values.toList()
     val ctx = LocalContext.current
     val repo = remember { ProductRepository(root.supabaseProvider, AppDatabase.get(ctx)) }
     val products by repo.listenProducts().collectAsState(initial = emptyList())
     val logger = rememberScreenLogger("CartReview")
+
+    if (!session.hasRole(RoleGuards.Outlet)) {
+        AccessDeniedCard(
+            title = "Outlet access required",
+            message = "Only outlet operators can review carts and submit orders.",
+            primaryLabel = "Back to Home",
+            onPrimary = onBack
+        )
+        return
+    }
 
     LaunchedEffect(Unit) { logger.enter(mapOf("initialItems" to cart.size)) }
     LaunchedEffect(cart) {

@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.util.rememberScreenLogger
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @Composable
 fun TransfersScreen(
@@ -38,6 +41,18 @@ fun TransfersScreen(
     val logger = rememberScreenLogger("Transfers")
 
     LaunchedEffect(Unit) { logger.enter(mapOf("hasSession" to (session != null))) }
+
+    if (!session.hasRole(RoleGuards.Transfers)) {
+        AccessDeniedCard(
+            title = "Transfers access required",
+            message = "Only users with the Transfers role can manage warehouse transfer requests.",
+            primaryLabel = "Back",
+            onPrimary = onBack,
+            secondaryLabel = "Log out",
+            onSecondary = onLogout
+        )
+        return
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val maxContentWidth = 900.dp
         val contentWidth = if (this.maxWidth < maxContentWidth) this.maxWidth else maxContentWidth

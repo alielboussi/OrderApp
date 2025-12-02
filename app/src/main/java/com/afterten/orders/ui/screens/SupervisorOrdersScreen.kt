@@ -18,6 +18,9 @@ import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.util.LogAnalytics
 import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
+import com.afterten.orders.ui.components.AccessDeniedCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +36,16 @@ fun SupervisorOrdersScreen(
     var items by remember { mutableStateOf(listOf<OrderRepository.OrderRow>()) }
     val scope = rememberCoroutineScope()
     val logger = rememberScreenLogger("SupervisorOrders")
+
+    if (!session.hasRole(RoleGuards.Supervisor)) {
+        AccessDeniedCard(
+            title = "Supervisor access required",
+            message = "Only Main Branch Order Supervisors can review and approve outlet orders.",
+            primaryLabel = "Back to Home",
+            onPrimary = onBack
+        )
+        return
+    }
 
     LaunchedEffect(Unit) { logger.enter() }
 

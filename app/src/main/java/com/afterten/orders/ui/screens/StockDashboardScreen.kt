@@ -40,6 +40,8 @@ import com.afterten.orders.data.SupabaseProvider
 import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +62,7 @@ fun StockDashboardScreen(
         MissingAuth()
         return
     }
-    if (session?.isAdmin != true) {
+    if (!session.hasRole(RoleGuards.WarehouseAdmin)) {
         logger.warn("UnauthorizedAccess")
         Unauthorized()
         return
@@ -580,6 +582,6 @@ private fun Unauthorized() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Text("Admins only", color = MaterialTheme.colorScheme.error)
+        Text("Warehouse admin role required", color = MaterialTheme.colorScheme.error)
     }
 }

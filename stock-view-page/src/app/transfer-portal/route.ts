@@ -311,8 +311,9 @@ const html = `<!DOCTYPE html>
   <script>
     const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
-    const REQUIRED_ROLE = 'warehouse_transfers';
-    const REQUIRED_ROLE_LABEL = 'Warehouse Transfers';
+    const REQUIRED_ROLE = 'transfers';
+    const REQUIRED_ROLE_ID = '768b2c30-6d0a-4e91-ac62-4ca4ae74b78f';
+    const REQUIRED_ROLE_LABEL = 'Transfers';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
@@ -675,7 +676,22 @@ const html = `<!DOCTYPE html>
         }
         const record = Array.isArray(data) ? data[0] : data;
         const roles = Array.isArray(record?.roles) ? record.roles : [];
-        const hasRole = roles.some((role) => typeof role === 'string' && role.toLowerCase() === REQUIRED_ROLE);
+        const hasRole = roles.some((role) => {
+          if (!role) return false;
+          if (typeof role === 'string') {
+            const trimmed = role.trim();
+            if (!trimmed) return false;
+            if (trimmed === REQUIRED_ROLE_ID) return true;
+            return trimmed.toLowerCase() === REQUIRED_ROLE;
+          }
+          if (typeof role === 'object') {
+            const roleId = typeof role.id === 'string' ? role.id : null;
+            const slugSource = typeof role.slug === 'string' ? role.slug : typeof role.name === 'string' ? role.name : null;
+            const slug = slugSource ? slugSource.toLowerCase() : null;
+            return roleId === REQUIRED_ROLE_ID || slug === REQUIRED_ROLE;
+          }
+          return false;
+        });
         if (!hasRole) {
           const missingRoleError = new Error('WAREHOUSE_ROLE_REQUIRED');
           missingRoleError.code = 'WAREHOUSE_ROLE_REQUIRED';
