@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 const PROJECT_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const LOCKED_SOURCE_ID = '54a93328-4031-4125-8ef7-dc40ada518b2';
+const LOCKED_SOURCE_ID = '09e0898f-359d-4373-a1ab-d9ba8be5b35b';
 const LOCKED_DEST_ID = '9a12caa0-c116-4137-8ea5-74bb0de77fae';
 
 const html = `<!DOCTYPE html>
@@ -536,7 +536,7 @@ const html = `<!DOCTYPE html>
               const unitLabel = item.unit ?? 'unit';
               return '- ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' - ' + qtyLabel + ' ' + unitLabel;
             })
-            .join('\n');
+            .join('\\n');
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
           const reference = /^\d+$/.test(rawReference) ? rawReference.padStart(10, '0') : rawReference;
           const summary = {
@@ -569,7 +569,7 @@ const html = `<!DOCTYPE html>
       }
 
       function showResult(message, isError) {
-        resultLog.value = new Date().toLocaleString() + ' - ' + message + '\n' + resultLog.value;
+        resultLog.value = new Date().toLocaleString() + ' - ' + message + '\\n' + resultLog.value;
         resultLog.className = isError ? 'message error' : 'message success';
       }
 
