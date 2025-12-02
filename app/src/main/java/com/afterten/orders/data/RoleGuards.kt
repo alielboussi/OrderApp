@@ -14,7 +14,7 @@ class RoleGuard(
 
     fun matches(role: RoleDescriptor): Boolean {
         if (id != null && role.id?.equals(id, ignoreCase = true) == true) return true
-        val normalizedSlug = normalize(role.slug)
+        val normalizedSlug = normalize(role.slug) ?: normalize(role.normalizedSlug)
         val normalizedDisplay = normalize(role.displayName)
         val normalizedTarget = normalize(slug)
         if (normalizedTarget != null) {

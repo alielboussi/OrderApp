@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 data class RoleDescriptor(
     val id: String? = null,
     val slug: String? = null,
+    @SerialName("normalized_slug") val normalizedSlug: String? = null,
     @SerialName("display_name") val displayName: String? = null
 )
 

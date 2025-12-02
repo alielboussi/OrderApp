@@ -30,8 +30,7 @@ VALUES
   ('admin', 'Administrator', 'Full access to every resource'),
   ('supervisor', 'Outlet Supervisor', 'Approves and reviews outlet orders'),
   ('outlet', 'Outlet Operator', 'Places orders on behalf of an outlet'),
-  ('transfer_manager', 'Transfer Manager', 'Controls warehouse transfers'),
-  ('warehouse_transfers', 'Warehouse Transfers', 'Night-shift transfer console operator')
+  ('transfers', 'Transfers', 'Night-shift transfer console operator')
 ON CONFLICT (slug) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   description = EXCLUDED.description;
@@ -76,6 +75,15 @@ ALTER TABLE IF EXISTS public.user_roles
 
 ALTER TABLE public.user_roles
   DROP CONSTRAINT IF EXISTS user_roles_role_slug_fkey;
+
+-- Normalize legacy transfer slugs to the canonical Transfers slug
+UPDATE public.user_roles
+SET role = 'transfers'
+WHERE lower(role) IN ('warehouse_transfers', 'transfer_manager');
+
+DELETE FROM public.roles
+WHERE lower(slug) IN ('warehouse_transfers', 'transfer_manager')
+  AND slug <> 'transfers';
 
 ALTER TABLE public.user_roles
   ADD CONSTRAINT user_roles_role_slug_fkey
@@ -199,7 +207,7 @@ LANGUAGE sql
 STABLE SECURITY DEFINER
 SET search_path TO 'public', 'auth'
 AS $$
-  SELECT public.has_role('transfer_manager', p_outlet_id);
+  SELECT public.has_role('transfers', p_outlet_id);
 $$;
 
 CREATE OR REPLACE FUNCTION public.tm_for_warehouse(p_warehouse_id uuid)
@@ -212,7 +220,7 @@ AS $$
     SELECT 1
     FROM public.warehouses w
     WHERE w.id = p_warehouse_id
-      AND public.has_role('transfer_manager', w.outlet_id)
+      AND public.has_role('transfers', w.outlet_id)
   );
 $$;
 
@@ -249,11 +257,11 @@ BEGIN
 
   SELECT COALESCE(
     ARRAY(
-      SELECT DISTINCT ur.role
+      SELECT DISTINCT lower(ur.role)
       FROM public.user_roles ur
       WHERE ur.user_id = v_uid
         AND ur.active
-      ORDER BY ur.role
+      ORDER BY lower(ur.role)
     ), '{}'
   ) INTO v_roles;
 
@@ -262,12 +270,12 @@ BEGIN
       SELECT jsonb_agg(jsonb_build_object(
         'outlet_id', o.id,
         'outlet_name', o.name,
-        'roles', ARRAY(SELECT DISTINCT ur_inner.role
+        'roles', ARRAY(SELECT DISTINCT lower(ur_inner.role)
                        FROM public.user_roles ur_inner
                        WHERE ur_inner.user_id = v_uid
                          AND ur_inner.active
                          AND ur_inner.outlet_id = o.id
-                       ORDER BY ur_inner.role))
+                       ORDER BY lower(ur_inner.role)))
       )
       FROM public.outlets o
       WHERE EXISTS (
@@ -285,10 +293,11 @@ BEGIN
       SELECT jsonb_agg(jsonb_build_object(
         'id', row_data.id,
         'slug', row_data.slug,
+        'normalized_slug', row_data.slug_lower,
         'display_name', row_data.display_name
       ))
       FROM (
-        SELECT DISTINCT r.id, r.slug, r.display_name
+        SELECT DISTINCT r.id, r.slug, lower(r.slug) AS slug_lower, r.display_name
         FROM public.roles r
         JOIN public.user_roles ur
           ON lower(ur.role) = lower(r.slug)
@@ -867,7 +876,7 @@ LANGUAGE plpgsql
 SET search_path TO 'pg_temp'
 AS $$
 DECLARE
-  v_role text := coalesce((current_setting('request.jwt.claims', true)::jsonb ->> 'role'),'');
+  v_role text := lower(coalesce((current_setting('request.jwt.claims', true)::jsonb ->> 'role'), ''));
   v_same_outlet boolean := false;
 BEGIN
   IF v_role <> 'supervisor' THEN
@@ -881,7 +890,7 @@ BEGIN
     WHERE o.id = NEW.order_id
       AND ur.user_id = auth.uid()
       AND ur.active
-      AND ur.role = 'supervisor'
+      AND lower(ur.role) = 'supervisor'
   ) INTO v_same_outlet;
 
   IF NOT v_same_outlet THEN
@@ -1506,7 +1515,7 @@ CREATE POLICY wse_select_admin
   FOR SELECT
   USING (
     public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
   );
 
 DROP POLICY IF EXISTS wse_write_admin ON public.warehouse_stock_entries;
@@ -1517,7 +1526,7 @@ CREATE POLICY wse_write_admin
     recorded_by = auth.uid()
     AND (
       public.is_admin(auth.uid())
-      OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+      OR public.has_role_any_outlet(auth.uid(), 'transfers')
     )
   );
 
@@ -1557,7 +1566,7 @@ BEGIN
   END IF;
   IF NOT (
     public.is_admin(v_uid)
-    OR public.has_role_any_outlet(v_uid, 'transfer_manager')
+    OR public.has_role_any_outlet(v_uid, 'transfers')
   ) THEN
     RAISE EXCEPTION 'not authorized';
   END IF;
@@ -1728,8 +1737,8 @@ BEGIN
 
   IF NOT (
     public.is_admin(v_uid)
-    OR public.has_role(v_uid, 'transfer_manager', v_src_outlet)
-    OR public.has_role(v_uid, 'transfer_manager', v_dest_outlet)
+    OR public.has_role(v_uid, 'transfers', v_src_outlet)
+    OR public.has_role(v_uid, 'transfers', v_dest_outlet)
   ) THEN
     RAISE EXCEPTION 'not authorized';
   END IF;
@@ -1873,7 +1882,7 @@ CREATE POLICY products_sold_members_select ON public.products_sold
   USING (
     public.is_admin(auth.uid())
     OR public.order_is_accessible(order_id, auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
   );
 
 INSERT INTO public.products_sold(
@@ -2221,7 +2230,7 @@ CREATE POLICY warehouse_stocktakes_select ON public.warehouse_stocktakes
   FOR SELECT
   USING (
     public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
   );
 
 DROP POLICY IF EXISTS warehouse_stocktakes_admin_rw ON public.warehouse_stocktakes;
@@ -2809,7 +2818,7 @@ CREATE POLICY product_recipes_transfer_ro ON public.product_recipes
   FOR SELECT
   USING (
     public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
   );
 
 CREATE TABLE IF NOT EXISTS public.product_recipe_ingredients (
@@ -2840,7 +2849,7 @@ CREATE POLICY recipe_ingredients_transfer_ro ON public.product_recipe_ingredient
   FOR SELECT
   USING (
     public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfer_manager')
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
   );
 
 CREATE OR REPLACE FUNCTION public.touch_product_recipe()

@@ -234,7 +234,7 @@ const html = `<!DOCTYPE html>
             <input type="email" id="login-email" placeholder="you@example.com" required />
           </label>
           <label>Password
-            <input type="password" id="login-password" placeholder="••••••••" required />
+            <input type="password" id="login-password" placeholder="********" required />
           </label>
         </div>
         <input id="login-wedge" type="text" autocomplete="off" style="position:absolute; opacity:0; height:0;" />
@@ -254,12 +254,12 @@ const html = `<!DOCTYPE html>
         <div class="two-cols">
           <div class="locked-pill">
             <h3>From</h3>
-            <p id="source-label">Loading…</p>
+            <p id="source-label">Loading...</p>
             <span class="badge">ID: ${LOCKED_SOURCE_ID}</span>
           </div>
           <div class="locked-pill">
             <h3>To</h3>
-            <p id="dest-label">Loading…</p>
+            <p id="dest-label">Loading...</p>
             <span class="badge">ID: ${LOCKED_DEST_ID}</span>
           </div>
         </div>
@@ -312,6 +312,7 @@ const html = `<!DOCTYPE html>
     const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
     const REQUIRED_ROLE = 'transfers';
+    const ALLOWED_ROLE_SLUGS = ['transfers', 'warehouse_transfers'];
     const REQUIRED_ROLE_ID = '768b2c30-6d0a-4e91-ac62-4ca4ae74b78f';
     const REQUIRED_ROLE_LABEL = 'Transfers';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -412,7 +413,7 @@ const html = `<!DOCTYPE html>
           return;
         }
 
-        variationSelect.innerHTML = '<option>Loading variations…</option>';
+        variationSelect.innerHTML = '<option>Loading variations...</option>';
         variationSelect.disabled = true;
         const { data, error } = await supabase
           .from('product_variations')
@@ -492,7 +493,7 @@ const html = `<!DOCTYPE html>
 
         state.loading = true;
         submitButton.disabled = true;
-        submitButton.textContent = 'Submitting…';
+        submitButton.textContent = 'Submitting...';
         try {
           const payload = {
             p_source: sourceId,
@@ -533,7 +534,7 @@ const html = `<!DOCTYPE html>
               const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
               const qtyLabel = item.qty ?? 0;
               const unitLabel = item.unit ?? 'unit';
-              return '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' — ' + qtyLabel + ' ' + unitLabel;
+              return '- ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' - ' + qtyLabel + ' ' + unitLabel;
             })
             .join('\n');
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
@@ -545,7 +546,7 @@ const html = `<!DOCTYPE html>
             operator: state.session?.user?.email ?? 'Unknown operator',
             sourceLabel: sourceLabel.textContent,
             destLabel: destLabel.textContent,
-            route: (sourceLabel.textContent ?? 'Unknown source') + ' → ' + (destLabel.textContent ?? 'Unknown destination'),
+            route: (sourceLabel.textContent ?? 'Unknown source') + ' -> ' + (destLabel.textContent ?? 'Unknown destination'),
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
@@ -568,7 +569,7 @@ const html = `<!DOCTYPE html>
       }
 
       function showResult(message, isError) {
-        resultLog.value = new Date().toLocaleString() + ' — ' + message + '\n' + resultLog.value;
+        resultLog.value = new Date().toLocaleString() + ' - ' + message + '\n' + resultLog.value;
         resultLog.className = isError ? 'message error' : 'message success';
       }
 
@@ -682,13 +683,20 @@ const html = `<!DOCTYPE html>
             const trimmed = role.trim();
             if (!trimmed) return false;
             if (trimmed === REQUIRED_ROLE_ID) return true;
-            return trimmed.toLowerCase() === REQUIRED_ROLE;
+            return ALLOWED_ROLE_SLUGS.includes(trimmed.toLowerCase());
           }
           if (typeof role === 'object') {
             const roleId = typeof role.id === 'string' ? role.id : null;
-            const slugSource = typeof role.slug === 'string' ? role.slug : typeof role.name === 'string' ? role.name : null;
+            const slugSource =
+              typeof role.slug === 'string'
+                ? role.slug
+                : typeof role.normalized_slug === 'string'
+                  ? role.normalized_slug
+                  : typeof role.name === 'string'
+                    ? role.name
+                    : null;
             const slug = slugSource ? slugSource.toLowerCase() : null;
-            return roleId === REQUIRED_ROLE_ID || slug === REQUIRED_ROLE;
+            return roleId === REQUIRED_ROLE_ID || (slug !== null && ALLOWED_ROLE_SLUGS.includes(slug));
           }
           return false;
         });
