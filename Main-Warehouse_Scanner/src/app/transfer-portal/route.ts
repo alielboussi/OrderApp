@@ -19,6 +19,7 @@ const html = `<!DOCTYPE html>
     :root {
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color-scheme: dark;
+      font-size: 15px;
     }
     *, *::before, *::after {
       box-sizing: border-box;
@@ -31,18 +32,21 @@ const html = `<!DOCTYPE html>
       min-width: 320px;
       display: flex;
       justify-content: center;
-      align-items: flex-start;
-      padding: clamp(16px, 2vw, 32px);
-      overflow-x: hidden;
-      overflow-y: auto;
+      align-items: center;
+      padding: 12px;
+      overflow: hidden;
     }
     main {
-      width: min(900px, 100%);
+      width: min(880px, calc(100vw - 24px));
+      height: min(708px, calc(100vh - 24px));
       background: rgba(0, 0, 0, 0.85);
-      padding: clamp(24px, 3vw, 36px);
+      padding: 22px;
       border-radius: 28px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
     h1 {
       margin-top: 0;
@@ -129,21 +133,41 @@ const html = `<!DOCTYPE html>
       background: rgba(255, 82, 82, 0.08);
       color: #ffc7c7;
     }
+    #auth-section,
+    #app-section {
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
     #app-section { display: none; }
     body[data-auth="true"] #auth-section { display: none; }
-    body[data-auth="true"] #app-section { display: block; }
+    body[data-auth="true"] #app-section {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
     .brand-header {
       display: flex;
       justify-content: center;
-      margin-bottom: 24px;
+      margin-bottom: 18px;
+      flex-shrink: 0;
     }
     .login-submit {
       display: block;
       margin: 18px auto 0;
       min-width: 180px;
     }
+    #app-section .panel:last-of-type {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
-      gap: 12px;
+    }
+    #transfer-form {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      overflow: hidden;
+      gap: 10px;
     }
     .locked-pill {
       background: rgba(255, 255, 255, 0.04);
@@ -442,12 +466,20 @@ const html = `<!DOCTYPE html>
     }
     @media (max-width: 1080px) {
       main {
-        width: min(860px, calc(100vw - 24px));
+        width: min(840px, calc(100vw - 20px));
+        height: min(680px, calc(100vh - 20px));
       }
     }
     @media (max-width: 720px) {
+      body {
+        align-items: flex-start;
+        padding: 16px;
+        overflow-y: auto;
+      }
       main {
-        padding: 24px;
+        width: 100%;
+        height: auto;
+        padding: 20px;
       }
       button {
         width: 100%;
@@ -518,19 +550,21 @@ const html = `<!DOCTYPE html>
                 <span id="cart-count">0 items</span>
               </div>
             </div>
-            <table class="cart-table">
-              <thead>
-                <tr>
-                  <th scope="col">Product</th>
-                  <th scope="col">Variation</th>
-                  <th scope="col">Qty</th>
-                  <th scope="col">UOM</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="cart-body"></tbody>
-            </table>
-            <p id="cart-empty">No items scanned yet.</p>
+            <div class="cart-scroll">
+              <table class="cart-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Product</th>
+                    <th scope="col">Variation</th>
+                    <th scope="col">Qty</th>
+                    <th scope="col">UOM</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cart-body"></tbody>
+              </table>
+              <p id="cart-empty">No items scanned yet.</p>
+            </div>
           </section>
 
           <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
@@ -632,6 +666,11 @@ const html = `<!DOCTYPE html>
       let scanBuffer = '';
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
+
+      function normalizeKey(value) {
+        if (value === null || value === undefined) return '';
+        return String(value).trim().replace(/[^0-9a-z]/gi, '').toLowerCase();
+      }
 
       function submitQtyForm() {
         if (!qtyForm) return;
@@ -740,7 +779,7 @@ const html = `<!DOCTYPE html>
 
         const { data: products, error: prodErr } = await supabase
           .from('products')
-          .select('id,name,has_variations,uom')
+          .select('id,name,has_variations,uom,sku')
           .in('id', Array.from(productIds))
           .eq('active', true)
           .order('name');
@@ -754,6 +793,17 @@ const html = `<!DOCTYPE html>
         });
       }
 
+      function indexVariationKey(key, variation) {
+        if (!key || typeof key !== 'string') return;
+        state.variationIndex.set(key, variation);
+        const lower = key.toLowerCase();
+        state.variationIndex.set(lower, variation);
+        const compact = normalizeKey(key);
+        if (compact) {
+          state.variationIndex.set(compact, variation);
+        }
+      }
+
       async function preloadVariations(productIds) {
         state.variations = new Map();
         state.variationIndex = new Map();
@@ -762,7 +812,7 @@ const html = `<!DOCTYPE html>
         }
         const { data, error } = await supabase
           .from('product_variations')
-          .select('id,product_id,name,uom')
+          .select('id,product_id,name,uom,sku')
           .in('product_id', productIds)
           .eq('default_warehouse_id', lockedSourceId)
           .eq('active', true)
@@ -774,8 +824,10 @@ const html = `<!DOCTYPE html>
           list.push(variation);
           state.variations.set(variation.product_id, list);
           if (variation.id) {
-            state.variationIndex.set(variation.id, variation);
-            state.variationIndex.set(variation.id.toLowerCase(), variation);
+            indexVariationKey(variation.id, variation);
+          }
+          if (typeof variation.sku === 'string' && variation.sku.trim()) {
+            indexVariationKey(variation.sku, variation);
           }
         });
       }
@@ -1231,27 +1283,40 @@ const html = `<!DOCTYPE html>
         const value = raw.trim();
         if (!value) return;
         const normalized = value.toLowerCase();
+        const compact = normalizeKey(value);
 
-        const variationById = state.variationIndex.get(value) || state.variationIndex.get(value.toLowerCase());
-        const variationByName = variationById
-          ? variationById
-          : Array.from(state.variationIndex.values()).find(
-              (variation) => (variation.name ?? '').toLowerCase() === normalized
-            );
+        let variationMatch =
+          state.variationIndex.get(value) ||
+          state.variationIndex.get(normalized) ||
+          (compact ? state.variationIndex.get(compact) : null);
 
-        if (variationByName) {
-          const product = state.products.find((p) => p.id === variationByName.product_id);
+        if (!variationMatch) {
+          variationMatch = Array.from(state.variationIndex.values()).find(
+            (variation) => (variation.name ?? '').toLowerCase() === normalized
+          );
+        }
+
+        if (variationMatch) {
+          const product = state.products.find((p) => p.id === variationMatch.product_id);
           if (product) {
-            promptQuantity(product, variationByName);
-            showResult('Scan matched variation: ' + (variationByName.name ?? 'Variation'), false);
+            promptQuantity(product, variationMatch);
+            showResult('Scan matched variation: ' + (variationMatch.name ?? 'Variation'), false);
             return;
           }
         }
 
         const productMatch = state.products.find((product) => {
           if (!product) return false;
+          const productName = (product.name ?? '').toLowerCase();
+          const skuLower = (product.sku ?? '').toLowerCase();
+          const skuCompact = normalizeKey(product.sku ?? '');
           if (product.id === value || product.id?.toLowerCase() === normalized) return true;
-          return (product.name ?? '').toLowerCase() === normalized;
+          if (productName === normalized) return true;
+          if (product.sku) {
+            if (skuLower === normalized) return true;
+            if (compact && skuCompact && skuCompact === compact) return true;
+          }
+          return false;
         });
 
         if (productMatch) {
