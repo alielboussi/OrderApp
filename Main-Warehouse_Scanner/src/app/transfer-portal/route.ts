@@ -31,21 +31,18 @@ const html = `<!DOCTYPE html>
       min-width: 320px;
       display: flex;
       justify-content: center;
-      align-items: center;
-      padding: 12px;
-      overflow: hidden;
+      align-items: flex-start;
+      padding: clamp(16px, 2vw, 32px);
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     main {
-      width: min(880px, calc(100vw - 24px));
-      height: min(720px, calc(100vh - 24px));
+      width: min(900px, 100%);
       background: rgba(0, 0, 0, 0.85);
-      padding: 24px;
+      padding: clamp(24px, 3vw, 36px);
       border-radius: 28px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
     }
     h1 {
       margin-top: 0;
@@ -65,8 +62,8 @@ const html = `<!DOCTYPE html>
       background: rgba(255, 255, 255, 0.02);
       border-radius: 20px;
       border: 1px solid rgba(255, 43, 72, 0.25);
-      padding: 18px;
-      margin-top: 16px;
+      padding: clamp(18px, 3vw, 24px);
+      margin-top: 20px;
     }
     label {
       display: flex;
@@ -134,60 +131,17 @@ const html = `<!DOCTYPE html>
     }
     #app-section { display: none; }
     body[data-auth="true"] #auth-section { display: none; }
-    body[data-auth="true"] #app-section {
-      display: flex;
-      flex-direction: column;
-      flex: 1 1 auto;
-      overflow: hidden;
-    }
+    body[data-auth="true"] #app-section { display: block; }
     .brand-header {
       display: flex;
       justify-content: center;
-      margin-bottom: 16px;
-      flex-shrink: 0;
-    }
-    .brand-header img {
-      width: clamp(140px, 30vw, 220px);
-      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
-    }
-    .scan-instructions {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 16px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
-    .scan-instructions p {
-      margin: 0;
-      color: #f5b7c8;
-      font-size: 0.95rem;
-    }
-    .scanner-hint {
-      margin-top: 12px;
-      text-align: center;
-      font-size: 0.85rem;
-      color: #f8b4d9;
+      margin-bottom: 24px;
     }
     .login-submit {
       display: block;
       margin: 18px auto 0;
       min-width: 180px;
     }
-    #auth-section,
-    #app-section {
-      flex: 1 1 auto;
-      overflow: hidden;
-    }
-    #app-section .panel:last-of-type {
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    #transfer-form {
-      display: flex;
-      flex-direction: column;
-      flex: 1 1 auto;
       overflow: hidden;
       gap: 12px;
     }
@@ -232,6 +186,7 @@ const html = `<!DOCTYPE html>
     .cart-table {
       width: 100%;
       border-collapse: collapse;
+      margin-top: 8px;
     }
     .cart-table th,
     .cart-table td {
@@ -563,21 +518,19 @@ const html = `<!DOCTYPE html>
                 <span id="cart-count">0 items</span>
               </div>
             </div>
-            <div class="cart-scroll">
-              <table class="cart-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Product</th>
-                    <th scope="col">Variation</th>
-                    <th scope="col">Qty</th>
-                    <th scope="col">UOM</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="cart-body"></tbody>
-              </table>
-              <p id="cart-empty">No items scanned yet.</p>
-            </div>
+            <table class="cart-table">
+              <thead>
+                <tr>
+                  <th scope="col">Product</th>
+                  <th scope="col">Variation</th>
+                  <th scope="col">Qty</th>
+                  <th scope="col">UOM</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cart-body"></tbody>
+            </table>
+            <p id="cart-empty">No items scanned yet.</p>
           </section>
 
           <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
