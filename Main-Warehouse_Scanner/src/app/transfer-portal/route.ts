@@ -151,6 +151,14 @@ const html = `<!DOCTYPE html>
       margin-bottom: 18px;
       flex-shrink: 0;
     }
+    .brand-header img {
+      width: 50mm;
+      height: 50mm;
+      max-width: 190px;
+      max-height: 190px;
+      object-fit: contain;
+      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
+    }
     .login-submit {
       display: block;
       margin: 18px auto 0;
