@@ -28,19 +28,22 @@ const html = `<!DOCTYPE html>
       background: radial-gradient(circle at top, #1f1f1f 0%, #050505 60%);
       color: #f5f5f5;
       min-height: 100vh;
+      min-width: 320px;
       display: flex;
       justify-content: center;
-      align-items: flex-start;
-      padding: clamp(16px, 3vw, 32px);
-      overflow-x: hidden;
+      align-items: center;
+      padding: clamp(16px, 2vw, 32px);
+      overflow: hidden;
     }
     main {
-      width: min(960px, 100%);
+      width: min(880px, calc(100vw - 32px));
+      max-height: calc(100vh - clamp(24px, 6vh, 64px));
       background: rgba(0, 0, 0, 0.85);
-      padding: clamp(28px, 4vw, 40px);
+      padding: clamp(24px, 3vw, 36px);
       border-radius: 28px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
+      overflow-y: auto;
     }
     h1 {
       margin-top: 0;
@@ -60,8 +63,8 @@ const html = `<!DOCTYPE html>
       background: rgba(255, 255, 255, 0.02);
       border-radius: 20px;
       border: 1px solid rgba(255, 43, 72, 0.25);
-      padding: clamp(20px, 3vw, 28px);
-      margin-top: 24px;
+      padding: clamp(18px, 3vw, 24px);
+      margin-top: 20px;
     }
     label {
       display: flex;
@@ -167,12 +170,19 @@ const html = `<!DOCTYPE html>
       border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 18px;
       padding: 14px 18px;
+      text-align: center;
     }
     .locked-pill h3 {
-      margin: 0 0 4px 0;
-      font-size: 1rem;
-      letter-spacing: 0.05em;
+      margin: 0 0 6px 0;
+      font-size: 1.05rem;
+      letter-spacing: 0.08em;
       color: #ff6b81;
+      text-transform: uppercase;
+    }
+    .locked-pill p {
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 700;
     }
     .cart-table {
       width: 100%;
@@ -265,6 +275,41 @@ const html = `<!DOCTYPE html>
     .qty-actions button {
       flex: 1;
       min-width: 160px;
+    }
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .numpad button {
+      padding: 14px 0;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+      font-size: 1.2rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .numpad button:hover {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .numpad button[data-action="enter"] {
+      grid-column: span 2;
+      background: linear-gradient(100deg, #ff1b2d, #ff004d);
+      border-color: rgba(255, 0, 77, 0.6);
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    #app-section > header {
+      text-align: center;
+    }
+    #app-section > header h1 {
+      font-size: 2.1rem;
     }
     .transfer-actions {
       display: flex;
@@ -398,7 +443,7 @@ const html = `<!DOCTYPE html>
     }
     @media (max-width: 1080px) {
       main {
-        width: min(900px, 100%);
+        width: min(860px, calc(100vw - 24px));
       }
     }
     @media (max-width: 720px) {
@@ -443,7 +488,6 @@ const html = `<!DOCTYPE html>
     <section id="app-section">
       <header>
         <h1>Warehouse Transfer Console</h1>
-        <p class="subtitle">Blackline interface locked to night shift move requests. Only unit-level transfers are allowed.</p>
       </header>
 
       <article class="panel">
@@ -457,14 +501,13 @@ const html = `<!DOCTYPE html>
             <p id="dest-label">Loading...</p>
           </div>
         </div>
-        <p class="subtitle" style="margin-top:16px;">Route locked by QA. Contact control if you expect different locations.</p>
       </article>
 
       <article class="panel">
         <form id="transfer-form">
           <div class="scan-instructions">
             <p>Scan product or variation barcodes from the Main Store Room. A quantity prompt will appear after each successful match.</p>
-            <p style="margin-top:6px; font-size:0.85rem; color:#f8d2e0;">Press Enter after typing the quantity to stage the item in the transfer cart. If scanning pauses, click anywhere on the console to re-arm the reader.</p>
+            <p style="margin-top:6px; font-size:0.85rem; color:#f8d2e0;">Use the on-screen numpad or the Enter key to confirm units. If scanning pauses, click anywhere on the console to re-arm the reader.</p>
           </div>
 
           <section id="cart-section">
@@ -510,9 +553,23 @@ const html = `<!DOCTYPE html>
       <h3 id="qty-title">Enter quantity</h3>
       <p id="qty-uom">UNIT</p>
       <input type="number" id="qty-input" min="0" step="0.01" placeholder="0" required />
+      <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
+        <button type="button" data-key="7">7</button>
+        <button type="button" data-key="8">8</button>
+        <button type="button" data-key="9">9</button>
+        <button type="button" data-key="4">4</button>
+        <button type="button" data-key="5">5</button>
+        <button type="button" data-key="6">6</button>
+        <button type="button" data-key="1">1</button>
+        <button type="button" data-key="2">2</button>
+        <button type="button" data-key="3">3</button>
+        <button type="button" data-action="clear">CLR</button>
+        <button type="button" data-key="0">0</button>
+        <button type="button" data-action="enter">Enter</button>
+      </div>
       <div class="qty-actions">
         <button type="button" id="qty-cancel">Cancel</button>
-        <button type="submit">Add Item (Enter)</button>
+        <button type="submit">Add Item</button>
       </div>
     </form>
   </div>
@@ -569,12 +626,54 @@ const html = `<!DOCTYPE html>
       const qtyUom = document.getElementById('qty-uom');
       const qtyTitle = document.getElementById('qty-title');
       const qtyCancel = document.getElementById('qty-cancel');
+      const qtyNumpad = document.getElementById('qty-numpad');
       const printRoot = document.getElementById('print-root');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
       let scanBuffer = '';
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
+
+      function submitQtyForm() {
+        if (!qtyForm) return;
+        if (typeof qtyForm.requestSubmit === 'function') {
+          qtyForm.requestSubmit();
+        } else {
+          qtyForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+      }
+
+      function appendQtyDigit(digit) {
+        if (!qtyInput) return;
+        qtyInput.value = (qtyInput.value ?? '') + digit;
+        qtyInput.focus();
+      }
+
+      function resetQtyInput() {
+        if (!qtyInput) return;
+        qtyInput.value = '';
+        qtyInput.focus();
+      }
+
+      if (qtyNumpad) {
+        qtyNumpad.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLButtonElement)) return;
+          const digit = target.dataset.key;
+          const action = target.dataset.action;
+          if (digit !== undefined) {
+            appendQtyDigit(digit);
+            return;
+          }
+          if (action === 'clear') {
+            resetQtyInput();
+            return;
+          }
+          if (action === 'enter' && qtyInput && qtyInput.value !== '') {
+            submitQtyForm();
+          }
+        });
+      }
 
       function collectDescendantIds(warehouses, rootId) {
         if (!rootId) return [];

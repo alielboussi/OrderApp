@@ -1,18 +1,18 @@
-## Stock View Page
+## Main Warehouse Scanner
 
 Single-page Next.js dashboard plus transfer portal now hosted entirely on Vercel. Instead of Supabase Edge Functions, the app exposes `app/api/*` routes that query Supabase with the service-role key, while the browser interacts only with Vercel endpoints.
 
 ### Prerequisites
 
 - Supabase project with the `warehouse_stock_current` view (or equivalent) plus the `transfer_units_between_warehouses` RPC, `warehouses`, `products`, and `product_variations` tables.
-- Vercel account (or any Next.js-compatible host) for deploying `stock-view-page`.
+- Vercel account (or any Next.js-compatible host) for deploying `Main-Warehouse_Scanner`.
 - Supabase service-role key so the Vercel API routes can read warehouse/product data.
 
 ### Local setup
 
 ```bash
-cp stock-view-page/.env.example stock-view-page/.env.local
-cd stock-view-page
+cp Main-Warehouse_Scanner/.env.example Main-Warehouse_Scanner/.env.local
+cd Main-Warehouse_Scanner
 npm install
 npm run dev
 ```

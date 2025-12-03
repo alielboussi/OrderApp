@@ -1,6 +1,18 @@
 -- Formatting helpers and any small schema utilities
 -- Idempotent: safe to run multiple times
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type
+    WHERE typname = 'stock_location_type'
+      AND typnamespace = 'public'::regnamespace
+  ) THEN
+    CREATE TYPE public.stock_location_type AS ENUM ('warehouse', 'outlet');
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.format_order_number(outlet_name text, seq bigint)
 RETURNS text
 LANGUAGE sql
