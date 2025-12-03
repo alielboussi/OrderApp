@@ -19,7 +19,7 @@ const html = `<!DOCTYPE html>
     :root {
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color-scheme: dark;
-      font-size: 15px;
+      font-size: 14px;
     }
     *, *::before, *::after {
       box-sizing: border-box;
@@ -33,14 +33,14 @@ const html = `<!DOCTYPE html>
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 12px;
+      padding: 6px;
       overflow: hidden;
     }
     main {
-      width: min(880px, calc(100vw - 24px));
-      height: min(708px, calc(100vh - 24px));
+      width: min(840px, calc(100vw - 20px));
+      height: min(720px, calc(100vh - 16px));
       background: rgba(0, 0, 0, 0.85);
-      padding: 22px;
+      padding: 16px;
       border-radius: 28px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
@@ -50,7 +50,7 @@ const html = `<!DOCTYPE html>
     }
     h1 {
       margin-top: 0;
-      font-size: 2rem;
+      font-size: 1.8rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
@@ -64,10 +64,10 @@ const html = `<!DOCTYPE html>
     }
     .panel {
       background: rgba(255, 255, 255, 0.02);
-      border-radius: 20px;
+      border-radius: 16px;
       border: 1px solid rgba(255, 43, 72, 0.25);
-      padding: clamp(18px, 3vw, 24px);
-      margin-top: 20px;
+      padding: clamp(12px, 2.2vw, 18px);
+      margin-top: 10px;
     }
     label {
       display: flex;
@@ -95,7 +95,7 @@ const html = `<!DOCTYPE html>
       text-transform: uppercase;
       border-radius: 999px;
       border: none;
-      padding: 16px 28px;
+      padding: 14px 24px;
       letter-spacing: 0.08em;
       background: linear-gradient(100deg, #ff1b2d, #f44336, #ff004d);
       color: #fff;
@@ -112,8 +112,8 @@ const html = `<!DOCTYPE html>
     }
     .two-cols {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: clamp(16px, 2vw, 24px);
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: clamp(12px, 2vw, 18px);
     }
     .message {
       padding: 14px 18px;
@@ -148,16 +148,27 @@ const html = `<!DOCTYPE html>
     .brand-header {
       display: flex;
       justify-content: center;
-      margin-bottom: 18px;
+      margin-bottom: 8px;
       flex-shrink: 0;
     }
     .brand-header img {
-      width: 50mm;
-      height: 50mm;
-      max-width: 190px;
-      max-height: 190px;
+      width: clamp(110px, 18vw, 150px);
+      height: auto;
+      max-height: 130px;
       object-fit: contain;
       filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
+    }
+    .scan-instructions {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+    }
+    .scan-instructions p {
+      margin: 2px 0;
+      font-size: 0.85rem;
+      line-height: 1.35;
     }
     .login-submit {
       display: block;
@@ -169,6 +180,7 @@ const html = `<!DOCTYPE html>
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
     }
     #transfer-form {
       display: flex;
@@ -176,24 +188,25 @@ const html = `<!DOCTYPE html>
       flex: 1 1 auto;
       overflow: hidden;
       gap: 10px;
+      min-height: 0;
     }
     .locked-pill {
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 18px;
-      padding: 14px 18px;
+      border-radius: 14px;
+      padding: 10px 14px;
       text-align: center;
     }
     .locked-pill h3 {
-      margin: 0 0 6px 0;
-      font-size: 1.05rem;
+      margin: 0 0 4px 0;
+      font-size: 0.95rem;
       letter-spacing: 0.08em;
       color: #ff6b81;
       text-transform: uppercase;
     }
     .locked-pill p {
       margin: 0;
-      font-size: 1.4rem;
+      font-size: 1rem;
       font-weight: 700;
     }
     #cart-section {
@@ -201,12 +214,14 @@ const html = `<!DOCTYPE html>
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
     }
     .cart-scroll {
       flex: 1 1 auto;
       overflow-y: auto;
-      margin-top: 8px;
+      margin-top: 6px;
       padding-right: 6px;
+      min-height: 0;
     }
     .cart-scroll::-webkit-scrollbar {
       width: 8px;
@@ -218,18 +233,24 @@ const html = `<!DOCTYPE html>
     .cart-table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 8px;
+      margin-top: 4px;
+    }
+    .cart-table thead th {
+      position: sticky;
+      top: 0;
+      background: rgba(0, 0, 0, 0.92);
+      z-index: 1;
     }
     .cart-table th,
     .cart-table td {
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       text-align: left;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
     .cart-table th {
       text-transform: uppercase;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       letter-spacing: 0.05em;
       color: #f7a8b7;
     }
@@ -340,15 +361,15 @@ const html = `<!DOCTYPE html>
       text-align: center;
     }
     #app-section > header h1 {
-      font-size: 2.1rem;
+      font-size: 1.8rem;
     }
     .transfer-actions {
       display: flex;
       justify-content: center;
-      margin-top: 24px;
+      margin-top: 8px;
     }
     .transfer-actions button {
-      min-width: clamp(220px, 40%, 320px);
+      min-width: clamp(190px, 34%, 260px);
     }
     #print-root {
       display: none;
