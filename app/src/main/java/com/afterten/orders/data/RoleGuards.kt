@@ -7,18 +7,21 @@ class RoleGuard(
     val id: String? = null,
     val slug: String? = null,
     legacySlugs: Set<String> = emptySet(),
-    additionalIds: Set<String> = emptySet()
+    additionalIds: Set<String> = emptySet(),
+    blockedIds: Set<String> = emptySet()
 ) {
     private val normalizedLegacy = legacySlugs.mapNotNull { it.trim().lowercase().takeIf(String::isNotEmpty) }.toSet()
     private val normalizedIds = buildSet {
         normalize(id)?.let { add(it) }
         additionalIds.mapNotNull { normalize(it) }.forEach { add(it) }
     }
+    private val normalizedBlocked = blockedIds.mapNotNull { normalize(it) }.toSet()
 
     private fun normalize(value: String?): String? = value?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
 
     fun matches(role: RoleDescriptor): Boolean {
         val normalizedRoleId = normalize(role.id)
+        if (normalizedRoleId != null && normalizedRoleId in normalizedBlocked) return false
         if (normalizedRoleId != null && normalizedRoleId in normalizedIds) return true
         val normalizedSlug = normalize(role.slug) ?: normalize(role.normalizedSlug)
         val normalizedDisplay = normalize(role.displayName)
@@ -53,10 +56,9 @@ object RoleGuards {
         additionalIds = setOf("89147a54-507d-420b-86b4-2089d64faecd")
     )
     val WarehouseAdmin = RoleGuard(
-        id = "e091af92-912d-43f5-bf22-fd867c57a59a",
-        slug = "Warehouse Admin",
-        legacySlugs = setOf("admin", "warehouse_admin"),
-        additionalIds = setOf("6b9e657a-6131-4a0b-8afa-0ce260f8ed0c")
+        id = "6b9e657a-6131-4a0b-8afa-0ce260f8ed0c",
+        slug = "admin",
+        legacySlugs = setOf("administrator")
     )
 }
 

@@ -18,7 +18,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
@@ -33,8 +32,6 @@ fun HomeScreen(
     onViewOrders: () -> Unit,
     onTransfers: () -> Unit,
     onAdminWarehouses: () -> Unit,
-    onStockDashboard: () -> Unit,
-    onStockLog: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
 ) {
@@ -100,25 +97,7 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         when {
             hasWarehouseAdmin -> {
-                // Admin home: expose stock tools and warehouse admin panel
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("StockDashboardTapped")
-                        onStockDashboard()
-                    },
-                    enabled = session != null
-                ) { Text("Stock Dashboard") }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("StockLogTapped")
-                        onStockLog()
-                    },
-                    enabled = session != null
-                ) { Text("Stock Injection Log") }
-                Spacer(Modifier.height(12.dp))
+                // Admin home: go directly to warehouse admin workspace (stock tools embedded there now)
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
