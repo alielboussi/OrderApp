@@ -85,6 +85,7 @@ class ProductRepository(
             VariationEntity(
                 id = it.id,
                 productId = it.productId,
+                sku = it.sku,
                 name = it.name,
                 imageUrl = it.imageUrl,
                 uom = it.uom,
@@ -110,6 +111,7 @@ class ProductRepository(
             VariationEntity(
                 id = it.id,
                 productId = it.productId,
+                sku = it.sku,
                 name = it.name,
                 imageUrl = it.imageUrl,
                 uom = it.uom,

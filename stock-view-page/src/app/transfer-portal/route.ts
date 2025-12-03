@@ -130,15 +130,14 @@ const html = `<!DOCTYPE html>
     #app-section { display: none; }
     body[data-auth="true"] #auth-section { display: none; }
     body[data-auth="true"] #app-section { display: block; }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
-      font-size: 0.85rem;
-      color: #fbecec;
+    .brand-header {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .brand-header img {
+      width: clamp(140px, 30vw, 220px);
+      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
     }
     .scan-instructions {
       background: rgba(255, 255, 255, 0.03);
@@ -267,13 +266,135 @@ const html = `<!DOCTYPE html>
       flex: 1;
       min-width: 160px;
     }
-    #result-log {
-      background: rgba(0, 0, 0, 0.6);
+    .transfer-actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 24px;
+    }
+    .transfer-actions button {
+      min-width: clamp(220px, 40%, 320px);
+    }
+    #print-root {
+      display: none;
+    }
+    .receipt {
+      font-family: 'Inter', system-ui, sans-serif;
+      color: #000;
+      background: #fff;
+      width: 55mm;
+      padding: 6mm 4mm;
+    }
+    .receipt-header {
+      text-align: center;
+      margin-bottom: 6mm;
+    }
+    .receipt-logo {
+      max-width: 40mm;
+      margin: 0 auto 2mm;
+      display: block;
+    }
+    .receipt-meta {
+      font-size: 0.78rem;
+      margin: 2px 0;
+    }
+    .receipt-title {
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.85rem;
+      margin: 0 0 2mm 0;
+    }
+    .receipt-lines {
+      list-style: none;
+      padding: 0;
+      margin: 4mm 0;
+    }
+    .receipt-product {
+      padding: 2mm 0;
+    }
+    .receipt-product + .receipt-product {
+      border-top: 1px dashed #999;
+    }
+    .receipt-line {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+      font-size: 0.8rem;
+    }
+    .receipt-line .bullet {
+      font-weight: 700;
+    }
+    .receipt-line .qty {
+      margin-left: auto;
+      font-weight: 600;
+    }
+    .receipt-product.has-variations .product-name {
+      text-decoration: underline;
+    }
+    .variation-list {
+      list-style: none;
+      margin: 1mm 0 0 7px;
+      padding: 0 0 0 6px;
+    }
+    .variation-list .receipt-line {
+      font-size: 0.78rem;
+    }
+    .receipt-footer {
+      text-align: center;
+      font-size: 0.78rem;
+      margin-top: 4mm;
+      border-top: 1px solid #000;
+      padding-top: 2mm;
+    }
+    @media print {
+      @page {
+        size: 55mm auto;
+        margin: 4mm;
+      }
+      body {
+        background: #fff;
+        padding: 0;
+      }
+      body:not(.print-mode) #print-root {
+        display: none;
+      }
+      body.print-mode > *:not(#print-root) {
+        display: none !important;
+      }
+      body.print-mode #print-root {
+        display: block;
+        margin: 0 auto;
+      }
+    }
+    .toast {
+      position: fixed;
+      bottom: 32px;
+      right: 32px;
+      padding: 14px 18px;
       border-radius: 16px;
-      border: 2px solid rgba(255, 255, 255, 0.08);
-      color: #fff;
-      padding: 16px;
-      min-height: 140px;
+      border: 1px solid transparent;
+      background: rgba(0, 0, 0, 0.85);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(16px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      font-size: 0.95rem;
+      min-width: 240px;
+      text-align: center;
+      z-index: 1200;
+    }
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .toast.success {
+      border-color: rgba(34, 197, 94, 0.5);
+      color: #c8ffd5;
+    }
+    .toast.error {
+      border-color: rgba(255, 99, 132, 0.6);
+      color: #ffd6dc;
     }
     @media (max-width: 1080px) {
       main {
@@ -287,11 +408,19 @@ const html = `<!DOCTYPE html>
       button {
         width: 100%;
       }
+      .toast {
+        left: 16px;
+        right: 16px;
+        bottom: 16px;
+      }
     }
   </style>
 </head>
 <body>
   <main>
+    <header class="brand-header">
+      <img src="/afterten-logo.png" alt="AfterTen logo" />
+    </header>
     <section id="auth-section" class="panel">
       <h1>Operator Login</h1>
       <p class="subtitle">Scan your badge QR or use email/password to enter the transfer bay.</p>
@@ -322,12 +451,10 @@ const html = `<!DOCTYPE html>
           <div class="locked-pill">
             <h3>From</h3>
             <p id="source-label">Loading...</p>
-            <span class="badge">ID: ${LOCKED_SOURCE_ID}</span>
           </div>
           <div class="locked-pill">
             <h3>To</h3>
             <p id="dest-label">Loading...</p>
-            <span class="badge">ID: ${LOCKED_DEST_ID}</span>
           </div>
         </div>
         <p class="subtitle" style="margin-top:16px;">Route locked by QA. Contact control if you expect different locations.</p>
@@ -366,12 +493,17 @@ const html = `<!DOCTYPE html>
 
           <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
 
-          <button type="submit" id="transfer-submit">Submit Transfer</button>
-          <textarea id="result-log" rows="4" readonly placeholder="Transfer status will appear here..."></textarea>
+          <div class="transfer-actions">
+            <button type="submit" id="transfer-submit">Submit Transfer</button>
+          </div>
         </form>
       </article>
     </section>
   </main>
+
+  <div id="result-toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="print-root" aria-hidden="true"></div>
 
   <div id="qty-modal">
     <form id="qty-form">
@@ -410,7 +542,9 @@ const html = `<!DOCTYPE html>
         cartItems: [],
         pendingEntry: null,
         loading: false,
-        operatorProfile: null
+        operatorProfile: null,
+        lockedSource: null,
+        lockedDest: null
       };
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -420,7 +554,8 @@ const html = `<!DOCTYPE html>
       const loginStatus = document.getElementById('login-status');
       const loginWedge = document.getElementById('login-wedge');
       const transferForm = document.getElementById('transfer-form');
-      const resultLog = document.getElementById('result-log');
+      const resultToast = document.getElementById('result-toast');
+      let resultToastTimeoutId = null;
       const submitButton = document.getElementById('transfer-submit');
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
@@ -434,8 +569,12 @@ const html = `<!DOCTYPE html>
       const qtyUom = document.getElementById('qty-uom');
       const qtyTitle = document.getElementById('qty-title');
       const qtyCancel = document.getElementById('qty-cancel');
+      const printRoot = document.getElementById('print-root');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
+      let scanBuffer = '';
+      let scanFlushTimeoutId = null;
+      const SCAN_FLUSH_DELAY_MS = 90;
 
       function collectDescendantIds(warehouses, rootId) {
         if (!rootId) return [];
@@ -549,6 +688,182 @@ const html = `<!DOCTYPE html>
         scannerWedge.focus();
       }
 
+      function queueScanFlush() {
+        if (!scannerWedge) return;
+        window.clearTimeout(scanFlushTimeoutId);
+        if (!scanBuffer) return;
+        scanFlushTimeoutId = window.setTimeout(() => {
+          const payload = scanBuffer.trim();
+          scanBuffer = '';
+          scannerWedge.value = '';
+          if (!payload) return;
+          handleProductScan(payload);
+        }, SCAN_FLUSH_DELAY_MS);
+      }
+
+      function commitScanBuffer() {
+        if (!scannerWedge) return;
+        window.clearTimeout(scanFlushTimeoutId);
+        const payload = (scanBuffer || scannerWedge.value || '').trim();
+        scanBuffer = '';
+        scannerWedge.value = '';
+        if (!payload) return;
+        handleProductScan(payload);
+      }
+
+      function formatQtyLabel(qty, uom) {
+        const numeric = Number(qty ?? 0);
+        const formattedQty = Number.isFinite(numeric) ? numeric : 0;
+        const unit = (uom || 'unit').toUpperCase();
+        return formattedQty + ' ' + unit;
+      }
+
+      function groupCartItemsForReceipt(entries) {
+        const map = new Map();
+        entries.forEach((entry, index) => {
+          const key = entry.productId || 'product-' + index;
+          if (!map.has(key)) {
+            map.set(key, {
+              productName: entry.productName ?? 'Product',
+              baseItems: [],
+              variations: []
+            });
+          }
+          const bucket = map.get(key);
+          if (entry.variationId) {
+            bucket.variations.push(entry);
+          } else {
+            bucket.baseItems.push(entry);
+          }
+        });
+        return Array.from(map.values());
+      }
+
+      function renderPrintReceipt(summary, cartSnapshot) {
+        if (!printRoot || !Array.isArray(cartSnapshot) || !cartSnapshot.length) return;
+        const groups = groupCartItemsForReceipt(cartSnapshot);
+        const receipt = document.createElement('div');
+        receipt.className = 'receipt';
+
+        const header = document.createElement('div');
+        header.className = 'receipt-header';
+        const logo = document.createElement('img');
+        logo.src = '/afterten-logo.png';
+        logo.alt = 'AfterTen logo';
+        logo.className = 'receipt-logo';
+        header.appendChild(logo);
+
+        const title = document.createElement('p');
+        title.className = 'receipt-title';
+        title.textContent = 'Transfer Ticket';
+        header.appendChild(title);
+
+        const metaDate = document.createElement('p');
+        metaDate.className = 'receipt-meta';
+        metaDate.textContent = 'Date: ' + (summary.dateTime ?? new Date().toLocaleString());
+        header.appendChild(metaDate);
+
+        const sourceName = state.lockedSource?.name ?? summary.sourceLabel ?? 'Source warehouse';
+        const destName = state.lockedDest?.name ?? summary.destLabel ?? 'Destination warehouse';
+
+        const metaFrom = document.createElement('p');
+        metaFrom.className = 'receipt-meta';
+        metaFrom.textContent = 'From: ' + sourceName;
+        header.appendChild(metaFrom);
+
+        const metaTo = document.createElement('p');
+        metaTo.className = 'receipt-meta';
+        metaTo.textContent = 'To: ' + destName;
+        header.appendChild(metaTo);
+
+        receipt.appendChild(header);
+
+        const linesList = document.createElement('ul');
+        linesList.className = 'receipt-lines';
+
+        groups.forEach((group) => {
+          const productItem = document.createElement('li');
+          productItem.className = 'receipt-product' + (group.variations.length ? ' has-variations' : '');
+
+          const productLine = document.createElement('div');
+          productLine.className = 'receipt-line';
+          const productBullet = document.createElement('span');
+          productBullet.className = 'bullet';
+          productBullet.textContent = '•';
+          const productName = document.createElement('span');
+          productName.className = 'product-name';
+          productName.textContent = group.productName ?? 'Product';
+          productLine.appendChild(productBullet);
+          productLine.appendChild(productName);
+
+          if (!group.variations.length) {
+            const totalQty = group.baseItems.reduce((sum, entry) => sum + Number(entry.qty ?? 0), 0);
+            const unit = group.baseItems[0]?.uom ?? 'unit';
+            const qtySpan = document.createElement('span');
+            qtySpan.className = 'qty';
+            qtySpan.textContent = formatQtyLabel(totalQty, unit);
+            productLine.appendChild(qtySpan);
+          }
+
+          productItem.appendChild(productLine);
+
+          if (group.variations.length) {
+            const variationList = document.createElement('ul');
+            variationList.className = 'variation-list';
+            const childEntries = [...group.variations];
+            const standaloneBase = group.baseItems.filter((entry) => !entry.variationId);
+            standaloneBase.forEach((entry) => {
+              childEntries.unshift({ ...entry, variationName: 'Base' });
+            });
+            childEntries.forEach((entry) => {
+              const variationItem = document.createElement('li');
+              variationItem.className = 'receipt-variation';
+              const variationLine = document.createElement('div');
+              variationLine.className = 'receipt-line';
+              const bullet = document.createElement('span');
+              bullet.className = 'bullet';
+              bullet.textContent = '•';
+              const label = document.createElement('span');
+              label.className = 'variation-name';
+              label.textContent = entry.variationName ?? 'Variation';
+              const qtySpan = document.createElement('span');
+              qtySpan.className = 'qty';
+              qtySpan.textContent = formatQtyLabel(entry.qty, entry.uom);
+              variationLine.appendChild(bullet);
+              variationLine.appendChild(label);
+              variationLine.appendChild(qtySpan);
+              variationItem.appendChild(variationLine);
+              variationList.appendChild(variationItem);
+            });
+            productItem.appendChild(variationList);
+          }
+
+          linesList.appendChild(productItem);
+        });
+
+        receipt.appendChild(linesList);
+
+        const footer = document.createElement('div');
+        footer.className = 'receipt-footer';
+        footer.textContent = 'Ref: ' + (summary.reference ?? summary.referenceRaw ?? 'N/A');
+        receipt.appendChild(footer);
+
+        printRoot.innerHTML = '';
+        printRoot.appendChild(receipt);
+
+        function triggerPrint() {
+          document.body.classList.add('print-mode');
+          window.setTimeout(() => window.print(), 60);
+        }
+
+        if (logo && !logo.complete) {
+          logo.addEventListener('load', triggerPrint, { once: true });
+          logo.addEventListener('error', triggerPrint, { once: true });
+        } else {
+          triggerPrint();
+        }
+      }
+
       function promptQuantity(product, variation) {
         if (!qtyModal || !qtyInput) return;
         state.pendingEntry = {
@@ -630,19 +945,45 @@ const html = `<!DOCTYPE html>
         cartCount.textContent = count + (count === 1 ? ' item' : ' items');
       }
 
-      async function refreshMetadata() {
-        const { data: warehouses, error: whErr } = await supabase
-          .from('warehouses')
-          .select('id,name,parent_warehouse_id')
-          .eq('active', true)
-          .order('name');
+      async function fetchWarehousesMetadata() {
+        const params = new URLSearchParams();
+        if (lockedSourceId) params.append('locked_id', lockedSourceId);
+        if (lockedDestId) params.append('locked_id', lockedDestId);
+        const response = await fetch('/api/warehouses?' + params.toString(), {
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store'
+        });
+        if (!response.ok) {
+          const detail = await response.text().catch(() => '');
+          throw new Error(detail || 'Failed to load warehouse metadata.');
+        }
+        const payload = await response.json().catch(() => ({}));
+        const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
+        return list;
+      }
 
-        if (whErr) throw whErr;
+      async function refreshMetadata() {
+        const warehouses = await fetchWarehousesMetadata();
         state.warehouses = warehouses ?? [];
-        const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId);
-        const destWarehouse = state.warehouses.find((w) => w.id === lockedDestId);
-        sourceLabel.textContent = sourceWarehouse ? sourceWarehouse.name : 'Source not found (check Supabase)';
-        destLabel.textContent = destWarehouse ? destWarehouse.name : 'Destination not found (check Supabase)';
+        const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
+        const destWarehouse = state.warehouses.find((w) => w.id === lockedDestId) ?? null;
+        const sourceLabelText = sourceWarehouse
+          ? (sourceWarehouse.name ?? 'Source warehouse') + (sourceWarehouse.active === false ? ' (inactive)' : '')
+          : 'Source not found (verify Supabase record)';
+        const destLabelText = destWarehouse
+          ? (destWarehouse.name ?? 'Destination warehouse') + (destWarehouse.active === false ? ' (inactive)' : '')
+          : 'Destination not found (verify Supabase record)';
+        sourceLabel.textContent = sourceLabelText;
+        destLabel.textContent = destLabelText;
+        state.lockedSource = sourceWarehouse;
+        state.lockedDest = destWarehouse;
+        if (!sourceWarehouse) {
+          throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
+        }
+        if (!destWarehouse) {
+          throw new Error('Locked destination warehouse is missing. Confirm the ID or mark it active in Supabase.');
+        }
 
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
@@ -742,6 +1083,7 @@ const html = `<!DOCTYPE html>
           notifyWhatsApp(summary).catch((notifyError) => {
             console.warn('WhatsApp notification failed', notifyError);
           });
+          renderPrintReceipt(summary, cartSnapshot);
           state.cartItems = [];
           renderCart();
         } catch (error) {
@@ -754,8 +1096,21 @@ const html = `<!DOCTYPE html>
       }
 
       function showResult(message, isError) {
-        resultLog.value = new Date().toLocaleString() + ' - ' + message + '\\n' + resultLog.value;
-        resultLog.className = isError ? 'message error' : 'message success';
+        if (isError) {
+          console.warn(message);
+        } else {
+          console.info(message);
+        }
+        if (!resultToast) return;
+        resultToast.textContent = message;
+        resultToast.classList.remove('success', 'error', 'visible');
+        resultToast.classList.add(isError ? 'error' : 'success', 'visible');
+        if (resultToastTimeoutId) {
+          clearTimeout(resultToastTimeoutId);
+        }
+        resultToastTimeoutId = window.setTimeout(() => {
+          resultToast.classList.remove('visible');
+        }, 5000);
       }
 
       async function notifyWhatsApp(summary) {
@@ -915,9 +1270,37 @@ const html = `<!DOCTYPE html>
         }
       }
 
-      scannerWedge?.addEventListener('input', () => {
-        handleProductScan(scannerWedge.value.trim());
-        scannerWedge.value = '';
+      scannerWedge?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          commitScanBuffer();
+          return;
+        }
+        const isCharacterKey = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+        if (!isCharacterKey) return;
+        scanBuffer += event.key;
+        queueScanFlush();
+      });
+      scannerWedge?.addEventListener('paste', (event) => {
+        event.preventDefault();
+        const text = (event.clipboardData || window.clipboardData)?.getData('text') ?? '';
+        if (!text) return;
+        scanBuffer += text;
+        commitScanBuffer();
+      });
+      scannerWedge?.addEventListener('blur', () => {
+        if (document.body.dataset.auth !== 'true') return;
+        if (qtyModal?.style.display === 'flex') return;
+        window.setTimeout(() => {
+          if (document.hidden) return;
+          focusScannerWedge();
+        }, 50);
+      });
+      window.addEventListener('afterprint', () => {
+        document.body.classList.remove('print-mode');
+        if (printRoot) {
+          printRoot.innerHTML = '';
+        }
       });
       qtyForm?.addEventListener('submit', (event) => {
         event.preventDefault();

@@ -22,6 +22,7 @@ data class ProductEntity(
 data class VariationEntity(
     @PrimaryKey val id: String,
     val productId: String,
+    val sku: String?,
     val name: String,
     val imageUrl: String?,
     val uom: String,
