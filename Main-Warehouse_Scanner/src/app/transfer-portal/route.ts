@@ -20,6 +20,9 @@ const html = `<!DOCTYPE html>
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color-scheme: dark;
       font-size: 14px;
+      --shell-pad: 18px;
+      --sticky-overlay: rgba(5, 5, 5, 0.92);
+      --sticky-stack-offset: 360px;
     }
     *, *::before, *::after {
       box-sizing: border-box;
@@ -32,21 +35,22 @@ const html = `<!DOCTYPE html>
       min-width: 320px;
       display: flex;
       justify-content: center;
-      align-items: center;
-      padding: 6px;
-      overflow: hidden;
+      align-items: flex-start;
+      padding: var(--shell-pad);
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     main {
-      width: min(840px, calc(100vw - 20px));
-      height: min(720px, calc(100vh - 16px));
+      width: min(880px, calc(100vw - 16px));
+      min-height: calc(100vh - var(--shell-pad) * 2);
       background: rgba(0, 0, 0, 0.85);
-      padding: 16px;
+      padding: var(--shell-pad);
       border-radius: 28px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      gap: 14px;
     }
     h1 {
       margin-top: 0;
@@ -135,60 +139,57 @@ const html = `<!DOCTYPE html>
     }
     #auth-section,
     #app-section {
-      flex: 1 1 auto;
-      overflow: hidden;
+      width: 100%;
     }
     #app-section { display: none; }
     body[data-auth="true"] #auth-section { display: none; }
     body[data-auth="true"] #app-section {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      gap: 12px;
     }
     .brand-header {
       display: flex;
       justify-content: center;
-      margin-bottom: 8px;
+      margin-bottom: 12px;
       flex-shrink: 0;
     }
     .brand-header img {
-      width: clamp(110px, 18vw, 150px);
+      width: clamp(120px, 20vw, 160px);
       height: auto;
-      max-height: 130px;
+      max-height: 140px;
       object-fit: contain;
       filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
     }
-    .scan-instructions {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
-      padding: 10px 12px;
-      margin-bottom: 6px;
+    .console-sticky {
+      position: sticky;
+      top: calc(var(--shell-pad) - 6px);
+      z-index: 6;
+      background: var(--sticky-overlay);
+      border-radius: 24px;
+      padding: 12px 16px 18px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
-    .scan-instructions p {
-      margin: 2px 0;
-      font-size: 0.85rem;
-      line-height: 1.35;
+    .console-sticky .brand-header {
+      margin-bottom: 4px;
     }
     .login-submit {
       display: block;
       margin: 18px auto 0;
       min-width: 180px;
     }
-    #app-section .panel:last-of-type {
-      flex: 1 1 auto;
+    .transfer-panel {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      min-height: 0;
+      gap: 14px;
     }
     #transfer-form {
       display: flex;
       flex-direction: column;
-      flex: 1 1 auto;
-      overflow: hidden;
-      gap: 10px;
-      min-height: 0;
+      gap: 12px;
     }
     .locked-pill {
       background: rgba(255, 255, 255, 0.04);
@@ -210,25 +211,19 @@ const html = `<!DOCTYPE html>
       font-weight: 700;
     }
     #cart-section {
-      flex: 1 1 auto;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      min-height: 0;
+      gap: 6px;
     }
-    .cart-scroll {
-      flex: 1 1 auto;
-      overflow-y: auto;
-      margin-top: 6px;
-      padding-right: 6px;
-      min-height: 0;
+    .cart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      margin-bottom: 4px;
     }
-    .cart-scroll::-webkit-scrollbar {
-      width: 8px;
-    }
-    .cart-scroll::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 4px;
+    .cart-summary {
+      text-align: right;
     }
     .cart-table {
       width: 100%;
@@ -237,22 +232,25 @@ const html = `<!DOCTYPE html>
     }
     .cart-table thead th {
       position: sticky;
-      top: 0;
-      background: rgba(0, 0, 0, 0.92);
-      z-index: 1;
-    }
-    .cart-table th,
-    .cart-table td {
-      padding: 8px 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      text-align: left;
-      font-size: 0.9rem;
-    }
-    .cart-table th {
+      top: var(--sticky-stack-offset);
+      background: rgba(5, 5, 5, 0.96);
+      padding: 10px 12px 16px;
       text-transform: uppercase;
       font-size: 0.75rem;
       letter-spacing: 0.05em;
       color: #f7a8b7;
+      z-index: 2;
+      box-shadow: 0 2px 0 rgba(255, 255, 255, 0.05);
+    }
+    .cart-table th,
+    .cart-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    .cart-table tbody td {
+      padding-top: 14px;
     }
     #cart-empty {
       margin: 12px 0;
@@ -357,11 +355,14 @@ const html = `<!DOCTYPE html>
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
-    #app-section > header {
+    .console-headline {
       text-align: center;
     }
-    #app-section > header h1 {
+    .console-headline h1 {
       font-size: 1.8rem;
+      margin: 0;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     .transfer-actions {
       display: flex;
@@ -495,20 +496,17 @@ const html = `<!DOCTYPE html>
     }
     @media (max-width: 1080px) {
       main {
-        width: min(840px, calc(100vw - 20px));
-        height: min(680px, calc(100vh - 20px));
+        width: min(820px, calc(100vw - 20px));
       }
     }
     @media (max-width: 720px) {
       body {
         align-items: flex-start;
         padding: 16px;
-        overflow-y: auto;
       }
       main {
         width: 100%;
-        height: auto;
-        padding: 20px;
+        padding: 16px;
       }
       button {
         width: 100%;
@@ -523,10 +521,10 @@ const html = `<!DOCTYPE html>
 </head>
 <body>
   <main>
-    <header class="brand-header">
-      <img src="/afterten-logo.png" alt="AfterTen logo" />
-    </header>
     <section id="auth-section" class="panel">
+      <header class="brand-header">
+        <img src="/afterten-logo.png" alt="AfterTen logo" />
+      </header>
       <h1>Operator Login</h1>
       <p class="subtitle">Scan your badge QR or use email/password to enter the transfer bay.</p>
       <form id="login-form">
@@ -546,54 +544,51 @@ const html = `<!DOCTYPE html>
     </section>
 
     <section id="app-section">
-      <header>
-        <h1>Warehouse Transfer Console</h1>
-      </header>
-
-      <article class="panel">
-        <div class="two-cols">
-          <div class="locked-pill">
-            <h3>From</h3>
-            <p id="source-label">Loading...</p>
+      <div class="console-sticky">
+        <header class="brand-header brand-header--app">
+          <img src="/afterten-logo.png" alt="AfterTen logo" />
+        </header>
+        <header class="console-headline">
+          <h1>Warehouse Transfer Console</h1>
+        </header>
+        <article class="panel route-locker">
+          <div class="two-cols">
+            <div class="locked-pill">
+              <h3>From</h3>
+              <p id="source-label">Loading...</p>
+            </div>
+            <div class="locked-pill">
+              <h3>To</h3>
+              <p id="dest-label">Loading...</p>
+            </div>
           </div>
-          <div class="locked-pill">
-            <h3>To</h3>
-            <p id="dest-label">Loading...</p>
-          </div>
-        </div>
-      </article>
+        </article>
+      </div>
 
-      <article class="panel">
+      <article class="panel transfer-panel">
         <form id="transfer-form">
-          <div class="scan-instructions">
-            <p>Scan product or variation barcodes from the Main Store Room. A quantity prompt will appear after each successful match.</p>
-            <p style="margin-top:6px; font-size:0.85rem; color:#f8d2e0;">Use the on-screen numpad or the Enter key to confirm units. If scanning pauses, click anywhere on the console to re-arm the reader.</p>
-          </div>
-
           <section id="cart-section">
-            <div class="two-cols" style="align-items:center; margin-bottom:8px;">
+            <div class="cart-head">
               <div>
                 <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Transfer Cart</h3>
               </div>
-              <div style="text-align:right;">
+              <div class="cart-summary">
                 <span id="cart-count">0 items</span>
               </div>
             </div>
-            <div class="cart-scroll">
-              <table class="cart-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Product</th>
-                    <th scope="col">Variation</th>
-                    <th scope="col">Qty</th>
-                    <th scope="col">UOM</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="cart-body"></tbody>
-              </table>
-              <p id="cart-empty">No items scanned yet.</p>
-            </div>
+            <table class="cart-table">
+              <thead>
+                <tr>
+                  <th scope="col">Product</th>
+                  <th scope="col">Variation</th>
+                  <th scope="col">Qty</th>
+                  <th scope="col">UOM</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cart-body"></tbody>
+            </table>
+            <p id="cart-empty">No items scanned yet.</p>
           </section>
 
           <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
@@ -668,6 +663,24 @@ const html = `<!DOCTYPE html>
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
+
+      const rootElement = document.documentElement;
+      const consoleSticky = document.querySelector('.console-sticky');
+
+      function updateStickyOffset() {
+        if (!rootElement || !consoleSticky) return;
+        const computed = window.getComputedStyle(consoleSticky);
+        if (computed.display === 'none' || consoleSticky.offsetHeight === 0) return;
+        const pad = parseFloat(window.getComputedStyle(rootElement).getPropertyValue('--shell-pad')) || 0;
+        const stickyTop = Math.max(pad - 6, 0);
+        const offset = stickyTop + consoleSticky.offsetHeight + 12;
+        rootElement.style.setProperty('--sticky-stack-offset', offset + 'px');
+      }
+
+      window.addEventListener('resize', () => {
+        window.requestAnimationFrame(updateStickyOffset);
+      });
+      updateStickyOffset();
 
       const loginForm = document.getElementById('login-form');
       const loginStatus = document.getElementById('login-status');
@@ -1094,11 +1107,11 @@ const html = `<!DOCTYPE html>
         } else {
           cartEmpty.style.display = 'none';
           state.cartItems.forEach((item, index) => {
-            const row = document.createElement('tr');
-            const productCell = document.createElement('td');
-            productCell.textContent = item.productName ?? 'Product';
-            const variationCell = document.createElement('td');
-            variationCell.textContent = item.variationName ?? 'Base';
+                const row = document.createElement('tr');
+                const productCell = document.createElement('td');
+                productCell.textContent = item.productName ?? 'Product';
+                const variationCell = document.createElement('td');
+            variationCell.textContent = item.variationName ? item.variationName : '-';
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
