@@ -97,26 +97,15 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         when {
             hasWarehouseAdmin -> {
-                // Admin home: go directly to warehouse admin workspace (stock tools embedded there now)
+                // Admin home: single entry into the transfer viewer
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        logger.event("WarehousesAdminTapped")
+                        logger.event("WarehouseTransfersTapped")
                         onAdminWarehouses()
                     },
                     enabled = session != null
-                ) { Text("Warehouses Admin") }
-                Spacer(Modifier.height(12.dp))
-                if (canAccessTransfers) {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            logger.event("TransfersTapped")
-                            onTransfers()
-                        },
-                        enabled = session != null
-                    ) { Text("Stock Transfers") }
-                }
+                ) { Text("Warehouse Transfers") }
             }
             hasSupervisorRole -> {
                 // Supervisor home: go to Outlet Orders (multi-outlet)

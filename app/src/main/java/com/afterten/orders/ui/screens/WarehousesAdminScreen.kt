@@ -9,22 +9,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,8 +29,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
@@ -51,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.OutletSession
 import com.afterten.orders.data.RoleGuards
@@ -63,7 +57,6 @@ import kotlinx.coroutines.delay
 import com.afterten.orders.data.SupabaseProvider.Warehouse
 import com.afterten.orders.data.SupabaseProvider.WarehouseTransferDto
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.text.style.TextOverflow
 import java.text.DecimalFormat
 import java.time.OffsetDateTime
@@ -118,59 +111,21 @@ private fun WarehousesAdminContent(
     onBack: () -> Unit,
     onLogout: () -> Unit
 ) {
-    var showTransfers by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "Warehouse Workspace",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "Monitor transfers flowing between warehouses in real time.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Button(
-            onClick = { showTransfers = true },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Filled.Inventory2, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Warehouse Transfers")
-        }
-        Spacer(modifier = Modifier.weight(1f, fill = true))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Back") }
-            TextButton(onClick = onLogout) { Text("Log out") }
-        }
-    }
-
-    if (showTransfers) {
-        WarehouseTransfersDialog(
-            supabase = root.supabaseProvider,
-            token = session.token,
-            onDismiss = { showTransfers = false }
-        )
-    }
+    WarehouseTransfersPane(
+        supabase = root.supabaseProvider,
+        token = session.token,
+        onBack = onBack,
+        onLogout = onLogout
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WarehouseTransfersDialog(
+private fun WarehouseTransfersPane(
     supabase: SupabaseProvider,
     token: String,
-    onDismiss: () -> Unit
+    onBack: () -> Unit,
+    onLogout: () -> Unit
 ) {
     var warehouses by remember { mutableStateOf<List<Warehouse>>(emptyList()) }
     var warehousesLoading by remember { mutableStateOf(true) }
@@ -234,110 +189,109 @@ private fun WarehouseTransfersDialog(
         isRefreshing = false
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            tonalElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
+            Button(onClick = onBack, shape = RoundedCornerShape(50)) {
+                Text("Back")
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = { refreshSignal += 1 }) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+            }
+            TextButton(onClick = onLogout) { Text("Log out") }
+        }
+
+        Text(
+            text = "Warehouse Transfers",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Live feed from the scanner portals.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (warehousesLoading || isRefreshing) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        TransferFilters(
+            warehouses = warehouses,
+            selectedSourceId = selectedSourceId,
+            selectedDestId = selectedDestId,
+            onSourceChanged = { selectedSourceId = it },
+            onDestChanged = { selectedDestId = it },
+            onClear = {
+                selectedSourceId = null
+                selectedDestId = null
+            }
+        )
+
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            when {
+                isInitialLoading -> {
+                    Box(Modifier.align(Alignment.Center)) {
+                        CircularProgressIndicator()
+                    }
+                }
+                transfers.isEmpty() -> {
+                    Box(Modifier.align(Alignment.Center)) {
                         Text(
-                            text = "Warehouse Transfers",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Live feed from the scanner portals.",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "No transfers have been logged yet.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = { refreshSignal += 1 }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.Close, contentDescription = "Close")
-                    }
                 }
-
-                if (warehousesLoading || isRefreshing) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-
-                TransferFilters(
-                    warehouses = warehouses,
-                    selectedSourceId = selectedSourceId,
-                    selectedDestId = selectedDestId,
-                    onSourceChanged = { selectedSourceId = it },
-                    onDestChanged = { selectedDestId = it },
-                    onClear = {
-                        selectedSourceId = null
-                        selectedDestId = null
-                    }
-                )
-
-                errorMessage?.let {
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 460.dp)
-                ) {
-                    when {
-                        isInitialLoading -> {
-                            Box(Modifier.align(Alignment.Center)) {
-                                CircularProgressIndicator()
-                            }
-                        }
-                        transfers.isEmpty() -> {
-                            Box(Modifier.align(Alignment.Center)) {
-                                Text(
-                                    text = "No transfers have been logged yet.",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        else -> {
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(transfers, key = { it.id }) { transfer ->
-                                    val sourceName = warehouseMap[transfer.sourceWarehouseId]?.name ?: "Unknown source"
-                                    val destName = warehouseMap[transfer.destWarehouseId]?.name ?: "Unknown destination"
-                                    TransferCard(
-                                        transfer = transfer,
-                                        sourceName = sourceName,
-                                        destName = destName,
-                                        expanded = expandedTransferId == transfer.id,
-                                        onToggleExpand = {
-                                            expandedTransferId = if (expandedTransferId == transfer.id) null else transfer.id
-                                        },
-                                        qtyFormatter = qtyFormatter
-                                    )
-                                }
-                            }
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(transfers, key = { it.id }) { transfer ->
+                            val sourceName = warehouseMap[transfer.sourceWarehouseId]?.name ?: "Unknown source"
+                            val destName = warehouseMap[transfer.destWarehouseId]?.name ?: "Unknown destination"
+                            TransferCard(
+                                transfer = transfer,
+                                sourceName = sourceName,
+                                destName = destName,
+                                expanded = expandedTransferId == transfer.id,
+                                onToggleExpand = {
+                                    expandedTransferId = if (expandedTransferId == transfer.id) null else transfer.id
+                                },
+                                qtyFormatter = qtyFormatter
+                            )
                         }
                     }
                 }
-
-                Text(
-                    text = "Updating every 6 seconds",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
+
+        Text(
+            text = "Updating every 6 seconds",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -403,15 +357,14 @@ private fun WarehouseDropdown(
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
             modifier = modifier
-                .menuAnchor()
+                .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true)
                 .fillMaxWidth(),
             value = selectedName,
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
             placeholder = { Text("Any warehouse") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors = TextFieldDefaults.outlinedTextFieldColors()
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
         )
         DropdownMenu(
             expanded = expanded,
