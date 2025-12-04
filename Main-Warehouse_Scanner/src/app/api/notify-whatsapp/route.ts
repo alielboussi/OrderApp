@@ -4,6 +4,7 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 const WHATSAPP_TO_NUMBERS = process.env.WHATSAPP_TO_NUMBER;
+const WHATSAPP_TEMPLATE_SID = process.env.WHATSAPP_TEMPLATE_SID ?? process.env.WHATSAPP_CONTENT_SID;
 
 type TransferItem = {
   productName?: unknown;
@@ -45,35 +46,44 @@ function formatItemsBlock(payload: Record<string, unknown>) {
   return lines.join('\n');
 }
 
-function formatMessage(payload: Record<string, unknown>) {
-  const reference = payload.reference ?? 'N/A';
-  const processedBy = payload.processedBy ?? payload.operator ?? 'Unknown operator';
-  const source = payload.sourceLabel ?? 'Unknown source';
-  const dest = payload.destLabel ?? 'Unknown destination';
-  const route = payload.route ?? `${source} → ${dest}`;
-  const windowText =
-    payload.dateTime ??
-    payload.window ??
-    payload.scheduleWindow ??
-    new Date().toLocaleString('en-US', { timeZone: 'UTC' });
+function buildContentVariables(payload: Record<string, unknown>) {
+  const reference = String(payload.reference ?? payload.referenceRaw ?? 'N/A');
+  const processedBy = String(payload.processedBy ?? payload.operator ?? 'Unknown operator');
+  const source = String(payload.sourceLabel ?? 'Unknown source');
+  const dest = String(payload.destLabel ?? 'Unknown destination');
+  const route = String(payload.route ?? `${source} -> ${dest}`);
+  const windowText = String(
+    payload.dateTime ?? payload.window ?? payload.scheduleWindow ?? new Date().toLocaleString('en-US')
+  );
   const itemsBlock = formatItemsBlock(payload);
 
-  return [
-    `Warehouse transfer ${reference} processed by ${processedBy}`,
-    `Route: ${route}`,
-    `Date & Time: ${windowText}`,
-    '',
-    '*Items:*',
-    itemsBlock,
-  ].join('\n');
+  return {
+    '1': reference,
+    '2': processedBy,
+    '3': route,
+    '4': windowText,
+    '5': itemsBlock,
+  };
 }
 
 export async function POST(request: Request) {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_NUMBER || !WHATSAPP_TO_NUMBERS) {
+  if (
+    !TWILIO_ACCOUNT_SID ||
+    !TWILIO_AUTH_TOKEN ||
+    !TWILIO_WHATSAPP_NUMBER ||
+    !WHATSAPP_TO_NUMBERS ||
+    !WHATSAPP_TEMPLATE_SID
+  ) {
     return NextResponse.json(
       {
         error: 'Missing Twilio WhatsApp configuration',
-        requiredEnv: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER', 'WHATSAPP_TO_NUMBER'],
+        requiredEnv: [
+          'TWILIO_ACCOUNT_SID',
+          'TWILIO_AUTH_TOKEN',
+          'TWILIO_WHATSAPP_NUMBER',
+          'WHATSAPP_TO_NUMBER',
+          'WHATSAPP_TEMPLATE_SID',
+        ],
       },
       { status: 500 }
     );
@@ -95,14 +105,15 @@ export async function POST(request: Request) {
 
   const authHeader = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
   const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const bodyText = formatMessage(payload);
+  const contentVariables = JSON.stringify(buildContentVariables(payload));
   const results: Array<{ to: string; ok: boolean; detail?: string }> = [];
 
   for (const to of recipients) {
     const params = new URLSearchParams({
       From: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
       To: `whatsapp:${to}`,
-      Body: bodyText,
+      ContentSid: WHATSAPP_TEMPLATE_SID,
+      ContentVariables: contentVariables,
     });
 
     const response = await fetch(url, {

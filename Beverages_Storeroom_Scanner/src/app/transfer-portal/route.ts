@@ -1252,7 +1252,7 @@ const html = `<!DOCTYPE html>
               const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
               const qtyLabel = item.qty ?? 0;
               const unitLabel = item.unit ?? 'unit';
-              return '- ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' - ' + qtyLabel + ' ' + unitLabel;
+              return '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             })
             .join('\\n');
           const rawReference = typeof data === 'string' ? data : String(data ?? '');

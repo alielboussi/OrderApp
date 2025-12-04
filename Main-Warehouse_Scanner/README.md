@@ -30,8 +30,9 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 | `STOCK_VIEW_NAME` | Optional override of the warehouse stock view name. Defaults to `warehouse_stock_current`. |
 | `TWILIO_ACCOUNT_SID` | Twilio Project SID used for the WhatsApp API (sandbox or production sender). |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token; rotate it if it ever leaks. |
-| `TWILIO_WHATSAPP_NUMBER` | WhatsApp-enabled Twilio sender (sandbox number or approved business number). |
-| `WHATSAPP_TO_NUMBER` | Comma separated list of recipient numbers that will receive transfer alerts. |
+| `TWILIO_WHATSAPP_NUMBER` | WhatsApp-enabled Twilio sender (sandbox number or approved business number). Use the bare E.164 number without the `whatsapp:` prefix. |
+| `WHATSAPP_TEMPLATE_SID` | Twilio Content Template SID (e.g., `HX8f3e...`) for the approved `warehouse_out_transfers` template. |
+| `WHATSAPP_TO_NUMBER` | Comma separated list of recipient numbers (E.164) that should receive every transfer alert. |
 
 ### WhatsApp notifications (Twilio)
 
@@ -54,7 +55,7 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 - `src/app/api/warehouses/route.ts` – Vercel API route replacing the former Supabase `warehouses` function.
 - `src/app/api/stock/route.ts` – Aggregates descendant warehouse stock, mirroring the old `stock` function logic.
 - `src/app/transfer-portal/route.ts` – Serves the HTML/JS portal that talks to Supabase directly with the anon key.
-- `src/app/api/notify-whatsapp/route.ts` – Pushes transfer summaries to WhatsApp (Meta Cloud API) once a move is recorded.
+- `src/app/api/notify-whatsapp/route.ts` – Pushes transfer summaries to the approved Twilio WhatsApp template once a move is recorded.
 - `src/app/page.tsx` – Client-side React dashboard that now fetches `/api/warehouses` and `/api/stock` from the same origin, so no cross-origin configuration is required.
 
 Updating data logic now happens inside the Vercel API routes; deploy via Vercel to release both UI and API changes simultaneously.
