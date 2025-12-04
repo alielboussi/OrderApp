@@ -1,0 +1,20 @@
+Accessible URLs for https://aftertentransfers.app/
+(updated 2025-12-04)
+
+https://aftertentransfers.app/
+  └─ Stock Snapshot dashboard (public landing experience rendered by Next.js root route)
+
+https://aftertentransfers.app/transfer-portal
+  └─ Warehouse Transfer Console UI served by custom HTML route (locks source/destination warehouses)
+
+https://aftertentransfers.app/api/warehouses   [GET]
+  └─ Returns normalized warehouse metadata; accepts query params `include_inactive` and `locked_id`
+
+https://aftertentransfers.app/api/warehouse-transfers   [GET]
+  └─ Lists recent warehouse-to-warehouse stock movements; optional query params `sourceId`, `destId`, `limit`
+
+https://aftertentransfers.app/api/stock   [POST]
+  └─ Aggregates stock rows for a warehouse subtree; body requires `warehouseId` and optional `search`
+
+https://aftertentransfers.app/api/notify-whatsapp   [POST]
+  └─ Twilio WhatsApp webhook to broadcast transfer summaries; expects JSON payload with transfer metadata
