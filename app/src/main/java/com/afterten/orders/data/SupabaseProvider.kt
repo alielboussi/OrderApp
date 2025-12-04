@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import com.afterten.orders.data.RoleGuards
+import kotlin.text.Charsets
 
 class SupabaseProvider(context: Context) {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
@@ -570,7 +571,9 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class StockMovementReferenceName(
         val name: String? = null,
-        val uom: String? = null
+        val uom: String? = null,
+        val sku: String? = null,
+        val cost: Double? = null
     )
 
     @Serializable
@@ -825,6 +828,24 @@ class SupabaseProvider(context: Context) {
         return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
     }
 
+    suspend fun fetchWarehousesByIds(jwt: String, ids: Collection<String>): List<Warehouse> {
+        val unique = ids.mapNotNull { it?.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (unique.isEmpty()) return emptyList()
+        val filter = "(${unique.joinToString(",")})"
+        val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,outlet_id,name,active,parent_warehouse_id&id=in.$encoded"
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) {
+            throw IllegalStateException("fetchWarehousesByIds failed: HTTP $code $txt")
+        }
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
+    }
+
     suspend fun fetchWarehouseTransfers(
         jwt: String,
         sourceWarehouseId: String? = null,
@@ -838,11 +859,9 @@ class SupabaseProvider(context: Context) {
         urlBuilder.append("?select=")
         urlBuilder.append(
             "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
-                "source:warehouses!stock_movements_source_location_id_fkey(id,name)," +
-                "dest:warehouses!stock_movements_dest_location_id_fkey(id,name)," +
                 "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
-                "product:products!stock_movement_items_product_id_fkey(name,uom)," +
-                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom))"
+                "product:products!stock_movement_items_product_id_fkey(name,uom,sku,cost)," +
+                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom,sku))"
         )
         urlBuilder.append("&source_location_type=eq.warehouse&dest_location_type=eq.warehouse")
         sourceWarehouseId?.takeIf { it.isNotBlank() }?.let {

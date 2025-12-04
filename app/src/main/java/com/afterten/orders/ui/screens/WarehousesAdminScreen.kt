@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +22,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
@@ -39,8 +43,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,7 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -67,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,6 +99,7 @@ private val TimestampFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.getDefault()).withZone(ZambiaZoneId)
 private val DateOnlyFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
+private const val ZambiaTimeSuffix = "CAT (UTC+02)"
 
 @Composable
 fun WarehousesAdminScreen(
@@ -173,7 +177,6 @@ private fun WarehouseTransfersPane(
     var startDate by remember { mutableStateOf<LocalDate?>(null) }
     var endDate by remember { mutableStateOf<LocalDate?>(null) }
     var searchQuery by remember { mutableStateOf("") }
-    var showAllTransfers by remember { mutableStateOf(false) }
     var refreshSignal by remember { mutableIntStateOf(0) }
     var expandedTransferId by remember { mutableStateOf<String?>(null) }
 
@@ -234,7 +237,7 @@ private fun WarehouseTransfersPane(
         }
     }
 
-    LaunchedEffect(refreshSignal, selectedSourceId, selectedDestId, startDate, endDate, showAllTransfers, token) {
+    LaunchedEffect(refreshSignal, selectedSourceId, selectedDestId, startDate, endDate, token) {
         if (refreshSignal == 0) return@LaunchedEffect
         val firstLoad = transfers.isEmpty()
         if (firstLoad) {
@@ -249,16 +252,44 @@ private fun WarehouseTransfersPane(
                 destWarehouseId = selectedDestId,
                 createdAfterIso = startDate?.toStartOfDayIso(),
                 createdBeforeIso = endDate?.toEndOfDayIso(),
-                limit = if (showAllTransfers) 500 else 120
+                limit = 120
             )
-        }.onSuccess {
-            transfers = it
+        }.onSuccess { fetchedTransfers ->
+            transfers = fetchedTransfers
             errorMessage = null
+
+            val knownIds = warehouses.mapTo(mutableSetOf()) { it.id }
+            val idsNeeded = mutableSetOf<String>()
+            fetchedTransfers.forEach { transfer ->
+                transfer.sourceWarehouseId?.let { idsNeeded.add(it) }
+                transfer.destWarehouseId?.let { idsNeeded.add(it) }
+            }
+            idsNeeded.removeAll(knownIds)
+
+            if (idsNeeded.isNotEmpty()) {
+                runCatching { supabase.fetchWarehousesByIds(token, idsNeeded) }
+                    .onSuccess { extras ->
+                        if (extras.isNotEmpty()) {
+                            val merged = (warehouses + extras).associateBy { it.id }.values.toList()
+                            warehouses = merged
+                        }
+                    }
+            }
         }.onFailure {
             errorMessage = it.message ?: "Unable to load transfers"
         }
         isInitialLoading = false
         isRefreshing = false
+    }
+
+    val resetFilters = {
+        selectedSourceId = null
+        selectedDestId = null
+        startDate = null
+        endDate = null
+        searchQuery = ""
+        errorMessage = null
+        refreshSignal += 1
     }
 
     Box(
@@ -303,6 +334,11 @@ private fun WarehouseTransfersPane(
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.7f)
         )
+        Text(
+            text = "Times shown in Zambia Standard Time • $ZambiaTimeSuffix",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.6f)
+        )
 
         if (warehousesLoading || isRefreshing) {
             LinearProgressIndicator(
@@ -319,7 +355,6 @@ private fun WarehouseTransfersPane(
             searchQuery = searchQuery,
             startDate = startDate,
             endDate = endDate,
-            showAllTransfers = showAllTransfers,
             onSourceChanged = { selectedSourceId = it },
             onDestChanged = { selectedDestId = it },
             onClearWarehouseFilters = {
@@ -347,7 +382,7 @@ private fun WarehouseTransfersPane(
                 startDate = null
                 endDate = null
             },
-            onToggleShowAll = { showAllTransfers = !showAllTransfers }
+            onResetAllFilters = resetFilters
         )
 
         errorMessage?.let {
@@ -414,7 +449,7 @@ private fun WarehouseTransfersPane(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun TransferFilters(
     warehouses: List<Warehouse>,
@@ -423,7 +458,6 @@ private fun TransferFilters(
     searchQuery: String,
     startDate: LocalDate?,
     endDate: LocalDate?,
-    showAllTransfers: Boolean,
     onSourceChanged: (String?) -> Unit,
     onDestChanged: (String?) -> Unit,
     onClearWarehouseFilters: () -> Unit,
@@ -431,9 +465,30 @@ private fun TransferFilters(
     onPickStartDate: () -> Unit,
     onPickEndDate: () -> Unit,
     onClearDates: () -> Unit,
-    onToggleShowAll: () -> Unit
+    onResetAllFilters: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Filled.FilterList,
+                contentDescription = null,
+                tint = AftertenRed,
+                modifier = Modifier.size(36.dp)
+            )
+            Text(
+                text = "Filter transfers",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Choose warehouses, dates, or search to focus this live feed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -453,27 +508,11 @@ private fun TransferFilters(
                 onSelected = onDestChanged
             )
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(Icons.Filled.FilterList, contentDescription = null, tint = AftertenRed)
-            Text(
-                text = "Filter transfers by source and destination",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                modifier = Modifier.weight(1f)
-            )
-            if (selectedSourceId != null || selectedDestId != null) {
-                TextButton(onClick = onClearWarehouseFilters, colors = ButtonDefaults.textButtonColors(contentColor = AftertenRed)) {
-                    Text("Clear")
-                }
-            }
-        }
 
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             DateFilterButton(
                 modifier = Modifier.weight(1f),
@@ -487,9 +526,18 @@ private fun TransferFilters(
                 value = endDate,
                 onClick = onPickEndDate
             )
-            TextButton(onClick = onClearDates, colors = ButtonDefaults.textButtonColors(contentColor = AftertenRed)) {
-                Text("Clear dates")
-            }
+            AssistChip(
+                onClick = onClearDates,
+                label = { Text("Clear dates") },
+                leadingIcon = {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White)
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = Color.Transparent,
+                    labelColor = Color.White
+                ),
+                border = BorderStroke(1.dp, AftertenRed.copy(alpha = 0.6f))
+            )
         }
 
         OutlinedTextField(
@@ -500,40 +548,35 @@ private fun TransferFilters(
                 .border(BorderStroke(1.5.dp, AftertenRed), RoundedCornerShape(18.dp)),
             singleLine = true,
             keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
-            placeholder = { Text("Search by warehouse or product", color = Color.White.copy(alpha = 0.5f)) },
-            label = { Text("Search transfers", color = Color.White) },
+            placeholder = { Text("Warehouse, product, SKU, note", color = Color.White.copy(alpha = 0.5f)) },
+            label = { Text("Search everything", color = Color.White) },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = AftertenRed) },
             colors = transferTextFieldColors()
         )
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterChip(
-                selected = showAllTransfers,
-                onClick = onToggleShowAll,
-                label = { Text("Show entire history") },
-                leadingIcon = if (showAllTransfers) {
-                    {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White)
-                    }
-                } else null,
-                colors = FilterChipDefaults.filterChipColors(
+            AssistChip(
+                onClick = onClearWarehouseFilters,
+                label = { Text("Clear route") },
+                enabled = selectedSourceId != null || selectedDestId != null,
+                colors = AssistChipDefaults.assistChipColors(
                     containerColor = Color.Transparent,
-                    selectedContainerColor = AftertenRed.copy(alpha = 0.2f),
-                    labelColor = Color.White,
-                    selectedLabelColor = Color.White
+                    labelColor = if (selectedSourceId != null || selectedDestId != null) Color.White else Color.White.copy(alpha = 0.4f)
                 ),
-                border = FilterChipDefaults.filterChipBorder(
-                    borderColor = AftertenRed,
-                    selectedBorderColor = AftertenRed
-                )
+                border = BorderStroke(1.dp, AftertenRed.copy(alpha = 0.6f))
             )
-            Text(
-                text = if (showAllTransfers) "Showing up to 500 transfers" else "Showing latest 120 transfers",
-                color = Color.White.copy(alpha = 0.7f),
-                style = MaterialTheme.typography.bodySmall
+            AssistChip(
+                onClick = onResetAllFilters,
+                label = { Text("Reset all filters") },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = AftertenRed.copy(alpha = 0.15f),
+                    labelColor = Color.White
+                ),
+                border = BorderStroke(1.dp, AftertenRed.copy(alpha = 0.6f))
             )
         }
     }
@@ -544,11 +587,13 @@ private fun DateFilterButton(
     modifier: Modifier = Modifier,
     label: String,
     value: LocalDate?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     OutlinedButton(
         onClick = onClick,
         modifier = modifier,
+        enabled = enabled,
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.5.dp, AftertenRed),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
@@ -610,7 +655,22 @@ private fun WarehouseDropdown(
             readOnly = true,
             label = { Text(label, color = Color.White) },
             placeholder = { Text("Any warehouse", color = Color.White.copy(alpha = 0.5f)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            trailingIcon = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (selectedId != null) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Clear selection",
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clickable { onSelected(null) },
+                            tint = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                }
+            },
             colors = transferTextFieldColors()
         )
         DropdownMenu(
@@ -638,6 +698,7 @@ private fun WarehouseDropdown(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TransferCard(
     transfer: WarehouseTransferDto,
@@ -647,6 +708,19 @@ private fun TransferCard(
     onToggleExpand: () -> Unit,
     qtyFormatter: DecimalFormat
 ) {
+    val isCompleted = transfer.status.equals("completed", ignoreCase = true)
+    val statusChipColors = if (isCompleted) {
+        AssistChipDefaults.assistChipColors(
+            containerColor = AftertenRed.copy(alpha = 0.2f),
+            labelColor = Color.White
+        )
+    } else {
+        AssistChipDefaults.assistChipColors(
+            containerColor = Color.Transparent,
+            labelColor = Color.White
+        )
+    }
+
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -678,11 +752,9 @@ private fun TransferCard(
                 AssistChip(
                     onClick = {},
                     label = { Text(formatStatusLabel(transfer.status), color = Color.White) },
+                    enabled = false,
                     border = BorderStroke(1.dp, AftertenRed),
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = Color.Transparent,
-                        labelColor = Color.White
-                    )
+                    colors = statusChipColors
                 )
                 IconButton(onClick = onToggleExpand) {
                     Icon(
@@ -773,12 +845,27 @@ private fun WarehouseTransferDto.matchesQuery(
     fun matchesCandidate(value: String?) =
         value?.lowercase(Locale.getDefault())?.contains(query) == true
 
+    fun matchesNumericCandidate(value: Number?): Boolean {
+        if (value == null) return false
+        val formatted = value.toString().lowercase(Locale.getDefault())
+        return formatted.contains(query)
+    }
+
     val resolvedSource = warehouseNames[sourceWarehouseId] ?: sourceWarehouse?.name
     val resolvedDest = warehouseNames[destWarehouseId] ?: destWarehouse?.name
-    if (matchesCandidate(resolvedSource) || matchesCandidate(resolvedDest)) return true
-    if (matchesCandidate(note) || matchesCandidate(status)) return true
+    if (matchesCandidate(resolvedSource) || matchesCandidate(destWarehouse?.id)) return true
+    if (matchesCandidate(resolvedDest) || matchesCandidate(sourceWarehouse?.id)) return true
+    if (matchesCandidate(note) || matchesCandidate(status) || matchesCandidate(id)) return true
+
     return items.any { item ->
-        matchesCandidate(item.product?.name) || matchesCandidate(item.variation?.name)
+        matchesCandidate(item.product?.name) ||
+            matchesCandidate(item.variation?.name) ||
+            matchesCandidate(item.product?.sku) ||
+            matchesCandidate(item.variation?.sku) ||
+            matchesCandidate(item.product?.uom) ||
+            matchesCandidate(item.variation?.uom) ||
+            matchesNumericCandidate(item.product?.cost) ||
+            matchesNumericCandidate(item.variation?.cost)
     }
 }
 

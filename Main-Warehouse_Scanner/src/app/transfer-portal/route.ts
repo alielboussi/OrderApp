@@ -5,6 +5,7 @@ const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const LOCKED_SOURCE_ID = '09e0898f-359d-4373-a1ab-d9ba8be5b35b';
 const LOCKED_DEST_ID = '9a12caa0-c116-4137-8ea5-74bb0de77fae';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_current';
+const MULTIPLY_QTY_BY_PACKAGE = false;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -224,6 +225,33 @@ const html = `<!DOCTYPE html>
     }
     .cart-summary {
       text-align: right;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+    .qty-lock-btn {
+      background: transparent;
+      border: 1px dashed rgba(255, 255, 255, 0.35);
+      color: #ffd6e0;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+    }
+    .qty-lock-btn.active {
+      background: rgba(255, 27, 45, 0.15);
+      border-color: rgba(255, 27, 45, 0.65);
+      color: #fff;
+    }
+    .qty-hint {
+      font-size: 0.85rem;
+      color: #fbb6c7;
+      margin: 0;
+      display: none;
     }
     .cart-table {
       width: 100%;
@@ -573,6 +601,7 @@ const html = `<!DOCTYPE html>
                 <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Transfer Cart</h3>
               </div>
               <div class="cart-summary">
+                <button type="button" id="qty-lock-toggle" class="qty-lock-btn">Auto qty: off</button>
                 <span id="cart-count">0 items</span>
               </div>
             </div>
@@ -581,6 +610,7 @@ const html = `<!DOCTYPE html>
                 <tr>
                   <th scope="col">Product</th>
                   <th scope="col">Variation</th>
+                  <th scope="col">Scanned Qty</th>
                   <th scope="col">Qty</th>
                   <th scope="col">UOM</th>
                   <th scope="col">Actions</th>
@@ -609,6 +639,7 @@ const html = `<!DOCTYPE html>
     <form id="qty-form">
       <h3 id="qty-title">Enter quantity</h3>
       <p id="qty-uom">UNIT</p>
+      <p id="qty-hint" class="qty-hint"></p>
       <input type="number" id="qty-input" min="0" step="0.01" placeholder="0" required />
       <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
         <button type="button" data-key="7">7</button>
@@ -636,6 +667,7 @@ const html = `<!DOCTYPE html>
     const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
+    const MULTIPLY_QTY_BY_PACKAGE = ${JSON.stringify(MULTIPLY_QTY_BY_PACKAGE)};
     const REQUIRED_ROLE = 'transfers';
     const ALLOWED_ROLE_SLUGS = ['transfers', 'warehouse_transfers'];
     const REQUIRED_ROLE_ID = '768b2c30-6d0a-4e91-ac62-4ca4ae74b78f';
@@ -658,7 +690,8 @@ const html = `<!DOCTYPE html>
         loading: false,
         operatorProfile: null,
         lockedSource: null,
-        lockedDest: null
+        lockedDest: null,
+        qtyLock: { enabled: false, qty: 1 }
       };
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -702,12 +735,17 @@ const html = `<!DOCTYPE html>
       const qtyTitle = document.getElementById('qty-title');
       const qtyCancel = document.getElementById('qty-cancel');
       const qtyNumpad = document.getElementById('qty-numpad');
+      const qtyHint = document.getElementById('qty-hint');
+      const qtyLockToggle = document.getElementById('qty-lock-toggle');
       const printRoot = document.getElementById('print-root');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
       let scanBuffer = '';
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
+
+      updateQtyHint(null);
+      syncQtyLockButton();
 
       function normalizeKey(value) {
         if (value === null || value === undefined) return '';
@@ -821,7 +859,7 @@ const html = `<!DOCTYPE html>
 
         const { data: products, error: prodErr } = await supabase
           .from('products')
-          .select('id,name,has_variations,uom,sku')
+          .select('id,name,has_variations,uom,sku,package_contains')
           .in('id', Array.from(productIds))
           .eq('active', true)
           .order('name');
@@ -854,7 +892,7 @@ const html = `<!DOCTYPE html>
         }
         const { data, error } = await supabase
           .from('product_variations')
-          .select('id,product_id,name,uom,sku')
+          .select('id,product_id,name,uom,sku,package_contains')
           .in('product_id', productIds)
           .eq('default_warehouse_id', lockedSourceId)
           .eq('active', true)
@@ -929,6 +967,57 @@ const html = `<!DOCTYPE html>
           }
         });
         return Array.from(map.values());
+      }
+
+      function resolvePackageSize(product, variation) {
+        const variationPack = Number(variation?.package_contains);
+        if (Number.isFinite(variationPack) && variationPack > 0) {
+          return variationPack;
+        }
+        const productPack = Number(product?.package_contains);
+        if (Number.isFinite(productPack) && productPack > 0) {
+          return productPack;
+        }
+        return 1;
+      }
+
+      function computeEffectiveQty(rawQty, entry) {
+        const qtyNumber = Number(rawQty);
+        if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
+          return null;
+        }
+        const multiplier = MULTIPLY_QTY_BY_PACKAGE ? entry.packageSize ?? 1 : 1;
+        return qtyNumber * multiplier;
+      }
+
+      function describeQty(entry, baseQty, effectiveQty) {
+        const unitLabel = entry.uom ?? 'UNIT';
+        if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
+          return baseQty + ' case(s) → ' + effectiveQty + ' ' + unitLabel;
+        }
+        return effectiveQty + ' ' + unitLabel;
+      }
+
+      function updateQtyHint(entry) {
+        if (!qtyHint) return;
+        if (!entry || !(MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1)) {
+          qtyHint.style.display = 'none';
+          qtyHint.textContent = '';
+          return;
+        }
+        qtyHint.textContent = 'Each = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
+        qtyHint.style.display = 'block';
+      }
+
+      function syncQtyLockButton() {
+        if (!qtyLockToggle) return;
+        if (state.qtyLock.enabled) {
+          qtyLockToggle.textContent = 'Auto qty: ' + state.qtyLock.qty;
+          qtyLockToggle.classList.add('active');
+        } else {
+          qtyLockToggle.textContent = 'Auto qty: off';
+          qtyLockToggle.classList.remove('active');
+        }
       }
 
       function renderPrintReceipt(summary, cartSnapshot) {
@@ -1058,17 +1147,38 @@ const html = `<!DOCTYPE html>
 
       function promptQuantity(product, variation) {
         if (!qtyModal || !qtyInput) return;
-        state.pendingEntry = {
+        const packageSize = resolvePackageSize(product, variation);
+        const entry = {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: (variation?.uom || product.uom || 'unit').toUpperCase()
+          uom: (variation?.uom || product.uom || 'unit').toUpperCase(),
+          packageSize
         };
+        state.pendingEntry = entry;
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = state.pendingEntry.uom;
+        qtyUom.textContent = entry.uom;
+
+        if (state.qtyLock.enabled) {
+          const effectiveQty = computeEffectiveQty(state.qtyLock.qty, entry);
+          if (effectiveQty === null) {
+            showResult('Auto quantity lock requires a positive quantity.', true);
+            state.pendingEntry = null;
+            updateQtyHint(null);
+            return;
+          }
+          addCartItem({ ...entry, qty: effectiveQty, scannedQty: state.qtyLock.qty });
+          showResult('Auto-added ' + describeQty(entry, state.qtyLock.qty, effectiveQty), false);
+          state.pendingEntry = null;
+          updateQtyHint(null);
+          focusScannerWedge();
+          return;
+        }
+
+        updateQtyHint(entry);
         qtyInput.value = '';
         qtyModal.style.display = 'flex';
         setTimeout(() => qtyInput.focus(), 10);
@@ -1078,17 +1188,21 @@ const html = `<!DOCTYPE html>
         if (!qtyModal) return;
         qtyModal.style.display = 'none';
         state.pendingEntry = null;
+        updateQtyHint(null);
         focusScannerWedge();
       }
 
       function addCartItem(entry) {
+        const scannedQty = Number(entry.scannedQty ?? entry.qty ?? 0);
         const existing = state.cartItems.find(
           (item) => item.productId === entry.productId && item.variationId === entry.variationId
         );
         if (existing) {
           existing.qty += entry.qty;
+          const priorScanned = Number(existing.scannedQty ?? 0);
+          existing.scannedQty = priorScanned + scannedQty;
         } else {
-          state.cartItems.push(entry);
+          state.cartItems.push({ ...entry, scannedQty });
         }
         renderCart();
       }
@@ -1112,6 +1226,8 @@ const html = `<!DOCTYPE html>
                 productCell.textContent = item.productName ?? 'Product';
                 const variationCell = document.createElement('td');
             variationCell.textContent = item.variationName ? item.variationName : '-';
+            const scannedCell = document.createElement('td');
+            scannedCell.textContent = (item.scannedQty ?? item.qty ?? 0).toString();
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
@@ -1127,6 +1243,7 @@ const html = `<!DOCTYPE html>
             actionsCell.appendChild(removeBtn);
             row.appendChild(productCell);
             row.appendChild(variationCell);
+            row.appendChild(scannedCell);
             row.appendChild(qtyCell);
             row.appendChild(uomCell);
             row.appendChild(actionsCell);
@@ -1511,20 +1628,43 @@ const html = `<!DOCTYPE html>
         event.preventDefault();
         const pending = state.pendingEntry;
         if (!pending) return;
-        const qtyValue = Number(qtyInput.value);
-        if (!Number.isFinite(qtyValue) || qtyValue <= 0) {
+        const rawQty = Number(qtyInput.value);
+        const effectiveQty = computeEffectiveQty(rawQty, pending);
+        if (effectiveQty === null) {
           qtyInput.focus();
           return;
         }
-        addCartItem({ ...pending, qty: qtyValue });
+        addCartItem({ ...pending, qty: effectiveQty, scannedQty: rawQty });
         showResult(
-          'Queued ' + (pending.productName ?? 'Product') + ' - ' + qtyValue + ' ' + (pending.uom ?? 'UNIT'),
+          'Queued ' + (pending.productName ?? 'Product') + ' - ' + describeQty(pending, rawQty, effectiveQty),
           false
         );
         closeQtyPrompt();
       });
       qtyCancel?.addEventListener('click', () => {
         closeQtyPrompt();
+      });
+      qtyLockToggle?.addEventListener('click', () => {
+        if (!state.qtyLock.enabled) {
+          let baseQty = Number(qtyInput?.value);
+          if (!Number.isFinite(baseQty) || baseQty <= 0) {
+            const promptValue = window.prompt('Quantity per scan', state.qtyLock.qty.toString());
+            if (promptValue === null) return;
+            baseQty = Number(promptValue);
+          }
+          if (!Number.isFinite(baseQty) || baseQty <= 0) {
+            showResult('Enter a positive quantity to lock.', true);
+            return;
+          }
+          state.qtyLock.enabled = true;
+          state.qtyLock.qty = baseQty;
+          showResult('Auto quantity lock enabled (' + baseQty + ' per scan).', false);
+        } else {
+          state.qtyLock.enabled = false;
+          showResult('Auto quantity lock disabled.', false);
+        }
+        syncQtyLockButton();
+        focusScannerWedge();
       });
       document.addEventListener('click', () => {
         if (document.body.dataset.auth === 'true') {
