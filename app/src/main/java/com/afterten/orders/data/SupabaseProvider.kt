@@ -574,6 +574,12 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    data class TransferWarehouseRef(
+        val id: String? = null,
+        val name: String? = null
+    )
+
+    @Serializable
     data class WarehouseTransferItem(
         val id: String,
         @SerialName("movement_id") val movementId: String,
@@ -593,6 +599,8 @@ class SupabaseProvider(context: Context) {
         @SerialName("dest_location_id") val destWarehouseId: String,
         @SerialName("created_at") val createdAt: String,
         @SerialName("completed_at") val completedAt: String? = null,
+        @SerialName("source") val sourceWarehouse: TransferWarehouseRef? = null,
+        @SerialName("dest") val destWarehouse: TransferWarehouseRef? = null,
         val items: List<WarehouseTransferItem> = emptyList()
     )
 
@@ -821,6 +829,8 @@ class SupabaseProvider(context: Context) {
         jwt: String,
         sourceWarehouseId: String? = null,
         destWarehouseId: String? = null,
+        createdAfterIso: String? = null,
+        createdBeforeIso: String? = null,
         limit: Int = 50
     ): List<WarehouseTransferDto> {
         val urlBuilder = StringBuilder()
@@ -828,6 +838,8 @@ class SupabaseProvider(context: Context) {
         urlBuilder.append("?select=")
         urlBuilder.append(
             "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
+                "source:warehouses!stock_movements_source_location_id_fkey(id,name)," +
+                "dest:warehouses!stock_movements_dest_location_id_fkey(id,name)," +
                 "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
                 "product:products!stock_movement_items_product_id_fkey(name,uom)," +
                 "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom))"
@@ -839,8 +851,16 @@ class SupabaseProvider(context: Context) {
         destWarehouseId?.takeIf { it.isNotBlank() }?.let {
             urlBuilder.append("&dest_location_id=eq.").append(it)
         }
+        createdAfterIso?.takeIf { it.isNotBlank() }?.let {
+            val encoded = java.net.URLEncoder.encode(it, "UTF-8")
+            urlBuilder.append("&created_at=gte.").append(encoded)
+        }
+        createdBeforeIso?.takeIf { it.isNotBlank() }?.let {
+            val encoded = java.net.URLEncoder.encode(it, "UTF-8")
+            urlBuilder.append("&created_at=lte.").append(encoded)
+        }
         urlBuilder.append("&order=created_at.desc")
-        urlBuilder.append("&limit=").append(limit.coerceAtMost(200))
+        urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
         val resp = http.get(urlBuilder.toString()) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
