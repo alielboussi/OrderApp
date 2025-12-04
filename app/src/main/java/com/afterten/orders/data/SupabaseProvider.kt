@@ -568,6 +568,35 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    data class StockMovementReferenceName(
+        val name: String? = null,
+        val uom: String? = null
+    )
+
+    @Serializable
+    data class WarehouseTransferItem(
+        val id: String,
+        @SerialName("movement_id") val movementId: String,
+        @SerialName("product_id") val productId: String,
+        @SerialName("variation_id") val variationId: String? = null,
+        val qty: Double = 0.0,
+        val product: StockMovementReferenceName? = null,
+        val variation: StockMovementReferenceName? = null
+    )
+
+    @Serializable
+    data class WarehouseTransferDto(
+        val id: String,
+        val status: String,
+        val note: String? = null,
+        @SerialName("source_location_id") val sourceWarehouseId: String,
+        @SerialName("dest_location_id") val destWarehouseId: String,
+        @SerialName("created_at") val createdAt: String,
+        @SerialName("completed_at") val completedAt: String? = null,
+        val items: List<WarehouseTransferItem> = emptyList()
+    )
+
+    @Serializable
     data class PackConsumptionRow(
         val id: String,
         @SerialName("order_id") val orderId: String,
@@ -786,6 +815,42 @@ class SupabaseProvider(context: Context) {
         }
         val txt = resp.bodyAsText()
         return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
+    }
+
+    suspend fun fetchWarehouseTransfers(
+        jwt: String,
+        sourceWarehouseId: String? = null,
+        destWarehouseId: String? = null,
+        limit: Int = 50
+    ): List<WarehouseTransferDto> {
+        val urlBuilder = StringBuilder()
+        urlBuilder.append("$supabaseUrl/rest/v1/stock_movements")
+        urlBuilder.append("?select=")
+        urlBuilder.append(
+            "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
+                "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
+                "product:products!stock_movement_items_product_id_fkey(name,uom)," +
+                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom))"
+        )
+        urlBuilder.append("&source_location_type=eq.warehouse&dest_location_type=eq.warehouse")
+        sourceWarehouseId?.takeIf { it.isNotBlank() }?.let {
+            urlBuilder.append("&source_location_id=eq.").append(it)
+        }
+        destWarehouseId?.takeIf { it.isNotBlank() }?.let {
+            urlBuilder.append("&dest_location_id=eq.").append(it)
+        }
+        urlBuilder.append("&order=created_at.desc")
+        urlBuilder.append("&limit=").append(limit.coerceAtMost(200))
+        val resp = http.get(urlBuilder.toString()) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) {
+            throw IllegalStateException("fetchWarehouseTransfers failed: HTTP $code $txt")
+        }
+        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(WarehouseTransferDto.serializer()), txt)
     }
 
     suspend fun createWarehouse(
