@@ -234,6 +234,7 @@ const html = `<!DOCTYPE html>
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      width: 100%;
       min-width: 72px;
       padding: 6px 12px;
       border-radius: 999px;
@@ -264,7 +265,14 @@ const html = `<!DOCTYPE html>
       width: 100%;
       border-collapse: collapse;
       margin-top: 4px;
+      table-layout: fixed;
     }
+    .cart-table col.col-product { width: 32%; }
+    .cart-table col.col-variation { width: 20%; }
+    .cart-table col.col-scanned { width: 16%; }
+    .cart-table col.col-qty { width: 12%; }
+    .cart-table col.col-uom { width: 10%; }
+    .cart-table col.col-actions { width: 10%; }
     .cart-table thead th {
       position: sticky;
       top: var(--sticky-stack-offset);
@@ -276,6 +284,18 @@ const html = `<!DOCTYPE html>
       color: #f7a8b7;
       z-index: 2;
       box-shadow: 0 2px 0 rgba(255, 255, 255, 0.05);
+    }
+    .cart-table th:nth-child(3),
+    .cart-table td:nth-child(3),
+    .cart-table th:nth-child(4),
+    .cart-table td:nth-child(4),
+    .cart-table th:nth-child(5),
+    .cart-table td:nth-child(5) {
+      text-align: center;
+    }
+    .cart-table th:nth-child(6),
+    .cart-table td:nth-child(6) {
+      text-align: right;
     }
     .cart-table th,
     .cart-table td {
@@ -291,6 +311,10 @@ const html = `<!DOCTYPE html>
       margin: 12px 0;
       color: #c4c4c4;
       font-size: 0.9rem;
+    }
+    .cart-row-actions {
+      display: flex;
+      justify-content: flex-end;
     }
     .cart-row-actions button {
       background: transparent;
@@ -612,6 +636,14 @@ const html = `<!DOCTYPE html>
               </div>
             </div>
             <table class="cart-table">
+              <colgroup>
+                <col class="col-product" />
+                <col class="col-variation" />
+                <col class="col-scanned" />
+                <col class="col-qty" />
+                <col class="col-uom" />
+                <col class="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th scope="col">Product</th>
@@ -663,7 +695,6 @@ const html = `<!DOCTYPE html>
       </div>
       <div class="qty-actions">
         <button type="button" id="qty-cancel">Cancel</button>
-        <button type="submit">Add Item</button>
       </div>
     </form>
   </div>
@@ -742,7 +773,6 @@ const html = `<!DOCTYPE html>
       const qtyCancel = document.getElementById('qty-cancel');
       const qtyNumpad = document.getElementById('qty-numpad');
       const qtyHint = document.getElementById('qty-hint');
-      const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const printRoot = document.getElementById('print-root');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
@@ -1152,9 +1182,6 @@ const html = `<!DOCTYPE html>
         };
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
-        if (qtySubmitButton) {
-          qtySubmitButton.textContent = 'Add Item';
-        }
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
@@ -1171,9 +1198,6 @@ const html = `<!DOCTYPE html>
         qtyModal.style.display = 'none';
         state.pendingEntry = null;
         state.pendingEditIndex = null;
-        if (qtySubmitButton) {
-          qtySubmitButton.textContent = 'Add Item';
-        }
         updateQtyHint(null);
         focusScannerWedge();
       }
@@ -1191,9 +1215,6 @@ const html = `<!DOCTYPE html>
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
-        if (qtySubmitButton) {
-          qtySubmitButton.textContent = 'Update Item';
-        }
         setTimeout(() => qtyInput.focus(), 10);
       }
 

@@ -66,24 +66,31 @@ function buildContentVariables(payload: Record<string, unknown>) {
   };
 }
 
+function buildPlaintextMessage(payload: Record<string, unknown>) {
+  const vars = buildContentVariables(payload);
+  return [
+    `Transfer Ref: ${vars['1']}`,
+    `Operator: ${vars['2']}`,
+    `Route: ${vars['3']}`,
+    `Window: ${vars['4']}`,
+    '',
+    vars['5'],
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export async function POST(request: Request) {
-  if (
-    !TWILIO_ACCOUNT_SID ||
-    !TWILIO_AUTH_TOKEN ||
-    !TWILIO_WHATSAPP_NUMBER ||
-    !WHATSAPP_TO_NUMBERS ||
-    !WHATSAPP_TEMPLATE_SID
-  ) {
+  const missingEnv: string[] = [];
+  if (!TWILIO_ACCOUNT_SID) missingEnv.push('TWILIO_ACCOUNT_SID');
+  if (!TWILIO_AUTH_TOKEN) missingEnv.push('TWILIO_AUTH_TOKEN');
+  if (!TWILIO_WHATSAPP_NUMBER) missingEnv.push('TWILIO_WHATSAPP_NUMBER');
+  if (!WHATSAPP_TO_NUMBERS) missingEnv.push('WHATSAPP_TO_NUMBER');
+  if (missingEnv.length) {
     return NextResponse.json(
       {
         error: 'Missing Twilio WhatsApp configuration',
-        requiredEnv: [
-          'TWILIO_ACCOUNT_SID',
-          'TWILIO_AUTH_TOKEN',
-          'TWILIO_WHATSAPP_NUMBER',
-          'WHATSAPP_TO_NUMBER',
-          'WHATSAPP_TEMPLATE_SID',
-        ],
+        missingEnv,
       },
       { status: 500 }
     );
@@ -105,16 +112,22 @@ export async function POST(request: Request) {
 
   const authHeader = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
   const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const contentVariables = JSON.stringify(buildContentVariables(payload));
+  const useTemplate = Boolean(WHATSAPP_TEMPLATE_SID);
+  const contentVariables = useTemplate ? JSON.stringify(buildContentVariables(payload)) : null;
+  const fallbackBody = useTemplate ? null : buildPlaintextMessage(payload);
   const results: Array<{ to: string; ok: boolean; detail?: string }> = [];
 
   for (const to of recipients) {
     const params = new URLSearchParams({
       From: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
       To: `whatsapp:${to}`,
-      ContentSid: WHATSAPP_TEMPLATE_SID,
-      ContentVariables: contentVariables,
     });
+    if (useTemplate && WHATSAPP_TEMPLATE_SID && contentVariables) {
+      params.set('ContentSid', WHATSAPP_TEMPLATE_SID);
+      params.set('ContentVariables', contentVariables);
+    } else if (fallbackBody) {
+      params.set('Body', fallbackBody);
+    }
 
     const response = await fetch(url, {
       method: 'POST',
