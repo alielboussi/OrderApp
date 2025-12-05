@@ -9,8 +9,23 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const sourceId = url.searchParams.get('sourceId')?.trim() || null;
     const destId = url.searchParams.get('destId')?.trim() || null;
+    const startDateParam = url.searchParams.get('startDate')?.trim() || null;
+    const endDateParam = url.searchParams.get('endDate')?.trim() || null;
     const limitParam = Number(url.searchParams.get('limit'));
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.floor(limitParam), 1), MAX_LIMIT) : 100;
+
+    const toIsoRange = (value: string | null, endOfDay: boolean) => {
+      if (!value) return null;
+      const parts = value.split('-').map((segment) => Number(segment));
+      if (parts.length < 3) return null;
+      const [year, month, day] = parts;
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+      const date = new Date(Date.UTC(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0));
+      return date.toISOString();
+    };
+
+    const startIso = toIsoRange(startDateParam, false);
+    const endIso = toIsoRange(endDateParam, true);
 
     const supabase = getServiceClient();
     let query = supabase
@@ -24,6 +39,14 @@ export async function GET(req: NextRequest) {
         completed_at,
         source_location_id,
         dest_location_id,
+        source:warehouses!stock_movements_source_location_id_fkey (
+          id,
+          name
+        ),
+        dest:warehouses!stock_movements_dest_location_id_fkey (
+          id,
+          name
+        ),
         items:stock_movement_items (
           id,
           movement_id,
@@ -45,6 +68,12 @@ export async function GET(req: NextRequest) {
     }
     if (destId) {
       query = query.eq('dest_location_id', destId);
+    }
+    if (startIso) {
+      query = query.gte('created_at', startIso);
+    }
+    if (endIso) {
+      query = query.lte('created_at', endIso);
     }
 
     type TransferRecord = WarehouseTransfer & {

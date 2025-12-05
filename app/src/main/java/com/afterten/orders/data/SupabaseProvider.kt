@@ -861,7 +861,9 @@ class SupabaseProvider(context: Context) {
             "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
                 "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
                 "product:products!stock_movement_items_product_id_fkey(name,uom,sku,cost)," +
-                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom,sku))"
+                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom,sku))," +
+                "source:warehouses!stock_movements_source_location_id_fkey(id,name)," +
+                "dest:warehouses!stock_movements_dest_location_id_fkey(id,name)"
         )
         urlBuilder.append("&source_location_type=eq.warehouse&dest_location_type=eq.warehouse")
         sourceWarehouseId?.takeIf { it.isNotBlank() }?.let {

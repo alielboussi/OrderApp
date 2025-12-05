@@ -4,6 +4,11 @@ export type TransferProductRef = {
   uom?: string | null;
 };
 
+export type TransferWarehouseRef = {
+  id?: string | null;
+  name?: string | null;
+};
+
 export type TransferItem = {
   id: string;
   movement_id?: string | null;
@@ -23,4 +28,6 @@ export type WarehouseTransfer = {
   source_location_id?: string | null;
   dest_location_id?: string | null;
   items: TransferItem[];
+  source?: TransferWarehouseRef | null;
+  dest?: TransferWarehouseRef | null;
 };

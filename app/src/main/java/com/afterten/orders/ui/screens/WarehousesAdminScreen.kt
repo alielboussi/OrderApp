@@ -17,19 +17,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
@@ -70,7 +68,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,6 +98,8 @@ private val TimestampFormatter: DateTimeFormatter =
 private val DateOnlyFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
 private const val ZambiaTimeSuffix = "CAT (UTC+02)"
+private val AdminContentMaxWidth = 640.dp
+private const val AUTO_REFRESH_INTERVAL_MILLIS = 300_000L
 
 @Composable
 fun WarehousesAdminScreen(
@@ -214,6 +213,17 @@ private fun WarehouseTransfersPane(
             }
         }
     }
+    val selectableWarehouses = remember(warehouses, warehouseNames) {
+        val fallback = warehouseNames.mapNotNull { (id, label) ->
+            val safeId = id.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val safeName = label.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            Warehouse(id = safeId, outletId = "", name = safeName, active = true)
+        }
+        (warehouses + fallback)
+            .associateBy { it.id }
+            .values
+            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+    }
 
     LaunchedEffect(transfers) {
         if (expandedTransferId != null && transfers.none { it.id == expandedTransferId }) {
@@ -233,7 +243,7 @@ private fun WarehouseTransfersPane(
     LaunchedEffect(Unit) {
         refreshSignal += 1
         while (true) {
-            delay(6_000)
+            delay(AUTO_REFRESH_INTERVAL_MILLIS)
             refreshSignal += 1
         }
     }
@@ -298,159 +308,162 @@ private fun WarehouseTransfersPane(
             .fillMaxSize()
             .background(AdminBackground)
     ) {
-        Column(
+        // Layout is intentionally width-capped to keep the kiosk spec locked; adjust AdminContentMaxWidth only with design approval.
+        LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
+                .align(Alignment.TopCenter)
+                .widthIn(max = AdminContentMaxWidth)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = onBack,
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = AftertenRed)
-            ) {
-                Text("Back", color = Color.White)
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = { refreshSignal += 1 }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = Color.White)
-            }
-            TextButton(onClick = onLogout, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
-                Text("Log out")
-            }
-        }
-
-        Text(
-            text = "Warehouse Transfers",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White
-        )
-        Text(
-            text = "Live feed from the scanner portals.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.7f)
-        )
-        Text(
-            text = "Times shown in Zambia Standard Time • $ZambiaTimeSuffix",
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.6f)
-        )
-
-        if (warehousesLoading || isRefreshing) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth(),
-                color = AftertenRed,
-                trackColor = Color.White.copy(alpha = 0.2f)
-            )
-        }
-
-        TransferFilters(
-            warehouses = warehouses,
-            selectedSourceId = selectedSourceId,
-            selectedDestId = selectedDestId,
-            searchQuery = searchQuery,
-            startDate = startDate,
-            endDate = endDate,
-            onSourceChanged = { selectedSourceId = it },
-            onDestChanged = { selectedDestId = it },
-            onClearWarehouseFilters = {
-                selectedSourceId = null
-                selectedDestId = null
-            },
-            onSearchChanged = { searchQuery = it },
-            onPickStartDate = {
-                showDatePicker(context, startDate) { picked ->
-                    startDate = picked
-                    endDate?.let { existingEnd ->
-                        if (picked.isAfter(existingEnd)) endDate = picked
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = onBack,
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(containerColor = AftertenRed)
+                    ) {
+                        Text("Back", color = Color.White)
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = { refreshSignal += 1 }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = Color.White)
+                    }
+                    TextButton(onClick = onLogout, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
+                        Text("Log out")
                     }
                 }
-            },
-            onPickEndDate = {
-                showDatePicker(context, endDate ?: startDate) { picked ->
-                    endDate = picked
-                    startDate?.let { existingStart ->
-                        if (picked.isBefore(existingStart)) startDate = picked
-                    }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Warehouse Transfers",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Times shown in Zambia Standard Time • $ZambiaTimeSuffix",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = "Syncs automatically every 5 minutes • Tap refresh for now",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
                 }
-            },
-            onClearDates = {
-                startDate = null
-                endDate = null
-            },
-            onResetAllFilters = resetFilters
-        )
-
-        errorMessage?.let {
-            Text(
-                text = it,
-                color = AftertenRed,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
+            }
+            if (warehousesLoading || isRefreshing) {
+                item {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = AftertenRed,
+                        trackColor = Color.White.copy(alpha = 0.2f)
+                    )
+                }
+            }
+            item {
+                TransferFilters(
+                    warehouses = selectableWarehouses,
+                    selectedSourceId = selectedSourceId,
+                    selectedDestId = selectedDestId,
+                    searchQuery = searchQuery,
+                    startDate = startDate,
+                    endDate = endDate,
+                    onSourceChanged = { selectedSourceId = it },
+                    onDestChanged = { selectedDestId = it },
+                    onClearWarehouseFilters = {
+                        selectedSourceId = null
+                        selectedDestId = null
+                    },
+                    onSearchChanged = { searchQuery = it },
+                    onPickStartDate = {
+                        showDatePicker(context, startDate) { picked ->
+                            startDate = picked
+                            endDate?.let { existingEnd ->
+                                if (picked.isAfter(existingEnd)) endDate = picked
+                            }
+                        }
+                    },
+                    onPickEndDate = {
+                        showDatePicker(context, endDate ?: startDate) { picked ->
+                            endDate = picked
+                            startDate?.let { existingStart ->
+                                if (picked.isBefore(existingStart)) startDate = picked
+                            }
+                        }
+                    },
+                    onResetAllFilters = resetFilters
+                )
+            }
+            if (errorMessage != null) {
+                item {
+                    Text(
+                        text = errorMessage ?: "",
+                        color = AftertenRed,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
             when {
                 isInitialLoading -> {
-                    Box(Modifier.align(Alignment.Center)) {
-                        CircularProgressIndicator(color = AftertenRed)
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = AftertenRed)
+                        }
                     }
                 }
                 filteredTransfers.isEmpty() -> {
-                    Box(Modifier.align(Alignment.Center)) {
-                        Text(
-                            text = "No transfers match the current filters.",
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-                else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(filteredTransfers, key = { it.id }) { transfer ->
-                            val sourceName = warehouseNames[transfer.sourceWarehouseId]
-                                ?: transfer.sourceWarehouse?.name
-                                ?: "Unknown source"
-                            val destName = warehouseNames[transfer.destWarehouseId]
-                                ?: transfer.destWarehouse?.name
-                                ?: "Unknown destination"
-                            TransferCard(
-                                transfer = transfer,
-                                sourceName = sourceName,
-                                destName = destName,
-                                expanded = expandedTransferId == transfer.id,
-                                onToggleExpand = {
-                                    expandedTransferId = if (expandedTransferId == transfer.id) null else transfer.id
-                                },
-                                qtyFormatter = qtyFormatter
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No transfers match the current filters.",
+                                color = Color.White.copy(alpha = 0.6f)
                             )
                         }
                     }
                 }
+                else -> {
+                    items(filteredTransfers, key = { it.id }) { transfer ->
+                        val sourceName = warehouseNames[transfer.sourceWarehouseId]
+                            ?: transfer.sourceWarehouse?.name
+                            ?: "Unknown source"
+                        val destName = warehouseNames[transfer.destWarehouseId]
+                            ?: transfer.destWarehouse?.name
+                            ?: "Unknown destination"
+                        TransferCard(
+                            transfer = transfer,
+                            sourceName = sourceName,
+                            destName = destName,
+                            expanded = expandedTransferId == transfer.id,
+                            onToggleExpand = {
+                                expandedTransferId = if (expandedTransferId == transfer.id) null else transfer.id
+                            },
+                            qtyFormatter = qtyFormatter
+                        )
+                    }
+                }
             }
         }
-
-        Text(
-            text = "Updating every 6 seconds",
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White.copy(alpha = 0.6f)
-        )
-    }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TransferFilters(
     warehouses: List<Warehouse>,
@@ -465,55 +478,40 @@ private fun TransferFilters(
     onSearchChanged: (String) -> Unit,
     onPickStartDate: () -> Unit,
     onPickEndDate: () -> Unit,
-    onClearDates: () -> Unit,
     onResetAllFilters: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Filled.FilterList,
-                contentDescription = null,
-                tint = AftertenRed,
-                modifier = Modifier.size(36.dp)
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = "Filter transfers",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                textAlign = TextAlign.Center
+                text = "From warehouse",
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White
             )
-            Text(
-                text = "Choose warehouses, dates, or search to focus this live feed.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
             WarehouseDropdown(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 label = "From warehouse",
                 warehouses = warehouses,
                 selectedId = selectedSourceId,
                 onSelected = onSourceChanged
             )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "To warehouse",
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White
+            )
             WarehouseDropdown(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 label = "To warehouse",
                 warehouses = warehouses,
                 selectedId = selectedDestId,
                 onSelected = onDestChanged
             )
         }
-
-        FlowRow(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             DateFilterButton(
                 modifier = Modifier.weight(1f),
@@ -526,18 +524,6 @@ private fun TransferFilters(
                 label = "To date",
                 value = endDate,
                 onClick = onPickEndDate
-            )
-            AssistChip(
-                onClick = onClearDates,
-                label = { Text("Clear dates") },
-                leadingIcon = {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White)
-                },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = Color.Transparent,
-                    labelColor = Color.White
-                ),
-                border = BorderStroke(1.dp, AftertenRed.copy(alpha = 0.6f))
             )
         }
 
@@ -555,10 +541,9 @@ private fun TransferFilters(
             colors = transferTextFieldColors()
         )
 
-        FlowRow(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AssistChip(
                 onClick = onClearWarehouseFilters,
