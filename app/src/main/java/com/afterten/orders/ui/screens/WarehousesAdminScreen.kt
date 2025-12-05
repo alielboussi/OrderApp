@@ -18,8 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -62,6 +62,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -179,21 +180,10 @@ private fun WarehouseTransfersPane(
     var searchQuery by remember { mutableStateOf("") }
     var refreshSignal by remember { mutableIntStateOf(0) }
     var expandedTransferId by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
 
     val warehouseNames = remember(warehouses, transfers) {
-        buildMap {
-            warehouses.forEach { put(it.id, it.name) }
-            transfers.forEach { transfer ->
-                transfer.sourceWarehouse?.let { ref ->
-                    val id = ref.id
-                    if (!id.isNullOrBlank()) put(id, ref.name ?: "Warehouse")
-                }
-                transfer.destWarehouse?.let { ref ->
-                    val id = ref.id
-                    if (!id.isNullOrBlank()) put(id, ref.name ?: "Warehouse")
-                }
-            }
-        }
+        buildWarehouseNameLookup(warehouses, transfers)
     }
     val qtyFormatter = remember { DecimalFormat("#,##0.##") }
 
@@ -214,15 +204,7 @@ private fun WarehouseTransfersPane(
         }
     }
     val selectableWarehouses = remember(warehouses, warehouseNames) {
-        val fallback = warehouseNames.mapNotNull { (id, label) ->
-            val safeId = id.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val safeName = label.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            Warehouse(id = safeId, outletId = "", name = safeName, active = true)
-        }
-        (warehouses + fallback)
-            .associateBy { it.id }
-            .values
-            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        buildSelectableWarehouses(warehouses, warehouseNames)
     }
 
     LaunchedEffect(transfers) {
@@ -309,153 +291,142 @@ private fun WarehouseTransfersPane(
             .background(AdminBackground)
     ) {
         // Layout is intentionally width-capped to keep the kiosk spec locked; adjust AdminContentMaxWidth only with design approval.
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .widthIn(max = AdminContentMaxWidth)
                 .fillMaxWidth()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onBack,
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = AftertenRed)
                 ) {
-                    Button(
-                        onClick = onBack,
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(containerColor = AftertenRed)
-                    ) {
-                        Text("Back", color = Color.White)
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { refreshSignal += 1 }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = Color.White)
-                    }
-                    TextButton(onClick = onLogout, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
-                        Text("Log out")
-                    }
+                    Text("Back", color = Color.White)
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = { refreshSignal += 1 }) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = Color.White)
+                }
+                TextButton(onClick = onLogout, colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
+                    Text("Log out")
                 }
             }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Warehouse Transfers",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Times shown in Zambia Standard Time • $ZambiaTimeSuffix",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "Syncs automatically every 5 minutes • Tap refresh for now",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                }
-            }
-            if (warehousesLoading || isRefreshing) {
-                item {
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = AftertenRed,
-                        trackColor = Color.White.copy(alpha = 0.2f)
-                    )
-                }
-            }
-            item {
-                TransferFilters(
-                    warehouses = selectableWarehouses,
-                    selectedSourceId = selectedSourceId,
-                    selectedDestId = selectedDestId,
-                    searchQuery = searchQuery,
-                    startDate = startDate,
-                    endDate = endDate,
-                    onSourceChanged = { selectedSourceId = it },
-                    onDestChanged = { selectedDestId = it },
-                    onClearWarehouseFilters = {
-                        selectedSourceId = null
-                        selectedDestId = null
-                    },
-                    onSearchChanged = { searchQuery = it },
-                    onPickStartDate = {
-                        showDatePicker(context, startDate) { picked ->
-                            startDate = picked
-                            endDate?.let { existingEnd ->
-                                if (picked.isAfter(existingEnd)) endDate = picked
-                            }
-                        }
-                    },
-                    onPickEndDate = {
-                        showDatePicker(context, endDate ?: startDate) { picked ->
-                            endDate = picked
-                            startDate?.let { existingStart ->
-                                if (picked.isBefore(existingStart)) startDate = picked
-                            }
-                        }
-                    },
-                    onResetAllFilters = resetFilters
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Warehouse Transfers",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Times shown in Zambia Standard Time • $ZambiaTimeSuffix",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+                Text(
+                    text = "Syncs automatically every 5 minutes • Tap refresh for now",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f)
                 )
             }
+            if (warehousesLoading || isRefreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = AftertenRed,
+                    trackColor = Color.White.copy(alpha = 0.2f)
+                )
+            }
+            TransferFilters(
+                warehouses = selectableWarehouses,
+                selectedSourceId = selectedSourceId,
+                selectedDestId = selectedDestId,
+                searchQuery = searchQuery,
+                startDate = startDate,
+                endDate = endDate,
+                onSourceChanged = { selectedSourceId = it },
+                onDestChanged = { selectedDestId = it },
+                onClearWarehouseFilters = {
+                    selectedSourceId = null
+                    selectedDestId = null
+                },
+                onSearchChanged = { searchQuery = it },
+                onPickStartDate = {
+                    showDatePicker(context, startDate) { picked ->
+                        startDate = picked
+                        endDate?.let { existingEnd ->
+                            if (picked.isAfter(existingEnd)) endDate = picked
+                        }
+                    }
+                },
+                onPickEndDate = {
+                    showDatePicker(context, endDate ?: startDate) { picked ->
+                        endDate = picked
+                        startDate?.let { existingStart ->
+                            if (picked.isBefore(existingStart)) startDate = picked
+                        }
+                    }
+                },
+                onResetAllFilters = resetFilters
+            )
             if (errorMessage != null) {
-                item {
-                    Text(
-                        text = errorMessage ?: "",
-                        color = AftertenRed,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                Text(
+                    text = errorMessage ?: "",
+                    color = AftertenRed,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
             when {
                 isInitialLoading -> {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = AftertenRed)
-                        }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = AftertenRed)
                     }
                 }
                 filteredTransfers.isEmpty() -> {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No transfers match the current filters.",
-                                color = Color.White.copy(alpha = 0.6f)
-                            )
-                        }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No transfers match the current filters.",
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
                     }
                 }
                 else -> {
-                    items(filteredTransfers, key = { it.id }) { transfer ->
-                        val sourceName = warehouseNames[transfer.sourceWarehouseId]
-                            ?: transfer.sourceWarehouse?.name
-                            ?: "Unknown source"
-                        val destName = warehouseNames[transfer.destWarehouseId]
-                            ?: transfer.destWarehouse?.name
-                            ?: "Unknown destination"
-                        TransferCard(
-                            transfer = transfer,
-                            sourceName = sourceName,
-                            destName = destName,
-                            expanded = expandedTransferId == transfer.id,
-                            onToggleExpand = {
-                                expandedTransferId = if (expandedTransferId == transfer.id) null else transfer.id
-                            },
-                            qtyFormatter = qtyFormatter
-                        )
+                    filteredTransfers.forEach { transfer ->
+                        key(transfer.id) {
+                            val sourceName = warehouseNames[transfer.sourceWarehouseId]
+                                ?: transfer.sourceWarehouse?.name
+                                ?: "Unknown source"
+                            val destName = warehouseNames[transfer.destWarehouseId]
+                                ?: transfer.destWarehouse?.name
+                                ?: "Unknown destination"
+                            TransferCard(
+                                transfer = transfer,
+                                sourceName = sourceName,
+                                destName = destName,
+                                expanded = expandedTransferId == transfer.id,
+                                onToggleExpand = {
+                                    expandedTransferId = if (expandedTransferId == transfer.id) null else transfer.id
+                                },
+                                qtyFormatter = qtyFormatter
+                            )
+                        }
                     }
                 }
             }

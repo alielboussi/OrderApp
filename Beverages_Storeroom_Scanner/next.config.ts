@@ -5,12 +5,20 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: "/Main-Warehouse_Scanner",
+        source: "/",
         destination: "/transfer-portal",
       },
       {
-        source: "/Main-Warehouse_Scanner/:path*",
-        destination: "/transfer-portal/:path*",
+        source: "/Beverages_Storeroom_Scanner",
+        destination: "/transfer-portal",
+      },
+      {
+        source: "/Beverages_Storeroom_Scanner/",
+        destination: "/transfer-portal",
+      },
+      {
+        source: "/Beverages_Storeroom_Scanner/:path*",
+        destination: "/:path*",
       },
     ];
   },

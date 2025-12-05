@@ -230,22 +230,29 @@ const html = `<!DOCTYPE html>
       align-items: flex-end;
       gap: 6px;
     }
-    .qty-lock-btn {
-      background: transparent;
-      border: 1px dashed rgba(255, 255, 255, 0.35);
-      color: #ffd6e0;
-      padding: 6px 14px;
+    .scanned-qty-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 72px;
+      padding: 6px 12px;
       border-radius: 999px;
-      font-size: 0.75rem;
+      border: 1px dashed rgba(255, 255, 255, 0.3);
+      background: transparent;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       cursor: pointer;
       transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
     }
-    .qty-lock-btn.active {
-      background: rgba(255, 27, 45, 0.15);
-      border-color: rgba(255, 27, 45, 0.65);
-      color: #fff;
+    .scanned-qty-button:hover,
+    .scanned-qty-button:focus-visible {
+      border-color: rgba(255, 107, 148, 0.8);
+      color: #ff9fba;
+      outline: none;
+      background: rgba(255, 255, 255, 0.04);
     }
     .qty-hint {
       font-size: 0.85rem;
@@ -601,7 +608,6 @@ const html = `<!DOCTYPE html>
                 <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Transfer Cart</h3>
               </div>
               <div class="cart-summary">
-                <button type="button" id="qty-lock-toggle" class="qty-lock-btn">Auto qty: off</button>
                 <span id="cart-count">0 items</span>
               </div>
             </div>
@@ -687,11 +693,11 @@ const html = `<!DOCTYPE html>
         variationIndex: new Map(),
         cartItems: [],
         pendingEntry: null,
+        pendingEditIndex: null,
         loading: false,
         operatorProfile: null,
         lockedSource: null,
-        lockedDest: null,
-        qtyLock: { enabled: false, qty: 1 }
+        lockedDest: null
       };
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -736,7 +742,7 @@ const html = `<!DOCTYPE html>
       const qtyCancel = document.getElementById('qty-cancel');
       const qtyNumpad = document.getElementById('qty-numpad');
       const qtyHint = document.getElementById('qty-hint');
-      const qtyLockToggle = document.getElementById('qty-lock-toggle');
+      const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const printRoot = document.getElementById('print-root');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
@@ -745,7 +751,6 @@ const html = `<!DOCTYPE html>
       const SCAN_FLUSH_DELAY_MS = 90;
 
       updateQtyHint(null);
-      syncQtyLockButton();
 
       function normalizeKey(value) {
         if (value === null || value === undefined) return '';
@@ -1009,17 +1014,6 @@ const html = `<!DOCTYPE html>
         qtyHint.style.display = 'block';
       }
 
-      function syncQtyLockButton() {
-        if (!qtyLockToggle) return;
-        if (state.qtyLock.enabled) {
-          qtyLockToggle.textContent = 'Auto qty: ' + state.qtyLock.qty;
-          qtyLockToggle.classList.add('active');
-        } else {
-          qtyLockToggle.textContent = 'Auto qty: off';
-          qtyLockToggle.classList.remove('active');
-        }
-      }
-
       function renderPrintReceipt(summary, cartSnapshot) {
         if (!printRoot || !Array.isArray(cartSnapshot) || !cartSnapshot.length) return;
         const groups = groupCartItemsForReceipt(cartSnapshot);
@@ -1157,26 +1151,14 @@ const html = `<!DOCTYPE html>
           packageSize
         };
         state.pendingEntry = entry;
+        state.pendingEditIndex = null;
+        if (qtySubmitButton) {
+          qtySubmitButton.textContent = 'Add Item';
+        }
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
         qtyUom.textContent = entry.uom;
-
-        if (state.qtyLock.enabled) {
-          const effectiveQty = computeEffectiveQty(state.qtyLock.qty, entry);
-          if (effectiveQty === null) {
-            showResult('Auto quantity lock requires a positive quantity.', true);
-            state.pendingEntry = null;
-            updateQtyHint(null);
-            return;
-          }
-          addCartItem({ ...entry, qty: effectiveQty, scannedQty: state.qtyLock.qty });
-          showResult('Auto-added ' + describeQty(entry, state.qtyLock.qty, effectiveQty), false);
-          state.pendingEntry = null;
-          updateQtyHint(null);
-          focusScannerWedge();
-          return;
-        }
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -1188,8 +1170,31 @@ const html = `<!DOCTYPE html>
         if (!qtyModal) return;
         qtyModal.style.display = 'none';
         state.pendingEntry = null;
+        state.pendingEditIndex = null;
+        if (qtySubmitButton) {
+          qtySubmitButton.textContent = 'Add Item';
+        }
         updateQtyHint(null);
         focusScannerWedge();
+      }
+
+      function editCartQuantity(index) {
+        if (!qtyModal || !qtyInput) return;
+        const target = state.cartItems[index];
+        if (!target) return;
+        state.pendingEntry = { ...target };
+        state.pendingEditIndex = index;
+        qtyTitle.textContent = target.variationName
+          ? (target.productName ?? 'Product') + ' – ' + target.variationName
+          : target.productName ?? 'Product';
+        qtyUom.textContent = target.uom ?? 'UNIT';
+        qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
+        updateQtyHint(target);
+        qtyModal.style.display = 'flex';
+        if (qtySubmitButton) {
+          qtySubmitButton.textContent = 'Update Item';
+        }
+        setTimeout(() => qtyInput.focus(), 10);
       }
 
       function addCartItem(entry) {
@@ -1227,7 +1232,15 @@ const html = `<!DOCTYPE html>
                 const variationCell = document.createElement('td');
             variationCell.textContent = item.variationName ? item.variationName : '-';
             const scannedCell = document.createElement('td');
-            scannedCell.textContent = (item.scannedQty ?? item.qty ?? 0).toString();
+                const scannedButton = document.createElement('button');
+                scannedButton.type = 'button';
+                scannedButton.className = 'scanned-qty-button';
+                scannedButton.title = 'Adjust scanned quantity';
+                scannedButton.textContent = (item.scannedQty ?? item.qty ?? 0).toString();
+                scannedButton.addEventListener('click', () => {
+                  editCartQuantity(index);
+                });
+                scannedCell.appendChild(scannedButton);
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
@@ -1634,6 +1647,24 @@ const html = `<!DOCTYPE html>
           qtyInput.focus();
           return;
         }
+        const editIndex = state.pendingEditIndex;
+        if (typeof editIndex === 'number' && editIndex >= 0) {
+          const target = state.cartItems[editIndex];
+          if (target) {
+            state.cartItems[editIndex] = {
+              ...target,
+              qty: effectiveQty,
+              scannedQty: rawQty
+            };
+            renderCart();
+            showResult(
+              'Updated ' + (pending.productName ?? 'Product') + ' - ' + describeQty(pending, rawQty, effectiveQty),
+              false
+            );
+          }
+          closeQtyPrompt();
+          return;
+        }
         addCartItem({ ...pending, qty: effectiveQty, scannedQty: rawQty });
         showResult(
           'Queued ' + (pending.productName ?? 'Product') + ' - ' + describeQty(pending, rawQty, effectiveQty),
@@ -1643,28 +1674,6 @@ const html = `<!DOCTYPE html>
       });
       qtyCancel?.addEventListener('click', () => {
         closeQtyPrompt();
-      });
-      qtyLockToggle?.addEventListener('click', () => {
-        if (!state.qtyLock.enabled) {
-          let baseQty = Number(qtyInput?.value);
-          if (!Number.isFinite(baseQty) || baseQty <= 0) {
-            const promptValue = window.prompt('Quantity per scan', state.qtyLock.qty.toString());
-            if (promptValue === null) return;
-            baseQty = Number(promptValue);
-          }
-          if (!Number.isFinite(baseQty) || baseQty <= 0) {
-            showResult('Enter a positive quantity to lock.', true);
-            return;
-          }
-          state.qtyLock.enabled = true;
-          state.qtyLock.qty = baseQty;
-          showResult('Auto quantity lock enabled (' + baseQty + ' per scan).', false);
-        } else {
-          state.qtyLock.enabled = false;
-          showResult('Auto quantity lock disabled.', false);
-        }
-        syncQtyLockButton();
-        focusScannerWedge();
       });
       document.addEventListener('click', () => {
         if (document.body.dataset.auth === 'true') {
