@@ -1,0 +1,16 @@
+{
+  "name": "afterten-orderapp",
+  "private": true,
+  "workspaces": ["Scanners"],
+  "scripts": {
+    "dev": "npm run dev --workspace Scanners",
+    "build": "npm run build --workspace Scanners",
+    "start": "npm run start --workspace Scanners",
+    "lint": "npm run lint --workspace Scanners",
+    "vercel-build": "npm run build --workspace Scanners"
+  },
+  "devDependencies": {
+    "babel-plugin-react-compiler": "1.0.0",
+    "next": "16.0.7"
+  }
+}
