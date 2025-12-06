@@ -4,8 +4,11 @@ Accessible URLs for https://aftertentransfers.app/
 https://aftertentransfers.app/
   └─ Stock Snapshot dashboard (public landing experience rendered by Next.js root route)
 
-https://aftertentransfers.app/transfer-portal
-  └─ Warehouse Transfer Console UI served by custom HTML route (locks source/destination warehouses)
+https://aftertentransfers.app/Main_Warehouse_Scanner
+  └─ Main Warehouse Transfer Console UI served by custom HTML route (locks source/destination warehouses)
+
+https://aftertentransfers.app/Beverages_Storeroom_Scanner
+  └─ Beverages Storeroom Transfer Console UI served by custom HTML route (locks source/destination warehouses)
 
 https://aftertentransfers.app/api/warehouses   [GET]
   └─ Returns normalized warehouse metadata; accepts query params `include_inactive` and `locked_id`

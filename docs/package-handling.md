@@ -25,6 +25,7 @@ The `Main_Warehouse_Scanner` Next.js app now hosts the HTTP routes that previous
 | --- | --- | --- |
 | `GET /api/warehouses` | `https://<your-vercel-domain>/api/warehouses` | Returns the active warehouse tree for dashboards, supervisors, and the transfer portal. |
 | `POST /api/stock` | `https://<your-vercel-domain>/api/stock` | Mirrors the legacy `stock` function: aggregates unit counts for a warehouse + descendants with optional search filtering. |
-| `GET /transfer-portal` | `https://<your-vercel-domain>/transfer-portal` | Serves the Supabase-authenticated transfer UI used by outlet teams for ad-hoc unit movements. |
+| `GET /Main_Warehouse_Scanner` | `https://<your-vercel-domain>/Main_Warehouse_Scanner` | Serves the Supabase-authenticated transfer UI used by the main warehouse team for ad-hoc unit movements. |
+| `GET /Beverages_Storeroom_Scanner` | `https://<your-vercel-domain>/Beverages_Storeroom_Scanner` | Serves the Supabase-authenticated transfer UI dedicated to the beverages storeroom workflows. |
 
 Deploying a new build to Vercel is now the only step needed to update these endpoints.

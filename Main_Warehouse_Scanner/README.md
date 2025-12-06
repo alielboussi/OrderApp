@@ -48,13 +48,13 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
    - `https://<vercel-domain>/` → stock dashboard UI.
    - `https://<vercel-domain>/api/warehouses` → JSON warehouse list.
    - `https://<vercel-domain>/api/stock` → JSON stock aggregation endpoint.
-   - `https://<vercel-domain>/transfer-portal` → Supabase-authenticated transfer UI.
+   - `https://<vercel-domain>/Main_Warehouse_Scanner` → Supabase-authenticated transfer UI.
 
 ### Architecture
 
 - `src/app/api/warehouses/route.ts` – Vercel API route replacing the former Supabase `warehouses` function.
 - `src/app/api/stock/route.ts` – Aggregates descendant warehouse stock, mirroring the old `stock` function logic.
-- `src/app/transfer-portal/route.ts` – Serves the HTML/JS portal that talks to Supabase directly with the anon key.
+- `src/app/Main_Warehouse_Scanner/route.ts` – Serves the HTML/JS portal that talks to Supabase directly with the anon key.
 - `src/app/api/notify-whatsapp/route.ts` – Pushes transfer summaries to the approved Twilio WhatsApp template once a move is recorded.
 - `src/app/page.tsx` – Client-side React dashboard that now fetches `/api/warehouses` and `/api/stock` from the same origin, so no cross-origin configuration is required.
 
