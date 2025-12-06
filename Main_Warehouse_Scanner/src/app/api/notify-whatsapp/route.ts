@@ -103,7 +103,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON payload', detail: String(error) }, { status: 400 });
   }
 
-  const recipients = WHATSAPP_TO_NUMBERS.split(',')
+  const toNumbers = WHATSAPP_TO_NUMBERS ?? '';
+  const recipients = toNumbers
+    .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
   if (recipients.length === 0) {
