@@ -5,6 +5,9 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 const WHATSAPP_TO_NUMBERS = process.env.WHATSAPP_TO_NUMBER;
 const WHATSAPP_TEMPLATE_SID = process.env.WHATSAPP_TEMPLATE_SID ?? process.env.WHATSAPP_CONTENT_SID;
+const WHATSAPP_TRANSFER_TEMPLATE_SID = process.env.WHATSAPP_TRANSFER_TEMPLATE_SID ?? WHATSAPP_TEMPLATE_SID;
+const WHATSAPP_PURCHASE_TEMPLATE_SID =
+  process.env.WHATSAPP_PURCHASE_TEMPLATE_SID ?? WHATSAPP_TRANSFER_TEMPLATE_SID;
 
 type TransferItem = {
   productName?: unknown;
@@ -13,6 +16,12 @@ type TransferItem = {
   qty?: unknown;
   unit?: unknown;
 };
+
+function formatMoney(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function formatItemsBlock(payload: Record<string, unknown>) {
   if (typeof payload.itemsBlock === 'string' && payload.itemsBlock.trim().length > 0) {
@@ -46,7 +55,10 @@ function formatItemsBlock(payload: Record<string, unknown>) {
   return lines.join('\n');
 }
 
-function buildContentVariables(payload: Record<string, unknown>) {
+function buildContentVariables(
+  payload: Record<string, unknown>,
+  context: 'transfer' | 'purchase' = 'transfer'
+) {
   const reference = String(payload.reference ?? payload.referenceRaw ?? 'N/A');
   const processedBy = String(payload.processedBy ?? payload.operator ?? 'Unknown operator');
   const source = String(payload.sourceLabel ?? 'Unknown source');
@@ -57,6 +69,20 @@ function buildContentVariables(payload: Record<string, unknown>) {
   );
   const itemsBlock = formatItemsBlock(payload);
 
+  if (context === 'purchase') {
+    const grossLabel = formatMoney(payload.totalGross);
+    const metaParts = [`Window: ${windowText}`, `Operator: ${processedBy}`];
+    if (grossLabel) {
+      metaParts.push('Gross: ' + grossLabel);
+    }
+    const metaLine = metaParts.join(' • ');
+    return {
+      '1': 'Purchase ' + reference,
+      '2': route + ' • ' + metaLine,
+      '3': itemsBlock,
+    };
+  }
+
   return {
     '1': reference,
     '2': processedBy,
@@ -66,8 +92,33 @@ function buildContentVariables(payload: Record<string, unknown>) {
   };
 }
 
-function buildPlaintextMessage(payload: Record<string, unknown>) {
-  const vars = buildContentVariables(payload);
+function buildPlaintextMessage(payload: Record<string, unknown>, context: 'transfer' | 'purchase' = 'transfer') {
+  if (context === 'purchase') {
+    const reference = String(payload.reference ?? payload.referenceRaw ?? 'N/A');
+    const source = String(payload.sourceLabel ?? 'Supplier');
+    const dest = String(payload.destLabel ?? 'Warehouse');
+    const operator = String(payload.processedBy ?? payload.operator ?? 'Unknown operator');
+    const windowText = String(
+      payload.dateTime ?? payload.window ?? payload.scheduleWindow ?? new Date().toLocaleString('en-US')
+    );
+    const grossLabel = formatMoney(payload.totalGross);
+    const metaParts = [`Window: ${windowText}`, `Operator: ${operator}`];
+    if (grossLabel) {
+      metaParts.push('Gross: ' + grossLabel);
+    }
+    const itemsBlock = formatItemsBlock(payload);
+    return [
+      `Purchase Ref: ${reference}`,
+      `Route: ${source} -> ${dest}`,
+      metaParts.join(' | '),
+      '',
+      itemsBlock,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  const vars = buildContentVariables(payload, 'transfer');
   return [
     `Transfer Ref: ${vars['1']}`,
     `Operator: ${vars['2']}`,
@@ -96,12 +147,19 @@ export async function POST(request: Request) {
     );
   }
 
-  let payload: Record<string, unknown> = {};
+  let requestBody: Record<string, unknown> = {};
   try {
-    payload = (await request.json()) as Record<string, unknown>;
+    requestBody = (await request.json()) as Record<string, unknown>;
   } catch (error) {
     return NextResponse.json({ error: 'Invalid JSON payload', detail: String(error) }, { status: 400 });
   }
+
+  const summaryPayload =
+    requestBody.summary && typeof requestBody.summary === 'object'
+      ? (requestBody.summary as Record<string, unknown>)
+      : requestBody;
+  const contextInput = typeof requestBody.context === 'string' ? requestBody.context : undefined;
+  const context: 'transfer' | 'purchase' = contextInput === 'purchase' ? 'purchase' : 'transfer';
 
   const toNumbers = WHATSAPP_TO_NUMBERS ?? '';
   const recipients = toNumbers
@@ -114,9 +172,10 @@ export async function POST(request: Request) {
 
   const authHeader = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
   const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const useTemplate = Boolean(WHATSAPP_TEMPLATE_SID);
-  const contentVariables = useTemplate ? JSON.stringify(buildContentVariables(payload)) : null;
-  const fallbackBody = useTemplate ? null : buildPlaintextMessage(payload);
+  const templateSid = context === 'purchase' ? WHATSAPP_PURCHASE_TEMPLATE_SID : WHATSAPP_TRANSFER_TEMPLATE_SID;
+  const useTemplate = Boolean(templateSid);
+  const contentVariables = useTemplate ? JSON.stringify(buildContentVariables(summaryPayload, context)) : null;
+  const fallbackBody = useTemplate ? null : buildPlaintextMessage(summaryPayload, context);
   const results: Array<{ to: string; ok: boolean; detail?: string }> = [];
 
   for (const to of recipients) {
@@ -124,8 +183,8 @@ export async function POST(request: Request) {
       From: `whatsapp:${TWILIO_WHATSAPP_NUMBER}`,
       To: `whatsapp:${to}`,
     });
-    if (useTemplate && WHATSAPP_TEMPLATE_SID && contentVariables) {
-      params.set('ContentSid', WHATSAPP_TEMPLATE_SID);
+    if (useTemplate && templateSid && contentVariables) {
+      params.set('ContentSid', templateSid);
       params.set('ContentVariables', contentVariables);
     } else if (fallbackBody) {
       params.set('Body', fallbackBody);

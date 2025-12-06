@@ -5,7 +5,7 @@ const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const LOCKED_SOURCE_ID = '09e0898f-359d-4373-a1ab-d9ba8be5b35b';
 const LOCKED_DEST_ID = '9a12caa0-c116-4137-8ea5-74bb0de77fae';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_current';
-const MULTIPLY_QTY_BY_PACKAGE = false;
+const MULTIPLY_QTY_BY_PACKAGE = true;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -165,6 +165,7 @@ const html = `<!DOCTYPE html>
     .console-sticky {
       position: sticky;
       top: calc(var(--shell-pad) - 6px);
+        <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
       z-index: 6;
       background: var(--sticky-overlay);
       border-radius: 24px;
@@ -259,6 +260,22 @@ const html = `<!DOCTYPE html>
       color: #fbb6c7;
       margin: 0;
       display: none;
+    }
+    .qty-cost-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .qty-cost-field input {
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      border-radius: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      padding: 10px 14px;
+      font-size: 1rem;
     }
     .cart-table {
       width: 100%;
@@ -361,6 +378,195 @@ const html = `<!DOCTYPE html>
       flex: 1;
       min-width: 160px;
     }
+    #purchase-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #purchase-form h3 {
+      margin: 0;
+      font-size: 1.3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    body[data-view="purchase"] #app-section {
+      display: none;
+    }
+    body[data-view="purchase"] #purchase-page {
+      display: flex;
+    }
+    #purchase-page {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      width: 100%;
+    }
+    .purchase-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .purchase-route-info {
+      margin-top: 8px;
+    }
+    .purchase-nav button {
+      min-width: 200px;
+    }
+    .purchase-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .purchase-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .purchase-shell {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .purchase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: clamp(12px, 2vw, 18px);
+    }
+    .reference-field {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #purchase-reference {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .purchase-grid label textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+    .purchase-timestamp-hint {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #f7a8b7;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .purchase-cart-section {
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: clamp(12px, 2vw, 18px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .virtual-numpad {
+      display: none;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.75);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+    }
+    .virtual-numpad.active {
+      display: grid;
+    }
+    .virtual-numpad button {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+    }
+    .virtual-numpad button:hover,
+    .virtual-numpad button:focus-visible {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+    .virtual-numpad button[data-action="clear"],
+    .virtual-numpad button[data-action="delete"],
+    .virtual-numpad button[data-action="close"] {
+      background: rgba(255, 43, 72, 0.08);
+      border-color: rgba(255, 43, 72, 0.4);
+    }
+    .purchase-toggle {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .purchase-toggle input {
+      width: 20px;
+      height: 20px;
+      accent-color: #ff1b2d;
+    }
+    .purchase-summary {
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 16px;
+    }
+    .purchase-summary h4 {
+      margin: 0 0 8px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.9rem;
+      color: #f7a8b7;
+    }
+    .purchase-summary ul {
+      margin: 0;
+      padding-left: 16px;
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: 0.9rem;
+    }
+    .purchase-summary li + li {
+      margin-top: 6px;
+    }
+    #purchase-summary-empty {
+      margin: 0;
+      color: #c8c8c8;
+      font-size: 0.9rem;
+    }
+    .purchase-warehouse-hint {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #f7a8b7;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .purchase-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .purchase-actions button {
+      flex: 1;
+      min-width: 180px;
+    }
+    #purchase-scanner-wedge {
+      opacity: 0;
+      position: absolute;
+      height: 0;
+      width: 0;
+    }
     .numpad {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -401,11 +607,25 @@ const html = `<!DOCTYPE html>
     }
     .transfer-actions {
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
+      gap: 12px;
       margin-top: 8px;
     }
     .transfer-actions button {
       min-width: clamp(190px, 34%, 260px);
+    }
+    .button-outline {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: #ffe2e8;
+      box-shadow: none;
+    }
+    .button-outline:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      box-shadow: none;
+      transform: translateY(-1px);
     }
     #print-root {
       display: none;
@@ -416,6 +636,7 @@ const html = `<!DOCTYPE html>
       background: #fff;
       width: 55mm;
       padding: 6mm 4mm;
+      margin: 0 auto;
     }
     .receipt-header {
       text-align: center;
@@ -479,6 +700,20 @@ const html = `<!DOCTYPE html>
       border-top: 1px solid #000;
       padding-top: 2mm;
     }
+    .receipt-meta-line {
+      font-size: 0.78rem;
+      margin: 1mm 0;
+      text-align: left;
+    }
+    .receipt-purchase-line {
+      display: flex;
+      flex-direction: column;
+      gap: 1mm;
+      font-size: 0.78rem;
+    }
+    .receipt-purchase-line span {
+      display: block;
+    }
     @media print {
       @page {
         size: 55mm auto;
@@ -495,7 +730,9 @@ const html = `<!DOCTYPE html>
         display: none !important;
       }
       body.print-mode #print-root {
-        display: block;
+        display: flex;
+        justify-content: center;
+        width: 100%;
         margin: 0 auto;
       }
     }
@@ -554,7 +791,7 @@ const html = `<!DOCTYPE html>
     }
   </style>
 </head>
-<body>
+<body data-view="transfer">
   <main>
     <section id="auth-section" class="panel">
       <header class="brand-header">
@@ -627,10 +864,10 @@ const html = `<!DOCTYPE html>
             <p id="cart-empty">No items scanned yet.</p>
           </section>
 
-          <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
 
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
+            <button type="button" id="purchase-open" class="button-outline">Log Purchase Intake</button>
           </div>
         </form>
       </article>
@@ -647,6 +884,9 @@ const html = `<!DOCTYPE html>
       <p id="qty-uom">UNIT</p>
       <p id="qty-hint" class="qty-hint"></p>
       <input type="number" id="qty-input" min="0" step="0.01" placeholder="0" required />
+      <label class="qty-cost-field">Unit Cost (optional)
+        <input type="number" id="qty-cost" min="0" step="0.01" placeholder="0.00" />
+      </label>
       <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
         <button type="button" data-key="7">7</button>
         <button type="button" data-key="8">8</button>
@@ -663,10 +903,104 @@ const html = `<!DOCTYPE html>
       </div>
       <div class="qty-actions">
         <button type="button" id="qty-cancel">Cancel</button>
-        <button type="submit">Add Item</button>
       </div>
     </form>
   </div>
+
+  <section id="purchase-page">
+    <header class="panel purchase-header">
+      <div class="purchase-header-bar">
+        <div class="brand-header">
+          <img src="/afterten-logo.png" alt="AfterTen logo" />
+        </div>
+        <div class="purchase-nav">
+          <button type="button" id="purchase-exit" class="button-outline">Back to Transfer Console</button>
+        </div>
+      </div>
+      <div class="purchase-route-info">
+        <p class="purchase-warehouse-hint">Intake warehouse: <span id="purchase-warehouse-label">Loading...</span></p>
+      </div>
+    </header>
+    <article class="panel purchase-panel">
+      <form id="purchase-form">
+        <div class="purchase-shell">
+          <h3>Purchase Intake</h3>
+          <div class="purchase-grid">
+            <label>Supplier
+              <select id="purchase-supplier">
+                <option value="">Select supplier</option>
+              </select>
+            </label>
+            <div class="reference-field">
+              <label>Reference / Invoice #
+                <input type="text" id="purchase-reference" placeholder="INV-12345" required />
+              </label>
+              <div id="reference-numpad" class="virtual-numpad" aria-hidden="true">
+                <button type="button" data-key="7">7</button>
+                <button type="button" data-key="8">8</button>
+                <button type="button" data-key="9">9</button>
+                <button type="button" data-key="4">4</button>
+                <button type="button" data-key="5">5</button>
+                <button type="button" data-key="6">6</button>
+                <button type="button" data-key="1">1</button>
+                <button type="button" data-key="2">2</button>
+                <button type="button" data-key="3">3</button>
+                <button type="button" data-key="0">0</button>
+                <button type="button" data-key="-">-</button>
+                <button type="button" data-key="/">/</button>
+                <button type="button" data-action="clear">CLR</button>
+                <button type="button" data-action="delete">DEL</button>
+                <button type="button" data-action="close">CLOSE</button>
+              </div>
+            </div>
+            <label>Receiving Notes
+              <textarea id="purchase-note" placeholder="Optional notes about this intake"></textarea>
+            </label>
+          </div>
+          <label class="purchase-toggle">
+            <input type="checkbox" id="purchase-whatsapp" checked />
+            <span>Send WhatsApp alert</span>
+          </label>
+          <p class="purchase-timestamp-hint">Date and time are captured automatically when you submit.</p>
+          <section class="purchase-cart-section">
+            <div class="cart-head">
+              <div>
+                <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Purchase Cart</h3>
+                <p class="purchase-warehouse-hint" style="margin-top:4px;">Stock posts to <span id="purchase-cart-warehouse">this warehouse</span></p>
+              </div>
+              <div class="cart-summary">
+                <span id="purchase-cart-count">0 items</span>
+              </div>
+            </div>
+            <table class="cart-table">
+              <thead>
+                <tr>
+                  <th scope="col">Product</th>
+                  <th scope="col">Variation</th>
+                  <th scope="col">Scanned Qty</th>
+                  <th scope="col">Qty</th>
+                  <th scope="col">UOM</th>
+                  <th scope="col">Unit Cost</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="purchase-cart-body"></tbody>
+            </table>
+            <p id="purchase-cart-empty">No items scanned yet.</p>
+          </section>
+          <div class="purchase-summary">
+            <h4>Line Items</h4>
+            <p id="purchase-summary-empty">Cart is empty.</p>
+            <ul id="purchase-summary-list"></ul>
+          </div>
+          <div class="purchase-actions">
+            <button type="button" id="purchase-back" class="button-outline">Back to Transfers</button>
+            <button type="submit" id="purchase-submit">Record Purchase</button>
+          </div>
+        </div>
+      </form>
+    </article>
+  </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
   <script>
@@ -691,13 +1025,24 @@ const html = `<!DOCTYPE html>
         products: [],
         variations: new Map(),
         variationIndex: new Map(),
-        cartItems: [],
+        mode: 'transfer',
+        transferCart: [],
+        purchaseCart: [],
         pendingEntry: null,
         pendingEditIndex: null,
+        pendingContext: 'transfer',
         loading: false,
         operatorProfile: null,
         lockedSource: null,
-        lockedDest: null
+        lockedDest: null,
+        suppliers: [],
+        purchaseForm: {
+          supplierId: '',
+          referenceCode: '',
+          note: '',
+          autoWhatsapp: true
+        },
+        purchaseSubmitting: false
       };
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -727,6 +1072,19 @@ const html = `<!DOCTYPE html>
       const transferForm = document.getElementById('transfer-form');
       const resultToast = document.getElementById('result-toast');
       let resultToastTimeoutId = null;
+
+      function showResult(message, isError = false) {
+        if (!resultToast) return;
+        resultToast.textContent = message;
+        resultToast.classList.remove('success', 'error', 'visible');
+        resultToast.classList.add(isError ? 'error' : 'success', 'visible');
+        if (resultToastTimeoutId) {
+          clearTimeout(resultToastTimeoutId);
+        }
+        resultToastTimeoutId = window.setTimeout(() => {
+          resultToast.classList.remove('visible');
+        }, 5000);
+      }
       const submitButton = document.getElementById('transfer-submit');
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
@@ -737,6 +1095,7 @@ const html = `<!DOCTYPE html>
       const qtyModal = document.getElementById('qty-modal');
       const qtyForm = document.getElementById('qty-form');
       const qtyInput = document.getElementById('qty-input');
+      const qtyCostInput = document.getElementById('qty-cost');
       const qtyUom = document.getElementById('qty-uom');
       const qtyTitle = document.getElementById('qty-title');
       const qtyCancel = document.getElementById('qty-cancel');
@@ -744,13 +1103,46 @@ const html = `<!DOCTYPE html>
       const qtyHint = document.getElementById('qty-hint');
       const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const printRoot = document.getElementById('print-root');
+      const purchaseOpenButton = document.getElementById('purchase-open');
+      const purchasePage = document.getElementById('purchase-page');
+      const purchaseForm = document.getElementById('purchase-form');
+      const purchaseSupplier = document.getElementById('purchase-supplier');
+      const purchaseReference = document.getElementById('purchase-reference');
+      const purchaseNote = document.getElementById('purchase-note');
+      const purchaseWhatsapp = document.getElementById('purchase-whatsapp');
+      const purchaseSummaryList = document.getElementById('purchase-summary-list');
+      const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
+      const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
+      const purchaseCartWarehouse = document.getElementById('purchase-cart-warehouse');
+      const purchaseBackButton = document.getElementById('purchase-back');
+      const purchaseExitButton = document.getElementById('purchase-exit');
+      const purchaseSubmit = document.getElementById('purchase-submit');
+      const purchaseCartBody = document.getElementById('purchase-cart-body');
+      const purchaseCartEmpty = document.getElementById('purchase-cart-empty');
+      const purchaseCartCount = document.getElementById('purchase-cart-count');
+      const referenceNumpad = document.getElementById('reference-numpad');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
       let scanBuffer = '';
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
+      let referenceNumpadHideTimeoutId = null;
+
+      const cartElements = {
+        transfer: {
+          body: cartBody,
+          empty: cartEmpty,
+          count: cartCount
+        },
+        purchase: {
+          body: purchaseCartBody,
+          empty: purchaseCartEmpty,
+          count: purchaseCartCount
+        }
+      };
 
       updateQtyHint(null);
+      resetPurchaseForm();
 
       function normalizeKey(value) {
         if (value === null || value === undefined) return '';
@@ -917,7 +1309,7 @@ const html = `<!DOCTYPE html>
         });
       }
 
-      function focusScannerWedge() {
+      function focusActiveScanner() {
         if (!scannerWedge) return;
         if (qtyModal?.style.display === 'flex') return;
         scannerWedge.focus();
@@ -951,6 +1343,21 @@ const html = `<!DOCTYPE html>
         const formattedQty = Number.isFinite(numeric) ? numeric : 0;
         const unit = (uom || 'unit').toUpperCase();
         return formattedQty + ' ' + unit;
+      }
+
+      function formatAmount(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return null;
+        return numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function computeLineTotal(entry) {
+        const unitCost = Number(entry?.unitCost);
+        const qtyValue = Number(entry?.qty);
+        if (!Number.isFinite(unitCost) || !Number.isFinite(qtyValue)) {
+          return null;
+        }
+        return unitCost * qtyValue;
       }
 
       function groupCartItemsForReceipt(entries) {
@@ -1003,6 +1410,29 @@ const html = `<!DOCTYPE html>
         return effectiveQty + ' ' + unitLabel;
       }
 
+      function mapCartSnapshotToLineItems(cartSnapshot) {
+        return cartSnapshot.map((item, index) => ({
+          productName: item.productName ?? 'Item ' + (index + 1),
+          variationName: item.variationName ?? 'Base',
+          qty: item.qty,
+          unit: item.uom ?? 'unit',
+          unitCost: item.unitCost ?? null
+        }));
+      }
+
+      function buildItemsBlockFromLines(lineItems) {
+        return lineItems
+          .map((item, index) => {
+            const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
+            const qtyLabel = item.qty ?? 0;
+            const unitLabel = item.unit ?? 'unit';
+            const costLabel = formatAmount(item.unitCost);
+            const base = '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
+            return costLabel ? base + ' @ ' + costLabel : base;
+          })
+          .join('\n');
+      }
+
       function updateQtyHint(entry) {
         if (!qtyHint) return;
         if (!entry || !(MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1)) {
@@ -1014,11 +1444,209 @@ const html = `<!DOCTYPE html>
         qtyHint.style.display = 'block';
       }
 
-      function renderPrintReceipt(summary, cartSnapshot) {
+      function getCart(context = state.mode) {
+        return context === 'purchase' ? state.purchaseCart : state.transferCart;
+      }
+
+      function setCart(context, next) {
+        if (context === 'purchase') {
+          state.purchaseCart = next;
+        } else {
+          state.transferCart = next;
+        }
+      }
+
+      function defaultPurchaseFormState() {
+        return {
+          supplierId: '',
+          referenceCode: '',
+          note: '',
+          autoWhatsapp: true
+        };
+      }
+
+      function resetPurchaseForm() {
+        state.purchaseForm = defaultPurchaseFormState();
+        if (purchaseSupplier) {
+          purchaseSupplier.value = '';
+          purchaseSupplier.disabled = state.suppliers.length === 0;
+        }
+        if (purchaseReference) {
+          purchaseReference.value = '';
+        }
+        syncReferenceValue('');
+        if (purchaseNote) {
+          purchaseNote.value = '';
+        }
+        if (purchaseWhatsapp) {
+          purchaseWhatsapp.checked = true;
+        }
+        updatePurchaseSummary();
+      }
+
+      function renderSupplierOptions() {
+        if (!purchaseSupplier) return;
+        purchaseSupplier.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = state.suppliers.length ? 'Select supplier' : 'No active suppliers';
+        purchaseSupplier.appendChild(placeholder);
+        if (!state.suppliers.length) {
+          purchaseSupplier.disabled = true;
+          state.purchaseForm.supplierId = '';
+          purchaseSupplier.value = '';
+          return;
+        }
+        purchaseSupplier.disabled = false;
+        state.suppliers.forEach((supplier) => {
+          if (!supplier?.id) return;
+          const option = document.createElement('option');
+          option.value = supplier.id;
+          option.textContent = supplier.name ?? 'Supplier';
+          purchaseSupplier.appendChild(option);
+        });
+        const hasExisting = state.suppliers.some((supplier) => supplier?.id === state.purchaseForm.supplierId);
+        purchaseSupplier.value = hasExisting ? state.purchaseForm.supplierId : '';
+        if (!hasExisting) {
+          state.purchaseForm.supplierId = '';
+        }
+      }
+
+      function updatePurchaseSummary() {
+        if (!purchaseSummaryList || !purchaseSummaryEmpty) return;
+        purchaseSummaryList.innerHTML = '';
+        const cart = getCart('purchase');
+        if (!cart.length) {
+          purchaseSummaryEmpty.style.display = 'block';
+          return;
+        }
+        purchaseSummaryEmpty.style.display = 'none';
+        cart.forEach((item) => {
+          const line = document.createElement('li');
+          const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
+          const qtyLabel = formatQtyLabel(item.qty, item.uom);
+          const costLabel = formatAmount(item.unitCost);
+          const baseText = (item.productName ?? 'Product') + variationLabel + ' — ' + qtyLabel;
+          line.textContent = costLabel ? baseText + ' @ ' + costLabel : baseText;
+          purchaseSummaryList.appendChild(line);
+        });
+      }
+
+      function showReferenceNumpad() {
+        if (!referenceNumpad) return;
+        window.clearTimeout(referenceNumpadHideTimeoutId);
+        referenceNumpad.classList.add('active');
+        referenceNumpad.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideReferenceNumpad() {
+        if (!referenceNumpad) return;
+        referenceNumpad.classList.remove('active');
+        referenceNumpad.setAttribute('aria-hidden', 'true');
+      }
+
+      function scheduleReferenceNumpadHide() {
+        window.clearTimeout(referenceNumpadHideTimeoutId);
+        referenceNumpadHideTimeoutId = window.setTimeout(() => {
+          const active = document.activeElement;
+          if (referenceNumpad?.contains(active)) return;
+          hideReferenceNumpad();
+        }, 120);
+      }
+
+      function syncReferenceValue(value) {
+        const upper = (value ?? '').toUpperCase();
+        state.purchaseForm.referenceCode = upper;
+        if (purchaseReference && purchaseReference.value !== upper) {
+          const start = purchaseReference.selectionStart;
+          const end = purchaseReference.selectionEnd;
+          purchaseReference.value = upper;
+          if (typeof start === 'number' && typeof end === 'number') {
+            purchaseReference.setSelectionRange(start, end);
+          }
+        }
+      }
+
+      function insertReferenceText(text) {
+        if (!purchaseReference || !text) return;
+        const input = purchaseReference;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const current = input.value ?? '';
+        const next = (current.slice(0, start) + text + current.slice(end)).toUpperCase();
+        input.value = next;
+        const caret = start + text.length;
+        input.setSelectionRange(caret, caret);
+        syncReferenceValue(next);
+        input.focus();
+      }
+
+      function deleteReferenceChar() {
+        if (!purchaseReference) return;
+        const input = purchaseReference;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        if (start === 0 && end === 0) return;
+        if (start !== end) {
+          const current = input.value ?? '';
+          const next = (current.slice(0, start) + current.slice(end)).toUpperCase();
+          input.value = next;
+          input.setSelectionRange(start, start);
+          syncReferenceValue(next);
+          input.focus();
+          return;
+        }
+        const current = input.value ?? '';
+        const newStart = Math.max(0, start - 1);
+        const next = (current.slice(0, newStart) + current.slice(end)).toUpperCase();
+        input.value = next;
+        input.setSelectionRange(newStart, newStart);
+        syncReferenceValue(next);
+        input.focus();
+      }
+
+      function enterPurchaseMode() {
+        state.mode = 'purchase';
+        document.body.dataset.view = 'purchase';
+        updatePurchaseSummary();
+        renderCart('purchase');
+        if (purchaseSupplier) {
+          purchaseSupplier.value = state.purchaseForm.supplierId ?? '';
+          purchaseSupplier.disabled = state.suppliers.length === 0;
+        }
+        if (purchaseReference) {
+          purchaseReference.value = state.purchaseForm.referenceCode ?? '';
+        }
+        if (purchaseNote) {
+          purchaseNote.value = state.purchaseForm.note ?? '';
+        }
+        if (purchaseWhatsapp) {
+          purchaseWhatsapp.checked = state.purchaseForm.autoWhatsapp !== false;
+        }
+        hideReferenceNumpad();
+        focusActiveScanner();
+      }
+
+      function exitPurchaseMode() {
+        document.body.dataset.view = 'transfer';
+        state.mode = 'transfer';
+        hideReferenceNumpad();
+        focusActiveScanner();
+      }
+
+      function renderPrintReceipt(summary, cartSnapshot, options = {}) {
         if (!printRoot || !Array.isArray(cartSnapshot) || !cartSnapshot.length) return;
+        const context = options.context ?? 'transfer';
+        const isPurchase = context === 'purchase';
         const groups = groupCartItemsForReceipt(cartSnapshot);
         const receipt = document.createElement('div');
         receipt.className = 'receipt';
+        const grossFromOptions = Number(options.totalGross);
+        const computedGross = cartSnapshot.reduce((sum, entry) => {
+          const lineTotal = computeLineTotal(entry);
+          return sum + (lineTotal ?? 0);
+        }, 0);
+        const grossTotal = Number.isFinite(grossFromOptions) ? grossFromOptions : computedGross;
 
         const header = document.createElement('div');
         header.className = 'receipt-header';
@@ -1071,7 +1699,9 @@ const html = `<!DOCTYPE html>
           productLine.appendChild(productBullet);
           productLine.appendChild(productName);
 
-          if (!group.variations.length) {
+          productItem.appendChild(productLine);
+
+          if (!group.variations.length && !isPurchase) {
             const totalQty = group.baseItems.reduce((sum, entry) => sum + Number(entry.qty ?? 0), 0);
             const unit = group.baseItems[0]?.uom ?? 'unit';
             const qtySpan = document.createElement('span');
@@ -1080,17 +1710,29 @@ const html = `<!DOCTYPE html>
             productLine.appendChild(qtySpan);
           }
 
-          productItem.appendChild(productLine);
-
-          if (group.variations.length) {
+          const needsDetailList = isPurchase || group.variations.length > 0;
+          if (needsDetailList) {
             const variationList = document.createElement('ul');
             variationList.className = 'variation-list';
-            const childEntries = [...group.variations];
-            const standaloneBase = group.baseItems.filter((entry) => !entry.variationId);
-            standaloneBase.forEach((entry) => {
-              childEntries.unshift({ ...entry, variationName: 'Base' });
-            });
-            childEntries.forEach((entry) => {
+            const entries = [];
+            const baseEntries = group.baseItems.length ? group.baseItems : [];
+            if (isPurchase) {
+              baseEntries.forEach((entry) => {
+                entries.push({ ...entry, variationName: entry.variationName ?? 'Base' });
+              });
+            } else if (group.variations.length) {
+              const standaloneBase = baseEntries.filter((entry) => !entry.variationId);
+              standaloneBase.forEach((entry) => {
+                entries.push({ ...entry, variationName: entry.variationName ?? 'Base' });
+              });
+            }
+            const variationEntries = group.variations.map((entry) => ({
+              ...entry,
+              variationName: entry.variationName ?? 'Variation'
+            }));
+            entries.push(...variationEntries);
+
+            entries.forEach((entry) => {
               const variationItem = document.createElement('li');
               variationItem.className = 'receipt-variation';
               const variationLine = document.createElement('div');
@@ -1108,15 +1750,42 @@ const html = `<!DOCTYPE html>
               variationLine.appendChild(label);
               variationLine.appendChild(qtySpan);
               variationItem.appendChild(variationLine);
+
+              if (isPurchase) {
+                const metaLine = document.createElement('div');
+                metaLine.className = 'receipt-meta-line receipt-purchase-line';
+                const costLabel = formatAmount(entry.unitCost);
+                const lineTotal = computeLineTotal(entry);
+                const lineTotalLabel = formatAmount(lineTotal);
+                const parts = [];
+                const qtyDescriptor = formatQtyLabel(entry.qty, entry.uom);
+                parts.push('Qty: ' + qtyDescriptor);
+                parts.push(costLabel ? 'Cost: ' + costLabel : 'Cost: -');
+                parts.push(lineTotalLabel ? 'Line: ' + lineTotalLabel : 'Line: -');
+                metaLine.textContent = parts.join(' | ');
+                variationItem.appendChild(metaLine);
+              }
+
               variationList.appendChild(variationItem);
             });
-            productItem.appendChild(variationList);
+
+            if (variationList.childElementCount > 0) {
+              productItem.appendChild(variationList);
+            }
           }
 
           linesList.appendChild(productItem);
         });
 
         receipt.appendChild(linesList);
+
+        if (isPurchase) {
+          const grossLine = document.createElement('p');
+          grossLine.className = 'receipt-meta-line';
+          const grossLabel = formatAmount(grossTotal) ?? '0.00';
+          grossLine.textContent = 'Gross Total: ' + grossLabel;
+          receipt.appendChild(grossLine);
+        }
 
         const footer = document.createElement('div');
         footer.className = 'receipt-footer';
@@ -1139,7 +1808,7 @@ const html = `<!DOCTYPE html>
         }
       }
 
-      function promptQuantity(product, variation) {
+      function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
         const packageSize = resolvePackageSize(product, variation);
         const entry = {
@@ -1148,10 +1817,12 @@ const html = `<!DOCTYPE html>
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
           uom: (variation?.uom || product.uom || 'unit').toUpperCase(),
-          packageSize
+          packageSize,
+          unitCost: null
         };
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
+        state.pendingContext = context;
         if (qtySubmitButton) {
           qtySubmitButton.textContent = 'Add Item';
         }
@@ -1162,6 +1833,9 @@ const html = `<!DOCTYPE html>
 
         updateQtyHint(entry);
         qtyInput.value = '';
+        if (qtyCostInput) {
+          qtyCostInput.value = '';
+        }
         qtyModal.style.display = 'flex';
         setTimeout(() => qtyInput.focus(), 10);
       }
@@ -1171,24 +1845,33 @@ const html = `<!DOCTYPE html>
         qtyModal.style.display = 'none';
         state.pendingEntry = null;
         state.pendingEditIndex = null;
+        state.pendingContext = state.mode;
         if (qtySubmitButton) {
           qtySubmitButton.textContent = 'Add Item';
         }
         updateQtyHint(null);
-        focusScannerWedge();
+        if (qtyCostInput) {
+          qtyCostInput.value = '';
+        }
+        focusActiveScanner();
       }
 
-      function editCartQuantity(index) {
+      function editCartQuantity(context, index) {
         if (!qtyModal || !qtyInput) return;
-        const target = state.cartItems[index];
+        const cart = getCart(context);
+        const target = cart[index];
         if (!target) return;
         state.pendingEntry = { ...target };
         state.pendingEditIndex = index;
+        state.pendingContext = context;
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
         qtyUom.textContent = target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
+        if (qtyCostInput) {
+          qtyCostInput.value = target.unitCost != null ? String(target.unitCost) : '';
+        }
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
         if (qtySubmitButton) {
@@ -1197,74 +1880,95 @@ const html = `<!DOCTYPE html>
         setTimeout(() => qtyInput.focus(), 10);
       }
 
-      function addCartItem(entry) {
+      function addCartItem(entry, context) {
         const scannedQty = Number(entry.scannedQty ?? entry.qty ?? 0);
-        const existing = state.cartItems.find(
+        const cart = getCart(context);
+        const existing = cart.find(
           (item) => item.productId === entry.productId && item.variationId === entry.variationId
         );
         if (existing) {
           existing.qty += entry.qty;
           const priorScanned = Number(existing.scannedQty ?? 0);
           existing.scannedQty = priorScanned + scannedQty;
+          if (entry.unitCost != null) {
+            existing.unitCost = entry.unitCost;
+          }
         } else {
-          state.cartItems.push({ ...entry, scannedQty });
+          cart.push({ ...entry, scannedQty, unitCost: entry.unitCost ?? null });
         }
-        renderCart();
+        renderCart(context);
       }
 
-      function removeCartItem(index) {
-        if (index < 0 || index >= state.cartItems.length) return;
-        state.cartItems.splice(index, 1);
-        renderCart();
+      function removeCartItem(context, index) {
+        const cart = getCart(context);
+        if (index < 0 || index >= cart.length) return;
+        cart.splice(index, 1);
+        renderCart(context);
       }
 
-      function renderCart() {
-        if (!cartBody || !cartEmpty || !cartCount) return;
-        cartBody.innerHTML = '';
-        if (!state.cartItems.length) {
-          cartEmpty.style.display = 'block';
+      function renderCart(context = state.mode) {
+        const elements = cartElements[context];
+        if (!elements?.body || !elements?.empty || !elements?.count) return;
+        const cart = getCart(context);
+        elements.body.innerHTML = '';
+        if (!cart.length) {
+          elements.empty.style.display = 'block';
         } else {
-          cartEmpty.style.display = 'none';
-          state.cartItems.forEach((item, index) => {
-                const row = document.createElement('tr');
-                const productCell = document.createElement('td');
-                productCell.textContent = item.productName ?? 'Product';
-                const variationCell = document.createElement('td');
+          elements.empty.style.display = 'none';
+          cart.forEach((item, index) => {
+            const row = document.createElement('tr');
+            const productCell = document.createElement('td');
+            productCell.textContent = item.productName ?? 'Product';
+            const variationCell = document.createElement('td');
             variationCell.textContent = item.variationName ? item.variationName : '-';
             const scannedCell = document.createElement('td');
-                const scannedButton = document.createElement('button');
-                scannedButton.type = 'button';
-                scannedButton.className = 'scanned-qty-button';
-                scannedButton.title = 'Adjust scanned quantity';
-                scannedButton.textContent = (item.scannedQty ?? item.qty ?? 0).toString();
-                scannedButton.addEventListener('click', () => {
-                  editCartQuantity(index);
-                });
-                scannedCell.appendChild(scannedButton);
+            const scannedButton = document.createElement('button');
+            scannedButton.type = 'button';
+            scannedButton.className = 'scanned-qty-button';
+            scannedButton.title = 'Adjust scanned quantity';
+            scannedButton.textContent = (item.scannedQty ?? item.qty ?? 0).toString();
+            scannedButton.addEventListener('click', () => {
+              editCartQuantity(context, index);
+            });
+            scannedCell.appendChild(scannedButton);
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
             uomCell.textContent = item.uom ?? 'UNIT';
+            if (context === 'purchase') {
+              const costCell = document.createElement('td');
+              costCell.textContent = formatAmount(item.unitCost) ?? '-';
+              row.appendChild(productCell);
+              row.appendChild(variationCell);
+              row.appendChild(scannedCell);
+              row.appendChild(qtyCell);
+              row.appendChild(uomCell);
+              row.appendChild(costCell);
+            } else {
+              row.appendChild(productCell);
+              row.appendChild(variationCell);
+              row.appendChild(scannedCell);
+              row.appendChild(qtyCell);
+              row.appendChild(uomCell);
+            }
             const actionsCell = document.createElement('td');
             actionsCell.className = 'cart-row-actions';
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.textContent = 'Remove';
             removeBtn.addEventListener('click', () => {
-              removeCartItem(index);
+              removeCartItem(context, index);
             });
             actionsCell.appendChild(removeBtn);
-            row.appendChild(productCell);
-            row.appendChild(variationCell);
-            row.appendChild(scannedCell);
-            row.appendChild(qtyCell);
-            row.appendChild(uomCell);
             row.appendChild(actionsCell);
-            cartBody.appendChild(row);
+            elements.body.appendChild(row);
           });
         }
-        const count = state.cartItems.length;
-        cartCount.textContent = count + (count === 1 ? ' item' : ' items');
+        const count = cart.length;
+        elements.count.textContent = count + (count === 1 ? ' item' : ' items');
+        if (context === 'purchase') {
+          updatePurchaseSummary();
+        }
       }
 
       async function fetchWarehousesMetadata() {
@@ -1285,6 +1989,17 @@ const html = `<!DOCTYPE html>
         return list;
       }
 
+      async function fetchSuppliers() {
+        const { data, error } = await supabase
+          .from('suppliers')
+          .select('id,name,contact_name,contact_phone,contact_email,active')
+          .eq('active', true)
+          .order('name', { ascending: true });
+        if (error) throw error;
+        state.suppliers = data ?? [];
+        renderSupplierOptions();
+      }
+
       async function refreshMetadata() {
         const warehouses = await fetchWarehousesMetadata();
         state.warehouses = warehouses ?? [];
@@ -1300,6 +2015,14 @@ const html = `<!DOCTYPE html>
         destLabel.textContent = destLabelText;
         state.lockedSource = sourceWarehouse;
         state.lockedDest = destWarehouse;
+        if (sourceWarehouse) {
+          if (purchaseWarehouseLabel) {
+            purchaseWarehouseLabel.textContent = sourceWarehouse.name ?? 'Warehouse';
+          }
+          if (purchaseCartWarehouse) {
+            purchaseCartWarehouse.textContent = sourceWarehouse.name ?? 'Warehouse';
+          }
+        }
         if (!sourceWarehouse) {
           throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
         }
@@ -1310,8 +2033,14 @@ const html = `<!DOCTYPE html>
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
         await preloadVariations(state.products.map((p) => p.id));
+        try {
+          await fetchSuppliers();
+        } catch (error) {
+          console.warn('Failed to load supplier list', error);
+          showResult('Unable to refresh supplier list. Continue scanning or retry later.', true);
+        }
         renderCart();
-        focusScannerWedge();
+        focusActiveScanner();
       }
 
       function showLoginError(message) {
@@ -1339,7 +2068,8 @@ const html = `<!DOCTYPE html>
         if (state.loading) return;
         const sourceId = lockedSourceId;
         const destId = lockedDestId;
-        if (!state.cartItems.length) {
+        const cart = getCart('transfer');
+        if (!cart.length) {
           showResult('Scan at least one product before submitting.', true);
           return;
         }
@@ -1348,7 +2078,7 @@ const html = `<!DOCTYPE html>
         submitButton.disabled = true;
         submitButton.textContent = 'Submitting...';
         try {
-          const cartSnapshot = state.cartItems.map((item) => ({ ...item }));
+          const cartSnapshot = cart.map((item) => ({ ...item }));
           const payload = {
             p_source: sourceId,
             p_destination: destId,
@@ -1371,20 +2101,8 @@ const html = `<!DOCTYPE html>
             minute: '2-digit'
           });
           const windowLabel = datePart + ' ' + timePart;
-          const lineItems = cartSnapshot.map((item, index) => ({
-            productName: item.productName ?? 'Item ' + (index + 1),
-            variationName: item.variationName ?? 'Base',
-            qty: item.qty,
-            unit: item.uom ?? 'unit'
-          }));
-          const itemsBlock = lineItems
-            .map((item, index) => {
-              const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
-              const qtyLabel = item.qty ?? 0;
-              const unitLabel = item.unit ?? 'unit';
-              return '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
-            })
-            .join('\\n');
+          const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
+          const itemsBlock = buildItemsBlockFromLines(lineItems);
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
           const reference = /^\d+$/.test(rawReference) ? rawReference.padStart(10, '0') : rawReference;
           const summary = {
@@ -1406,8 +2124,8 @@ const html = `<!DOCTYPE html>
             console.warn('WhatsApp notification failed', notifyError);
           });
           renderPrintReceipt(summary, cartSnapshot);
-          state.cartItems = [];
-          renderCart();
+          setCart('transfer', []);
+          renderCart('transfer');
         } catch (error) {
           showResult(error.message ?? 'Transfer failed', true);
         } finally {
@@ -1417,37 +2135,133 @@ const html = `<!DOCTYPE html>
         }
       }
 
-      function showResult(message, isError) {
-        if (isError) {
-          console.warn(message);
-        } else {
-          console.info(message);
+      async function handlePurchaseSubmit(event) {
+        event.preventDefault();
+        if (state.purchaseSubmitting) return;
+        const warehouseId = lockedSourceId;
+        if (!warehouseId) {
+          showResult('Source warehouse unavailable for purchase intake.', true);
+          return;
         }
-        if (!resultToast) return;
-        resultToast.textContent = message;
-        resultToast.classList.remove('success', 'error', 'visible');
-        resultToast.classList.add(isError ? 'error' : 'success', 'visible');
-        if (resultToastTimeoutId) {
-          clearTimeout(resultToastTimeoutId);
+        const cart = getCart('purchase');
+        if (!cart.length) {
+          showResult('Scan at least one product before logging a purchase.', true);
+          return;
         }
-        resultToastTimeoutId = window.setTimeout(() => {
-          resultToast.classList.remove('visible');
-        }, 5000);
+
+        const referenceInput = (purchaseReference?.value ?? state.purchaseForm.referenceCode ?? '').trim();
+        if (!referenceInput) {
+          showResult('Reference / Invoice # is required.', true);
+          purchaseReference?.focus();
+          return;
+        }
+
+        const noteValue = (purchaseNote?.value ?? state.purchaseForm.note ?? '').trim();
+        const supplierId = state.purchaseForm.supplierId || null;
+        const autoWhatsapp = state.purchaseForm.autoWhatsapp !== false;
+        const cartSnapshot = cart.map((item) => ({ ...item }));
+        const payloadItems = cartSnapshot.map((item) => ({
+          product_id: item.productId,
+          variation_id: item.variationId,
+          qty: item.qty,
+          qty_input_mode: 'units',
+          unit_cost: item.unitCost ?? null
+        }));
+
+        if (payloadItems.some((item) => !item.product_id || !item.qty || item.qty <= 0)) {
+          showResult('One or more items are missing quantity or product references.', true);
+          return;
+        }
+
+        state.purchaseForm.referenceCode = referenceInput;
+        state.purchaseForm.note = noteValue;
+        state.purchaseSubmitting = true;
+        if (purchaseSubmit) {
+          purchaseSubmit.disabled = true;
+          purchaseSubmit.textContent = 'Recording...';
+        }
+
+        try {
+          const payload = {
+            p_warehouse_id: warehouseId,
+            p_supplier_id: supplierId,
+            p_reference_code: referenceInput,
+            p_items: payloadItems,
+            p_note: noteValue || null,
+            p_auto_whatsapp: autoWhatsapp
+          };
+          const { data, error } = await supabase.rpc('record_purchase_receipt', payload);
+          if (error) throw error;
+
+          const receiptRef = typeof data?.reference_code === 'string' ? data.reference_code : referenceInput;
+          const supplierName = supplierId
+            ? state.suppliers.find((supplier) => supplier?.id === supplierId)?.name ?? 'Supplier'
+            : 'Unspecified supplier';
+          const warehouseName = state.lockedSource?.name ?? sourceLabel.textContent ?? 'Warehouse';
+          const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
+          const grossTotal = cartSnapshot.reduce((sum, item) => {
+            const lineTotal = computeLineTotal(item);
+            return sum + (lineTotal ?? 0);
+          }, 0);
+          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const timestampSource = data?.received_at ?? data?.recorded_at ?? new Date().toISOString();
+          const timestamp = new Date(timestampSource);
+          const windowLabel = timestamp.toLocaleDateString('en-US') + ' ' + timestamp.toLocaleString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit'
+          });
+
+          const summary = {
+            reference: receiptRef,
+            referenceRaw: receiptRef,
+            processedBy: state.session?.user?.email ?? 'Unknown operator',
+            sourceLabel: supplierName,
+            destLabel: warehouseName,
+            route: supplierName + ' -> ' + warehouseName,
+            dateTime: windowLabel,
+            window: windowLabel,
+            itemsBlock,
+            items: lineItems,
+            note: noteValue || null,
+            totalGross: grossTotal
+          };
+
+          showResult('Purchase ' + receiptRef + ' recorded successfully.', false);
+          if (autoWhatsapp) {
+            notifyWhatsApp(summary, 'purchase').catch((notifyError) => {
+              console.warn('Purchase WhatsApp notification failed', notifyError);
+            });
+          }
+          renderPrintReceipt(summary, cartSnapshot, { context: 'purchase', totalGross: grossTotal });
+          setCart('purchase', []);
+          renderCart('purchase');
+          resetPurchaseForm();
+          focusActiveScanner();
+        } catch (error) {
+          showResult(error.message ?? 'Purchase failed', true);
+        } finally {
+          state.purchaseSubmitting = false;
+          if (purchaseSubmit) {
+            purchaseSubmit.disabled = false;
+            purchaseSubmit.textContent = 'Record Purchase';
+          }
+        }
       }
 
-      async function notifyWhatsApp(summary) {
+      async function notifyWhatsApp(summary, context = 'transfer') {
         try {
           const response = await fetch('/api/notify-whatsapp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(summary)
+            body: JSON.stringify({ context, summary })
           });
           if (!response.ok) {
             const info = await response.json().catch(() => ({}));
             throw new Error(info.error || 'Unable to ping WhatsApp API');
           }
         } catch (error) {
-          showResult('Transfer recorded but WhatsApp alert failed: ' + (error.message || error), true);
+          const prefix = context === 'purchase' ? 'Purchase logged' : 'Transfer recorded';
+          showResult(prefix + ' but WhatsApp alert failed: ' + (error.message || error), true);
         }
       }
 
@@ -1572,9 +2386,15 @@ const html = `<!DOCTYPE html>
         state.session = session;
         if (!session) {
           state.operatorProfile = null;
-          state.cartItems = [];
-          renderCart();
+          state.transferCart = [];
+          state.purchaseCart = [];
+          state.suppliers = [];
+          state.purchaseSubmitting = false;
+          resetPurchaseForm();
+          renderCart('transfer');
+          renderCart('purchase');
           closeQtyPrompt();
+          exitPurchaseMode();
           document.body.dataset.auth = 'false';
           return;
         }
@@ -1628,7 +2448,7 @@ const html = `<!DOCTYPE html>
         if (qtyModal?.style.display === 'flex') return;
         window.setTimeout(() => {
           if (document.hidden) return;
-          focusScannerWedge();
+          focusActiveScanner();
         }, 50);
       });
       window.addEventListener('afterprint', () => {
@@ -1637,26 +2457,116 @@ const html = `<!DOCTYPE html>
           printRoot.innerHTML = '';
         }
       });
+
+      purchaseOpenButton?.addEventListener('click', async () => {
+        try {
+          if (!state.suppliers.length) {
+            await fetchSuppliers();
+          }
+        } catch (error) {
+          console.warn('Supplier fetch failed before opening purchase page', error);
+          showResult('Unable to refresh supplier list. Try again or continue without selecting one.', true);
+        }
+        enterPurchaseMode();
+      });
+
+      purchaseBackButton?.addEventListener('click', () => {
+        exitPurchaseMode();
+      });
+
+      purchaseExitButton?.addEventListener('click', () => {
+        exitPurchaseMode();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && state.mode === 'purchase') {
+          exitPurchaseMode();
+        }
+      });
+
+      purchaseSupplier?.addEventListener('change', () => {
+        state.purchaseForm.supplierId = purchaseSupplier.value ?? '';
+      });
+
+      purchaseReference?.addEventListener('focus', () => {
+        showReferenceNumpad();
+      });
+
+      purchaseReference?.addEventListener('blur', () => {
+        scheduleReferenceNumpadHide();
+      });
+
+      purchaseReference?.addEventListener('input', () => {
+        syncReferenceValue(purchaseReference.value ?? '');
+      });
+
+      purchaseNote?.addEventListener('input', () => {
+        state.purchaseForm.note = purchaseNote.value ?? '';
+      });
+
+      purchaseWhatsapp?.addEventListener('change', () => {
+        state.purchaseForm.autoWhatsapp = Boolean(purchaseWhatsapp.checked);
+      });
+
+      referenceNumpad?.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+      });
+
+      referenceNumpad?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertReferenceText(key.toUpperCase());
+          return;
+        }
+        if (!action) return;
+        if (action === 'clear') {
+          syncReferenceValue('');
+          if (purchaseReference) {
+            purchaseReference.value = '';
+            purchaseReference.focus();
+          }
+          return;
+        }
+        if (action === 'delete') {
+          deleteReferenceChar();
+          return;
+        }
+        if (action === 'close') {
+          hideReferenceNumpad();
+          purchaseReference?.blur();
+        }
+      });
+
       qtyForm?.addEventListener('submit', (event) => {
         event.preventDefault();
         const pending = state.pendingEntry;
         if (!pending) return;
+        const context = state.pendingContext || state.mode;
         const rawQty = Number(qtyInput.value);
         const effectiveQty = computeEffectiveQty(rawQty, pending);
+        const costValue = qtyCostInput?.value?.trim() ?? '';
+        const parsedCost = costValue ? Number(costValue) : null;
+        const unitCost = costValue && Number.isFinite(parsedCost) ? parsedCost : null;
+        pending.unitCost = unitCost;
         if (effectiveQty === null) {
           qtyInput.focus();
           return;
         }
         const editIndex = state.pendingEditIndex;
         if (typeof editIndex === 'number' && editIndex >= 0) {
-          const target = state.cartItems[editIndex];
+          const cart = getCart(context);
+          const target = cart[editIndex];
           if (target) {
-            state.cartItems[editIndex] = {
+            cart[editIndex] = {
               ...target,
               qty: effectiveQty,
-              scannedQty: rawQty
+              scannedQty: rawQty,
+              unitCost
             };
-            renderCart();
+            renderCart(context);
             showResult(
               'Updated ' + (pending.productName ?? 'Product') + ' - ' + describeQty(pending, rawQty, effectiveQty),
               false
@@ -1665,7 +2575,7 @@ const html = `<!DOCTYPE html>
           closeQtyPrompt();
           return;
         }
-        addCartItem({ ...pending, qty: effectiveQty, scannedQty: rawQty });
+        addCartItem({ ...pending, qty: effectiveQty, scannedQty: rawQty, unitCost }, context);
         showResult(
           'Queued ' + (pending.productName ?? 'Product') + ' - ' + describeQty(pending, rawQty, effectiveQty),
           false
@@ -1677,7 +2587,7 @@ const html = `<!DOCTYPE html>
       });
       document.addEventListener('click', () => {
         if (document.body.dataset.auth === 'true') {
-          focusScannerWedge();
+          focusActiveScanner();
         }
       });
       loginWedge?.addEventListener('input', () => {
@@ -1698,6 +2608,7 @@ const html = `<!DOCTYPE html>
       });
 
       loginForm?.addEventListener('submit', handleLogin);
+      purchaseForm?.addEventListener('submit', handlePurchaseSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
     }
   </script>

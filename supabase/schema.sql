@@ -1492,6 +1492,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variations_sku_unique
   WHERE sku IS NOT NULL;
 
 -- ------------------------------------------------------------
+-- Supplier registry (2025-12-06)
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.suppliers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  notes text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_name_unique
+  ON public.suppliers ((lower(name)));
+
+ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS suppliers_rw ON public.suppliers;
+CREATE POLICY suppliers_rw
+  ON public.suppliers
+  FOR ALL
+  USING (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+  )
+  WITH CHECK (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+  );
+
+-- ------------------------------------------------------------
 -- Stock entry logging + warehouse transfer portal (2025-11-27)
 -- ------------------------------------------------------------
 
@@ -1520,9 +1554,235 @@ CREATE INDEX IF NOT EXISTS idx_wse_warehouse ON public.warehouse_stock_entries(w
 CREATE INDEX IF NOT EXISTS idx_wse_product ON public.warehouse_stock_entries(product_id);
 CREATE INDEX IF NOT EXISTS idx_wse_variation ON public.warehouse_stock_entries(variation_id);
 
+-- ------------------------------------------------------------
+-- Purchase receipts + entry audit (2025-12-06)
+-- ------------------------------------------------------------
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type WHERE typname = 'warehouse_purchase_status'
+  ) THEN
+    CREATE TYPE public.warehouse_purchase_status AS ENUM ('draft','received','partial','cancelled');
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.warehouse_purchase_receipts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
+  reference_code text NOT NULL,
+  status public.warehouse_purchase_status NOT NULL DEFAULT 'received',
+  note text,
+  auto_whatsapp boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  recorded_by uuid NOT NULL DEFAULT auth.uid(),
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  received_at timestamptz,
+  total_units numeric NOT NULL DEFAULT 0,
+  total_lines integer NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wpr_unique_ref
+  ON public.warehouse_purchase_receipts(warehouse_id, lower(reference_code));
+
+CREATE INDEX IF NOT EXISTS idx_wpr_supplier
+  ON public.warehouse_purchase_receipts(supplier_id);
+
+ALTER TABLE public.warehouse_purchase_receipts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS wpr_select_access ON public.warehouse_purchase_receipts;
+CREATE POLICY wpr_select_access
+  ON public.warehouse_purchase_receipts
+  FOR SELECT
+  USING (
+    public.is_admin(auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.warehouses w
+      WHERE w.id = warehouse_purchase_receipts.warehouse_id
+        AND (
+          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
+          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS wpr_write_access ON public.warehouse_purchase_receipts;
+CREATE POLICY wpr_write_access
+  ON public.warehouse_purchase_receipts
+  FOR ALL
+  USING (
+    public.is_admin(auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.warehouses w
+      WHERE w.id = warehouse_purchase_receipts.warehouse_id
+        AND (
+          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
+          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
+        )
+    )
+  )
+  WITH CHECK (
+    public.is_admin(auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.warehouses w
+      WHERE w.id = warehouse_purchase_receipts.warehouse_id
+        AND (
+          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
+          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
+        )
+    )
+  );
+
+CREATE TABLE IF NOT EXISTS public.warehouse_purchase_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  receipt_id uuid NOT NULL REFERENCES public.warehouse_purchase_receipts(id) ON DELETE CASCADE,
+  stock_entry_id uuid NOT NULL REFERENCES public.warehouse_stock_entries(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE RESTRICT,
+  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
+  qty_units numeric NOT NULL CHECK (qty_units > 0),
+  qty_cases numeric,
+  package_contains numeric,
+  unit_cost numeric,
+  note text,
+  created_by uuid NOT NULL DEFAULT auth.uid(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wpi_receipt ON public.warehouse_purchase_items(receipt_id);
+CREATE INDEX IF NOT EXISTS idx_wpi_product ON public.warehouse_purchase_items(product_id);
+
+ALTER TABLE public.warehouse_purchase_items ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS wpi_select_access ON public.warehouse_purchase_items;
+CREATE POLICY wpi_select_access
+  ON public.warehouse_purchase_items
+  FOR SELECT
+  USING (
+    public.is_admin(auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.warehouse_purchase_receipts r
+      JOIN public.warehouses w ON w.id = r.warehouse_id
+      WHERE r.id = warehouse_purchase_items.receipt_id
+        AND (
+          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
+          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS wpi_write_access ON public.warehouse_purchase_items;
+CREATE POLICY wpi_write_access
+  ON public.warehouse_purchase_items
+  FOR ALL
+  USING (
+    public.is_admin(auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.warehouse_purchase_receipts r
+      JOIN public.warehouses w ON w.id = r.warehouse_id
+      WHERE r.id = warehouse_purchase_items.receipt_id
+        AND (
+          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
+          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
+        )
+    )
+  )
+  WITH CHECK (
+    public.is_admin(auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.warehouse_purchase_receipts r
+      JOIN public.warehouses w ON w.id = r.warehouse_id
+      WHERE r.id = warehouse_purchase_items.receipt_id
+        AND (
+          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
+          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
+        )
+    )
+  );
+
+CREATE TABLE IF NOT EXISTS public.warehouse_stock_entry_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id uuid NOT NULL REFERENCES public.warehouse_stock_entries(id) ON DELETE CASCADE,
+  event_type text NOT NULL,
+  payload jsonb,
+  recorded_by uuid,
+  recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wsee_entry ON public.warehouse_stock_entry_events(entry_id);
+
+ALTER TABLE public.warehouse_stock_entry_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS wsee_select ON public.warehouse_stock_entry_events;
+CREATE POLICY wsee_select
+  ON public.warehouse_stock_entry_events
+  FOR SELECT
+  USING (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+  );
+
+DROP POLICY IF EXISTS wsee_insert ON public.warehouse_stock_entry_events;
+CREATE POLICY wsee_insert
+  ON public.warehouse_stock_entry_events
+  FOR INSERT
+  WITH CHECK (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+  );
+
+CREATE OR REPLACE FUNCTION public.log_warehouse_stock_entry_event()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  INSERT INTO public.warehouse_stock_entry_events(
+    entry_id,
+    event_type,
+    payload,
+    recorded_by
+  ) VALUES (
+    NEW.id,
+    lower(TG_OP),
+    jsonb_build_object(
+      'entry_kind', NEW.entry_kind,
+      'qty', NEW.qty,
+      'previous_qty', NEW.previous_qty,
+      'current_qty', NEW.current_qty,
+      'supplier_id', NEW.supplier_id,
+      'reference_code', NEW.reference_code,
+      'source_purchase_id', NEW.source_purchase_id
+    ),
+    COALESCE(NEW.recorded_by, auth.uid())
+  );
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_wse_audit ON public.warehouse_stock_entries;
+CREATE TRIGGER tr_wse_audit
+  AFTER INSERT OR UPDATE ON public.warehouse_stock_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.log_warehouse_stock_entry_event();
+
 ALTER TABLE IF EXISTS public.warehouse_stock_entries
   ADD COLUMN IF NOT EXISTS qty_cases numeric,
-  ADD COLUMN IF NOT EXISTS package_contains numeric;
+  ADD COLUMN IF NOT EXISTS package_contains numeric,
+  ADD COLUMN IF NOT EXISTS supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS reference_code text,
+  ADD COLUMN IF NOT EXISTS unit_cost numeric,
+  ADD COLUMN IF NOT EXISTS source_purchase_id uuid REFERENCES public.warehouse_purchase_receipts(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS previous_qty numeric,
+  ADD COLUMN IF NOT EXISTS current_qty numeric;
 
 UPDATE public.warehouse_stock_entries wse
 SET package_contains = COALESCE(
@@ -1539,6 +1799,10 @@ SET qty_cases = CASE
     ELSE wse.qty / NULLIF(wse.package_contains, 0)
   END
 WHERE wse.qty_cases IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_wse_supplier ON public.warehouse_stock_entries(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_wse_reference_code ON public.warehouse_stock_entries((lower(reference_code)));
+CREATE INDEX IF NOT EXISTS idx_wse_source_purchase ON public.warehouse_stock_entries(source_purchase_id);
 
 ALTER TABLE public.warehouse_stock_entries ENABLE ROW LEVEL SECURITY;
 
@@ -1577,7 +1841,11 @@ CREATE OR REPLACE FUNCTION public.record_stock_entry(
   p_qty numeric,
   p_variation_id uuid DEFAULT NULL,
   p_note text DEFAULT NULL,
-  p_qty_input_mode text DEFAULT 'auto'
+  p_qty_input_mode text DEFAULT 'auto',
+  p_supplier_id uuid DEFAULT NULL,
+  p_reference_code text DEFAULT NULL,
+  p_unit_cost numeric DEFAULT NULL,
+  p_source_purchase_id uuid DEFAULT NULL
 )
 RETURNS public.warehouse_stock_entries
 LANGUAGE plpgsql
@@ -1587,12 +1855,13 @@ AS $$
 DECLARE
   v_uid uuid := auth.uid();
   v_entry public.warehouse_stock_entries%ROWTYPE;
-  v_current numeric := 0;
+  v_previous numeric := 0;
   v_target numeric := 0;
   v_pkg numeric := 1;
   v_qty_units numeric := 0;
   v_qty_cases numeric := NULL;
   v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));
+  v_reference text := NULL;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'not authenticated';
@@ -1606,6 +1875,8 @@ BEGIN
   IF p_qty IS NULL OR p_qty <= 0 THEN
     RAISE EXCEPTION 'quantity must be positive';
   END IF;
+
+  v_reference := nullif(btrim(p_reference_code), '');
 
   SELECT coalesce(
            (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),
@@ -1630,6 +1901,17 @@ BEGIN
   END IF;
   v_target := v_qty_units;
 
+  SELECT coalesce(qty, 0)
+    INTO v_previous
+    FROM public.warehouse_stock_current
+   WHERE warehouse_id = p_warehouse_id
+     AND product_id = p_product_id
+     AND (variation_id IS NOT DISTINCT FROM p_variation_id);
+
+  IF p_entry_kind = 'purchase' THEN
+    v_target := v_previous + v_qty_units;
+  END IF;
+
   INSERT INTO public.warehouse_stock_entries(
     warehouse_id,
     product_id,
@@ -1639,7 +1921,13 @@ BEGIN
     qty_cases,
     package_contains,
     note,
-    recorded_by
+    recorded_by,
+    supplier_id,
+    reference_code,
+    unit_cost,
+    source_purchase_id,
+    previous_qty,
+    current_qty
   ) VALUES (
     p_warehouse_id,
     p_product_id,
@@ -1649,18 +1937,14 @@ BEGIN
     v_qty_cases,
     v_pkg,
     p_note,
-    v_uid
+    v_uid,
+    p_supplier_id,
+    v_reference,
+    p_unit_cost,
+    p_source_purchase_id,
+    v_previous,
+    v_target
   ) RETURNING * INTO v_entry;
-
-  IF p_entry_kind = 'purchase' THEN
-    SELECT coalesce(qty, 0)
-      INTO v_current
-      FROM public.warehouse_stock_current
-     WHERE warehouse_id = p_warehouse_id
-       AND product_id = p_product_id
-       AND (variation_id IS NOT DISTINCT FROM p_variation_id);
-    v_target := v_current + v_qty_units;
-  END IF;
 
   PERFORM public.record_stocktake(
     p_warehouse_id,
@@ -1672,6 +1956,158 @@ BEGIN
   );
 
   RETURN v_entry;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_purchase_receipt(
+  p_warehouse_id uuid,
+  p_supplier_id uuid,
+  p_reference_code text,
+  p_items jsonb,
+  p_note text DEFAULT NULL,
+  p_auto_whatsapp boolean DEFAULT true
+)
+RETURNS public.warehouse_purchase_receipts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_receipt public.warehouse_purchase_receipts%ROWTYPE;
+  v_entry public.warehouse_stock_entries%ROWTYPE;
+  v_item RECORD;
+  v_outlet uuid;
+  v_reference text := nullif(btrim(p_reference_code), '');
+  v_total numeric := 0;
+  v_lines integer := 0;
+  v_items_count integer := 0;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
+  END IF;
+  IF p_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'warehouse_id is required';
+  END IF;
+  IF v_reference IS NULL THEN
+    RAISE EXCEPTION 'reference_code is required';
+  END IF;
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'p_items must be a non-empty json array';
+  END IF;
+
+  SELECT outlet_id INTO v_outlet
+  FROM public.warehouses
+  WHERE id = p_warehouse_id;
+
+  IF v_outlet IS NULL THEN
+    RAISE EXCEPTION 'warehouse % not found', p_warehouse_id;
+  END IF;
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR public.outlet_auth_user_matches(v_outlet, v_uid)
+    OR public.has_role_any_outlet(v_uid, 'transfers', v_outlet)
+  ) THEN
+    RAISE EXCEPTION 'not authorized for this warehouse intake';
+  END IF;
+
+  v_items_count := jsonb_array_length(p_items);
+
+  INSERT INTO public.warehouse_purchase_receipts(
+    outlet_id,
+    warehouse_id,
+    supplier_id,
+    reference_code,
+    status,
+    note,
+    auto_whatsapp,
+    metadata,
+    recorded_by,
+    recorded_at
+  ) VALUES (
+    v_outlet,
+    p_warehouse_id,
+    p_supplier_id,
+    v_reference,
+    'received',
+    p_note,
+    COALESCE(p_auto_whatsapp, true),
+    jsonb_build_object('items_count', v_items_count),
+    v_uid,
+    now()
+  ) RETURNING * INTO v_receipt;
+
+  FOR v_item IN
+    SELECT
+      (value->>'product_id')::uuid AS product_id,
+      NULLIF(value->>'variation_id', '')::uuid AS variation_id,
+      COALESCE(NULLIF(value->>'qty', '')::numeric, 0) AS qty_value,
+      CASE
+        WHEN lower(NULLIF(value->>'qty_input_mode', '')) IN ('units','cases') THEN lower(NULLIF(value->>'qty_input_mode', ''))
+        ELSE 'auto'
+      END AS qty_mode,
+      NULLIF(btrim(value->>'note'), '') AS note,
+      NULLIF(value->>'unit_cost', '')::numeric AS unit_cost
+    FROM jsonb_array_elements(p_items) value
+  LOOP
+    IF v_item.product_id IS NULL THEN
+      RAISE EXCEPTION 'purchase item missing product_id';
+    END IF;
+    IF v_item.qty_value IS NULL OR v_item.qty_value <= 0 THEN
+      RAISE EXCEPTION 'purchase qty must be positive for %', v_item.product_id;
+    END IF;
+
+    v_entry := public.record_stock_entry(
+      p_warehouse_id := p_warehouse_id,
+      p_product_id := v_item.product_id,
+      p_entry_kind := 'purchase',
+      p_qty := v_item.qty_value,
+      p_variation_id := v_item.variation_id,
+      p_note := COALESCE(v_item.note, p_note, format('Purchase %s', v_reference)),
+      p_qty_input_mode := v_item.qty_mode,
+      p_supplier_id := p_supplier_id,
+      p_reference_code := v_reference,
+      p_unit_cost := v_item.unit_cost,
+      p_source_purchase_id := v_receipt.id
+    );
+
+    INSERT INTO public.warehouse_purchase_items(
+      receipt_id,
+      stock_entry_id,
+      product_id,
+      variation_id,
+      qty_units,
+      qty_cases,
+      package_contains,
+      unit_cost,
+      note,
+      created_by
+    ) VALUES (
+      v_receipt.id,
+      v_entry.id,
+      v_entry.product_id,
+      v_entry.variation_id,
+      v_entry.qty,
+      v_entry.qty_cases,
+      v_entry.package_contains,
+      v_item.unit_cost,
+      COALESCE(v_item.note, p_note),
+      v_uid
+    );
+
+    v_total := v_total + v_entry.qty;
+    v_lines := v_lines + 1;
+  END LOOP;
+
+  UPDATE public.warehouse_purchase_receipts
+  SET total_units = v_total,
+      total_lines = v_lines,
+      received_at = COALESCE(received_at, now())
+  WHERE id = v_receipt.id
+  RETURNING * INTO v_receipt;
+
+  RETURN v_receipt;
 END;
 $$;
 

@@ -3881,6 +3881,617 @@
             "is_nullable": "NO",
             "is_generated": "NEVER",
             "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "id",
+            "comment": null,
+            "default": "gen_random_uuid()",
+            "ordinal": 1,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "name",
+            "comment": null,
+            "default": null,
+            "ordinal": 2,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "contact_name",
+            "comment": null,
+            "default": null,
+            "ordinal": 3,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "contact_phone",
+            "comment": null,
+            "default": null,
+            "ordinal": 4,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "contact_email",
+            "comment": null,
+            "default": null,
+            "ordinal": 5,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "notes",
+            "comment": null,
+            "default": null,
+            "ordinal": 6,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "active",
+            "comment": null,
+            "default": "true",
+            "ordinal": 7,
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "created_at",
+            "comment": null,
+            "default": "now()",
+            "ordinal": 8,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "suppliers",
+            "column": "updated_at",
+            "comment": null,
+            "default": "now()",
+            "ordinal": 9,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "id",
+            "comment": null,
+            "default": "gen_random_uuid()",
+            "ordinal": 1,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "outlet_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 2,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "warehouse_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 3,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "supplier_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 4,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "reference_code",
+            "comment": null,
+            "default": null,
+            "ordinal": 5,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "status",
+            "comment": null,
+            "default": "'received'::warehouse_purchase_status",
+            "ordinal": 6,
+            "udt_name": "warehouse_purchase_status",
+            "data_type": "USER-DEFINED",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "note",
+            "comment": null,
+            "default": null,
+            "ordinal": 7,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "auto_whatsapp",
+            "comment": null,
+            "default": "true",
+            "ordinal": 8,
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "metadata",
+            "comment": null,
+            "default": "'{}'::jsonb",
+            "ordinal": 9,
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "recorded_by",
+            "comment": null,
+            "default": "auth.uid()",
+            "ordinal": 10,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "recorded_at",
+            "comment": null,
+            "default": "now()",
+            "ordinal": 11,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "received_at",
+            "comment": null,
+            "default": null,
+            "ordinal": 12,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "total_units",
+            "comment": null,
+            "default": "0",
+            "ordinal": 13,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_receipts",
+            "column": "total_lines",
+            "comment": null,
+            "default": "0",
+            "ordinal": 14,
+            "udt_name": "int4",
+            "data_type": "integer",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "id",
+            "comment": null,
+            "default": "gen_random_uuid()",
+            "ordinal": 1,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "receipt_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 2,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "stock_entry_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 3,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "product_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 4,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "variation_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 5,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "qty_units",
+            "comment": null,
+            "default": null,
+            "ordinal": 6,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "qty_cases",
+            "comment": null,
+            "default": null,
+            "ordinal": 7,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "package_contains",
+            "comment": null,
+            "default": null,
+            "ordinal": 8,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "unit_cost",
+            "comment": null,
+            "default": null,
+            "ordinal": 9,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "note",
+            "comment": null,
+            "default": null,
+            "ordinal": 10,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "created_by",
+            "comment": null,
+            "default": "auth.uid()",
+            "ordinal": 11,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_purchase_items",
+            "column": "created_at",
+            "comment": null,
+            "default": "now()",
+            "ordinal": 12,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entry_events",
+            "column": "id",
+            "comment": null,
+            "default": "gen_random_uuid()",
+            "ordinal": 1,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entry_events",
+            "column": "entry_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 2,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entry_events",
+            "column": "event_type",
+            "comment": null,
+            "default": null,
+            "ordinal": 3,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entry_events",
+            "column": "payload",
+            "comment": null,
+            "default": null,
+            "ordinal": 4,
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entry_events",
+            "column": "recorded_by",
+            "comment": null,
+            "default": null,
+            "ordinal": 5,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entry_events",
+            "column": "recorded_at",
+            "comment": null,
+            "default": "now()",
+            "ordinal": 6,
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "is_identity": "NO",
+            "is_nullable": "NO",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entries",
+            "column": "supplier_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 12,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entries",
+            "column": "reference_code",
+            "comment": null,
+            "default": null,
+            "ordinal": 13,
+            "udt_name": "text",
+            "data_type": "text",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entries",
+            "column": "unit_cost",
+            "comment": null,
+            "default": null,
+            "ordinal": 14,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entries",
+            "column": "source_purchase_id",
+            "comment": null,
+            "default": null,
+            "ordinal": 15,
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entries",
+            "column": "previous_qty",
+            "comment": null,
+            "default": null,
+            "ordinal": 16,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
+        },
+        {
+            "table": "warehouse_stock_entries",
+            "column": "current_qty",
+            "comment": null,
+            "default": null,
+            "ordinal": 17,
+            "udt_name": "numeric",
+            "data_type": "numeric",
+            "is_identity": "NO",
+            "is_nullable": "YES",
+            "is_generated": "NEVER",
+            "identity_generation": null
         }
     ],
     "indexes": [
@@ -4261,6 +4872,97 @@
             "is_unique": true,
             "definition": "CREATE UNIQUE INDEX warehouses_pkey ON public.warehouses USING btree (id)",
             "is_primary": true
+        },
+        {
+            "name": "suppliers_pkey",
+            "table": "suppliers",
+            "is_unique": true,
+            "is_primary": true,
+            "definition": "CREATE UNIQUE INDEX suppliers_pkey ON public.suppliers USING btree (id)"
+        },
+        {
+            "name": "idx_suppliers_name_unique",
+            "table": "suppliers",
+            "is_unique": true,
+            "is_primary": false,
+            "definition": "CREATE UNIQUE INDEX idx_suppliers_name_unique ON public.suppliers USING btree (lower(name))"
+        },
+        {
+            "name": "warehouse_purchase_receipts_pkey",
+            "table": "warehouse_purchase_receipts",
+            "is_unique": true,
+            "is_primary": true,
+            "definition": "CREATE UNIQUE INDEX warehouse_purchase_receipts_pkey ON public.warehouse_purchase_receipts USING btree (id)"
+        },
+        {
+            "name": "idx_wpr_unique_ref",
+            "table": "warehouse_purchase_receipts",
+            "is_unique": true,
+            "is_primary": false,
+            "definition": "CREATE UNIQUE INDEX idx_wpr_unique_ref ON public.warehouse_purchase_receipts USING btree (warehouse_id, lower(reference_code))"
+        },
+        {
+            "name": "idx_wpr_supplier",
+            "table": "warehouse_purchase_receipts",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wpr_supplier ON public.warehouse_purchase_receipts USING btree (supplier_id)"
+        },
+        {
+            "name": "warehouse_purchase_items_pkey",
+            "table": "warehouse_purchase_items",
+            "is_unique": true,
+            "is_primary": true,
+            "definition": "CREATE UNIQUE INDEX warehouse_purchase_items_pkey ON public.warehouse_purchase_items USING btree (id)"
+        },
+        {
+            "name": "idx_wpi_receipt",
+            "table": "warehouse_purchase_items",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wpi_receipt ON public.warehouse_purchase_items USING btree (receipt_id)"
+        },
+        {
+            "name": "idx_wpi_product",
+            "table": "warehouse_purchase_items",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wpi_product ON public.warehouse_purchase_items USING btree (product_id)"
+        },
+        {
+            "name": "warehouse_stock_entry_events_pkey",
+            "table": "warehouse_stock_entry_events",
+            "is_unique": true,
+            "is_primary": true,
+            "definition": "CREATE UNIQUE INDEX warehouse_stock_entry_events_pkey ON public.warehouse_stock_entry_events USING btree (id)"
+        },
+        {
+            "name": "idx_wsee_entry",
+            "table": "warehouse_stock_entry_events",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wsee_entry ON public.warehouse_stock_entry_events USING btree (entry_id)"
+        },
+        {
+            "name": "idx_wse_supplier",
+            "table": "warehouse_stock_entries",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wse_supplier ON public.warehouse_stock_entries USING btree (supplier_id)"
+        },
+        {
+            "name": "idx_wse_reference_code",
+            "table": "warehouse_stock_entries",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wse_reference_code ON public.warehouse_stock_entries USING btree (lower(reference_code))"
+        },
+        {
+            "name": "idx_wse_source_purchase",
+            "table": "warehouse_stock_entries",
+            "is_unique": false,
+            "is_primary": false,
+            "definition": "CREATE INDEX idx_wse_source_purchase ON public.warehouse_stock_entries USING btree (source_purchase_id)"
         }
     ],
     "triggers": [
@@ -4310,6 +5012,14 @@
             "table": "product_recipes",
             "timing": "BEFORE",
             "statement": "EXECUTE FUNCTION touch_product_recipe()",
+            "orientation": "ROW"
+        },
+        {
+            "name": "tr_wse_audit",
+            "event": "INSERT OR UPDATE",
+            "table": "warehouse_stock_entries",
+            "timing": "AFTER",
+            "statement": "EXECUTE FUNCTION log_warehouse_stock_entry_event()",
             "orientation": "ROW"
         }
     ],
@@ -4460,22 +5170,22 @@
         {
             "kind": "f",
             "name": "has_role_any_outlet",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role_any_outlet(p_user uuid, p_role text)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user, p_role, NULL::uuid);\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role_any_outlet(p_user uuid, p_role text, p_outlet uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user, p_role, p_outlet);\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
-            "arg_count": 2,
-            "arguments": "p_user uuid, p_role text",
+            "arg_count": 3,
+            "arguments": "p_user uuid, p_role text, p_outlet uuid",
             "volatility": "s",
             "security_definer": false
         },
         {
             "kind": "f",
             "name": "has_role_any_outlet",
-            "source": "CREATE OR REPLACE FUNCTION public.has_role_any_outlet(p_user uuid, p_role text, p_outlet uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user, p_role, p_outlet);\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.has_role_any_outlet(p_user uuid, p_role text)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT public.has_role(p_user, p_role, NULL::uuid);\r\n$function$\n",
             "returns": "boolean",
             "language": "sql",
-            "arg_count": 3,
-            "arguments": "p_user uuid, p_role text, p_outlet uuid",
+            "arg_count": 2,
+            "arguments": "p_user uuid, p_role text",
             "volatility": "s",
             "security_definer": false
         },
@@ -4680,33 +5390,22 @@
         {
             "kind": "f",
             "name": "record_stock_entry",
-            "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text, p_qty_input_mode text DEFAULT 'auto'::text)\n RETURNS warehouse_stock_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_entry public.warehouse_stock_entries%ROWTYPE;\r\n  v_current numeric := 0;\r\n  v_target numeric := 0;\r\n  v_pkg numeric := 1;\r\n  v_qty_units numeric := 0;\r\n  v_qty_cases numeric := NULL;\r\n  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR public.has_role_any_outlet(v_uid, 'transfers')\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n  IF p_qty IS NULL OR p_qty <= 0 THEN\r\n    RAISE EXCEPTION 'quantity must be positive';\r\n  END IF;\r\n\r\n  SELECT coalesce(\r\n           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),\r\n           (SELECT package_contains FROM public.products WHERE id = p_product_id),\r\n           1\r\n         )\r\n    INTO v_pkg;\r\n\r\n  IF v_mode NOT IN ('auto','units','cases') THEN\r\n    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;\r\n  END IF;\r\n  IF v_mode = 'auto' THEN\r\n    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;\r\n  END IF;\r\n\r\n  IF v_mode = 'cases' THEN\r\n    v_qty_cases := p_qty;\r\n    v_qty_units := p_qty * v_pkg;\r\n  ELSE\r\n    v_qty_units := p_qty;\r\n    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;\r\n  END IF;\r\n  v_target := v_qty_units;\r\n\r\n  INSERT INTO public.warehouse_stock_entries(\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    entry_kind,\r\n    qty,\r\n    qty_cases,\r\n    package_contains,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    p_entry_kind,\r\n    v_qty_units,\r\n    v_qty_cases,\r\n    v_pkg,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_entry;\r\n\r\n  IF p_entry_kind = 'purchase' THEN\r\n    SELECT coalesce(qty, 0)\r\n      INTO v_current\r\n      FROM public.warehouse_stock_current\r\n     WHERE warehouse_id = p_warehouse_id\r\n       AND product_id = p_product_id\r\n       AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n    v_target := v_current + v_qty_units;\r\n  END IF;\r\n\r\n  PERFORM public.record_stocktake(\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    v_target,\r\n    p_variation_id,\r\n    coalesce(p_note, p_entry_kind::text),\r\n    'units'\r\n  );\r\n\r\n  RETURN v_entry;\r\nEND;\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(\n  p_warehouse_id uuid,\n  p_product_id uuid,\n  p_entry_kind public.stock_entry_kind,\n  p_qty numeric,\n  p_variation_id uuid DEFAULT NULL,\n  p_note text DEFAULT NULL,\n  p_qty_input_mode text DEFAULT 'auto',\n  p_supplier_id uuid DEFAULT NULL,\n  p_reference_code text DEFAULT NULL,\n  p_unit_cost numeric DEFAULT NULL,\n  p_source_purchase_id uuid DEFAULT NULL\n)\nRETURNS public.warehouse_stock_entries\nLANGUAGE plpgsql\nSECURITY DEFINER\nSET search_path TO 'public'\nAS $$\nDECLARE\n  v_uid uuid := auth.uid();\n  v_entry public.warehouse_stock_entries%ROWTYPE;\n  v_previous numeric := 0;\n  v_target numeric := 0;\n  v_pkg numeric := 1;\n  v_qty_units numeric := 0;\n  v_qty_cases numeric := NULL;\n  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));\n  v_reference text := NULL;\nBEGIN\n  IF v_uid IS NULL THEN\n    RAISE EXCEPTION 'not authenticated';\n  END IF;\n  IF NOT (\n    public.is_admin(v_uid)\n    OR public.has_role_any_outlet(v_uid, 'transfers')\n  ) THEN\n    RAISE EXCEPTION 'not authorized';\n  END IF;\n  IF p_qty IS NULL OR p_qty <= 0 THEN\n    RAISE EXCEPTION 'quantity must be positive';\n  END IF;\n\n  v_reference := nullif(btrim(p_reference_code), '');\n\n  SELECT coalesce(\n           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),\n           (SELECT package_contains FROM public.products WHERE id = p_product_id),\n           1\n         )\n    INTO v_pkg;\n\n  IF v_mode NOT IN ('auto','units','cases') THEN\n    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;\n  END IF;\n  IF v_mode = 'auto' THEN\n    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;\n  END IF;\n\n  IF v_mode = 'cases' THEN\n    v_qty_cases := p_qty;\n    v_qty_units := p_qty * v_pkg;\n  ELSE\n    v_qty_units := p_qty;\n    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;\n  END IF;\n  v_target := v_qty_units;\n\n  SELECT coalesce(qty, 0)\n    INTO v_previous\n    FROM public.warehouse_stock_current\n   WHERE warehouse_id = p_warehouse_id\n     AND product_id = p_product_id\n     AND (variation_id IS NOT DISTINCT FROM p_variation_id);\n\n  IF p_entry_kind = 'purchase' THEN\n    v_target := v_previous + v_qty_units;\n  END IF;\n\n  INSERT INTO public.warehouse_stock_entries(\n    warehouse_id,\n    product_id,\n    variation_id,\n    entry_kind,\n    qty,\n    qty_cases,\n    package_contains,\n    note,\n    recorded_by,\n    supplier_id,\n    reference_code,\n    unit_cost,\n    source_purchase_id,\n    previous_qty,\n    current_qty\n  ) VALUES (\n    p_warehouse_id,\n    p_product_id,\n    p_variation_id,\n    p_entry_kind,\n    v_qty_units,\n    v_qty_cases,\n    v_pkg,\n    p_note,\n    v_uid,\n    p_supplier_id,\n    v_reference,\n    p_unit_cost,\n    p_source_purchase_id,\n    v_previous,\n    v_target\n  ) RETURNING * INTO v_entry;\n\n  PERFORM public.record_stocktake(\n    p_warehouse_id,\n    p_product_id,\n    v_target,\n    p_variation_id,\n    coalesce(p_note, p_entry_kind::text),\n    'units'\n  );\n\n  RETURN v_entry;\nEND;\n$$;",
             "returns": "warehouse_stock_entries",
             "language": "plpgsql",
-            "arg_count": 7,
-            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text",
+            "arg_count": 11,
+            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text, p_supplier_id uuid, p_reference_code text, p_unit_cost numeric, p_source_purchase_id uuid",
             "volatility": "v",
             "security_definer": true
         },
         {
             "kind": "f",
             "name": "record_stock_entry",
-            "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_units numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stock_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_entry public.warehouse_stock_entries%ROWTYPE;\r\n  v_current numeric := 0;\r\n  v_target numeric := p_units;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR public.has_role_any_outlet(v_uid, 'transfer_manager')\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n  IF p_units IS NULL OR p_units <= 0 THEN\r\n    RAISE EXCEPTION 'quantity must be positive';\r\n  END IF;\r\n\r\n  INSERT INTO public.warehouse_stock_entries(\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    entry_kind,\r\n    qty,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    p_entry_kind,\r\n    p_units,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_entry;\r\n\r\n  IF p_entry_kind = 'purchase' THEN\r\n    SELECT coalesce(qty, 0)\r\n      INTO v_current\r\n      FROM public.warehouse_stock_current\r\n     WHERE warehouse_id = p_warehouse_id\r\n       AND product_id = p_product_id\r\n       AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n    v_target := v_current + p_units;\r\n  ELSE\r\n    v_target := p_units;\r\n  END IF;\r\n\r\n  PERFORM public.record_stocktake(\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    v_target,\r\n    p_variation_id,\r\n    coalesce(p_note, p_entry_kind::text)\r\n  );\r\n\r\n  RETURN v_entry;\r\nEND;\r\n$function$\n",
+            "source": "CREATE OR REPLACE FUNCTION public.record_stock_entry(p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text, p_qty_input_mode text DEFAULT 'auto'::text)\n RETURNS warehouse_stock_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_entry public.warehouse_stock_entries%ROWTYPE;\r\n  v_current numeric := 0;\r\n  v_target numeric := 0;\r\n  v_pkg numeric := 1;\r\n  v_qty_units numeric := 0;\r\n  v_qty_cases numeric := NULL;\r\n  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR public.has_role_any_outlet(v_uid, 'transfers')\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n  IF p_qty IS NULL OR p_qty <= 0 THEN\r\n    RAISE EXCEPTION 'quantity must be positive';\r\n  END IF;\r\n\r\n  SELECT coalesce(\r\n           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),\r\n           (SELECT package_contains FROM public.products WHERE id = p_product_id),\r\n           1\r\n         )\r\n    INTO v_pkg;\r\n\r\n  IF v_mode NOT IN ('auto','units','cases') THEN\r\n    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;\r\n  END IF;\r\n  IF v_mode = 'auto' THEN\r\n    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;\r\n  END IF;\r\n\r\n  IF v_mode = 'cases' THEN\r\n    v_qty_cases := p_qty;\r\n    v_qty_units := p_qty * v_pkg;\r\n  ELSE\r\n    v_qty_units := p_qty;\r\n    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;\r\n  END IF;\r\n  v_target := v_qty_units;\r\n\r\n  INSERT INTO public.warehouse_stock_entries(\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    entry_kind,\r\n    qty,\r\n    qty_cases,\r\n    package_contains,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    p_entry_kind,\r\n    v_qty_units,\r\n    v_qty_cases,\r\n    v_pkg,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_entry;\r\n\r\n  IF p_entry_kind = 'purchase' THEN\r\n    SELECT coalesce(qty, 0)\r\n      INTO v_current\r\n      FROM public.warehouse_stock_current\r\n     WHERE warehouse_id = p_warehouse_id\r\n       AND product_id = p_product_id\r\n       AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n    v_target := v_current + v_qty_units;\r\n  END IF;\r\n\r\n  PERFORM public.record_stocktake(\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    v_target,\r\n    p_variation_id,\r\n    coalesce(p_note, p_entry_kind::text),\r\n    'units'\r\n  );\r\n\r\n  RETURN v_entry;\r\nEND;\r\n$function$\n",
             "returns": "warehouse_stock_entries",
             "language": "plpgsql",
-            "arg_count": 6,
-            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_units numeric, p_variation_id uuid, p_note text",
-            "volatility": "v",
-            "security_definer": true
-        },
-        {
-            "kind": "f",
-            "name": "record_stocktake",
-            "source": "CREATE OR REPLACE FUNCTION public.record_stocktake(p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stocktakes\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_current numeric := 0;\r\n  v_delta numeric := 0;\r\n  v_row public.warehouse_stocktakes%ROWTYPE;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n\r\n  SELECT coalesce(qty, 0)\r\n    INTO v_current\r\n    FROM public.warehouse_stock_current\r\n   WHERE warehouse_id = p_warehouse_id\r\n     AND product_id = p_product_id\r\n     AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n\r\n  v_delta := coalesce(p_counted_qty, 0) - v_current;\r\n\r\n  INSERT INTO public.warehouse_stocktakes (\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    counted_qty,\r\n    delta,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    coalesce(p_counted_qty, 0),\r\n    v_delta,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_row;\r\n\r\n  IF v_delta <> 0 THEN\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      location_id,\r\n      product_id,\r\n      variation_id,\r\n      qty_change,\r\n      reason,\r\n      ref_order_id,\r\n      note\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_product_id,\r\n      p_variation_id,\r\n      v_delta,\r\n      'stocktake_adjustment',\r\n      NULL,\r\n      p_note\r\n    );\r\n  END IF;\r\n\r\n  RETURN v_row;\r\nEND;\r\n$function$\n",
-            "returns": "warehouse_stocktakes",
-            "language": "plpgsql",
-            "arg_count": 5,
-            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid, p_note text",
+            "arg_count": 7,
+            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_entry_kind stock_entry_kind, p_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text",
             "volatility": "v",
             "security_definer": true
         },
@@ -4718,6 +5417,17 @@
             "language": "plpgsql",
             "arg_count": 6,
             "arguments": "p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid, p_note text, p_qty_input_mode text",
+            "volatility": "v",
+            "security_definer": true
+        },
+        {
+            "kind": "f",
+            "name": "record_stocktake",
+            "source": "CREATE OR REPLACE FUNCTION public.record_stocktake(p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stocktakes\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_current numeric := 0;\r\n  v_delta numeric := 0;\r\n  v_row public.warehouse_stocktakes%ROWTYPE;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authenticated';\r\n  END IF;\r\n\r\n  SELECT coalesce(qty, 0)\r\n    INTO v_current\r\n    FROM public.warehouse_stock_current\r\n   WHERE warehouse_id = p_warehouse_id\r\n     AND product_id = p_product_id\r\n     AND (variation_id IS NOT DISTINCT FROM p_variation_id);\r\n\r\n  v_delta := coalesce(p_counted_qty, 0) - v_current;\r\n\r\n  INSERT INTO public.warehouse_stocktakes (\r\n    warehouse_id,\r\n    product_id,\r\n    variation_id,\r\n    counted_qty,\r\n    delta,\r\n    note,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_product_id,\r\n    p_variation_id,\r\n    coalesce(p_counted_qty, 0),\r\n    v_delta,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_row;\r\n\r\n  IF v_delta <> 0 THEN\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      location_id,\r\n      product_id,\r\n      variation_id,\r\n      qty_change,\r\n      reason,\r\n      ref_order_id,\r\n      note\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_product_id,\r\n      p_variation_id,\r\n      v_delta,\r\n      'stocktake_adjustment',\r\n      NULL,\r\n      p_note\r\n    );\r\n  END IF;\r\n\r\n  RETURN v_row;\r\nEND;\r\n$function$\n",
+            "returns": "warehouse_stocktakes",
+            "language": "plpgsql",
+            "arg_count": 5,
+            "arguments": "p_warehouse_id uuid, p_product_id uuid, p_counted_qty numeric, p_variation_id uuid, p_note text",
             "volatility": "v",
             "security_definer": true
         },
@@ -4907,6 +5617,28 @@
             "arguments": "",
             "volatility": "v",
             "security_definer": true
+        },
+        {
+            "kind": "f",
+            "name": "record_purchase_receipt",
+            "source": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(\n  p_warehouse_id uuid,\n  p_supplier_id uuid,\n  p_reference_code text,\n  p_items jsonb,\n  p_note text DEFAULT NULL,\n  p_auto_whatsapp boolean DEFAULT true\n)\nRETURNS public.warehouse_purchase_receipts\nLANGUAGE plpgsql\nSECURITY DEFINER\nSET search_path TO 'public'\nAS $$\nDECLARE\n  v_uid uuid := auth.uid();\n  v_receipt public.warehouse_purchase_receipts%ROWTYPE;\n  v_entry public.warehouse_stock_entries%ROWTYPE;\n  v_item RECORD;\n  v_outlet uuid;\n  v_reference text := nullif(btrim(p_reference_code), '');\n  v_total numeric := 0;\n  v_lines integer := 0;\n  v_items_count integer := 0;\nBEGIN\n  IF v_uid IS NULL THEN\n    RAISE EXCEPTION 'not authenticated';\n  END IF;\n  IF p_warehouse_id IS NULL THEN\n    RAISE EXCEPTION 'warehouse_id is required';\n  END IF;\n  IF v_reference IS NULL THEN\n    RAISE EXCEPTION 'reference_code is required';\n  END IF;\n  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN\n    RAISE EXCEPTION 'p_items must be a non-empty json array';\n  END IF;\n\n  SELECT outlet_id INTO v_outlet\n  FROM public.warehouses\n  WHERE id = p_warehouse_id;\n\n  IF v_outlet IS NULL THEN\n    RAISE EXCEPTION 'warehouse % not found', p_warehouse_id;\n  END IF;\n\n  IF NOT (\n    public.is_admin(v_uid)\n    OR public.outlet_auth_user_matches(v_outlet, v_uid)\n    OR public.has_role_any_outlet(v_uid, 'transfers', v_outlet)\n  ) THEN\n    RAISE EXCEPTION 'not authorized for this warehouse intake';\n  END IF;\n\n  v_items_count := jsonb_array_length(p_items);\n\n  INSERT INTO public.warehouse_purchase_receipts(\n    outlet_id,\n    warehouse_id,\n    supplier_id,\n    reference_code,\n    status,\n    note,\n    auto_whatsapp,\n    metadata,\n    recorded_by,\n    recorded_at\n  ) VALUES (\n    v_outlet,\n    p_warehouse_id,\n    p_supplier_id,\n    v_reference,\n    'received',\n    p_note,\n    COALESCE(p_auto_whatsapp, true),\n    jsonb_build_object('items_count', v_items_count),\n    v_uid,\n    now()\n  ) RETURNING * INTO v_receipt;\n\n  FOR v_item IN\n    SELECT\n      (value->>'product_id')::uuid AS product_id,\n      NULLIF(value->>'variation_id', '')::uuid AS variation_id,\n      COALESCE(NULLIF(value->>'qty', '')::numeric, 0) AS qty_value,\n      CASE\n        WHEN lower(NULLIF(value->>'qty_input_mode', '')) IN ('units','cases') THEN lower(NULLIF(value->>'qty_input_mode', ''))\n        ELSE 'auto'\n      END AS qty_mode,\n      NULLIF(btrim(value->>'note'), '') AS note,\n      NULLIF(value->>'unit_cost', '')::numeric AS unit_cost\n    FROM jsonb_array_elements(p_items) value\n  LOOP\n    IF v_item.product_id IS NULL THEN\n      RAISE EXCEPTION 'purchase item missing product_id';\n    END IF;\n    IF v_item.qty_value IS NULL OR v_item.qty_value <= 0 THEN\n      RAISE EXCEPTION 'purchase qty must be positive for %', v_item.product_id;\n    END IF;\n\n    v_entry := public.record_stock_entry(\n      p_warehouse_id := p_warehouse_id,\n      p_product_id := v_item.product_id,\n      p_entry_kind := 'purchase',\n      p_qty := v_item.qty_value,\n      p_variation_id := v_item.variation_id,\n      p_note := COALESCE(v_item.note, p_note, format('Purchase %s', v_reference)),\n      p_qty_input_mode := v_item.qty_mode,\n      p_supplier_id := p_supplier_id,\n      p_reference_code := v_reference,\n      p_unit_cost := v_item.unit_cost,\n      p_source_purchase_id := v_receipt.id\n    );\n\n    INSERT INTO public.warehouse_purchase_items(\n      receipt_id,\n      stock_entry_id,\n      product_id,\n      variation_id,\n      qty_units,\n      qty_cases,\n      package_contains,\n      unit_cost,\n      note,\n      created_by\n    ) VALUES (\n      v_receipt.id,\n      v_entry.id,\n      v_entry.product_id,\n      v_entry.variation_id,\n      v_entry.qty,\n      v_entry.qty_cases,\n      v_entry.package_contains,\n      v_item.unit_cost,\n      COALESCE(v_item.note, p_note),\n      v_uid\n    );\n\n    v_total := v_total + v_entry.qty;\n    v_lines := v_lines + 1;\n  END LOOP;\n\n  UPDATE public.warehouse_purchase_receipts\n  SET total_units = v_total,\n      total_lines = v_lines,\n      received_at = COALESCE(received_at, now())\n  WHERE id = v_receipt.id\n  RETURNING * INTO v_receipt;\n\n  RETURN v_receipt;\nEND;\n$$;",
+            "returns": "warehouse_purchase_receipts",
+            "language": "plpgsql",
+            "arg_count": 6,
+            "arguments": "p_warehouse_id uuid, p_supplier_id uuid, p_reference_code text, p_items jsonb, p_note text, p_auto_whatsapp boolean",
+            "volatility": "v",
+            "security_definer": true
+        },
+        {
+            "kind": "f",
+            "name": "log_warehouse_stock_entry_event",
+            "source": "CREATE OR REPLACE FUNCTION public.log_warehouse_stock_entry_event()\nRETURNS trigger\nLANGUAGE plpgsql\nSECURITY DEFINER\nSET search_path TO 'public'\nAS $$\nBEGIN\n  INSERT INTO public.warehouse_stock_entry_events(\n    entry_id,\n    event_type,\n    payload,\n    recorded_by\n  ) VALUES (\n    NEW.id,\n    lower(TG_OP),\n    jsonb_build_object(\n      'entry_kind', NEW.entry_kind,\n      'qty', NEW.qty,\n      'previous_qty', NEW.previous_qty,\n      'current_qty', NEW.current_qty,\n      'supplier_id', NEW.supplier_id,\n      'reference_code', NEW.reference_code,\n      'source_purchase_id', NEW.source_purchase_id\n    ),\n    COALESCE(NEW.recorded_by, auth.uid())\n  );\n  RETURN NEW;\nEND;\n$$;",
+            "returns": "trigger",
+            "language": "plpgsql",
+            "arg_count": 0,
+            "arguments": "",
+            "volatility": "v",
+            "security_definer": true
         }
     ],
     "sequences": null,
@@ -4996,17 +5728,17 @@
             "name": "order_item_allocations_qty_check",
             "type": "CHECK",
             "table": "order_item_allocations",
-            "columns": [
-                null
-            ],
-            "check_definition": null
+            "columns": null,
+            "check_definition": "CHECK ((qty > (0)::numeric))"
         },
         {
             "name": "order_item_allocations_qty_check",
             "type": "CHECK",
             "table": "order_item_allocations",
-            "columns": null,
-            "check_definition": "CHECK ((qty > (0)::numeric))"
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "order_item_allocations_order_id_fkey",
@@ -5643,17 +6375,17 @@
             "name": "outlet_stocktakes_counted_qty_check",
             "type": "CHECK",
             "table": "outlet_stocktakes",
-            "columns": null,
-            "check_definition": "CHECK ((counted_qty >= (0)::numeric))"
+            "columns": [
+                null
+            ],
+            "check_definition": null
         },
         {
             "name": "outlet_stocktakes_counted_qty_check",
             "type": "CHECK",
             "table": "outlet_stocktakes",
-            "columns": [
-                null
-            ],
-            "check_definition": null
+            "columns": null,
+            "check_definition": "CHECK ((counted_qty >= (0)::numeric))"
         },
         {
             "name": "outlet_stocktakes_package_contains_check",
@@ -7196,6 +7928,51 @@
                 "id"
             ],
             "check_definition": null
+        },
+        {
+            "name": "suppliers_pkey",
+            "type": "PRIMARY KEY",
+            "table": "suppliers",
+            "columns": [
+                "id"
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "warehouse_purchase_receipts_pkey",
+            "type": "PRIMARY KEY",
+            "table": "warehouse_purchase_receipts",
+            "columns": [
+                "id"
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "warehouse_purchase_items_pkey",
+            "type": "PRIMARY KEY",
+            "table": "warehouse_purchase_items",
+            "columns": [
+                "id"
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "warehouse_stock_entry_events_pkey",
+            "type": "PRIMARY KEY",
+            "table": "warehouse_stock_entry_events",
+            "columns": [
+                "id"
+            ],
+            "check_definition": null
+        },
+        {
+            "name": "warehouse_purchase_items_qty_units_check",
+            "type": "CHECK",
+            "table": "warehouse_purchase_items",
+            "columns": [
+                null
+            ],
+            "check_definition": "(qty_units > 0)"
         }
     ],
     "foreign_keys": [
@@ -7803,6 +8580,116 @@
             "target_columns": [
                 "id"
             ]
+        },
+        {
+            "name": "warehouse_purchase_receipts_outlet_id_fkey",
+            "source_table": "warehouse_purchase_receipts",
+            "target_table": "outlets",
+            "source_columns": [
+                "outlet_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_purchase_receipts_warehouse_id_fkey",
+            "source_table": "warehouse_purchase_receipts",
+            "target_table": "warehouses",
+            "source_columns": [
+                "warehouse_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_purchase_receipts_supplier_id_fkey",
+            "source_table": "warehouse_purchase_receipts",
+            "target_table": "suppliers",
+            "source_columns": [
+                "supplier_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_purchase_items_receipt_id_fkey",
+            "source_table": "warehouse_purchase_items",
+            "target_table": "warehouse_purchase_receipts",
+            "source_columns": [
+                "receipt_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_purchase_items_stock_entry_id_fkey",
+            "source_table": "warehouse_purchase_items",
+            "target_table": "warehouse_stock_entries",
+            "source_columns": [
+                "stock_entry_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_purchase_items_product_id_fkey",
+            "source_table": "warehouse_purchase_items",
+            "target_table": "products",
+            "source_columns": [
+                "product_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_purchase_items_variation_id_fkey",
+            "source_table": "warehouse_purchase_items",
+            "target_table": "product_variations",
+            "source_columns": [
+                "variation_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_stock_entry_events_entry_id_fkey",
+            "source_table": "warehouse_stock_entry_events",
+            "target_table": "warehouse_stock_entries",
+            "source_columns": [
+                "entry_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_stock_entries_supplier_id_fkey",
+            "source_table": "warehouse_stock_entries",
+            "target_table": "suppliers",
+            "source_columns": [
+                "supplier_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
+        },
+        {
+            "name": "warehouse_stock_entries_source_purchase_id_fkey",
+            "source_table": "warehouse_stock_entries",
+            "target_table": "warehouse_purchase_receipts",
+            "source_columns": [
+                "source_purchase_id"
+            ],
+            "target_columns": [
+                "id"
+            ]
         }
     ],
     "rls_policies": [
@@ -8354,6 +9241,83 @@
             "command": "INSERT",
             "permissive": "PERMISSIVE",
             "check_expression": "(EXISTS ( SELECT 1\n   FROM outlets o\n  WHERE ((o.id = warehouses.outlet_id) AND (o.auth_user_id = auth.uid()))))",
+            "using_expression": null
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "suppliers",
+            "policy": "suppliers_rw",
+            "command": "ALL",
+            "permissive": "PERMISSIVE",
+            "check_expression": "(is_admin(auth.uid()) OR has_role_any_outlet(auth.uid(), 'transfers'::text))",
+            "using_expression": "(is_admin(auth.uid()) OR has_role_any_outlet(auth.uid(), 'transfers'::text))"
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "warehouse_purchase_receipts",
+            "policy": "wpr_select_access",
+            "command": "SELECT",
+            "permissive": "PERMISSIVE",
+            "check_expression": null,
+            "using_expression": "(is_admin(auth.uid()) OR EXISTS ( SELECT 1 FROM warehouses w WHERE ((w.id = warehouse_purchase_receipts.warehouse_id) AND (has_role_any_outlet(auth.uid(), 'transfers'::text, w.outlet_id) OR outlet_auth_user_matches(w.outlet_id, auth.uid())))))"
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "warehouse_purchase_receipts",
+            "policy": "wpr_write_access",
+            "command": "ALL",
+            "permissive": "PERMISSIVE",
+            "check_expression": "(is_admin(auth.uid()) OR EXISTS ( SELECT 1 FROM warehouses w WHERE ((w.id = warehouse_purchase_receipts.warehouse_id) AND (has_role_any_outlet(auth.uid(), 'transfers'::text, w.outlet_id) OR outlet_auth_user_matches(w.outlet_id, auth.uid())))))",
+            "using_expression": "(is_admin(auth.uid()) OR EXISTS ( SELECT 1 FROM warehouses w WHERE ((w.id = warehouse_purchase_receipts.warehouse_id) AND (has_role_any_outlet(auth.uid(), 'transfers'::text, w.outlet_id) OR outlet_auth_user_matches(w.outlet_id, auth.uid())))))"
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "warehouse_purchase_items",
+            "policy": "wpi_select_access",
+            "command": "SELECT",
+            "permissive": "PERMISSIVE",
+            "check_expression": null,
+            "using_expression": "(is_admin(auth.uid()) OR EXISTS ( SELECT 1 FROM warehouse_purchase_receipts r JOIN warehouses w ON ((w.id = r.warehouse_id)) WHERE ((r.id = warehouse_purchase_items.receipt_id) AND (has_role_any_outlet(auth.uid(), 'transfers'::text, w.outlet_id) OR outlet_auth_user_matches(w.outlet_id, auth.uid())))))"
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "warehouse_purchase_items",
+            "policy": "wpi_write_access",
+            "command": "ALL",
+            "permissive": "PERMISSIVE",
+            "check_expression": "(is_admin(auth.uid()) OR EXISTS ( SELECT 1 FROM warehouse_purchase_receipts r JOIN warehouses w ON ((w.id = r.warehouse_id)) WHERE ((r.id = warehouse_purchase_items.receipt_id) AND (has_role_any_outlet(auth.uid(), 'transfers'::text, w.outlet_id) OR outlet_auth_user_matches(w.outlet_id, auth.uid())))))",
+            "using_expression": "(is_admin(auth.uid()) OR EXISTS ( SELECT 1 FROM warehouse_purchase_receipts r JOIN warehouses w ON ((w.id = r.warehouse_id)) WHERE ((r.id = warehouse_purchase_items.receipt_id) AND (has_role_any_outlet(auth.uid(), 'transfers'::text, w.outlet_id) OR outlet_auth_user_matches(w.outlet_id, auth.uid())))))"
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "warehouse_stock_entry_events",
+            "policy": "wsee_select",
+            "command": "SELECT",
+            "permissive": "PERMISSIVE",
+            "check_expression": null,
+            "using_expression": "(is_admin(auth.uid()) OR has_role_any_outlet(auth.uid(), 'transfers'::text))"
+        },
+        {
+            "roles": [
+                "public"
+            ],
+            "table": "warehouse_stock_entry_events",
+            "policy": "wsee_insert",
+            "command": "INSERT",
+            "permissive": "PERMISSIVE",
+            "check_expression": "(is_admin(auth.uid()) OR has_role_any_outlet(auth.uid(), 'transfers'::text))",
             "using_expression": null
         }
     ],

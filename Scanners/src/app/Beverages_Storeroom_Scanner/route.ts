@@ -1456,12 +1456,12 @@ const html = `<!DOCTYPE html>
         }, 5000);
       }
 
-      async function notifyWhatsApp(summary) {
+      async function notifyWhatsApp(summary, context = 'transfer') {
         try {
           const response = await fetch('/api/notify-whatsapp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(summary)
+            body: JSON.stringify({ context, summary })
           });
           if (!response.ok) {
             const info = await response.json().catch(() => ({}));
