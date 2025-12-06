@@ -9,15 +9,15 @@ const nextConfig: NextConfig = {
         destination: "/transfer-portal",
       },
       {
-        source: "/Main-Warehouse_Scanner",
+        source: "/Main_Warehouse_Scanner",
         destination: "/transfer-portal",
       },
       {
-        source: "/Main-Warehouse_Scanner/",
+        source: "/Main_Warehouse_Scanner/",
         destination: "/transfer-portal",
       },
       {
-        source: "/Main-Warehouse_Scanner/:path*",
+        source: "/Main_Warehouse_Scanner/:path*",
         destination: "/:path*",
       },
     ];

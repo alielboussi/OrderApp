@@ -19,7 +19,7 @@
 - Recipes are RLS-protected: admins can edit, while transfer managers get read-only access for transparency when balancing stock across depots.
 
 ## Vercel Routes (replacing Supabase Edge Functions)
-The `Main-Warehouse_Scanner` Next.js app now hosts the HTTP routes that previously lived on Supabase Edge. Once deployed to Vercel, replace `<your-vercel-domain>` with the project domain (for example `afterten-stock.vercel.app`).
+The `Main_Warehouse_Scanner` Next.js app now hosts the HTTP routes that previously lived on Supabase Edge. Once deployed to Vercel, replace `<your-vercel-domain>` with the project domain (for example `afterten-stock.vercel.app`).
 
 | Route | URL template | Purpose |
 | --- | --- | --- |

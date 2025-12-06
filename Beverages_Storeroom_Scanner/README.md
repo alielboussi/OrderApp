@@ -5,14 +5,14 @@ Single-page Next.js dashboard plus transfer portal now hosted entirely on Vercel
 ### Prerequisites
 
 - Supabase project with the `warehouse_stock_current` view (or equivalent) plus the `transfer_units_between_warehouses` RPC, `warehouses`, `products`, and `product_variations` tables.
-- Vercel account (or any Next.js-compatible host) for deploying `Main-Warehouse_Scanner`.
+- Vercel account (or any Next.js-compatible host) for deploying `Main_Warehouse_Scanner`.
 - Supabase service-role key so the Vercel API routes can read warehouse/product data.
 
 ### Local setup
 
 ```bash
-cp Main-Warehouse_Scanner/.env.example Main-Warehouse_Scanner/.env.local
-cd Main-Warehouse_Scanner
+cp Main_Warehouse_Scanner/.env.example Main_Warehouse_Scanner/.env.local
+cd Main_Warehouse_Scanner
 npm install
 npm run dev
 ```
