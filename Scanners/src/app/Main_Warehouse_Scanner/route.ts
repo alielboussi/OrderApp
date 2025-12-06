@@ -1009,8 +1009,9 @@ const html = `<!DOCTYPE html>
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
     const MULTIPLY_QTY_BY_PACKAGE = ${JSON.stringify(MULTIPLY_QTY_BY_PACKAGE)};
     const REQUIRED_ROLE = 'transfers';
-    const ALLOWED_ROLE_SLUGS = ['transfers', 'warehouse_transfers'];
     const REQUIRED_ROLE_ID = '768b2c30-6d0a-4e91-ac62-4ca4ae74b78f';
+    const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
+    const ALLOWED_ROLE_SLUGS = ['transfers', 'warehouse_transfers', 'admin'];
     const REQUIRED_ROLE_LABEL = 'Transfers';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
@@ -2355,7 +2356,7 @@ const html = `<!DOCTYPE html>
           if (typeof role === 'string') {
             const trimmed = role.trim();
             if (!trimmed) return false;
-            if (trimmed === REQUIRED_ROLE_ID) return true;
+            if (trimmed === REQUIRED_ROLE_ID || trimmed === ADMIN_ROLE_ID) return true;
             return ALLOWED_ROLE_SLUGS.includes(trimmed.toLowerCase());
           }
           if (typeof role === 'object') {
@@ -2369,7 +2370,11 @@ const html = `<!DOCTYPE html>
                     ? role.name
                     : null;
             const slug = slugSource ? slugSource.toLowerCase() : null;
-            return roleId === REQUIRED_ROLE_ID || (slug !== null && ALLOWED_ROLE_SLUGS.includes(slug));
+            return (
+              roleId === REQUIRED_ROLE_ID ||
+              roleId === ADMIN_ROLE_ID ||
+              (slug !== null && ALLOWED_ROLE_SLUGS.includes(slug))
+            );
           }
           return false;
         });
