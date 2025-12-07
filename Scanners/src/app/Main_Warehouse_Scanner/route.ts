@@ -41,9 +41,31 @@ const html = `<!DOCTYPE html>
       overflow-x: hidden;
       overflow-y: auto;
     }
+    body[data-view="purchase"] {
+      display: block;
+    }
+    body[data-view="purchase"] #auth-section,
+    body[data-view="purchase"] #app-section,
+    body[data-view="purchase"] .console-sticky,
+    body[data-view="purchase"] main {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      overflow: hidden !important;
+    }
+    body[data-view="purchase"] #purchase-page {
+      display: flex;
+    }
     main {
-      width: min(880px, calc(100vw - 16px));
-      min-height: calc(100vh - var(--shell-pad) * 2);
+      width: 1024px;
+      max-width: 1024px;
+      min-width: 1024px;
+      min-height: 768px;
+      margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
       padding: var(--shell-pad);
       border-radius: 28px;
@@ -399,7 +421,16 @@ const html = `<!DOCTYPE html>
       display: none;
       flex-direction: column;
       gap: 14px;
-      width: 100%;
+      width: 1024px;
+      max-width: 1024px;
+      min-width: 1024px;
+      min-height: 768px;
+      margin: 0 auto;
+      background: rgba(0, 0, 0, 0.85);
+      padding: var(--shell-pad);
+      border-radius: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
     }
     .purchase-header-bar {
       display: flex;
@@ -499,28 +530,122 @@ const html = `<!DOCTYPE html>
       background: rgba(255, 43, 72, 0.08);
       border-color: rgba(255, 43, 72, 0.4);
     }
-    .purchase-toggle {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    .virtual-keyboard {
+      display: none;
+      grid-template-columns: repeat(10, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.6);
+      max-width: 760px;
+      width: 100%;
+      margin: 10px auto 0;
+      justify-items: stretch;
     }
-    .purchase-toggle input {
-      width: 20px;
-      height: 20px;
-      accent-color: #ff1b2d;
+    .virtual-keyboard.active {
+      display: grid;
+    }
+    .virtual-keyboard button {
+      padding: 14px 10px;
+      min-height: 54px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.05rem;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .virtual-keyboard button:hover,
+    .virtual-keyboard button:focus-visible {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+    .virtual-keyboard button[data-action] {
+      background: rgba(86, 126, 255, 0.12);
+      border-color: rgba(86, 126, 255, 0.45);
+    }
+    .virtual-keyboard button.wide-2 {
+      grid-column: span 2;
+    }
+    .virtual-keyboard button.wide-3 {
+      grid-column: span 3;
+    }
+    .virtual-keyboard button.wide-4 {
+      grid-column: span 4;
+    }
+    .virtual-keyboard button.wide-5 {
+      grid-column: span 5;
+    }
+    .notes-field {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .notes-keyboard-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .keyboard-trigger {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border-radius: 12px;
+      padding: 10px 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+    .keyboard-trigger:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-1px);
+    }
+    .purchase-header {
+      align-items: center;
+      text-align: center;
+    }
+    .purchase-header-bar {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .purchase-route-info {
+      text-align: center;
+    }
+    #purchase-open {
+      background: linear-gradient(100deg, #6b46c1, #7c3aed, #8b5cf6);
+      border-color: rgba(139, 92, 246, 0.6);
+      color: #fff;
     }
     .purchase-summary {
       background: rgba(255, 255, 255, 0.02);
       border-radius: 18px;
       border: 1px solid rgba(255, 255, 255, 0.06);
       padding: 16px;
+    }
+    .scanned-qty-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.35);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 10px;
+      padding: 8px 10px;
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .scanned-qty-input:focus {
+      outline: none;
+      border-color: rgba(255, 27, 45, 0.6);
+      box-shadow: 0 0 8px rgba(255, 27, 45, 0.4);
     }
     .purchase-summary h4 {
       margin: 0 0 8px 0;
@@ -953,14 +1078,57 @@ const html = `<!DOCTYPE html>
                 <button type="button" data-action="close">CLOSE</button>
               </div>
             </div>
-            <label>Receiving Notes
+            <label class="notes-field">Receiving Notes
               <textarea id="purchase-note" placeholder="Optional notes about this intake"></textarea>
+              <div class="notes-keyboard-actions">
+                <button type="button" id="notes-keyboard-open" class="keyboard-trigger">Open Keyboard</button>
+              </div>
+              <div id="notes-keyboard" class="virtual-keyboard" aria-hidden="true">
+                <!-- Row 1 -->
+                <button type="button" data-key="Q">Q</button>
+                <button type="button" data-key="W">W</button>
+                <button type="button" data-key="E">E</button>
+                <button type="button" data-key="R">R</button>
+                <button type="button" data-key="T">T</button>
+                <button type="button" data-key="Y">Y</button>
+                <button type="button" data-key="U">U</button>
+                <button type="button" data-key="I">I</button>
+                <button type="button" data-key="O">O</button>
+                <button type="button" data-key="P">P</button>
+                <!-- Row 2 -->
+                <button type="button" data-key="A">A</button>
+                <button type="button" data-key="S">S</button>
+                <button type="button" data-key="D">D</button>
+                <button type="button" data-key="F">F</button>
+                <button type="button" data-key="G">G</button>
+                <button type="button" data-key="H">H</button>
+                <button type="button" data-key="J">J</button>
+                <button type="button" data-key="K">K</button>
+                <button type="button" data-key="L">L</button>
+                <button type="button" data-key=";" aria-label="Semicolon">;</button>
+                <!-- Row 3 -->
+                <button type="button" data-key="Z">Z</button>
+                <button type="button" data-key="X">X</button>
+                <button type="button" data-key="C">C</button>
+                <button type="button" data-key="V">V</button>
+                <button type="button" data-key="B">B</button>
+                <button type="button" data-key="N">N</button>
+                <button type="button" data-key="M">M</button>
+                <button type="button" data-key="," aria-label="Comma">,</button>
+                <button type="button" data-key="." aria-label="Period">.</button>
+                <button type="button" data-key="/" aria-label="Slash">/</button>
+                <!-- Row 4 -->
+                <button type="button" class="wide-4" data-action="space">Space</button>
+                <button type="button" class="wide-2" data-action="enter">Enter</button>
+                <button type="button" class="wide-2" data-action="delete">Backspace</button>
+                <button type="button" data-key="-" aria-label="Dash">-</button>
+                <button type="button" data-key="'" aria-label="Apostrophe">'</button>
+                <!-- Row 5 -->
+                <button type="button" class="wide-5" data-action="clear">Clear</button>
+                <button type="button" class="wide-5" data-action="close">Close</button>
+              </div>
             </label>
           </div>
-          <label class="purchase-toggle">
-            <input type="checkbox" id="purchase-whatsapp" checked />
-            <span>Send WhatsApp alert</span>
-          </label>
           <p class="purchase-timestamp-hint">Date and time are captured automatically when you submit.</p>
           <section class="purchase-cart-section">
             <div class="cart-head">
@@ -1071,6 +1239,8 @@ const html = `<!DOCTYPE html>
       const loginStatus = document.getElementById('login-status');
       const loginWedge = document.getElementById('login-wedge');
       const transferForm = document.getElementById('transfer-form');
+      const appSection = document.getElementById('app-section');
+      const mainShell = document.querySelector('main');
       const resultToast = document.getElementById('result-toast');
       let resultToastTimeoutId = null;
 
@@ -1110,7 +1280,8 @@ const html = `<!DOCTYPE html>
       const purchaseSupplier = document.getElementById('purchase-supplier');
       const purchaseReference = document.getElementById('purchase-reference');
       const purchaseNote = document.getElementById('purchase-note');
-      const purchaseWhatsapp = document.getElementById('purchase-whatsapp');
+      const notesKeyboard = document.getElementById('notes-keyboard');
+      const notesKeyboardOpen = document.getElementById('notes-keyboard-open');
       const purchaseSummaryList = document.getElementById('purchase-summary-list');
       const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
       const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
@@ -1431,7 +1602,7 @@ const html = `<!DOCTYPE html>
             const base = '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
           })
-          .join('\n');
+          .join('\\n');
       }
 
       function updateQtyHint(entry) {
@@ -1478,9 +1649,6 @@ const html = `<!DOCTYPE html>
         syncReferenceValue('');
         if (purchaseNote) {
           purchaseNote.value = '';
-        }
-        if (purchaseWhatsapp) {
-          purchaseWhatsapp.checked = true;
         }
         updatePurchaseSummary();
       }
@@ -1606,9 +1774,86 @@ const html = `<!DOCTYPE html>
         input.focus();
       }
 
+      function showNotesKeyboard() {
+        if (!notesKeyboard) return;
+        notesKeyboard.classList.add('active');
+        notesKeyboard.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideNotesKeyboard() {
+        if (!notesKeyboard) return;
+        notesKeyboard.classList.remove('active');
+        notesKeyboard.setAttribute('aria-hidden', 'true');
+      }
+
+      function insertNoteText(text) {
+        if (!purchaseNote || !text) return;
+        const start = purchaseNote.selectionStart ?? purchaseNote.value.length;
+        const end = purchaseNote.selectionEnd ?? purchaseNote.value.length;
+        const current = purchaseNote.value ?? '';
+        const next = current.slice(0, start) + text + current.slice(end);
+        purchaseNote.value = next;
+        const caret = start + text.length;
+        purchaseNote.setSelectionRange(caret, caret);
+        state.purchaseForm.note = purchaseNote.value;
+        purchaseNote.focus();
+      }
+
+      function deleteNoteChar() {
+        if (!purchaseNote) return;
+        const start = purchaseNote.selectionStart ?? purchaseNote.value.length;
+        const end = purchaseNote.selectionEnd ?? purchaseNote.value.length;
+        if (start === 0 && end === 0) return;
+        const current = purchaseNote.value ?? '';
+        const hasSelection = start !== end;
+        const next = hasSelection
+          ? current.slice(0, start) + current.slice(end)
+          : current.slice(0, Math.max(0, start - 1)) + current.slice(end);
+        const caret = hasSelection ? start : Math.max(0, start - 1);
+        purchaseNote.value = next;
+        purchaseNote.setSelectionRange(caret, caret);
+        state.purchaseForm.note = purchaseNote.value;
+        purchaseNote.focus();
+      }
+
+      function handleNotesAction(action) {
+        if (!action) return;
+        if (action === 'space') {
+          insertNoteText(' ');
+          return;
+        }
+        if (action === 'enter') {
+          insertNoteText('\\n');
+          return;
+        }
+        if (action === 'delete') {
+          deleteNoteChar();
+          return;
+        }
+        if (action === 'clear') {
+          if (purchaseNote) {
+            purchaseNote.value = '';
+            purchaseNote.setSelectionRange(0, 0);
+            state.purchaseForm.note = '';
+            purchaseNote.focus();
+          }
+          return;
+        }
+        if (action === 'close') {
+          hideNotesKeyboard();
+          purchaseNote?.focus();
+        }
+      }
+
       function enterPurchaseMode() {
         state.mode = 'purchase';
         document.body.dataset.view = 'purchase';
+        if (appSection) {
+          appSection.style.display = 'none';
+        }
+        if (mainShell) {
+          mainShell.style.display = 'none';
+        }
         updatePurchaseSummary();
         renderCart('purchase');
         if (purchaseSupplier) {
@@ -1621,17 +1866,22 @@ const html = `<!DOCTYPE html>
         if (purchaseNote) {
           purchaseNote.value = state.purchaseForm.note ?? '';
         }
-        if (purchaseWhatsapp) {
-          purchaseWhatsapp.checked = state.purchaseForm.autoWhatsapp !== false;
-        }
         hideReferenceNumpad();
+        hideNotesKeyboard();
         focusActiveScanner();
       }
 
       function exitPurchaseMode() {
         document.body.dataset.view = 'transfer';
         state.mode = 'transfer';
+        if (appSection) {
+          appSection.style.display = '';
+        }
+        if (mainShell) {
+          mainShell.style.display = '';
+        }
         hideReferenceNumpad();
+        hideNotesKeyboard();
         focusActiveScanner();
       }
 
@@ -1900,6 +2150,21 @@ const html = `<!DOCTYPE html>
         renderCart(context);
       }
 
+      function updateCartScannedQty(context, index, rawValue) {
+        const cart = getCart(context);
+        const target = cart[index];
+        if (!target) return;
+        const effective = computeEffectiveQty(rawValue, target);
+        if (effective == null || effective <= 0) {
+          showResult('Enter a valid quantity', true);
+          renderCart(context);
+          return;
+        }
+        target.scannedQty = Number(rawValue);
+        target.qty = effective;
+        renderCart(context);
+      }
+
       function removeCartItem(context, index) {
         const cart = getCart(context);
         if (index < 0 || index >= cart.length) return;
@@ -1923,15 +2188,20 @@ const html = `<!DOCTYPE html>
             const variationCell = document.createElement('td');
             variationCell.textContent = item.variationName ? item.variationName : '-';
             const scannedCell = document.createElement('td');
-            const scannedButton = document.createElement('button');
-            scannedButton.type = 'button';
-            scannedButton.className = 'scanned-qty-button';
-            scannedButton.title = 'Adjust scanned quantity';
-            scannedButton.textContent = (item.scannedQty ?? item.qty ?? 0).toString();
-            scannedButton.addEventListener('click', () => {
-              editCartQuantity(context, index);
+            const scannedInput = document.createElement('input');
+            scannedInput.type = 'number';
+            scannedInput.min = '0';
+            scannedInput.step = '0.01';
+            scannedInput.className = 'scanned-qty-input';
+            scannedInput.value = (item.scannedQty ?? item.qty ?? 0).toString();
+            scannedInput.title = 'Adjust scanned quantity';
+            scannedInput.addEventListener('change', () => {
+              updateCartScannedQty(context, index, scannedInput.value);
             });
-            scannedCell.appendChild(scannedButton);
+            scannedInput.addEventListener('focus', () => {
+              scannedInput.select();
+            });
+            scannedCell.appendChild(scannedInput);
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
@@ -2159,7 +2429,7 @@ const html = `<!DOCTYPE html>
 
         const noteValue = (purchaseNote?.value ?? state.purchaseForm.note ?? '').trim();
         const supplierId = state.purchaseForm.supplierId || null;
-        const autoWhatsapp = state.purchaseForm.autoWhatsapp !== false;
+        const autoWhatsapp = true;
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
@@ -2509,8 +2779,31 @@ const html = `<!DOCTYPE html>
         state.purchaseForm.note = purchaseNote.value ?? '';
       });
 
-      purchaseWhatsapp?.addEventListener('change', () => {
-        state.purchaseForm.autoWhatsapp = Boolean(purchaseWhatsapp.checked);
+      purchaseNote?.addEventListener('focus', () => {
+        showNotesKeyboard();
+      });
+
+      notesKeyboardOpen?.addEventListener('click', () => {
+        showNotesKeyboard();
+        purchaseNote?.focus();
+      });
+
+      notesKeyboard?.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+      });
+
+      notesKeyboard?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertNoteText(key);
+          return;
+        }
+        if (action) {
+          handleNotesAction(action);
+        }
       });
 
       referenceNumpad?.addEventListener('mousedown', (event) => {
