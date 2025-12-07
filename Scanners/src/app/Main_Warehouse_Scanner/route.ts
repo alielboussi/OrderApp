@@ -213,7 +213,7 @@ const html = `<!DOCTYPE html>
     #transfer-form {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 20px;
     }
     .locked-pill {
       background: rgba(255, 255, 255, 0.04);
@@ -237,7 +237,13 @@ const html = `<!DOCTYPE html>
     #cart-section {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
+      position: relative;
+      overflow: visible;
+      padding: 0;
+      background: transparent;
+      border: none;
+      margin-top: 32px;
     }
     .cart-head {
       display: flex;
@@ -302,19 +308,21 @@ const html = `<!DOCTYPE html>
     .cart-table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 4px;
+      margin-top: 6px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.52);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
     .cart-table thead th {
-      position: sticky;
-      top: var(--sticky-stack-offset);
-      background: rgba(5, 5, 5, 0.96);
-      padding: 10px 12px 16px;
+      position: static;
+      background: rgba(5, 5, 5, 0.92);
+      padding: 10px 12px 14px;
       text-transform: uppercase;
       font-size: 0.75rem;
       letter-spacing: 0.05em;
       color: #f7a8b7;
-      z-index: 2;
-      box-shadow: 0 2px 0 rgba(255, 255, 255, 0.05);
+      z-index: 1;
     }
     .cart-table th,
     .cart-table td {
@@ -325,6 +333,7 @@ const html = `<!DOCTYPE html>
     }
     .cart-table tbody td {
       padding-top: 14px;
+      background: transparent;
     }
     #cart-empty {
       margin: 12px 0;
@@ -531,15 +540,19 @@ const html = `<!DOCTYPE html>
       display: none;
       grid-template-columns: repeat(10, minmax(0, 1fr));
       gap: 10px;
-      padding: 14px;
-      background: rgba(0, 0, 0, 0.8);
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.92);
       border-radius: 18px;
       border: 1px solid rgba(255, 255, 255, 0.16);
-      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.6);
-      max-width: 760px;
-      width: 100%;
-      margin: 10px auto 0;
+      box-shadow: 0 28px 72px rgba(0, 0, 0, 0.7);
+      max-width: 820px;
+      width: min(820px, calc(100vw - 32px));
       justify-items: stretch;
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 40;
     }
     .virtual-keyboard.active {
       display: grid;
