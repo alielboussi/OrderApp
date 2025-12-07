@@ -243,7 +243,7 @@ const html = `<!DOCTYPE html>
       padding: 0;
       background: transparent;
       border: none;
-      margin-top: 32px;
+      margin-top: 96px;
     }
     .cart-head {
       display: flex;
