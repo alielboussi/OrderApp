@@ -21,7 +21,7 @@ const html = `<!DOCTYPE html>
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color-scheme: dark;
       font-size: 13px;
-      --shell-pad: 12px;
+      --shell-pad: 10px;
       --sticky-overlay: rgba(5, 5, 5, 0.92);
       --sticky-stack-offset: 360px;
     }
@@ -40,6 +40,7 @@ const html = `<!DOCTYPE html>
       padding: var(--shell-pad);
       overflow-x: hidden;
       overflow-y: auto;
+      zoom: 0.9;
     }
     body[data-view="purchase"] {
       display: block;
@@ -67,7 +68,7 @@ const html = `<!DOCTYPE html>
       min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
-      padding: calc(var(--shell-pad) * 1.2);
+      padding: calc(var(--shell-pad) * 1.0);
       border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
@@ -309,24 +310,6 @@ const html = `<!DOCTYPE html>
       font-weight: 600;
       font-size: 0.9rem;
     }
-    .qty-cost-field input {
-      background: rgba(0, 0, 0, 0.65);
-      color: #fff;
-      border-radius: 14px;
-      border: 2px solid rgba(255, 255, 255, 0.2);
-      padding: 10px 14px;
-      font-size: 1rem;
-    }
-    .cart-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 6px;
-      border-radius: 12px;
-      overflow: hidden;
-      background: rgba(0, 0, 0, 0.52);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .cart-table thead th {
       position: static;
       background: rgba(5, 5, 5, 0.92);
       padding: 10px 12px 14px;
@@ -448,7 +431,7 @@ const html = `<!DOCTYPE html>
       min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
-      padding: calc(var(--shell-pad) * 1.2);
+      padding: calc(var(--shell-pad) * 1.0);
       border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
@@ -1035,9 +1018,6 @@ const html = `<!DOCTYPE html>
       <p id="qty-uom">UNIT</p>
       <p id="qty-hint" class="qty-hint"></p>
       <input type="number" id="qty-input" min="0" step="0.01" placeholder="0" required />
-      <label class="qty-cost-field">Unit Cost (optional)
-        <input type="number" id="qty-cost" min="0" step="0.01" placeholder="0.00" />
-      </label>
       <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
         <button type="button" data-key="7">7</button>
         <button type="button" data-key="8">8</button>
@@ -1320,7 +1300,6 @@ const html = `<!DOCTYPE html>
       const qtyModal = document.getElementById('qty-modal');
       const qtyForm = document.getElementById('qty-form');
       const qtyInput = document.getElementById('qty-input');
-      const qtyCostInput = document.getElementById('qty-cost');
       const qtyUom = document.getElementById('qty-uom');
       const qtyTitle = document.getElementById('qty-title');
       const qtyCancel = document.getElementById('qty-cancel');
@@ -2141,9 +2120,6 @@ const html = `<!DOCTYPE html>
 
         updateQtyHint(entry);
         qtyInput.value = '';
-        if (qtyCostInput) {
-          qtyCostInput.value = '';
-        }
         qtyModal.style.display = 'flex';
         setTimeout(() => qtyInput.focus(), 10);
       }
@@ -2158,9 +2134,6 @@ const html = `<!DOCTYPE html>
           qtySubmitButton.textContent = 'Add Item';
         }
         updateQtyHint(null);
-        if (qtyCostInput) {
-          qtyCostInput.value = '';
-        }
         focusActiveScanner();
       }
 
@@ -2177,9 +2150,6 @@ const html = `<!DOCTYPE html>
           : target.productName ?? 'Product';
         qtyUom.textContent = target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
-        if (qtyCostInput) {
-          qtyCostInput.value = target.unitCost != null ? String(target.unitCost) : '';
-        }
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
         if (qtySubmitButton) {
@@ -2246,17 +2216,20 @@ const html = `<!DOCTYPE html>
             variationCell.textContent = item.variationName ? item.variationName : '-';
             const scannedCell = document.createElement('td');
             const scannedInput = document.createElement('input');
-            scannedInput.type = 'number';
-            scannedInput.min = '0';
-            scannedInput.step = '0.01';
+            scannedInput.type = 'text';
+            scannedInput.readOnly = true;
             scannedInput.className = 'scanned-qty-input';
             scannedInput.value = (item.scannedQty ?? item.qty ?? 0).toString();
-            scannedInput.title = 'Adjust scanned quantity';
-            scannedInput.addEventListener('change', () => {
-              updateCartScannedQty(context, index, scannedInput.value);
+            scannedInput.title = 'Tap to adjust scanned quantity';
+            scannedInput.addEventListener('click', () => {
+              editCartQuantity(context, index);
             });
-            scannedInput.addEventListener('focus', () => {
-              scannedInput.select();
+            scannedInput.addEventListener('keydown', (event) => {
+              const key = event.key?.toLowerCase();
+              if (key === 'enter' || key === ' ') {
+                event.preventDefault();
+                editCartQuantity(context, index);
+              }
             });
             scannedCell.appendChild(scannedInput);
             const qtyCell = document.createElement('td');
@@ -2908,10 +2881,7 @@ const html = `<!DOCTYPE html>
         const context = state.pendingContext || state.mode;
         const rawQty = Number(qtyInput.value);
         const effectiveQty = computeEffectiveQty(rawQty, pending);
-        const costValue = qtyCostInput?.value?.trim() ?? '';
-        const parsedCost = costValue ? Number(costValue) : null;
-        const unitCost = costValue && Number.isFinite(parsedCost) ? parsedCost : null;
-        pending.unitCost = unitCost;
+        const unitCost = null;
         if (effectiveQty === null) {
           qtyInput.focus();
           return;
