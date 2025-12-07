@@ -64,7 +64,7 @@ const html = `<!DOCTYPE html>
       width: 1024px;
       max-width: 1024px;
       min-width: 1024px;
-      min-height: 768px;
+      min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
       padding: var(--shell-pad);
@@ -240,10 +240,22 @@ const html = `<!DOCTYPE html>
       gap: 8px;
       position: relative;
       overflow: visible;
-      padding: 0;
+      padding: 0 0 8px;
       background: transparent;
       border: none;
-      margin-top: 96px;
+      margin-top: 12px;
+    }
+    #scanner-wedge,
+    #login-wedge {
+      position: absolute !important;
+      left: -9999px !important;
+      width: 1px !important;
+      height: 1px !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      caret-color: transparent !important;
+      outline: none !important;
+      border: none !important;
     }
     .cart-head {
       display: flex;
@@ -433,7 +445,7 @@ const html = `<!DOCTYPE html>
       width: 1024px;
       max-width: 1024px;
       min-width: 1024px;
-      min-height: 768px;
+      min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
       padding: var(--shell-pad);
@@ -1067,22 +1079,59 @@ const html = `<!DOCTYPE html>
               <label>Reference / Invoice #
                 <input type="text" id="purchase-reference" placeholder="INV-12345" required />
               </label>
-              <div id="reference-numpad" class="virtual-numpad" aria-hidden="true">
-                <button type="button" data-key="7">7</button>
-                <button type="button" data-key="8">8</button>
-                <button type="button" data-key="9">9</button>
-                <button type="button" data-key="4">4</button>
-                <button type="button" data-key="5">5</button>
-                <button type="button" data-key="6">6</button>
+              <div id="reference-numpad" class="virtual-keyboard" aria-hidden="true">
+                <!-- Digits Row -->
                 <button type="button" data-key="1">1</button>
                 <button type="button" data-key="2">2</button>
                 <button type="button" data-key="3">3</button>
+                <button type="button" data-key="4">4</button>
+                <button type="button" data-key="5">5</button>
+                <button type="button" data-key="6">6</button>
+                <button type="button" data-key="7">7</button>
+                <button type="button" data-key="8">8</button>
+                <button type="button" data-key="9">9</button>
                 <button type="button" data-key="0">0</button>
-                <button type="button" data-key="-">-</button>
-                <button type="button" data-key="/">/</button>
-                <button type="button" data-action="clear">CLR</button>
-                <button type="button" data-action="delete">DEL</button>
-                <button type="button" data-action="close">CLOSE</button>
+                <button type="button" data-key="-" aria-label="Dash">-</button>
+                <button type="button" data-key="/" aria-label="Slash">/</button>
+                <!-- Row 1 -->
+                <button type="button" data-key="Q">Q</button>
+                <button type="button" data-key="W">W</button>
+                <button type="button" data-key="E">E</button>
+                <button type="button" data-key="R">R</button>
+                <button type="button" data-key="T">T</button>
+                <button type="button" data-key="Y">Y</button>
+                <button type="button" data-key="U">U</button>
+                <button type="button" data-key="I">I</button>
+                <button type="button" data-key="O">O</button>
+                <button type="button" data-key="P">P</button>
+                <!-- Row 2 -->
+                <button type="button" data-key="A">A</button>
+                <button type="button" data-key="S">S</button>
+                <button type="button" data-key="D">D</button>
+                <button type="button" data-key="F">F</button>
+                <button type="button" data-key="G">G</button>
+                <button type="button" data-key="H">H</button>
+                <button type="button" data-key="J">J</button>
+                <button type="button" data-key="K">K</button>
+                <button type="button" data-key="L">L</button>
+                <button type="button" data-key=";" aria-label="Semicolon">;</button>
+                <!-- Row 3 -->
+                <button type="button" data-key="Z">Z</button>
+                <button type="button" data-key="X">X</button>
+                <button type="button" data-key="C">C</button>
+                <button type="button" data-key="V">V</button>
+                <button type="button" data-key="B">B</button>
+                <button type="button" data-key="N">N</button>
+                <button type="button" data-key="M">M</button>
+                <button type="button" data-key="," aria-label="Comma">,</button>
+                <button type="button" data-key="." aria-label="Period">.</button>
+                <button type="button" data-key="'" aria-label="Apostrophe">'</button>
+                <!-- Row 4 -->
+                <button type="button" class="wide-4" data-action="space">Space</button>
+                <button type="button" class="wide-2" data-action="enter">Enter</button>
+                <button type="button" class="wide-2" data-action="delete">Backspace</button>
+                <button type="button" class="wide-5" data-action="clear">Clear</button>
+                <button type="button" class="wide-5" data-action="close">Close</button>
               </div>
             </div>
             <label class="notes-field">Receiving Notes
@@ -1136,7 +1185,6 @@ const html = `<!DOCTYPE html>
               </div>
             </label>
           </div>
-          <p class="purchase-timestamp-hint">Date and time are captured automatically when you submit.</p>
           <section class="purchase-cart-section">
             <div class="cart-head">
               <div>
@@ -1163,11 +1211,6 @@ const html = `<!DOCTYPE html>
             </table>
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
-          <div class="purchase-summary">
-            <h4>Line Items</h4>
-            <p id="purchase-summary-empty">Cart is empty.</p>
-            <ul id="purchase-summary-list"></ul>
-          </div>
           <div class="purchase-actions">
             <button type="button" id="purchase-back" class="button-outline">Back to Transfers</button>
             <button type="submit" id="purchase-submit">Record Purchase</button>
@@ -2828,6 +2871,16 @@ const html = `<!DOCTYPE html>
             purchaseReference.value = '';
             purchaseReference.focus();
           }
+          return;
+        }
+        if (action === 'space') {
+          insertReferenceText(' ');
+          purchaseReference?.focus();
+          return;
+        }
+        if (action === 'enter') {
+          hideReferenceNumpad();
+          purchaseReference?.blur();
           return;
         }
         if (action === 'delete') {
