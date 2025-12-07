@@ -20,8 +20,8 @@ const html = `<!DOCTYPE html>
     :root {
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color-scheme: dark;
-      font-size: 14px;
-      --shell-pad: 18px;
+      font-size: 13px;
+      --shell-pad: 14px;
       --sticky-overlay: rgba(5, 5, 5, 0.92);
       --sticky-stack-offset: 360px;
     }
@@ -248,11 +248,12 @@ const html = `<!DOCTYPE html>
     #scanner-wedge,
     #login-wedge {
       position: absolute !important;
-      left: -9999px !important;
+      top: 0 !important;
+      left: 0 !important;
       width: 1px !important;
       height: 1px !important;
       opacity: 0 !important;
-      pointer-events: none !important;
+      pointer-events: auto !important;
       caret-color: transparent !important;
       outline: none !important;
       border: none !important;
