@@ -435,14 +435,11 @@ const html = `<!DOCTYPE html>
     .purchase-header-bar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       gap: 12px;
     }
     .purchase-route-info {
       margin-top: 8px;
-    }
-    .purchase-nav button {
-      min-width: 200px;
     }
     .purchase-panel {
       display: flex;
@@ -1038,9 +1035,6 @@ const html = `<!DOCTYPE html>
         <div class="brand-header">
           <img src="/afterten-logo.png" alt="AfterTen logo" />
         </div>
-        <div class="purchase-nav">
-          <button type="button" id="purchase-exit" class="button-outline">Back to Transfer Console</button>
-        </div>
       </div>
       <div class="purchase-route-info">
         <p class="purchase-warehouse-hint">Intake warehouse: <span id="purchase-warehouse-label">Loading...</span></p>
@@ -1287,7 +1281,6 @@ const html = `<!DOCTYPE html>
       const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
       const purchaseCartWarehouse = document.getElementById('purchase-cart-warehouse');
       const purchaseBackButton = document.getElementById('purchase-back');
-      const purchaseExitButton = document.getElementById('purchase-exit');
       const purchaseSubmit = document.getElementById('purchase-submit');
       const purchaseCartBody = document.getElementById('purchase-cart-body');
       const purchaseCartEmpty = document.getElementById('purchase-cart-empty');
@@ -2746,10 +2739,6 @@ const html = `<!DOCTYPE html>
       });
 
       purchaseBackButton?.addEventListener('click', () => {
-        exitPurchaseMode();
-      });
-
-      purchaseExitButton?.addEventListener('click', () => {
         exitPurchaseMode();
       });
 
