@@ -21,7 +21,7 @@ const html = `<!DOCTYPE html>
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color-scheme: dark;
       font-size: 13px;
-      --shell-pad: 14px;
+      --shell-pad: 12px;
       --sticky-overlay: rgba(5, 5, 5, 0.92);
       --sticky-stack-offset: 360px;
     }
@@ -61,14 +61,14 @@ const html = `<!DOCTYPE html>
       display: flex;
     }
     main {
-      width: 1024px;
-      max-width: 1024px;
-      min-width: 1024px;
+      width: 960px;
+      max-width: 960px;
+      min-width: 960px;
       min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
-      padding: var(--shell-pad);
-      border-radius: 28px;
+      padding: calc(var(--shell-pad) * 1.2);
+      border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
       display: flex;
@@ -187,7 +187,6 @@ const html = `<!DOCTYPE html>
     .console-sticky {
       position: sticky;
       top: calc(var(--shell-pad) - 6px);
-        <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:absolute; height:0;" />
       z-index: 6;
       background: var(--sticky-overlay);
       border-radius: 24px;
@@ -247,13 +246,13 @@ const html = `<!DOCTYPE html>
     }
     #scanner-wedge,
     #login-wedge {
-      position: absolute !important;
+      position: fixed !important;
       top: 0 !important;
       left: 0 !important;
       width: 1px !important;
       height: 1px !important;
       opacity: 0 !important;
-      pointer-events: auto !important;
+      pointer-events: none !important;
       caret-color: transparent !important;
       outline: none !important;
       border: none !important;
@@ -443,14 +442,14 @@ const html = `<!DOCTYPE html>
       display: none;
       flex-direction: column;
       gap: 14px;
-      width: 1024px;
-      max-width: 1024px;
-      min-width: 1024px;
+      width: 960px;
+      max-width: 960px;
+      min-width: 960px;
       min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
-      padding: var(--shell-pad);
-      border-radius: 28px;
+      padding: calc(var(--shell-pad) * 1.2);
+      border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 25px 80px -30px rgba(0, 0, 0, 0.9);
     }
@@ -711,9 +710,12 @@ const html = `<!DOCTYPE html>
     }
     #purchase-scanner-wedge {
       opacity: 0;
-      position: absolute;
-      height: 0;
-      width: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 1px;
+      height: 1px;
+      pointer-events: none;
     }
     .numpad {
       display: grid;
@@ -940,6 +942,7 @@ const html = `<!DOCTYPE html>
   </style>
 </head>
 <body data-view="transfer">
+  <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:fixed; width:1px; height:1px; top:0; left:0;" />
   <main>
     <section id="auth-section" class="panel">
       <header class="brand-header">
@@ -1345,6 +1348,10 @@ const html = `<!DOCTYPE html>
       const referenceNumpad = document.getElementById('reference-numpad');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
+
+      window.setTimeout(() => {
+        focusActiveScanner();
+      }, 200);
       let scanBuffer = '';
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
