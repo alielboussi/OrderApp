@@ -861,9 +861,7 @@ class SupabaseProvider(context: Context) {
             "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
                 "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
                 "product:products!stock_movement_items_product_id_fkey(name,uom,sku,cost)," +
-                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom,sku))," +
-                "source:warehouses!stock_movements_source_location_id_fkey(id,name)," +
-                "dest:warehouses!stock_movements_dest_location_id_fkey(id,name)"
+                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom,sku))"
         )
         urlBuilder.append("&source_location_type=eq.warehouse&dest_location_type=eq.warehouse")
         sourceWarehouseId?.takeIf { it.isNotBlank() }?.let {
@@ -891,7 +889,41 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) {
             throw IllegalStateException("fetchWarehouseTransfers failed: HTTP $code $txt")
         }
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(WarehouseTransferDto.serializer()), txt)
+
+        val baseTransfers = Json { ignoreUnknownKeys = true }
+            .decodeFromString(ListSerializer(WarehouseTransferDto.serializer()), txt)
+        if (baseTransfers.isEmpty()) return baseTransfers
+
+        val idsNeeded = buildSet {
+            baseTransfers.forEach { transfer ->
+                if (transfer.sourceWarehouse?.name.isNullOrBlank()) {
+                    transfer.sourceWarehouseId?.let { add(it) }
+                }
+                if (transfer.destWarehouse?.name.isNullOrBlank()) {
+                    transfer.destWarehouseId?.let { add(it) }
+                }
+            }
+        }
+        val warehousesById = if (idsNeeded.isEmpty()) {
+            emptyMap()
+        } else {
+            runCatching { fetchWarehousesByIds(jwt, idsNeeded) }
+                .getOrElse { emptyList() }
+                .associate { warehouse -> warehouse.id to warehouse.name }
+        }
+
+        return baseTransfers.map { transfer ->
+            val sourceRef = transfer.sourceWarehouse ?: transfer.sourceWarehouseId?.let { id ->
+                TransferWarehouseRef(id = id, name = warehousesById[id])
+            }
+            val destRef = transfer.destWarehouse ?: transfer.destWarehouseId?.let { id ->
+                TransferWarehouseRef(id = id, name = warehousesById[id])
+            }
+            transfer.copy(
+                sourceWarehouse = sourceRef,
+                destWarehouse = destRef
+            )
+        }
     }
 
     suspend fun createWarehouse(

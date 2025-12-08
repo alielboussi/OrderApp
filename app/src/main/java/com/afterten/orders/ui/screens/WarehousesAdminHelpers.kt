@@ -8,15 +8,15 @@ internal fun buildWarehouseNameLookup(
     warehouses: List<Warehouse>,
     transfers: List<WarehouseTransferDto>
 ): Map<String, String> = buildMap {
-    warehouses.forEach { put(it.id, it.name) }
+    warehouses.forEach { put(it.id, it.name.ifBlank { "Warehouse" }) }
     transfers.forEach { transfer ->
         transfer.sourceWarehouse?.let { ref ->
             val id = ref.id
-            if (!id.isNullOrBlank()) put(id, ref.name ?: "Warehouse")
+            if (!id.isNullOrBlank()) putIfAbsent(id, ref.name?.ifBlank { "Warehouse" } ?: "Warehouse")
         }
         transfer.destWarehouse?.let { ref ->
             val id = ref.id
-            if (!id.isNullOrBlank()) put(id, ref.name ?: "Warehouse")
+            if (!id.isNullOrBlank()) putIfAbsent(id, ref.name?.ifBlank { "Warehouse" } ?: "Warehouse")
         }
     }
 }

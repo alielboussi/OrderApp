@@ -34,7 +34,7 @@ fun HomeScreen(
     onAdminWarehouses: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
-) {
+)
     val session by viewModel.session.collectAsState()
     val hasWarehouseAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
     val hasTransferRole = session.hasRole(RoleGuards.Transfers)
@@ -97,7 +97,6 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         when {
             hasWarehouseAdmin -> {
-                // Admin home: single entry into the transfer viewer
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {

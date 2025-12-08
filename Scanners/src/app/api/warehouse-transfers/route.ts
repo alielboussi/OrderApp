@@ -11,8 +11,11 @@ export async function GET(req: NextRequest) {
     const destId = url.searchParams.get('destId')?.trim() || null;
     const startDateParam = url.searchParams.get('startDate')?.trim() || null;
     const endDateParam = url.searchParams.get('endDate')?.trim() || null;
-    const limitParam = Number(url.searchParams.get('limit'));
-    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.floor(limitParam), 1), MAX_LIMIT) : 100;
+    const limitParamRaw = url.searchParams.get('limit');
+    const limitParam = limitParamRaw === null ? Number.NaN : Number(limitParamRaw);
+    const limit = Number.isFinite(limitParam)
+      ? Math.min(Math.max(Math.floor(limitParam), 1), MAX_LIMIT)
+      : 100;
 
     const toIsoRange = (value: string | null, endOfDay: boolean) => {
       if (!value) return null;
@@ -39,14 +42,6 @@ export async function GET(req: NextRequest) {
         completed_at,
         source_location_id,
         dest_location_id,
-        source:warehouses!stock_movements_source_location_id_fkey (
-          id,
-          name
-        ),
-        dest:warehouses!stock_movements_dest_location_id_fkey (
-          id,
-          name
-        ),
         items:stock_movement_items (
           id,
           movement_id,
@@ -85,15 +80,48 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
-    const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => ({
-      ...transfer,
-      items: Array.isArray(transfer.items)
-        ? transfer.items.map((item) => ({
-            ...item,
-            qty: Number(item?.qty) || 0,
-          }))
-        : [],
-    }));
+    const warehouseIds = new Set<string>();
+    (data ?? []).forEach((transfer) => {
+      if (transfer.source_location_id) warehouseIds.add(transfer.source_location_id);
+      if (transfer.dest_location_id) warehouseIds.add(transfer.dest_location_id);
+    });
+
+    const warehouseMap = new Map<string, string | null>();
+    if (warehouseIds.size > 0) {
+      const { data: warehouseRows, error: warehouseError } = await supabase
+        .from('warehouses')
+        .select('id,name')
+        .in('id', Array.from(warehouseIds));
+      if (warehouseError) {
+        throw warehouseError;
+      }
+      warehouseRows?.forEach((row) => {
+        if (row?.id) {
+          warehouseMap.set(row.id, row.name ?? null);
+        }
+      });
+    }
+
+    const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => {
+      const sourceName = transfer.source?.name ?? (transfer.source_location_id ? warehouseMap.get(transfer.source_location_id) ?? null : null);
+      const destName = transfer.dest?.name ?? (transfer.dest_location_id ? warehouseMap.get(transfer.dest_location_id) ?? null : null);
+
+      return {
+        ...transfer,
+        source: transfer.source_location_id
+          ? { id: transfer.source_location_id, name: sourceName }
+          : null,
+        dest: transfer.dest_location_id
+          ? { id: transfer.dest_location_id, name: destName }
+          : null,
+        items: Array.isArray(transfer.items)
+          ? transfer.items.map((item) => ({
+              ...item,
+              qty: Number(item?.qty) || 0,
+            }))
+          : [],
+      };
+    });
 
     return NextResponse.json({ transfers });
   } catch (error) {

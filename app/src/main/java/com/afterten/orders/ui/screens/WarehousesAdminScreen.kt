@@ -187,19 +187,39 @@ private fun WarehouseTransfersPane(
     }
     val qtyFormatter = remember { DecimalFormat("#,##0.##") }
 
+    val hasActiveFilters by remember(selectedSourceId, selectedDestId, startDate, endDate, searchQuery) {
+        derivedStateOf {
+            selectedSourceId != null ||
+                selectedDestId != null ||
+                startDate != null ||
+                endDate != null ||
+                searchQuery.isNotBlank()
+        }
+    }
+
     val filteredTransfers by remember(transfers, searchQuery, startDate, endDate, warehouseNames) {
         derivedStateOf {
             val query = searchQuery.trim().lowercase(Locale.getDefault())
-            transfers.filter { transfer ->
-                val createdDate = transfer.createdAt.toZambiaLocalDate()
-                val matchesStart = startDate?.let { filterDate -> createdDate?.isBefore(filterDate)?.not() ?: false } ?: true
-                val matchesEnd = endDate?.let { filterDate -> createdDate?.isAfter(filterDate)?.not() ?: false } ?: true
-                val matchesSearch = if (query.isEmpty()) {
-                    true
-                } else {
-                    transfer.matchesQuery(query, warehouseNames)
+            val sorted = transfers
+                .filter { transfer ->
+                    val createdDate = transfer.createdAt.toZambiaLocalDate()
+                    val matchesStart = startDate?.let { filterDate -> createdDate?.isBefore(filterDate)?.not() ?: false } ?: true
+                    val matchesEnd = endDate?.let { filterDate -> createdDate?.isAfter(filterDate)?.not() ?: false } ?: true
+                    val matchesSearch = if (query.isEmpty()) {
+                        true
+                    } else {
+                        transfer.matchesQuery(query, warehouseNames)
+                    }
+                    matchesStart && matchesEnd && matchesSearch
                 }
-                matchesStart && matchesEnd && matchesSearch
+                .sortedByDescending { transfer ->
+                    runCatching { OffsetDateTime.parse(transfer.createdAt).toEpochSecond() }.getOrDefault(0)
+                }
+
+            if (hasActiveFilters) {
+                sorted
+            } else {
+                sorted.take(3)
             }
         }
     }
@@ -250,24 +270,6 @@ private fun WarehouseTransfersPane(
         }.onSuccess { fetchedTransfers ->
             transfers = fetchedTransfers
             errorMessage = null
-
-            val knownIds = warehouses.mapTo(mutableSetOf()) { it.id }
-            val idsNeeded = mutableSetOf<String>()
-            fetchedTransfers.forEach { transfer ->
-                transfer.sourceWarehouseId?.let { idsNeeded.add(it) }
-                transfer.destWarehouseId?.let { idsNeeded.add(it) }
-            }
-            idsNeeded.removeAll(knownIds)
-
-            if (idsNeeded.isNotEmpty()) {
-                runCatching { supabase.fetchWarehousesByIds(token, idsNeeded) }
-                    .onSuccess { extras ->
-                        if (extras.isNotEmpty()) {
-                            val merged = (warehouses + extras).associateBy { it.id }.values.toList()
-                            warehouses = merged
-                        }
-                    }
-            }
         }.onFailure {
             errorMessage = it.message ?: "Unable to load transfers"
         }
