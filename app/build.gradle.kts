@@ -164,6 +164,7 @@ val supabaseUrl = (project.findProperty("SUPABASE_URL") as String?) ?: ""
 val supabaseAnonKey = (project.findProperty("SUPABASE_ANON_KEY") as String?) ?: ""
 val adminEmail = (project.findProperty("ADMIN_EMAIL") as String?) ?: ""
 val adminUuid = (project.findProperty("ADMIN_UUID") as String?) ?: ""
+val warehouseBackofficeUrl = (project.findProperty("WAREHOUSE_BACKOFFICE_URL") as String?) ?: ""
 
 android {
     defaultConfig {
@@ -171,5 +172,6 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         buildConfigField("String", "ADMIN_EMAIL", "\"$adminEmail\"")
         buildConfigField("String", "ADMIN_UUID", "\"$adminUuid\"")
+        buildConfigField("String", "WAREHOUSE_BACKOFFICE_URL", "\"$warehouseBackofficeUrl\"")
     }
 }

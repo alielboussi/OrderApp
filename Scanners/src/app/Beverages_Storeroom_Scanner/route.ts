@@ -2055,7 +2055,7 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'enter') {
-          insertNoteText('\\n');
+          insertNoteText(String.fromCharCode(10));
           return;
         }
         if (action === 'delete') {
@@ -2072,8 +2072,9 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'close') {
-          hideNotesKeyboard({ suppressUntilBlur: true });
-          purchaseNote?.focus();
+          hideNotesKeyboard();
+          purchaseNote?.blur();
+          focusActiveScanner();
           return;
         }
       }
@@ -2130,7 +2131,7 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'enter') {
-          insertDamageNoteText('\\n');
+          insertDamageNoteText(String.fromCharCode(10));
           return;
         }
         if (action === 'delete') {
@@ -2142,13 +2143,13 @@ const html = `<!DOCTYPE html>
             damageNote.value = '';
             damageNote.setSelectionRange(0, 0);
             state.damageNote = '';
-            damageNote.focus();
           }
           return;
         }
         if (action === 'close') {
           hideDamageNotesKeyboard();
-          damageNote?.focus();
+          damageNote?.blur();
+          focusActiveScanner();
           return;
         }
       }
@@ -2678,9 +2679,9 @@ const html = `<!DOCTYPE html>
         const destId = lockedDestId;
         const cart = getCart('transfer');
         if (!cart.length) {
-          showResult('Scan at least one product before submitting.', true);
-          return;
         }
+        if (action === 'enter') {
+          insertNoteText('\\n');
 
         state.loading = true;
         submitButton.disabled = true;
@@ -3195,6 +3196,40 @@ const html = `<!DOCTYPE html>
         }
       });
 
+      purchaseNote?.addEventListener('input', () => {
+        state.purchaseForm.note = purchaseNote.value ?? '';
+      });
+
+      const showPurchaseNotesKeyboard = () => {
+        showNotesKeyboard();
+      };
+
+      purchaseNote?.addEventListener('focus', showPurchaseNotesKeyboard);
+      purchaseNote?.addEventListener('pointerdown', showPurchaseNotesKeyboard);
+
+      notesKeyboardOpen?.addEventListener('click', () => {
+        showNotesKeyboard(true);
+        purchaseNote?.focus();
+      });
+
+      notesKeyboard?.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+      });
+
+      notesKeyboard?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertNoteText(key);
+          return;
+        }
+        if (action) {
+          handleNotesAction(action);
+        }
+      });
+
       purchaseBackButton?.addEventListener('click', () => {
         exitPurchaseMode();
       });
@@ -3241,9 +3276,18 @@ const html = `<!DOCTYPE html>
           // Keep the keyboard open while interacting with it or its source input.
           window.clearTimeout(referenceNumpadHideTimeoutId);
           showReferenceNumpad();
+        } else {
+          hideReferenceNumpad();
+        }
+
+        const interactingWithNotesInput = target === purchaseNote || purchaseNote?.contains(target);
+        const interactingWithNotesKeyboard = notesKeyboard?.contains(target);
+        const interactingWithNotesTrigger = target === notesKeyboardOpen || notesKeyboardOpen?.contains(target);
+        if (interactingWithNotesInput || interactingWithNotesKeyboard || interactingWithNotesTrigger) {
+          showNotesKeyboard();
           return;
         }
-        hideReferenceNumpad();
+        hideNotesKeyboard();
       });
 
       // Notes input removed; listeners intentionally omitted.
@@ -3347,11 +3391,23 @@ const html = `<!DOCTYPE html>
         const target = event.target;
         const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
         const clickedReferenceNumpad = referenceNumpad?.contains(target);
-        if (clickedReferenceInput || clickedReferenceNumpad) return;
+        const clickedNotesInput = target === purchaseNote || purchaseNote?.contains(target);
+        const clickedNotesKeyboard = notesKeyboard?.contains(target);
+        const clickedNotesTrigger = target === notesKeyboardOpen || notesKeyboardOpen?.contains(target);
+        if (
+          clickedReferenceInput ||
+          clickedReferenceNumpad ||
+          clickedNotesInput ||
+          clickedNotesKeyboard ||
+          clickedNotesTrigger
+        ) {
+          return;
+        }
         if (document.body.dataset.auth === 'true') {
           focusActiveScanner();
         }
       });
+
       loginWedge?.addEventListener('input', () => {
         applyLoginScan(loginWedge.value.trim());
         loginWedge.value = '';
@@ -3373,6 +3429,7 @@ const html = `<!DOCTYPE html>
       purchaseForm?.addEventListener('submit', handlePurchaseSubmit);
       damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
+    }
     }
   </script>
 </body>

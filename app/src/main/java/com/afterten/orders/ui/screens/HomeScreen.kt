@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,9 +33,10 @@ fun HomeScreen(
     onViewOrders: () -> Unit,
     onTransfers: () -> Unit,
     onAdminWarehouses: () -> Unit,
+    onOpenWarehouseBackoffice: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
-)
+) {
     val session by viewModel.session.collectAsState()
     val hasWarehouseAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
     val hasTransferRole = session.hasRole(RoleGuards.Transfers)
@@ -97,14 +99,24 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         when {
             hasWarehouseAdmin -> {
+                // Admin home: offer both native Compose and kiosk web dashboards
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        logger.event("WarehouseTransfersTapped")
+                        logger.event("WarehouseAdminHubTapped")
                         onAdminWarehouses()
                     },
                     enabled = session != null
-                ) { Text("Warehouse Transfers") }
+                ) { Text("Warehouse Admin Dashboard") }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        logger.event("WarehouseBackofficeTapped")
+                        onOpenWarehouseBackoffice()
+                    },
+                    enabled = session != null
+                ) { Text("Warehouse Backoffice (Web)") }
             }
             hasSupervisorRole -> {
                 // Supervisor home: go to Outlet Orders (multi-outlet)

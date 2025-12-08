@@ -41,6 +41,8 @@ sealed class Routes(val route: String) {
     data object Orders : Routes("orders")
     data object Transfers : Routes("transfers")
     data object AdminWarehouses : Routes("admin_warehouses")
+    data object AdminWarehouseTransfers : Routes("admin_warehouse_transfers")
+    data object WarehouseBackoffice : Routes("warehouse_backoffice")
     data object SupervisorOrders : Routes("supervisor_orders")
     data object SupervisorOrderDetail : Routes("supervisor_order_detail/{orderId}") {
         fun route(orderId: String) = "supervisor_order_detail/$orderId"
@@ -68,6 +70,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 },
                 onTransfers = { navController.navigate(Routes.Transfers.route) },
                 onAdminWarehouses = { navController.navigate(Routes.AdminWarehouses.route) },
+                onOpenWarehouseBackoffice = { navController.navigate(Routes.WarehouseBackoffice.route) },
                 onLogout = {
                     appViewModel.setSession(null)
                     navController.navigate(Routes.Login.route) {
@@ -133,8 +136,32 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             )
         }
         composable(Routes.AdminWarehouses.route) {
+            com.afterten.orders.ui.screens.WarehouseAdminHubScreen(
+                onOpenNativeTransfers = { navController.navigate(Routes.AdminWarehouseTransfers.route) },
+                onOpenBackoffice = { navController.navigate(Routes.WarehouseBackoffice.route) },
+                onBack = { navController.popBackStack() },
+                onLogout = {
+                    appViewModel.setSession(null)
+                    navController.navigate(Routes.Login.route) {
+                        popUpTo(Routes.Home.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable(Routes.AdminWarehouseTransfers.route) {
             com.afterten.orders.ui.screens.WarehousesAdminScreen(
                 root = appViewModel,
+                onBack = { navController.popBackStack() },
+                onLogout = {
+                    appViewModel.setSession(null)
+                    navController.navigate(Routes.Login.route) {
+                        popUpTo(Routes.Home.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable(Routes.WarehouseBackoffice.route) {
+            com.afterten.orders.ui.screens.WarehouseBackofficeScreen(
                 onBack = { navController.popBackStack() },
                 onLogout = {
                     appViewModel.setSession(null)

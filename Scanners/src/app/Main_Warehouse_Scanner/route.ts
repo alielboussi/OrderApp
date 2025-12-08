@@ -124,6 +124,35 @@ const html = `<!DOCTYPE html>
       box-shadow: 0 0 12px rgba(255, 27, 45, 0.45);
       outline: none;
     }
+    #purchase-supplier {
+      border-color: rgba(255, 27, 45, 0.9);
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.9);
+      box-shadow: 0 14px 28px rgba(255, 27, 45, 0.16);
+      appearance: none;
+      -moz-appearance: none;
+      -webkit-appearance: none;
+      padding-right: 42px;
+      background-image:
+        linear-gradient(45deg, transparent 50%, #ff4d6b 50%),
+        linear-gradient(135deg, #ff4d6b 50%, transparent 50%),
+        linear-gradient(90deg, rgba(255, 77, 107, 0.18), rgba(255, 77, 107, 0.18));
+      background-position: right 18px center, right 10px center, right 0 top;
+      background-size: 10px 10px, 10px 10px, 46px 100%;
+      background-repeat: no-repeat;
+    }
+    #purchase-supplier:hover {
+      border-color: #ff2e4f;
+      box-shadow: 0 16px 34px rgba(255, 27, 45, 0.2);
+    }
+    #purchase-supplier:focus {
+      border-color: #ff1b2d;
+      box-shadow: 0 18px 38px rgba(255, 27, 45, 0.28);
+    }
+    #purchase-supplier option {
+      background: #0d0d12;
+      color: #fff;
+    }
     button {
       font-weight: 700;
       text-transform: uppercase;
@@ -560,9 +589,12 @@ const html = `<!DOCTYPE html>
       justify-items: stretch;
       position: fixed;
       left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
+      top: 70%;
+      transform: translate(-50%, -70%);
       z-index: 40;
+    }
+    #damage-notes-keyboard {
+      top: 40%;
     }
     .virtual-keyboard.active {
       display: grid;
@@ -704,8 +736,8 @@ const html = `<!DOCTYPE html>
     #purchase-scanner-wedge {
       opacity: 0;
       position: fixed;
-      top: 0;
-      left: 0;
+      top: 60%;
+      transform: translate(-50%, -60%);
       width: 1px;
       height: 1px;
       pointer-events: none;
@@ -1159,9 +1191,8 @@ const html = `<!DOCTYPE html>
                 <button type="button" data-key="." aria-label="Period">.</button>
                 <button type="button" data-key="'" aria-label="Apostrophe">'</button>
                 <!-- Row 4 -->
-                <button type="button" class="wide-4" data-action="space">Space</button>
-                <button type="button" class="wide-2" data-action="enter">Enter</button>
-                <button type="button" class="wide-2" data-action="delete">Backspace</button>
+                <button type="button" class="wide-5" data-action="space">Space</button>
+                <button type="button" class="wide-3" data-action="delete">Backspace</button>
                 <button type="button" class="wide-5" data-action="clear">Clear</button>
                 <button type="button" class="wide-5" data-action="close">Close</button>
               </div>
@@ -1292,9 +1323,6 @@ const html = `<!DOCTYPE html>
           <p id="damage-cart-empty">No damages logged yet.</p>
           <label>Damage Note (optional)
             <input type="text" id="damage-note" placeholder="e.g. Broken on arrival" />
-            <div class="notes-keyboard-actions">
-              <button type="button" id="damage-notes-keyboard-open" class="keyboard-trigger">Open Keyboard</button>
-            </div>
             <div id="damage-notes-keyboard" class="virtual-keyboard" aria-hidden="true">
               <!-- Row 1 -->
               <button type="button" data-key="Q">Q</button>
@@ -1330,9 +1358,8 @@ const html = `<!DOCTYPE html>
               <button type="button" data-key="." aria-label="Period">.</button>
               <button type="button" data-key="/" aria-label="Slash">/</button>
               <!-- Row 4 -->
-              <button type="button" class="wide-4" data-action="space">Space</button>
-              <button type="button" class="wide-2" data-action="enter">Enter</button>
-              <button type="button" class="wide-2" data-action="delete">Backspace</button>
+              <button type="button" class="wide-5" data-action="space">Space</button>
+              <button type="button" class="wide-3" data-action="delete">Backspace</button>
               <button type="button" data-key="-" aria-label="Dash">-</button>
               <button type="button" data-key="'" aria-label="Apostrophe">'</button>
               <!-- Row 5 -->
@@ -1458,7 +1485,6 @@ const html = `<!DOCTYPE html>
       const damageBackButton = document.getElementById('damage-back');
       const damagePage = document.getElementById('damage-page');
       const damageNotesKeyboard = document.getElementById('damage-notes-keyboard');
-      const damageNotesKeyboardOpen = document.getElementById('damage-notes-keyboard-open');
       const qtyModal = document.getElementById('qty-modal');
       const qtyForm = document.getElementById('qty-form');
       const qtyInput = document.getElementById('qty-input');
@@ -1690,6 +1716,7 @@ const html = `<!DOCTYPE html>
       function focusActiveScanner() {
         if (!scannerWedge) return;
         if (qtyModal?.style.display === 'flex') return;
+        if (document.body.dataset.view === 'purchase') return;
         scannerWedge.focus();
       }
 
@@ -2059,7 +2086,7 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'enter') {
-          insertNoteText('\\n');
+          insertNoteText(String.fromCharCode(10));
           return;
         }
         if (action === 'delete') {
@@ -2133,7 +2160,7 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'enter') {
-          insertDamageNoteText('\n');
+          insertDamageNoteText(String.fromCharCode(10));
           return;
         }
         if (action === 'delete') {
@@ -2151,7 +2178,8 @@ const html = `<!DOCTYPE html>
         }
         if (action === 'close') {
           hideDamageNotesKeyboard();
-          damageNote?.focus();
+          damageNote?.blur();
+          focusActiveScanner();
           return;
         }
       }
@@ -2594,13 +2622,84 @@ const html = `<!DOCTYPE html>
       }
 
       async function fetchSuppliers() {
-        const { data, error } = await supabase.rpc('suppliers_for_warehouse', {
-          p_warehouse_id: lockedSourceId
-        });
-        if (error) throw error;
-        const list = Array.isArray(data) ? data : [];
+        const loadViaRpc = async (warehouseId) => {
+          if (!warehouseId) return [];
+          const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
+          if (error) {
+            const wrapped = new Error(error.message ?? 'suppliers_for_warehouse RPC failed');
+            wrapped.status = status;
+            wrapped.code = error.code;
+            throw wrapped;
+          }
+          return Array.isArray(data) ? data : [];
+        };
+
+        const loadViaLinkTable = async (warehouseId) => {
+          if (!warehouseId) return [];
+          const { data, error, status } = await supabase
+            .from('product_supplier_links')
+            .select('supplier:suppliers(id,name,contact_name,contact_phone,contact_email,active)')
+            .eq('warehouse_id', warehouseId)
+            .eq('active', true);
+          if (error) {
+            const wrapped = new Error(error.message ?? 'product_supplier_links fetch failed');
+            wrapped.status = status;
+            wrapped.code = error.code;
+            throw wrapped;
+          }
+          return (Array.isArray(data) ? data : [])
+            .map((row) => row?.supplier)
+            .filter(Boolean);
+        };
+
+        const loadAllSuppliers = async () => {
+          const { data, error, status } = await supabase
+            .from('suppliers')
+            .select('id,name,contact_name,contact_phone,contact_email,active')
+            .eq('active', true);
+          if (error) {
+            const wrapped = new Error(error.message ?? 'suppliers fetch failed');
+            wrapped.status = status;
+            wrapped.code = error.code;
+            throw wrapped;
+          }
+          return Array.isArray(data) ? data : [];
+        };
+
+        let list = [];
+        let lastError = null;
+
+        try {
+          list = await loadViaRpc(lockedSourceId);
+        } catch (error) {
+          lastError = error;
+          console.warn('Primary supplier fetch failed, attempting link-table fallback', error);
+        }
+
+        if (!list.length) {
+          try {
+            list = await loadViaLinkTable(lockedSourceId);
+          } catch (error) {
+            lastError = error;
+            console.warn('Link-table supplier fetch failed, attempting all active suppliers', error);
+          }
+        }
+
+        if (!list.length) {
+          try {
+            list = await loadAllSuppliers();
+          } catch (error) {
+            lastError = error;
+            console.warn('All-suppliers fetch failed', error);
+          }
+        }
+
         state.suppliers = list.filter((s) => s && s.active !== false);
         renderSupplierOptions();
+
+        if (!state.suppliers.length && lastError) {
+          throw lastError;
+        }
       }
 
       async function refreshMetadata() {
@@ -3171,16 +3270,15 @@ const html = `<!DOCTYPE html>
         state.damageNote = damageNote.value ?? '';
       });
 
-      damageNotesKeyboardOpen?.addEventListener('click', () => {
+      const openDamageKeyboard = () => {
         showDamageNotesKeyboard();
-        damageNote?.focus();
-      });
+      };
 
-      damageNotesKeyboard?.addEventListener('mousedown', (event) => {
+      damageNote?.addEventListener('focus', openDamageKeyboard);
+      damageNote?.addEventListener('pointerdown', openDamageKeyboard);
+
+      damageNotesKeyboard?.addEventListener('pointerdown', (event) => {
         event.preventDefault();
-      });
-
-      damageNotesKeyboard?.addEventListener('click', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLButtonElement)) return;
         const key = target.dataset.key;
@@ -3346,7 +3444,21 @@ const html = `<!DOCTYPE html>
         const target = event.target;
         const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
         const clickedReferenceNumpad = referenceNumpad?.contains(target);
-        if (clickedReferenceInput || clickedReferenceNumpad) return;
+        const interactingWithDamageNotes = target === damageNote || damageNote?.contains(target) || damageNotesKeyboard?.contains(target);
+        const interactingWithSupplier = target === purchaseSupplier || purchaseSupplier?.contains(target);
+
+        if (
+          clickedReferenceInput ||
+          clickedReferenceNumpad ||
+          interactingWithDamageNotes ||
+          interactingWithSupplier
+        ) {
+          return;
+        }
+
+        // Do not steal focus while on the purchase page; let the dropdown stay open.
+        if (document.body.dataset.view === 'purchase') return;
+
         if (document.body.dataset.auth === 'true') {
           focusActiveScanner();
         }
