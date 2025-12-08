@@ -1525,6 +1525,154 @@ CREATE POLICY suppliers_rw
     OR public.has_role_any_outlet(auth.uid(), 'transfers')
   );
 
+-- Supplier scoping per warehouse/product (2025-12-08)
+CREATE TABLE IF NOT EXISTS public.product_supplier_links (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  variation_id uuid REFERENCES public.product_variations(id) ON DELETE CASCADE,
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  supplier_id uuid NOT NULL REFERENCES public.suppliers(id) ON DELETE RESTRICT,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_product_supplier_links_scope
+  ON public.product_supplier_links (
+    warehouse_id,
+    supplier_id,
+    product_id,
+    COALESCE(variation_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+CREATE INDEX IF NOT EXISTS idx_product_supplier_links_active
+  ON public.product_supplier_links (warehouse_id, product_id, variation_id, active)
+  WHERE active;
+
+ALTER TABLE public.product_supplier_links ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS psl_select_any ON public.product_supplier_links;
+CREATE POLICY psl_select_any
+  ON public.product_supplier_links
+  FOR SELECT
+  USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS psl_admin_rw ON public.product_supplier_links;
+CREATE POLICY psl_admin_rw
+  ON public.product_supplier_links
+  FOR ALL
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+CREATE OR REPLACE FUNCTION public.suppliers_for_warehouse(p_warehouse_id uuid)
+RETURNS TABLE(
+  id uuid,
+  name text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  active boolean
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT DISTINCT
+    s.id,
+    s.name,
+    s.contact_name,
+    s.contact_phone,
+    s.contact_email,
+    s.active
+  FROM public.suppliers s
+  JOIN public.product_supplier_links psl ON psl.supplier_id = s.id
+  WHERE psl.warehouse_id = p_warehouse_id
+    AND psl.active
+    AND s.active
+  ORDER BY s.name;
+$$;
+
+-- Allow assigning multiple suppliers to a product/variation within a warehouse
+CREATE OR REPLACE FUNCTION public.set_product_suppliers(
+  p_warehouse_id uuid,
+  p_product_id uuid,
+  p_supplier_ids uuid[],
+  p_variation_id uuid DEFAULT NULL,
+  p_active boolean DEFAULT true
+)
+RETURNS TABLE(
+  supplier_id uuid,
+  product_id uuid,
+  variation_id uuid,
+  warehouse_id uuid,
+  active boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
+  END IF;
+  IF NOT (
+    public.is_admin(v_uid)
+    OR public.has_role_any_outlet(v_uid, 'transfers')
+  ) THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  -- Normalize input (unique, non-null supplier IDs)
+  WITH normalized AS (
+    SELECT DISTINCT sid AS supplier_id
+    FROM unnest(coalesce(p_supplier_ids, '{}')) AS sid
+    WHERE sid IS NOT NULL
+  )
+  -- Remove links that are no longer selected
+  DELETE FROM public.product_supplier_links psl
+  WHERE psl.warehouse_id = p_warehouse_id
+    AND psl.product_id = p_product_id
+    AND (psl.variation_id IS NOT DISTINCT FROM p_variation_id)
+    AND NOT EXISTS (
+      SELECT 1 FROM normalized n WHERE n.supplier_id = psl.supplier_id
+    );
+
+  -- Upsert active links for the provided suppliers
+  INSERT INTO public.product_supplier_links(
+    warehouse_id,
+    product_id,
+    variation_id,
+    supplier_id,
+    active
+  )
+  SELECT
+    p_warehouse_id,
+    p_product_id,
+    p_variation_id,
+    n.supplier_id,
+    COALESCE(p_active, true)
+  FROM normalized n
+  ON CONFLICT ON CONSTRAINT ux_product_supplier_links_scope
+  DO UPDATE SET
+    active = EXCLUDED.active,
+    updated_at = now();
+
+  RETURN QUERY
+  SELECT
+    supplier_id,
+    product_id,
+    variation_id,
+    warehouse_id,
+    active
+  FROM public.product_supplier_links
+  WHERE warehouse_id = p_warehouse_id
+    AND product_id = p_product_id
+    AND (variation_id IS NOT DISTINCT FROM p_variation_id);
+END;
+$$;
+
 -- ------------------------------------------------------------
 -- Stock entry logging + warehouse transfer portal (2025-11-27)
 -- ------------------------------------------------------------
@@ -1535,6 +1683,17 @@ BEGIN
     SELECT 1 FROM pg_type WHERE typname = 'stock_entry_kind'
   ) THEN
     CREATE TYPE public.stock_entry_kind AS ENUM ('initial','purchase','closing');
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t
+    JOIN pg_enum e ON e.enumtypid = t.oid
+    WHERE t.typname = 'stock_entry_kind' AND e.enumlabel = 'damage'
+  ) THEN
+    ALTER TYPE public.stock_entry_kind ADD VALUE IF NOT EXISTS 'damage';
   END IF;
 END $$;
 
@@ -1549,6 +1708,51 @@ CREATE TABLE IF NOT EXISTS public.warehouse_stock_entries (
   recorded_by uuid NOT NULL DEFAULT auth.uid(),
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Damages log (deductions recorded against a warehouse/product/variation)
+CREATE TABLE IF NOT EXISTS public.damages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  variation_id uuid REFERENCES public.product_variations(id) ON DELETE CASCADE,
+  qty numeric NOT NULL CHECK (qty > 0),
+  qty_cases numeric,
+  package_contains numeric,
+  note text,
+  recorded_by uuid NOT NULL DEFAULT auth.uid(),
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  source_entry_id uuid REFERENCES public.warehouse_stock_entries(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_damages_warehouse ON public.damages(warehouse_id, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_damages_product ON public.damages(product_id, variation_id);
+
+ALTER TABLE public.damages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS damages_select ON public.damages;
+CREATE POLICY damages_select
+  ON public.damages
+  FOR SELECT
+  USING (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+  );
+
+DROP POLICY IF EXISTS damages_admin_rw ON public.damages;
+CREATE POLICY damages_admin_rw
+  ON public.damages
+  FOR ALL
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS damages_insert ON public.damages;
+CREATE POLICY damages_insert
+  ON public.damages
+  FOR INSERT
+  WITH CHECK (
+    public.is_admin(auth.uid())
+    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+  );
 
 CREATE INDEX IF NOT EXISTS idx_wse_warehouse ON public.warehouse_stock_entries(warehouse_id);
 CREATE INDEX IF NOT EXISTS idx_wse_product ON public.warehouse_stock_entries(product_id);
@@ -1910,6 +2114,8 @@ BEGIN
 
   IF p_entry_kind = 'purchase' THEN
     v_target := v_previous + v_qty_units;
+  ELSIF p_entry_kind = 'damage' THEN
+    v_target := GREATEST(v_previous - v_qty_units, 0);
   END IF;
 
   INSERT INTO public.warehouse_stock_entries(
@@ -1956,6 +2162,102 @@ BEGIN
   );
 
   RETURN v_entry;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_damage(
+  p_warehouse_id uuid,
+  p_items jsonb,
+  p_note text DEFAULT NULL
+)
+RETURNS TABLE(
+  id uuid,
+  warehouse_id uuid,
+  product_id uuid,
+  variation_id uuid,
+  qty numeric,
+  qty_cases numeric,
+  package_contains numeric,
+  note text,
+  recorded_by uuid,
+  recorded_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_note text := nullif(btrim(p_note), '');
+  v_item jsonb;
+  v_entry public.warehouse_stock_entries%ROWTYPE;
+  v_row public.damages%ROWTYPE;
+  v_qty numeric;
+  v_product uuid;
+  v_variation uuid;
+  v_item_note text;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
+  END IF;
+  IF p_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'warehouse_id is required';
+  END IF;
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'p_items must be a non-empty json array';
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+    v_product := (v_item->>'product_id')::uuid;
+    v_variation := NULLIF(v_item->>'variation_id', '')::uuid;
+    v_qty := (v_item->>'qty')::numeric;
+    v_item_note := nullif(btrim(coalesce(v_item->>'note', v_note)), '');
+
+    IF v_product IS NULL THEN
+      RAISE EXCEPTION 'product_id is required for each item';
+    END IF;
+    IF v_qty IS NULL OR v_qty <= 0 THEN
+      RAISE EXCEPTION 'qty must be positive for each item';
+    END IF;
+
+    v_entry := public.record_stock_entry(
+      p_warehouse_id,
+      v_product,
+      'damage',
+      v_qty,
+      v_variation,
+      v_item_note,
+      'units',
+      NULL,
+      NULL,
+      NULL,
+      NULL
+    );
+
+    INSERT INTO public.damages(
+      warehouse_id,
+      product_id,
+      variation_id,
+      qty,
+      qty_cases,
+      package_contains,
+      note,
+      recorded_by,
+      source_entry_id
+    ) VALUES (
+      p_warehouse_id,
+      v_product,
+      v_variation,
+      v_qty,
+      v_entry.qty_cases,
+      v_entry.package_contains,
+      v_item_note,
+      coalesce(v_entry.recorded_by, v_uid),
+      v_entry.id
+    ) RETURNING * INTO v_row;
+
+    RETURN QUERY SELECT v_row.*;
+  END LOOP;
 END;
 $$;
 

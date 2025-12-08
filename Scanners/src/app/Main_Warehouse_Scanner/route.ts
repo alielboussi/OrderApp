@@ -40,15 +40,20 @@ const html = `<!DOCTYPE html>
       padding: var(--shell-pad);
       overflow-x: hidden;
       overflow-y: auto;
-      zoom: 0.82;
+      zoom: 0.78;
     }
-    body[data-view="purchase"] {
+    body[data-view="purchase"],
+    body[data-view="damage"] {
       display: block;
     }
     body[data-view="purchase"] #auth-section,
     body[data-view="purchase"] #app-section,
     body[data-view="purchase"] .console-sticky,
-    body[data-view="purchase"] main {
+    body[data-view="purchase"] main,
+    body[data-view="damage"] #auth-section,
+    body[data-view="damage"] #app-section,
+    body[data-view="damage"] .console-sticky,
+    body[data-view="damage"] main {
       display: none !important;
       width: 0 !important;
       height: 0 !important;
@@ -58,13 +63,14 @@ const html = `<!DOCTYPE html>
       box-shadow: none !important;
       overflow: hidden !important;
     }
-    body[data-view="purchase"] #purchase-page {
+    body[data-view="purchase"] #purchase-page,
+    body[data-view="damage"] #damage-page {
       display: flex;
     }
     main {
-      width: 920px;
-      max-width: 920px;
-      min-width: 920px;
+      width: 900px;
+      max-width: 900px;
+      min-width: 900px;
       min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
@@ -404,24 +410,8 @@ const html = `<!DOCTYPE html>
       flex: 1;
       min-width: 160px;
     }
-    #purchase-page {
-      display: none;
-      flex-direction: column;
-      gap: 12px;
-      width: 920px;
-      max-width: 920px;
-      min-width: 920px;
-      min-height: auto;
-      margin: 0 auto;
-      background: rgba(0, 0, 0, 0.85);
-      padding: calc(var(--shell-pad) * 0.9);
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    body[data-view="purchase"] #purchase-page {
-      display: flex;
-    }
-    #purchase-page {
+    #purchase-page,
+    #damage-page {
       display: none;
       flex-direction: column;
       gap: 14px;
@@ -442,7 +432,16 @@ const html = `<!DOCTYPE html>
       justify-content: center;
       gap: 12px;
     }
+    .damage-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
     .purchase-route-info {
+      margin-top: 8px;
+    }
+    .damage-route-info {
       margin-top: 8px;
     }
     .purchase-panel {
@@ -450,12 +449,28 @@ const html = `<!DOCTYPE html>
       flex-direction: column;
       gap: 16px;
     }
+    .damage-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-color: rgba(34, 197, 94, 0.35);
+    }
     .purchase-header {
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
+    .damage-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
     .purchase-shell {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .damage-shell {
       display: flex;
       flex-direction: column;
       gap: 18px;
@@ -586,15 +601,10 @@ const html = `<!DOCTYPE html>
     .virtual-keyboard button.wide-5 {
       grid-column: span 5;
     }
-    .notes-field {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .notes-keyboard-actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
+    /* Purchase notes hidden */
+    .notes-field,
+    #notes-keyboard {
+      display: none !important;
     }
     .keyboard-trigger {
       background: rgba(255, 255, 255, 0.06);
@@ -747,6 +757,42 @@ const html = `<!DOCTYPE html>
     }
     .transfer-actions button {
       min-width: clamp(190px, 34%, 260px);
+    }
+    .damage-panel {
+      margin-top: 12px;
+      border-color: rgba(34, 197, 94, 0.35);
+    }
+    .damage-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .damage-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .button-green {
+      background: linear-gradient(120deg, #10b981, #22c55e, #16a34a);
+      color: #032012;
+      border: 1px solid rgba(34, 197, 94, 0.5);
+      box-shadow: 0 18px 30px rgba(34, 197, 94, 0.25);
+    }
+    .button-green:hover:not(:disabled) {
+      box-shadow: 0 18px 36px rgba(34, 197, 94, 0.35);
+      transform: translateY(-2px);
+    }
+    .active-mode {
+      border-color: rgba(34, 197, 94, 0.6) !important;
+      box-shadow: 0 18px 38px rgba(34, 197, 94, 0.18);
+    }
+    .damage-hint {
+      margin: 2px 0 0 0;
+      color: #b7f7d1;
+      font-size: 0.9rem;
     }
     .button-outline {
       background: transparent;
@@ -1002,9 +1048,11 @@ const html = `<!DOCTYPE html>
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
             <button type="button" id="purchase-open" class="button-outline">Log Purchase Intake</button>
+            <button type="button" id="damage-open" class="button-green">Log Damages</button>
           </div>
         </form>
       </article>
+
     </section>
   </main>
 
@@ -1204,6 +1252,103 @@ const html = `<!DOCTYPE html>
     </article>
   </section>
 
+  <section id="damage-page">
+    <header class="panel damage-header">
+      <div class="damage-header-bar">
+        <div class="brand-header">
+          <img src="/afterten-logo.png" alt="AfterTen logo" />
+        </div>
+        <div class="damage-route-info">
+          <p class="damage-hint" style="margin:0;">Scans deduct from <span id="damage-warehouse-label">this warehouse</span>.</p>
+        </div>
+      </div>
+    </header>
+    <article class="panel damage-panel" id="damage-panel">
+      <form id="damage-form">
+        <div class="damage-shell">
+          <h3>Log Damages</h3>
+          <div class="cart-head">
+            <div>
+              <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Damages Cart</h3>
+              <p class="damage-hint" style="margin-top:4px;">Scans deduct from <span id="damage-cart-warehouse">this warehouse</span></p>
+            </div>
+            <div class="cart-summary">
+              <span id="damage-cart-count">0 items</span>
+            </div>
+          </div>
+          <table class="cart-table">
+            <thead>
+              <tr>
+                <th scope="col">Product</th>
+                <th scope="col">Variation</th>
+                <th scope="col">Scanned Qty</th>
+                <th scope="col">Qty</th>
+                <th scope="col">UOM</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="damage-cart-body"></tbody>
+          </table>
+          <p id="damage-cart-empty">No damages logged yet.</p>
+          <label>Damage Note (optional)
+            <input type="text" id="damage-note" placeholder="e.g. Broken on arrival" />
+            <div class="notes-keyboard-actions">
+              <button type="button" id="damage-notes-keyboard-open" class="keyboard-trigger">Open Keyboard</button>
+            </div>
+            <div id="damage-notes-keyboard" class="virtual-keyboard" aria-hidden="true">
+              <!-- Row 1 -->
+              <button type="button" data-key="Q">Q</button>
+              <button type="button" data-key="W">W</button>
+              <button type="button" data-key="E">E</button>
+              <button type="button" data-key="R">R</button>
+              <button type="button" data-key="T">T</button>
+              <button type="button" data-key="Y">Y</button>
+              <button type="button" data-key="U">U</button>
+              <button type="button" data-key="I">I</button>
+              <button type="button" data-key="O">O</button>
+              <button type="button" data-key="P">P</button>
+              <!-- Row 2 -->
+              <button type="button" data-key="A">A</button>
+              <button type="button" data-key="S">S</button>
+              <button type="button" data-key="D">D</button>
+              <button type="button" data-key="F">F</button>
+              <button type="button" data-key="G">G</button>
+              <button type="button" data-key="H">H</button>
+              <button type="button" data-key="J">J</button>
+              <button type="button" data-key="K">K</button>
+              <button type="button" data-key="L">L</button>
+              <button type="button" data-key=";" aria-label="Semicolon">;</button>
+              <!-- Row 3 -->
+              <button type="button" data-key="Z">Z</button>
+              <button type="button" data-key="X">X</button>
+              <button type="button" data-key="C">C</button>
+              <button type="button" data-key="V">V</button>
+              <button type="button" data-key="B">B</button>
+              <button type="button" data-key="N">N</button>
+              <button type="button" data-key="M">M</button>
+              <button type="button" data-key="," aria-label="Comma">,</button>
+              <button type="button" data-key="." aria-label="Period">.</button>
+              <button type="button" data-key="/" aria-label="Slash">/</button>
+              <!-- Row 4 -->
+              <button type="button" class="wide-4" data-action="space">Space</button>
+              <button type="button" class="wide-2" data-action="enter">Enter</button>
+              <button type="button" class="wide-2" data-action="delete">Backspace</button>
+              <button type="button" data-key="-" aria-label="Dash">-</button>
+              <button type="button" data-key="'" aria-label="Apostrophe">'</button>
+              <!-- Row 5 -->
+              <button type="button" class="wide-5" data-action="clear">Clear</button>
+              <button type="button" class="wide-5" data-action="close">Close</button>
+            </div>
+          </label>
+          <div class="damage-actions">
+            <button type="button" id="damage-back" class="button-outline">Back to Transfers</button>
+            <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
+          </div>
+        </div>
+      </form>
+    </article>
+  </section>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
   <script>
     const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
@@ -1230,6 +1375,7 @@ const html = `<!DOCTYPE html>
         variationIndex: new Map(),
         mode: 'transfer',
         transferCart: [],
+        damageCart: [],
         purchaseCart: [],
         pendingEntry: null,
         pendingEditIndex: null,
@@ -1245,7 +1391,9 @@ const html = `<!DOCTYPE html>
           note: '',
           autoWhatsapp: true
         },
-        purchaseSubmitting: false
+        purchaseSubmitting: false,
+        damageSubmitting: false,
+        damageNote: ''
       };
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -1273,6 +1421,7 @@ const html = `<!DOCTYPE html>
       const loginStatus = document.getElementById('login-status');
       const loginWedge = document.getElementById('login-wedge');
       const transferForm = document.getElementById('transfer-form');
+      const transferPanelEl = document.querySelector('.transfer-panel');
       const appSection = document.getElementById('app-section');
       const mainShell = document.querySelector('main');
       const resultToast = document.getElementById('result-toast');
@@ -1297,6 +1446,19 @@ const html = `<!DOCTYPE html>
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
       const cartCount = document.getElementById('cart-count');
+      const damagePanel = document.getElementById('damage-panel');
+      const damageForm = document.getElementById('damage-form');
+      const damageCartBody = document.getElementById('damage-cart-body');
+      const damageCartEmpty = document.getElementById('damage-cart-empty');
+      const damageCartCount = document.getElementById('damage-cart-count');
+      const damageSubmit = document.getElementById('damage-submit');
+      const damageNote = document.getElementById('damage-note');
+      const damageWarehouseLabel = document.getElementById('damage-warehouse-label');
+      const damageCartWarehouse = document.getElementById('damage-cart-warehouse');
+      const damageBackButton = document.getElementById('damage-back');
+      const damagePage = document.getElementById('damage-page');
+      const damageNotesKeyboard = document.getElementById('damage-notes-keyboard');
+      const damageNotesKeyboardOpen = document.getElementById('damage-notes-keyboard-open');
       const qtyModal = document.getElementById('qty-modal');
       const qtyForm = document.getElementById('qty-form');
       const qtyInput = document.getElementById('qty-input');
@@ -1308,6 +1470,7 @@ const html = `<!DOCTYPE html>
       const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const printRoot = document.getElementById('print-root');
       const purchaseOpenButton = document.getElementById('purchase-open');
+      const damageOpenButton = document.getElementById('damage-open');
       const purchasePage = document.getElementById('purchase-page');
       const purchaseForm = document.getElementById('purchase-form');
       const purchaseSupplier = document.getElementById('purchase-supplier');
@@ -1335,12 +1498,18 @@ const html = `<!DOCTYPE html>
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
       let referenceNumpadHideTimeoutId = null;
+      let notesKeyboardSuppressed = false;
 
       const cartElements = {
         transfer: {
           body: cartBody,
           empty: cartEmpty,
           count: cartCount
+        },
+        damage: {
+          body: damageCartBody,
+          empty: damageCartEmpty,
+          count: damageCartCount
         },
         purchase: {
           body: purchaseCartBody,
@@ -1351,6 +1520,7 @@ const html = `<!DOCTYPE html>
 
       updateQtyHint(null);
       resetPurchaseForm();
+      setMode('transfer');
 
       function normalizeKey(value) {
         if (value === null || value === undefined) return '';
@@ -1653,12 +1823,16 @@ const html = `<!DOCTYPE html>
       }
 
       function getCart(context = state.mode) {
-        return context === 'purchase' ? state.purchaseCart : state.transferCart;
+        if (context === 'purchase') return state.purchaseCart;
+        if (context === 'damage') return state.damageCart;
+        return state.transferCart;
       }
 
       function setCart(context, next) {
         if (context === 'purchase') {
           state.purchaseCart = next;
+        } else if (context === 'damage') {
+          state.damageCart = next;
         } else {
           state.transferCart = next;
         }
@@ -1687,6 +1861,14 @@ const html = `<!DOCTYPE html>
           purchaseNote.value = '';
         }
         updatePurchaseSummary();
+      }
+
+      function setMode(next) {
+        const target = ['transfer', 'purchase', 'damage'].includes(next) ? next : 'transfer';
+        state.mode = target;
+        document.body.dataset.mode = target;
+        transferPanelEl?.classList.toggle('active-mode', target === 'transfer');
+        damagePanel?.classList.toggle('active-mode', target === 'damage');
       }
 
       function renderSupplierOptions() {
@@ -1740,14 +1922,24 @@ const html = `<!DOCTYPE html>
       function showReferenceNumpad() {
         if (!referenceNumpad) return;
         window.clearTimeout(referenceNumpadHideTimeoutId);
+        referenceNumpad.style.display = 'grid';
         referenceNumpad.classList.add('active');
         referenceNumpad.setAttribute('aria-hidden', 'false');
       }
 
       function hideReferenceNumpad() {
         if (!referenceNumpad) return;
+        referenceNumpad.style.display = 'none';
         referenceNumpad.classList.remove('active');
         referenceNumpad.setAttribute('aria-hidden', 'true');
+      }
+
+      function forceCloseReferenceNumpad(event) {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        hideReferenceNumpad();
+        purchaseReference?.blur();
+        focusActiveScanner();
       }
 
       function scheduleReferenceNumpadHide() {
@@ -1810,16 +2002,24 @@ const html = `<!DOCTYPE html>
         input.focus();
       }
 
-      function showNotesKeyboard() {
+      function showNotesKeyboard(force = false) {
         if (!notesKeyboard) return;
+        if (notesKeyboardSuppressed && !force) return;
+        notesKeyboardSuppressed = false;
+        notesKeyboard.style.display = 'grid';
         notesKeyboard.classList.add('active');
         notesKeyboard.setAttribute('aria-hidden', 'false');
       }
 
-      function hideNotesKeyboard() {
+      function hideNotesKeyboard(options = {}) {
         if (!notesKeyboard) return;
+        const { suppressUntilBlur = false } = options;
+        notesKeyboard.style.display = 'none';
         notesKeyboard.classList.remove('active');
         notesKeyboard.setAttribute('aria-hidden', 'true');
+        if (suppressUntilBlur) {
+          notesKeyboardSuppressed = true;
+        }
       }
 
       function insertNoteText(text) {
@@ -1876,13 +2076,88 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'close') {
-          hideNotesKeyboard();
+          hideNotesKeyboard({ suppressUntilBlur: true });
           purchaseNote?.focus();
+          return;
+        }
+      }
+
+      function showDamageNotesKeyboard() {
+        if (!damageNotesKeyboard) return;
+        damageNotesKeyboard.style.display = 'grid';
+        damageNotesKeyboard.classList.add('active');
+        damageNotesKeyboard.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideDamageNotesKeyboard() {
+        if (!damageNotesKeyboard) return;
+        damageNotesKeyboard.style.display = 'none';
+        damageNotesKeyboard.classList.remove('active');
+        damageNotesKeyboard.setAttribute('aria-hidden', 'true');
+      }
+
+      function insertDamageNoteText(text) {
+        if (!damageNote || !text) return;
+        const start = damageNote.selectionStart ?? damageNote.value.length;
+        const end = damageNote.selectionEnd ?? damageNote.value.length;
+        const current = damageNote.value ?? '';
+        const next = current.slice(0, start) + text + current.slice(end);
+        damageNote.value = next;
+        const caret = start + text.length;
+        damageNote.setSelectionRange(caret, caret);
+        state.damageNote = next;
+        damageNote.focus();
+      }
+
+      function deleteDamageNoteChar() {
+        if (!damageNote) return;
+        const start = damageNote.selectionStart ?? damageNote.value.length;
+        const end = damageNote.selectionEnd ?? damageNote.value.length;
+        if (start === 0 && end === 0) return;
+        const current = damageNote.value ?? '';
+        const hasSelection = start !== end;
+        const next = hasSelection
+          ? current.slice(0, start) + current.slice(end)
+          : current.slice(0, Math.max(0, start - 1)) + current.slice(end);
+        const caret = hasSelection ? start : Math.max(0, start - 1);
+        damageNote.value = next;
+        damageNote.setSelectionRange(caret, caret);
+        state.damageNote = next;
+        damageNote.focus();
+      }
+
+      function handleDamageNotesAction(action) {
+        if (!action) return;
+        if (action === 'space') {
+          insertDamageNoteText(' ');
+          return;
+        }
+        if (action === 'enter') {
+          insertDamageNoteText('\n');
+          return;
+        }
+        if (action === 'delete') {
+          deleteDamageNoteChar();
+          return;
+        }
+        if (action === 'clear') {
+          if (damageNote) {
+            damageNote.value = '';
+            damageNote.setSelectionRange(0, 0);
+            state.damageNote = '';
+            damageNote.focus();
+          }
+          return;
+        }
+        if (action === 'close') {
+          hideDamageNotesKeyboard();
+          damageNote?.focus();
+          return;
         }
       }
 
       function enterPurchaseMode() {
-        state.mode = 'purchase';
+        setMode('purchase');
         document.body.dataset.view = 'purchase';
         if (appSection) {
           appSection.style.display = 'none';
@@ -1909,7 +2184,7 @@ const html = `<!DOCTYPE html>
 
       function exitPurchaseMode() {
         document.body.dataset.view = 'transfer';
-        state.mode = 'transfer';
+        setMode('transfer');
         if (appSection) {
           appSection.style.display = '';
         }
@@ -1918,6 +2193,34 @@ const html = `<!DOCTYPE html>
         }
         hideReferenceNumpad();
         hideNotesKeyboard();
+        focusActiveScanner();
+      }
+
+      function enterDamageMode() {
+        setMode('damage');
+        document.body.dataset.view = 'damage';
+        if (appSection) {
+          appSection.style.display = 'none';
+        }
+        if (mainShell) {
+          mainShell.style.display = 'none';
+        }
+        renderCart('damage');
+        if (damageNote) {
+          damageNote.value = state.damageNote ?? '';
+        }
+        focusActiveScanner();
+      }
+
+      function exitDamageMode() {
+        document.body.dataset.view = 'transfer';
+        setMode('transfer');
+        if (appSection) {
+          appSection.style.display = '';
+        }
+        if (mainShell) {
+          mainShell.style.display = '';
+        }
         focusActiveScanner();
       }
 
@@ -2291,13 +2594,12 @@ const html = `<!DOCTYPE html>
       }
 
       async function fetchSuppliers() {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .select('id,name,contact_name,contact_phone,contact_email,active')
-          .eq('active', true)
-          .order('name', { ascending: true });
+        const { data, error } = await supabase.rpc('suppliers_for_warehouse', {
+          p_warehouse_id: lockedSourceId
+        });
         if (error) throw error;
-        state.suppliers = data ?? [];
+        const list = Array.isArray(data) ? data : [];
+        state.suppliers = list.filter((s) => s && s.active !== false);
         renderSupplierOptions();
       }
 
@@ -2323,6 +2625,12 @@ const html = `<!DOCTYPE html>
           if (purchaseCartWarehouse) {
             purchaseCartWarehouse.textContent = sourceWarehouse.name ?? 'Warehouse';
           }
+          if (damageWarehouseLabel) {
+            damageWarehouseLabel.textContent = sourceWarehouse.name ?? 'Warehouse';
+          }
+          if (damageCartWarehouse) {
+            damageCartWarehouse.textContent = sourceWarehouse.name ?? 'Warehouse';
+          }
         }
         if (!sourceWarehouse) {
           throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
@@ -2341,6 +2649,7 @@ const html = `<!DOCTYPE html>
           showResult('Unable to refresh supplier list. Continue scanning or retry later.', true);
         }
         renderCart();
+        renderCart('damage');
         focusActiveScanner();
       }
 
@@ -2433,6 +2742,66 @@ const html = `<!DOCTYPE html>
           state.loading = false;
           submitButton.disabled = false;
           submitButton.textContent = 'Submit Transfer';
+        }
+      }
+
+      async function handleDamageSubmit(event) {
+        event.preventDefault();
+        if (state.damageSubmitting) return;
+        const warehouseId = lockedSourceId;
+        if (!warehouseId) {
+          showResult('Source warehouse unavailable for damages.', true);
+          return;
+        }
+        const cart = getCart('damage');
+        if (!cart.length) {
+          showResult('Scan at least one product before logging damages.', true);
+          return;
+        }
+
+        const noteValue = (damageNote?.value ?? state.damageNote ?? '').trim();
+        const cartSnapshot = cart.map((item) => ({ ...item }));
+        const payloadItems = cartSnapshot.map((item) => ({
+          product_id: item.productId,
+          variation_id: item.variationId,
+          qty: item.qty,
+          note: noteValue || null
+        }));
+
+        if (payloadItems.some((item) => !item.product_id || !item.qty || item.qty <= 0)) {
+          showResult('One or more damage items are missing quantity or product references.', true);
+          return;
+        }
+
+        state.damageSubmitting = true;
+        if (damageSubmit) {
+          damageSubmit.disabled = true;
+          damageSubmit.textContent = 'Logging...';
+        }
+
+        try {
+          const { error } = await supabase.rpc('record_damage', {
+            p_warehouse_id: warehouseId,
+            p_items: payloadItems,
+            p_note: noteValue || null
+          });
+          if (error) throw error;
+
+          showResult('Damages logged and deducted.', false);
+          setCart('damage', []);
+          renderCart('damage');
+          if (damageNote) damageNote.value = '';
+          state.damageNote = '';
+          setMode('damage');
+          focusActiveScanner();
+        } catch (error) {
+          showResult(error.message ?? 'Failed to log damages', true);
+        } finally {
+          state.damageSubmitting = false;
+          if (damageSubmit) {
+            damageSubmit.disabled = false;
+            damageSubmit.textContent = 'Log Damages';
+          }
         }
       }
 
@@ -2692,13 +3061,19 @@ const html = `<!DOCTYPE html>
         if (!session) {
           state.operatorProfile = null;
           state.transferCart = [];
+          state.damageCart = [];
           state.purchaseCart = [];
           state.suppliers = [];
           state.purchaseSubmitting = false;
+          state.damageSubmitting = false;
+          state.damageNote = '';
           resetPurchaseForm();
           renderCart('transfer');
+          renderCart('damage');
           renderCart('purchase');
           closeQtyPrompt();
+          setMode('transfer');
+          exitDamageMode();
           exitPurchaseMode();
           document.body.dataset.auth = 'false';
           return;
@@ -2775,13 +3150,68 @@ const html = `<!DOCTYPE html>
         enterPurchaseMode();
       });
 
+      damageOpenButton?.addEventListener('click', () => {
+        enterDamageMode();
+      });
+
+      damageForm?.addEventListener('pointerdown', () => {
+        if (state.mode !== 'damage') setMode('damage');
+      });
+
+      transferForm?.addEventListener('pointerdown', () => {
+        if (document.body.dataset.view === 'purchase' || document.body.dataset.view === 'damage') return;
+        if (state.mode !== 'transfer') setMode('transfer');
+      });
+
+      damageSubmit?.addEventListener('click', () => {
+        if (state.mode !== 'damage') setMode('damage');
+      });
+
+      damageNote?.addEventListener('input', () => {
+        state.damageNote = damageNote.value ?? '';
+      });
+
+      damageNotesKeyboardOpen?.addEventListener('click', () => {
+        showDamageNotesKeyboard();
+        damageNote?.focus();
+      });
+
+      damageNotesKeyboard?.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+      });
+
+      damageNotesKeyboard?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertDamageNoteText(key);
+          return;
+        }
+        if (action) {
+          handleDamageNotesAction(action);
+        }
+      });
+
       purchaseBackButton?.addEventListener('click', () => {
         exitPurchaseMode();
+      });
+
+      damageBackButton?.addEventListener('click', () => {
+        exitDamageMode();
       });
 
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && state.mode === 'purchase') {
           exitPurchaseMode();
+        }
+        if (event.key === 'Escape' && document.body.dataset.view === 'damage') {
+          if (damageNotesKeyboard?.classList.contains('active')) {
+            hideDamageNotesKeyboard();
+            return;
+          }
+          exitDamageMode();
         }
       });
 
@@ -2793,48 +3223,29 @@ const html = `<!DOCTYPE html>
         showReferenceNumpad();
       });
 
-      purchaseReference?.addEventListener('blur', () => {
-        scheduleReferenceNumpadHide();
+      referenceNumpad?.addEventListener('mousedown', (event) => {
+        // Prevent focus from leaving the input while clicking the on-screen keyboard.
+        event.preventDefault();
       });
 
       purchaseReference?.addEventListener('input', () => {
         syncReferenceValue(purchaseReference.value ?? '');
       });
 
-      purchaseNote?.addEventListener('input', () => {
-        state.purchaseForm.note = purchaseNote.value ?? '';
-      });
-
-      purchaseNote?.addEventListener('focus', () => {
-        showNotesKeyboard();
-      });
-
-      notesKeyboardOpen?.addEventListener('click', () => {
-        showNotesKeyboard();
-        purchaseNote?.focus();
-      });
-
-      notesKeyboard?.addEventListener('mousedown', (event) => {
-        event.preventDefault();
-      });
-
-      notesKeyboard?.addEventListener('click', (event) => {
+      document.addEventListener('pointerdown', (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const key = target.dataset.key;
-        const action = target.dataset.action;
-        if (key) {
-          insertNoteText(key);
+        const interactingWithReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
+        const interactingWithReferenceNumpad = referenceNumpad?.contains(target);
+        if (interactingWithReferenceInput || interactingWithReferenceNumpad) {
+          // Keep the keyboard open while interacting with it or its source input.
+          window.clearTimeout(referenceNumpadHideTimeoutId);
+          showReferenceNumpad();
           return;
         }
-        if (action) {
-          handleNotesAction(action);
-        }
+        hideReferenceNumpad();
       });
 
-      referenceNumpad?.addEventListener('mousedown', (event) => {
-        event.preventDefault();
-      });
+      // Notes input removed; listeners intentionally omitted.
 
       referenceNumpad?.addEventListener('click', (event) => {
         const target = event.target;
@@ -2869,10 +3280,23 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'close') {
-          event.preventDefault();
-          hideReferenceNumpad();
-          purchaseReference?.blur();
-          focusActiveScanner();
+          forceCloseReferenceNumpad(event);
+        }
+      });
+
+      // Close buttons should always hide the keyboard even if focus stays inside.
+      referenceNumpad?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          forceCloseReferenceNumpad(event);
+        });
+        btn.addEventListener('pointerdown', (event) => {
+          forceCloseReferenceNumpad(event);
+        });
+      });
+
+      referenceNumpad?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          forceCloseReferenceNumpad(event);
         }
       });
 
@@ -2918,7 +3342,11 @@ const html = `<!DOCTYPE html>
       qtyCancel?.addEventListener('click', () => {
         closeQtyPrompt();
       });
-      document.addEventListener('click', () => {
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
+        const clickedReferenceNumpad = referenceNumpad?.contains(target);
+        if (clickedReferenceInput || clickedReferenceNumpad) return;
         if (document.body.dataset.auth === 'true') {
           focusActiveScanner();
         }
@@ -2942,6 +3370,7 @@ const html = `<!DOCTYPE html>
 
       loginForm?.addEventListener('submit', handleLogin);
       purchaseForm?.addEventListener('submit', handlePurchaseSubmit);
+      damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
     }
   </script>
