@@ -3536,7 +3536,8 @@ function createHtml(config: {
             operator: state.session?.user?.email ?? 'Unknown operator',
             sourceLabel: sourceLabel.textContent,
             destLabel: destLabel.textContent,
-            route: (sourceLabel.textContent ?? 'Unknown source') + ' -> ' + (destLabel.textContent ?? 'Unknown destination'),
+            route:
+              (sourceLabel.textContent ?? 'Unknown source') + ' → ' + (destLabel.textContent ?? 'Unknown destination'),
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
@@ -3707,7 +3708,7 @@ function createHtml(config: {
             processedBy: state.session?.user?.email ?? 'Unknown operator',
             sourceLabel: supplierName,
             destLabel: warehouseName,
-            route: supplierName + ' -> ' + warehouseName,
+            route: supplierName + ' → ' + warehouseName,
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
