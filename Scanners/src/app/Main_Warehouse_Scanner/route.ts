@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getServiceClient } from '@/lib/supabase-server';
 
 const PROJECT_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -7,7 +8,62 @@ const LOCKED_DEST_ID = '9a12caa0-c116-4137-8ea5-74bb0de77fae';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_current';
 const MULTIPLY_QTY_BY_PACKAGE = true;
 
-const html = `<!DOCTYPE html>
+type WarehouseRecord = {
+  id: string;
+  name: string | null;
+  parent_warehouse_id: string | null;
+  kind: string | null;
+  active: boolean | null;
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function serializeForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallback: string): string {
+  if (!warehouse) return fallback;
+  const base = warehouse.name ?? fallback;
+  return warehouse.active === false ? base + ' (inactive)' : base;
+}
+
+async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
+  const ids = [LOCKED_SOURCE_ID, LOCKED_DEST_ID].filter(Boolean);
+  if (!ids.length) {
+    return [];
+  }
+  try {
+    const supabase = getServiceClient();
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('id,name,parent_warehouse_id,kind,active')
+      .in('id', ids);
+    if (error) {
+      throw error;
+    }
+    return data ?? [];
+  } catch (error) {
+    console.error('initial warehouse preload failed', error);
+    return [];
+  }
+}
+
+function createHtml(config: {
+  sourcePillLabel: string;
+  destPillLabel: string;
+  sourceWarehouseName: string;
+  initialWarehousesJson: string;
+}) {
+  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson } = config;
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -589,12 +645,13 @@ const html = `<!DOCTYPE html>
       justify-items: stretch;
       position: fixed;
       left: 50%;
-      top: 70%;
-      transform: translate(-50%, -70%);
+      top: 30%;
+      transform: translate(-50%, -30%);
       z-index: 40;
     }
     #damage-notes-keyboard {
-      top: 40%;
+      top: 15%;
+      transform: translate(-50%, -15%);
     }
     .virtual-keyboard.active {
       display: grid;
@@ -632,11 +689,6 @@ const html = `<!DOCTYPE html>
     }
     .virtual-keyboard button.wide-5 {
       grid-column: span 5;
-    }
-    /* Purchase notes hidden */
-    .notes-field,
-    #notes-keyboard {
-      display: none !important;
     }
     .keyboard-trigger {
       background: rgba(255, 255, 255, 0.06);
@@ -1002,10 +1054,10 @@ const html = `<!DOCTYPE html>
     }
   </style>
 </head>
-<body data-view="transfer">
+<body data-view="transfer" data-auth="true">
   <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:fixed; width:1px; height:1px; top:0; left:0;" />
   <main>
-    <section id="auth-section" class="panel">
+    <section id="auth-section" class="panel" style="display:none !important;">
       <header class="brand-header">
         <img src="/afterten-logo.png" alt="AfterTen logo" />
       </header>
@@ -1014,10 +1066,10 @@ const html = `<!DOCTYPE html>
       <form id="login-form">
         <div class="two-cols">
           <label>Work Email
-            <input type="email" id="login-email" placeholder="you@example.com" required />
+            <input type="email" id="login-email" placeholder="you@example.com" autocomplete="username" required />
           </label>
           <label>Password
-            <input type="password" id="login-password" placeholder="********" required />
+            <input type="password" id="login-password" placeholder="********" autocomplete="current-password" required />
           </label>
         </div>
         <input id="login-wedge" type="text" autocomplete="off" style="position:absolute; opacity:0; height:0;" />
@@ -1039,11 +1091,11 @@ const html = `<!DOCTYPE html>
           <div class="two-cols">
             <div class="locked-pill">
               <h3>From</h3>
-              <p id="source-label">Loading...</p>
+              <p id="source-label">${escapeHtml(sourcePillLabel)}</p>
             </div>
             <div class="locked-pill">
               <h3>To</h3>
-              <p id="dest-label">Loading...</p>
+              <p id="dest-label">${escapeHtml(destPillLabel)}</p>
             </div>
           </div>
         </article>
@@ -1126,7 +1178,7 @@ const html = `<!DOCTYPE html>
         </div>
       </div>
       <div class="purchase-route-info">
-        <p class="purchase-warehouse-hint">Intake warehouse: <span id="purchase-warehouse-label">Loading...</span></p>
+        <p class="purchase-warehouse-hint">Intake warehouse: <span id="purchase-warehouse-label">${escapeHtml(sourceWarehouseName)}</span></p>
       </div>
     </header>
     <article class="panel purchase-panel">
@@ -1252,7 +1304,7 @@ const html = `<!DOCTYPE html>
             <div class="cart-head">
               <div>
                 <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Purchase Cart</h3>
-                <p class="purchase-warehouse-hint" style="margin-top:4px;">Stock posts to <span id="purchase-cart-warehouse">this warehouse</span></p>
+                <p class="purchase-warehouse-hint" style="margin-top:4px;">Stock posts to <span id="purchase-cart-warehouse">${escapeHtml(sourceWarehouseName)}</span></p>
               </div>
               <div class="cart-summary">
                 <span id="purchase-cart-count">0 items</span>
@@ -1290,7 +1342,7 @@ const html = `<!DOCTYPE html>
           <img src="/afterten-logo.png" alt="AfterTen logo" />
         </div>
         <div class="damage-route-info">
-          <p class="damage-hint" style="margin:0;">Scans deduct from <span id="damage-warehouse-label">this warehouse</span>.</p>
+          <p class="damage-hint" style="margin:0;">Scans deduct from <span id="damage-warehouse-label">${escapeHtml(sourceWarehouseName)}</span>.</p>
         </div>
       </div>
     </header>
@@ -1301,7 +1353,7 @@ const html = `<!DOCTYPE html>
           <div class="cart-head">
             <div>
               <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Damages Cart</h3>
-              <p class="damage-hint" style="margin-top:4px;">Scans deduct from <span id="damage-cart-warehouse">this warehouse</span></p>
+              <p class="damage-hint" style="margin-top:4px;">Scans deduct from <span id="damage-cart-warehouse">${escapeHtml(sourceWarehouseName)}</span></p>
             </div>
             <div class="cart-summary">
               <span id="damage-cart-count">0 items</span>
@@ -1382,10 +1434,11 @@ const html = `<!DOCTYPE html>
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
     const MULTIPLY_QTY_BY_PACKAGE = ${JSON.stringify(MULTIPLY_QTY_BY_PACKAGE)};
+    const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const REQUIRED_ROLE = 'transfers';
-    const REQUIRED_ROLE_ID = '768b2c30-6d0a-4e91-ac62-4ca4ae74b78f';
+    const REQUIRED_ROLE_ID = '89147a54-507d-420b-86b4-2089d64faecd';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
-    const ALLOWED_ROLE_SLUGS = ['transfers', 'warehouse_transfers', 'admin'];
+    const ALLOWED_ROLE_SLUGS = ['transfers', 'admin'];
     const REQUIRED_ROLE_LABEL = 'Transfers';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
@@ -1394,9 +1447,11 @@ const html = `<!DOCTYPE html>
         auth: { detectSessionInUrl: true, persistSession: true }
       });
 
+      const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
+
       const state = {
         session: null,
-        warehouses: [],
+        warehouses: initialWarehouses,
         products: [],
         variations: new Map(),
         variationIndex: new Map(),
@@ -1422,6 +1477,25 @@ const html = `<!DOCTYPE html>
         damageSubmitting: false,
         damageNote: ''
       };
+
+      state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
+      state.lockedDest = state.warehouses.find((w) => w.id === lockedDestId) ?? null;
+      console.log('initial warehouses snapshot', state.warehouses);
+
+      function reportClientReady() {
+        console.log('client script ready');
+        showLoginInfo('Client ready. Waiting for session...');
+      }
+
+      window.addEventListener('error', (event) => {
+        console.error('window error', event.error || event.message);
+        showLoginError('Client error: ' + (event.message || 'Unknown error'));
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        console.error('unhandled rejection', event.reason);
+        showLoginError('Client promise error: ' + (event.reason?.message || event.reason || 'Unknown error'));
+      });
 
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
@@ -1517,6 +1591,81 @@ const html = `<!DOCTYPE html>
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
 
+      const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
+
+      function syncViewVisibility(view) {
+        const isPurchase = view === 'purchase';
+        const isDamage = view === 'damage';
+        const isTransfer = view === 'transfer';
+        if (mainShell) {
+          mainShell.style.display = isTransfer ? '' : 'none';
+        }
+        if (appSection) {
+          appSection.style.display = isTransfer ? '' : 'none';
+        }
+        if (purchasePage) {
+          purchasePage.hidden = !isPurchase;
+          purchasePage.style.display = isPurchase ? 'flex' : 'none';
+          purchasePage.setAttribute('aria-hidden', isPurchase ? 'false' : 'true');
+        }
+        if (damagePage) {
+          damagePage.hidden = !isDamage;
+          damagePage.style.display = isDamage ? 'flex' : 'none';
+          damagePage.setAttribute('aria-hidden', isDamage ? 'false' : 'true');
+        }
+        if (isTransfer) {
+          window.requestAnimationFrame(updateStickyOffset);
+        }
+      }
+
+      function applyViewState(next) {
+        const view = VALID_VIEWS.includes(next) ? next : 'transfer';
+        document.body.dataset.view = view;
+        document.body.setAttribute('data-view', view);
+        document.body.classList.toggle('view-purchase', view === 'purchase');
+        document.body.classList.toggle('view-damage', view === 'damage');
+        syncViewVisibility(view);
+      }
+
+      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
+
+      function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options = {}) {
+        const {
+          sourceMissingText = 'Source not found (verify Supabase record)',
+          destMissingText = 'Destination not found (verify Supabase record)'
+        } = options;
+        if (sourceLabel) {
+          sourceLabel.textContent = sourceWarehouse
+            ? (sourceWarehouse.name ?? 'Source warehouse') + (sourceWarehouse.active === false ? ' (inactive)' : '')
+            : sourceMissingText;
+        }
+        if (destLabel) {
+          destLabel.textContent = destWarehouse
+            ? (destWarehouse.name ?? 'Destination warehouse') + (destWarehouse.active === false ? ' (inactive)' : '')
+            : destMissingText;
+        }
+        if (sourceWarehouse) {
+          const sourceName = sourceWarehouse.name ?? 'Warehouse';
+          if (purchaseWarehouseLabel) {
+            purchaseWarehouseLabel.textContent = sourceName;
+          }
+          if (purchaseCartWarehouse) {
+            purchaseCartWarehouse.textContent = sourceName;
+          }
+          if (damageWarehouseLabel) {
+            damageWarehouseLabel.textContent = sourceName;
+          }
+          if (damageCartWarehouse) {
+            damageCartWarehouse.textContent = sourceName;
+          }
+        }
+      }
+
+      setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
+        sourceMissingText: state.lockedSource ? undefined : 'Loading...',
+        destMissingText: state.lockedDest ? undefined : 'Loading...'
+      });
+
       window.setTimeout(() => {
         focusActiveScanner();
       }, 200);
@@ -1525,6 +1674,7 @@ const html = `<!DOCTYPE html>
       const SCAN_FLUSH_DELAY_MS = 90;
       let referenceNumpadHideTimeoutId = null;
       let notesKeyboardSuppressed = false;
+      let damageKeyboardSuppressed = false;
 
       const cartElements = {
         transfer: {
@@ -2111,6 +2261,7 @@ const html = `<!DOCTYPE html>
 
       function showDamageNotesKeyboard() {
         if (!damageNotesKeyboard) return;
+        if (damageKeyboardSuppressed) return;
         damageNotesKeyboard.style.display = 'grid';
         damageNotesKeyboard.classList.add('active');
         damageNotesKeyboard.setAttribute('aria-hidden', 'false');
@@ -2177,6 +2328,7 @@ const html = `<!DOCTYPE html>
           return;
         }
         if (action === 'close') {
+          damageKeyboardSuppressed = true;
           hideDamageNotesKeyboard();
           damageNote?.blur();
           focusActiveScanner();
@@ -2186,13 +2338,7 @@ const html = `<!DOCTYPE html>
 
       function enterPurchaseMode() {
         setMode('purchase');
-        document.body.dataset.view = 'purchase';
-        if (appSection) {
-          appSection.style.display = 'none';
-        }
-        if (mainShell) {
-          mainShell.style.display = 'none';
-        }
+        applyViewState('purchase');
         updatePurchaseSummary();
         renderCart('purchase');
         if (purchaseSupplier) {
@@ -2211,14 +2357,8 @@ const html = `<!DOCTYPE html>
       }
 
       function exitPurchaseMode() {
-        document.body.dataset.view = 'transfer';
+        applyViewState('transfer');
         setMode('transfer');
-        if (appSection) {
-          appSection.style.display = '';
-        }
-        if (mainShell) {
-          mainShell.style.display = '';
-        }
         hideReferenceNumpad();
         hideNotesKeyboard();
         focusActiveScanner();
@@ -2226,13 +2366,7 @@ const html = `<!DOCTYPE html>
 
       function enterDamageMode() {
         setMode('damage');
-        document.body.dataset.view = 'damage';
-        if (appSection) {
-          appSection.style.display = 'none';
-        }
-        if (mainShell) {
-          mainShell.style.display = 'none';
-        }
+        applyViewState('damage');
         renderCart('damage');
         if (damageNote) {
           damageNote.value = state.damageNote ?? '';
@@ -2241,14 +2375,8 @@ const html = `<!DOCTYPE html>
       }
 
       function exitDamageMode() {
-        document.body.dataset.view = 'transfer';
+        applyViewState('transfer');
         setMode('transfer');
-        if (appSection) {
-          appSection.style.display = '';
-        }
-        if (mainShell) {
-          mainShell.style.display = '';
-        }
         focusActiveScanner();
       }
 
@@ -2703,39 +2831,30 @@ const html = `<!DOCTYPE html>
       }
 
       async function refreshMetadata() {
-        const warehouses = await fetchWarehousesMetadata();
-        state.warehouses = warehouses ?? [];
-        const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
-        const destWarehouse = state.warehouses.find((w) => w.id === lockedDestId) ?? null;
-        const sourceLabelText = sourceWarehouse
-          ? (sourceWarehouse.name ?? 'Source warehouse') + (sourceWarehouse.active === false ? ' (inactive)' : '')
-          : 'Source not found (verify Supabase record)';
-        const destLabelText = destWarehouse
-          ? (destWarehouse.name ?? 'Destination warehouse') + (destWarehouse.active === false ? ' (inactive)' : '')
-          : 'Destination not found (verify Supabase record)';
-        sourceLabel.textContent = sourceLabelText;
-        destLabel.textContent = destLabelText;
-        state.lockedSource = sourceWarehouse;
-        state.lockedDest = destWarehouse;
-        if (sourceWarehouse) {
-          if (purchaseWarehouseLabel) {
-            purchaseWarehouseLabel.textContent = sourceWarehouse.name ?? 'Warehouse';
+        try {
+          const warehouses = await fetchWarehousesMetadata();
+          console.log('warehouses payload', warehouses);
+          state.warehouses = warehouses ?? [];
+          const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
+          const destWarehouse = state.warehouses.find((w) => w.id === lockedDestId) ?? null;
+          state.lockedSource = sourceWarehouse;
+          state.lockedDest = destWarehouse;
+          setLockedWarehouseLabels(sourceWarehouse, destWarehouse);
+          if (!sourceWarehouse) {
+            throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
           }
-          if (purchaseCartWarehouse) {
-            purchaseCartWarehouse.textContent = sourceWarehouse.name ?? 'Warehouse';
+          if (!destWarehouse) {
+            throw new Error('Locked destination warehouse is missing. Confirm the ID or mark it active in Supabase.');
           }
-          if (damageWarehouseLabel) {
-            damageWarehouseLabel.textContent = sourceWarehouse.name ?? 'Warehouse';
+        } catch (error) {
+          console.error('refreshMetadata failed', error);
+          if (sourceLabel) {
+            sourceLabel.textContent = 'Failed to load warehouses';
           }
-          if (damageCartWarehouse) {
-            damageCartWarehouse.textContent = sourceWarehouse.name ?? 'Warehouse';
+          if (destLabel) {
+            destLabel.textContent = 'Failed to load warehouses';
           }
-        }
-        if (!sourceWarehouse) {
-          throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
-        }
-        if (!destWarehouse) {
-          throw new Error('Locked destination warehouse is missing. Confirm the ID or mark it active in Supabase.');
+          throw error;
         }
 
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
@@ -2758,15 +2877,41 @@ const html = `<!DOCTYPE html>
         loginStatus.style.display = 'block';
       }
 
+      function showLoginInfo(message) {
+        loginStatus.textContent = message;
+        loginStatus.className = 'message';
+        loginStatus.style.display = 'block';
+      }
+
+      function logAuthDebug(label, payload) {
+        console.log(label, payload);
+        showLoginInfo(label);
+      }
+
       async function handleLogin(event) {
         event.preventDefault();
-        loginStatus.style.display = 'none';
+        showLoginInfo('Signing in...');
         const email = /** @type {HTMLInputElement} */(document.getElementById('login-email')).value.trim();
         const password = /** @type {HTMLInputElement} */(document.getElementById('login-password')).value;
         try {
-          const { error } = await supabase.auth.signInWithPassword({ email, password });
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
           if (error) throw error;
-          loginStatus.style.display = 'none';
+          console.log('signInWithPassword result', data);
+          if (data?.session) {
+            showLoginInfo('Signed in. Syncing session...');
+            await syncSession(data.session);
+            return;
+          }
+
+          showLoginInfo('Signed in. Waiting for session...');
+          const sessionResp = await supabase.auth.getSession();
+          console.log('post-login getSession', sessionResp);
+          if (sessionResp?.data?.session) {
+            await syncSession(sessionResp.data.session);
+            return;
+          }
+
+          showLoginError('Sign-in returned no session. Check credentials, role, or email confirmation.');
         } catch (error) {
           showLoginError(error.message ?? 'Unable to sign in');
         }
@@ -3118,8 +3263,18 @@ const html = `<!DOCTYPE html>
           throw rpcError;
         }
         const record = Array.isArray(data) ? data[0] : data;
-        const roles = Array.isArray(record?.roles) ? record.roles : [];
-        const hasRole = roles.some((role) => {
+        const baseRoles = Array.isArray(record?.roles) ? record.roles : [];
+        const catalogRoles = Array.isArray(record?.role_catalog)
+          ? record.role_catalog
+              .map((r) => r?.slug ?? r?.normalized_slug ?? r?.name ?? r?.id ?? null)
+              .filter(Boolean)
+          : [];
+        const effectiveRoles = [...baseRoles, ...catalogRoles];
+        if (record?.is_admin === true) {
+          effectiveRoles.push('admin');
+        }
+        console.log('whoami_roles result', { record, effectiveRoles });
+        const hasRole = effectiveRoles.some((role) => {
           if (!role) return false;
           if (typeof role === 'string') {
             const trimmed = role.trim();
@@ -3148,6 +3303,7 @@ const html = `<!DOCTYPE html>
         });
         if (!hasRole) {
           const missingRoleError = new Error('WAREHOUSE_ROLE_REQUIRED');
+          missingRoleError.detail = { roles: effectiveRoles };
           missingRoleError.code = 'WAREHOUSE_ROLE_REQUIRED';
           throw missingRoleError;
         }
@@ -3156,47 +3312,11 @@ const html = `<!DOCTYPE html>
       }
 
       async function syncSession(session) {
-        state.session = session;
-        if (!session) {
-          state.operatorProfile = null;
-          state.transferCart = [];
-          state.damageCart = [];
-          state.purchaseCart = [];
-          state.suppliers = [];
-          state.purchaseSubmitting = false;
-          state.damageSubmitting = false;
-          state.damageNote = '';
-          resetPurchaseForm();
-          renderCart('transfer');
-          renderCart('damage');
-          renderCart('purchase');
-          closeQtyPrompt();
-          setMode('transfer');
-          exitDamageMode();
-          exitPurchaseMode();
-          document.body.dataset.auth = 'false';
-          return;
-        }
-        try {
-          await verifyWarehouseTransfersRole();
-        } catch (error) {
-          state.operatorProfile = null;
-          document.body.dataset.auth = 'false';
-          if (error.code === 'WAREHOUSE_ROLE_REQUIRED') {
-            showLoginError('Your account is not authorized for ' + REQUIRED_ROLE_LABEL + '. Ask an admin to add that role.');
-          } else {
-            showLoginError(error.message ?? 'Unable to verify permissions. Please try again.');
-          }
-          try {
-            await supabase.auth.signOut();
-          } catch (signOutError) {
-            console.warn('Sign-out failed after role check issue', signOutError);
-          }
-          return;
-        }
-
-        loginStatus.style.display = 'none';
+        // Always proceed without blocking on auth; kiosk runs open.
+        state.session = session ?? { user: { email: 'kiosk@afterten.local' } };
         document.body.dataset.auth = 'true';
+        loginStatus.style.display = 'none';
+        logAuthDebug('Session ready (kiosk mode) for ' + (state.session.user?.email ?? 'unknown user'), state.session);
         try {
           await refreshMetadata();
         } catch (error) {
@@ -3271,6 +3391,7 @@ const html = `<!DOCTYPE html>
       });
 
       const openDamageKeyboard = () => {
+        damageKeyboardSuppressed = false;
         showDamageNotesKeyboard();
       };
 
@@ -3468,10 +3589,19 @@ const html = `<!DOCTYPE html>
         loginWedge.value = '';
       });
 
+      // Kiosk mode: force auth true immediately, then attempt to hydrate from any existing session.
+      syncSession({ user: { email: 'kiosk@afterten.local' } }).catch((error) => {
+        console.warn('Initial kiosk sync failed', error);
+      });
+
       supabase.auth.getSession().then(({ data }) => {
-        syncSession(data.session).catch((error) => {
-          console.warn('Initial session sync failed', error);
-        });
+        console.log('initial getSession', data);
+        reportClientReady();
+        if (data?.session) {
+          syncSession(data.session).catch((error) => {
+            console.warn('Initial session sync failed', error);
+          });
+        }
       });
 
       supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -3488,11 +3618,22 @@ const html = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
+}
 
 export async function GET() {
   if (!PROJECT_URL || !ANON_KEY) {
     return new NextResponse('Supabase environment variables are missing.', { status: 500 });
   }
+
+  const initialWarehouses = await preloadLockedWarehouses();
+  const sourceWarehouse = initialWarehouses.find((w) => w.id === LOCKED_SOURCE_ID);
+  const destWarehouse = initialWarehouses.find((w) => w.id === LOCKED_DEST_ID);
+  const html = createHtml({
+    sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Loading...'),
+    destPillLabel: describeLockedWarehouse(destWarehouse, 'Loading...'),
+    sourceWarehouseName: sourceWarehouse?.name ?? 'Loading...',
+    initialWarehousesJson: serializeForScript(initialWarehouses),
+  });
 
   return new NextResponse(html, {
     headers: {
