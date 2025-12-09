@@ -1,6 +1,8 @@
 -- Formatting helpers and any small schema utilities
 -- Idempotent: safe to run multiple times
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -1670,6 +1672,77 @@ BEGIN
   WHERE warehouse_id = p_warehouse_id
     AND product_id = p_product_id
     AND (variation_id IS NOT DISTINCT FROM p_variation_id);
+END;
+$$;
+
+-- ------------------------------------------------------------
+-- Kiosk operator credentials (2025-12-09)
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.console_operators (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  display_name text NOT NULL,
+  passcode_hash text NOT NULL,
+  auth_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS console_operator_display_name_key
+  ON public.console_operators ((lower(display_name)));
+
+ALTER TABLE public.console_operators ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS console_operators_admin_rw ON public.console_operators;
+CREATE POLICY console_operators_admin_rw
+  ON public.console_operators
+  FOR ALL
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+CREATE OR REPLACE FUNCTION public.console_operator_directory()
+RETURNS TABLE(
+  id uuid,
+  display_name text,
+  auth_user_id uuid
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public', 'auth'
+AS $$
+  SELECT id, display_name, auth_user_id
+  FROM public.console_operators
+  WHERE active
+  ORDER BY display_name;
+$$;
+
+CREATE OR REPLACE FUNCTION public.verify_console_operator_passcode(
+  p_operator_id uuid,
+  p_passcode text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_hash text;
+BEGIN
+  IF p_operator_id IS NULL OR p_passcode IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT passcode_hash INTO v_hash
+  FROM public.console_operators
+  WHERE id = p_operator_id
+    AND active;
+
+  IF v_hash IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN crypt(p_passcode, v_hash) = v_hash;
 END;
 $$;
 

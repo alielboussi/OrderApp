@@ -43,3 +43,5 @@ LEFT JOIN (
   AND cols.column_name = fk.source_column
 WHERE cols.table_schema NOT IN ('pg_catalog', 'information_schema')
 ORDER BY cols.table_schema, cols.table_name, cols.ordinal_position;
+
+-- 2025-12-09 addition: include public.console_operators with auth_user_id -> auth.users(id)

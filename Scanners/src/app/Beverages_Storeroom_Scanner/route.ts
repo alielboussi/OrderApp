@@ -4,9 +4,23 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const LOCKED_SOURCE_ID = 'e028dee8-28ca-42b8-978f-4d4e41c22540';
-const LOCKED_DEST_ID = '0c2fd4c2-ffdd-4f35-a51e-c88c94b759ed';
+const DESTINATION_CHOICES = [
+  { id: '0c2fd4c2-ffdd-4f35-a51e-c88c94b759ed', label: 'Till 1 & Till 2 Fridges' },
+  { id: '331b436a-ae04-4b7f-a7ee-f8d653f9914e', label: 'Quick Corner Fridges' }
+] as const;
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '0c2fd4c2-ffdd-4f35-a51e-c88c94b759ed';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_current';
 const MULTIPLY_QTY_BY_PACKAGE = false;
+const OPERATOR_SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
+const OPERATOR_CONTEXT_LABELS = {
+  transfer: 'Transfers',
+  purchase: 'Purchases',
+  damage: 'Damages'
+};
+
+// IMPORTANT: Behavior for this scanner was finalized on 2025-12-09 for kiosk parity.
+// Please coordinate with the transfers team before changing any logic in this file,
+// as late edits risk breaking the now-approved workflows.
 
 type WarehouseRecord = {
   id: string;
@@ -64,6 +78,8 @@ function createHtml(config: {
   initialView: 'transfer' | 'purchase' | 'damage';
 }) {
   const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
+  const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
+  const operatorContextLabelsJson = serializeForScript(OPERATOR_CONTEXT_LABELS);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -256,13 +272,13 @@ function createHtml(config: {
       filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
     }
     .console-sticky {
-      position: sticky;
-      top: calc(var(--shell-pad) - 6px);
-      z-index: 6;
-      background: var(--sticky-overlay);
-      border-radius: 24px;
-      padding: 12px 16px 18px;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+      position: static;
+      top: auto;
+      z-index: auto;
+      background: transparent;
+      border-radius: 0;
+      padding: 0 0 12px;
+      box-shadow: none;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -301,8 +317,141 @@ function createHtml(config: {
     }
     .locked-pill p {
       margin: 0;
-      font-size: 1rem;
+      font-size: clamp(1.35rem, 2.4vw, 1.9rem);
       font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: capitalize;
+      line-height: 1.2;
+    }
+    .locked-pill--destination #dest-label {
+      font-size: clamp(1.45rem, 2.6vw, 2.1rem);
+    }
+    .locked-pill--destination {
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .destination-pill-select {
+      display: block;
+    }
+    .destination-pill-select select {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 12px 16px;
+      color: #ff5d73;
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .destination-pill-select select:focus-visible {
+      outline: none;
+      border-color: #ff1b2d;
+      box-shadow: 0 0 0 3px rgba(255, 27, 45, 0.35);
+    }
+    .destination-pill-hint {
+      margin: 0;
+      font-size: 0.78rem;
+      color: #f7a8b7;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .operator-auth-card {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .operator-auth-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .operator-auth-head h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .operator-status-pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+    .operator-status-pill[data-state="locked"] {
+      color: #ffb4c4;
+      border-color: rgba(255, 76, 108, 0.5);
+    }
+    .operator-status-pill[data-state="unlocked"] {
+      color: #bdfccf;
+      border-color: rgba(34, 197, 94, 0.5);
+    }
+    .operator-select-label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .operator-select-label select {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 14px 18px;
+      color: #ff5d73;
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+    }
+    .operator-select-label select:focus-visible {
+      outline: none;
+      border-color: #ff1b2d;
+      box-shadow: 0 0 0 3px rgba(255, 27, 45, 0.35);
+    }
+    .operator-select-label select option {
+      background: #050505;
+      color: #ff5d73;
+      font-size: 1.2rem;
+      text-transform: uppercase;
+      padding: 12px 10px;
+    }
+    }
+    .operator-auth-hint {
+      margin: 0;
+      font-size: 0.8rem;
+      color: #f7a8b7;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
     #cart-section {
       display: flex;
@@ -473,6 +622,66 @@ function createHtml(config: {
     .qty-actions button {
       flex: 1;
       min-width: 160px;
+    }
+    #operator-passcode-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1100;
+    }
+    #operator-passcode-modal.active {
+      display: flex;
+    }
+    #operator-passcode-form {
+      width: min(420px, calc(100vw - 48px));
+      background: #050505;
+      border: 2px solid #7c3aed;
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      text-align: center;
+    }
+    #operator-passcode-form h3 {
+      margin: 0;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    #operator-modal-context {
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      color: #f7a8b7;
+      text-transform: uppercase;
+      margin: 0;
+    }
+    #operator-passcode-input {
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      border-radius: 16px;
+      border: 3px solid rgba(124, 58, 237, 0.5);
+      padding: 12px 16px;
+      font-size: 1.1rem;
+      text-align: center;
+      letter-spacing: 0.2em;
+    }
+    .operator-modal-error {
+      min-height: 1.2em;
+      font-size: 0.85rem;
+      color: #ffb4c4;
+      margin: 0;
+    }
+    .operator-modal-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .operator-modal-actions button {
+      flex: 1;
+      min-width: 120px;
     }
     #purchase-page,
     #damage-page {
@@ -1070,9 +1279,16 @@ function createHtml(config: {
               <h3>From</h3>
               <p id="source-label">${escapeHtml(sourcePillLabel)}</p>
             </div>
-            <div class="locked-pill">
+            <div class="locked-pill locked-pill--destination">
               <h3>To</h3>
               <p id="dest-label">${escapeHtml(destPillLabel)}</p>
+              <label class="destination-pill-select">
+                <span class="sr-only">Select destination warehouse</span>
+                <select id="console-destination-select">
+                  <option value="">Choose destination</option>
+                </select>
+              </label>
+              <p class="destination-pill-hint">Pick Till 1 &amp; 2 Fridges or Quick Corner before scanning.</p>
             </div>
           </div>
         </article>
@@ -1080,6 +1296,18 @@ function createHtml(config: {
 
       <article class="panel transfer-panel">
         <form id="transfer-form">
+          <section class="operator-auth-card" data-context="transfer">
+            <div class="operator-auth-head">
+              <h3>Transfer Operator</h3>
+              <span id="transfer-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
+            </div>
+            <label class="operator-select-label">Select operator
+              <select id="transfer-operator-select">
+                <option value="">Select operator</option>
+              </select>
+            </label>
+            <p class="operator-auth-hint">Transfers stay locked until a valid operator signs in. Sessions auto-expire after 20 minutes.</p>
+          </section>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -1147,6 +1375,18 @@ function createHtml(config: {
     </form>
   </div>
 
+  <div id="operator-passcode-modal" aria-hidden="true">
+    <form id="operator-passcode-form">
+      <h3 id="operator-modal-title">Unlock Console</h3>
+      <p id="operator-modal-context">Provide passcode to continue.</p>
+      <input type="password" id="operator-passcode-input" placeholder="Scan or type passcode" autocomplete="one-time-code" inputmode="numeric" />
+      <p id="operator-modal-error" class="operator-modal-error"></p>
+      <div class="operator-modal-actions">
+        <button type="button" id="operator-modal-cancel">Cancel</button>
+      </div>
+    </form>
+  </div>
+
   <section id="purchase-page">
     <header class="panel purchase-header">
       <div class="purchase-header-bar">
@@ -1161,6 +1401,18 @@ function createHtml(config: {
     <article class="panel purchase-panel">
       <form id="purchase-form">
         <div class="purchase-shell">
+          <section class="operator-auth-card" data-context="purchase">
+            <div class="operator-auth-head">
+              <h3>Purchase Operator</h3>
+              <span id="purchase-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
+            </div>
+            <label class="operator-select-label">Select operator
+              <select id="purchase-operator-select">
+                <option value="">Select operator</option>
+              </select>
+            </label>
+            <p class="operator-auth-hint">Unlock purchases with the assigned passcode. Sessions auto-expire after 20 minutes.</p>
+          </section>
           <h3>Purchase Intake</h3>
           <div class="purchase-grid">
             <label>Supplier
@@ -1220,63 +1472,12 @@ function createHtml(config: {
                 <button type="button" data-key="." aria-label="Period">.</button>
                 <button type="button" data-key="'" aria-label="Apostrophe">'</button>
                 <!-- Row 4 -->
-                <button type="button" class="wide-4" data-action="space">Space</button>
-                <button type="button" class="wide-2" data-action="enter">Enter</button>
-                <button type="button" class="wide-2" data-action="delete">Backspace</button>
+                <button type="button" class="wide-5" data-action="space">Space</button>
+                <button type="button" class="wide-3" data-action="delete">Backspace</button>
                 <button type="button" class="wide-5" data-action="clear">Clear</button>
                 <button type="button" class="wide-5" data-action="close">Close</button>
               </div>
             </div>
-            <label class="notes-field">Receiving Notes
-              <textarea id="purchase-note" placeholder="Optional notes about this intake"></textarea>
-              <div class="notes-keyboard-actions">
-                <button type="button" id="notes-keyboard-open" class="keyboard-trigger">Open Keyboard</button>
-              </div>
-              <div id="notes-keyboard" class="virtual-keyboard" aria-hidden="true">
-                <!-- Row 1 -->
-                <button type="button" data-key="Q">Q</button>
-                <button type="button" data-key="W">W</button>
-                <button type="button" data-key="E">E</button>
-                <button type="button" data-key="R">R</button>
-                <button type="button" data-key="T">T</button>
-                <button type="button" data-key="Y">Y</button>
-                <button type="button" data-key="U">U</button>
-                <button type="button" data-key="I">I</button>
-                <button type="button" data-key="O">O</button>
-                <button type="button" data-key="P">P</button>
-                <!-- Row 2 -->
-                <button type="button" data-key="A">A</button>
-                <button type="button" data-key="S">S</button>
-                <button type="button" data-key="D">D</button>
-                <button type="button" data-key="F">F</button>
-                <button type="button" data-key="G">G</button>
-                <button type="button" data-key="H">H</button>
-                <button type="button" data-key="J">J</button>
-                <button type="button" data-key="K">K</button>
-                <button type="button" data-key="L">L</button>
-                <button type="button" data-key=";" aria-label="Semicolon">;</button>
-                <!-- Row 3 -->
-                <button type="button" data-key="Z">Z</button>
-                <button type="button" data-key="X">X</button>
-                <button type="button" data-key="C">C</button>
-                <button type="button" data-key="V">V</button>
-                <button type="button" data-key="B">B</button>
-                <button type="button" data-key="N">N</button>
-                <button type="button" data-key="M">M</button>
-                <button type="button" data-key="," aria-label="Comma">,</button>
-                <button type="button" data-key="." aria-label="Period">.</button>
-                <button type="button" data-key="/" aria-label="Slash">/</button>
-                <!-- Row 4 -->
-                <button type="button" class="wide-4" data-action="space">Space</button>
-                <button type="button" class="wide-2" data-action="enter">Enter</button>
-                <button type="button" class="wide-2" data-action="delete">Backspace</button>
-                <button type="button" data-key="-" aria-label="Dash">-</button>
-                <button type="button" data-key="'" aria-label="Apostrophe">'</button>
-                <!-- Row 5 -->
-                <button type="button" class="wide-5" data-action="clear">Clear</button>
-                <button type="button" class="wide-5" data-action="close">Close</button>
-              </div>
-            </label>
           </div>
           <section class="purchase-cart-section">
             <div class="cart-head">
@@ -1305,7 +1506,7 @@ function createHtml(config: {
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
           <div class="purchase-actions">
-            <a id="purchase-back" class="button button-outline" href="." role="button">Back to Transfers</a>
+            <a id="purchase-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
           </div>
         </div>
@@ -1327,6 +1528,18 @@ function createHtml(config: {
     <article class="panel damage-panel" id="damage-panel">
       <form id="damage-form">
         <div class="damage-shell">
+          <section class="operator-auth-card" data-context="damage">
+            <div class="operator-auth-head">
+              <h3>Damage Operator</h3>
+              <span id="damage-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
+            </div>
+            <label class="operator-select-label">Select operator
+              <select id="damage-operator-select">
+                <option value="">Select operator</option>
+              </select>
+            </label>
+            <p class="operator-auth-hint">Damages stay locked until an operator signs in. Auto-lock after 20 minutes.</p>
+          </section>
           <h3>Log Damages</h3>
           <div class="cart-head">
             <div>
@@ -1388,9 +1601,8 @@ function createHtml(config: {
               <button type="button" data-key="." aria-label="Period">.</button>
               <button type="button" data-key="/" aria-label="Slash">/</button>
               <!-- Row 4 -->
-              <button type="button" class="wide-4" data-action="space">Space</button>
-              <button type="button" class="wide-2" data-action="enter">Enter</button>
-              <button type="button" class="wide-2" data-action="delete">Backspace</button>
+              <button type="button" class="wide-5" data-action="space">Space</button>
+              <button type="button" class="wide-3" data-action="delete">Backspace</button>
               <button type="button" data-key="-" aria-label="Dash">-</button>
               <button type="button" data-key="'" aria-label="Apostrophe">'</button>
               <!-- Row 5 -->
@@ -1399,7 +1611,7 @@ function createHtml(config: {
             </div>
           </label>
           <div class="damage-actions">
-            <a id="damage-back" class="button button-outline" href="." role="button">Back to Transfers</a>
+            <a id="damage-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
           </div>
         </div>
@@ -1414,6 +1626,8 @@ function createHtml(config: {
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
     const MULTIPLY_QTY_BY_PACKAGE = ${JSON.stringify(MULTIPLY_QTY_BY_PACKAGE)};
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
+    const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
+    const DESTINATION_CHOICES = ${destinationChoicesJson};
     const REQUIRED_ROLE = 'transfers';
     const REQUIRED_ROLE_ID = '89147a54-507d-420b-86b4-2089d64faecd';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
@@ -1448,19 +1662,33 @@ function createHtml(config: {
         lockedSource: null,
         lockedDest: null,
         suppliers: [],
+        operators: [],
+        destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
+        destinationSelection: null,
         purchaseForm: {
           supplierId: '',
           referenceCode: '',
-          note: '',
           autoWhatsapp: true
         },
         purchaseSubmitting: false,
         damageSubmitting: false,
-        damageNote: ''
+        damageNote: '',
+        operatorSessions: {
+          transfer: null,
+          purchase: null,
+          damage: null
+        },
+        operatorSessionTimers: {
+          transfer: null,
+          purchase: null,
+          damage: null
+        },
+        pendingOperatorSelection: null,
+        operatorUnlocking: false
       };
 
       state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
-      state.lockedDest = state.warehouses.find((w) => w.id === lockedDestId) ?? null;
+      state.lockedDest = null;
       console.log('initial warehouses snapshot', state.warehouses);
 
       function reportClientReady() {
@@ -1518,7 +1746,7 @@ function createHtml(config: {
           resultToast.classList.remove('visible');
         }, 5000);
       }
-      const submitButton = document.getElementById('transfer-submit');
+      const transferSubmit = document.getElementById('transfer-submit');
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
@@ -1553,9 +1781,6 @@ function createHtml(config: {
       const purchaseForm = document.getElementById('purchase-form');
       const purchaseSupplier = document.getElementById('purchase-supplier');
       const purchaseReference = document.getElementById('purchase-reference');
-      const purchaseNote = document.getElementById('purchase-note');
-      const notesKeyboard = document.getElementById('notes-keyboard');
-      const notesKeyboardOpen = document.getElementById('notes-keyboard-open');
       const purchaseSummaryList = document.getElementById('purchase-summary-list');
       const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
       const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
@@ -1568,6 +1793,24 @@ function createHtml(config: {
       const referenceNumpad = document.getElementById('reference-numpad');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
+      const operatorSelects = {
+        transfer: document.getElementById('transfer-operator-select'),
+        purchase: document.getElementById('purchase-operator-select'),
+        damage: document.getElementById('damage-operator-select')
+      };
+      const destinationSelect = document.getElementById('console-destination-select');
+      const operatorStatusLabels = {
+        transfer: document.getElementById('transfer-operator-status'),
+        purchase: document.getElementById('purchase-operator-status'),
+        damage: document.getElementById('damage-operator-status')
+      };
+      const operatorModal = document.getElementById('operator-passcode-modal');
+      const operatorModalForm = document.getElementById('operator-passcode-form');
+      const operatorModalTitle = document.getElementById('operator-modal-title');
+      const operatorModalContext = document.getElementById('operator-modal-context');
+      const operatorPasscodeInput = document.getElementById('operator-passcode-input');
+      const operatorModalError = document.getElementById('operator-modal-error');
+      const operatorModalCancel = document.getElementById('operator-modal-cancel');
 
       const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
 
@@ -1654,7 +1897,7 @@ function createHtml(config: {
 
       setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
         sourceMissingText: state.lockedSource ? undefined : 'Loading...',
-        destMissingText: state.lockedDest ? undefined : 'Loading...'
+        destMissingText: state.lockedDest ? undefined : 'Choose destination'
       });
 
       window.setTimeout(() => {
@@ -1664,7 +1907,8 @@ function createHtml(config: {
       let scanFlushTimeoutId = null;
       const SCAN_FLUSH_DELAY_MS = 90;
       let referenceNumpadHideTimeoutId = null;
-      let notesKeyboardSuppressed = false;
+      let damageKeyboardSuppressed = false;
+      let operatorPasscodeAutoSubmitTimeoutId = null;
 
       const cartElements = {
         transfer: {
@@ -1860,6 +2104,22 @@ function createHtml(config: {
         scannerWedge.focus();
       }
 
+      function shouldHoldScannerFocus(element) {
+        const active = element instanceof HTMLElement ? element : document.activeElement;
+        if (!active || active === document.body) return false;
+        if (active === operatorPasscodeInput) return true;
+        if (active === purchaseReference) return true;
+        if (active === damageNote) return true;
+        if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
+          return true;
+        }
+        if (active instanceof HTMLElement) {
+          if (active.closest('#operator-passcode-modal')) return true;
+          if (active.closest('.operator-auth-card')) return true;
+        }
+        return false;
+      }
+
       function queueScanFlush() {
         if (!scannerWedge) return;
         window.clearTimeout(scanFlushTimeoutId);
@@ -2009,7 +2269,6 @@ function createHtml(config: {
         return {
           supplierId: '',
           referenceCode: '',
-          note: '',
           autoWhatsapp: true
         };
       }
@@ -2024,9 +2283,6 @@ function createHtml(config: {
           purchaseReference.value = '';
         }
         syncReferenceValue('');
-        if (purchaseNote) {
-          purchaseNote.value = '';
-        }
         updatePurchaseSummary();
       }
 
@@ -2037,6 +2293,347 @@ function createHtml(config: {
         transferPanelEl?.classList.toggle('active-mode', target === 'transfer');
         damagePanel?.classList.toggle('active-mode', target === 'damage');
       }
+
+      function formatOperatorLabel(context) {
+        return OPERATOR_CONTEXT_LABELS[context] ?? 'Console';
+      }
+
+      function renderOperatorOptions() {
+        Object.entries(operatorSelects).forEach(([context, select]) => {
+          if (!select) return;
+          const existingValue = select.value;
+          select.innerHTML = '';
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = state.operators.length ? 'Select operator' : 'No operators available';
+          select.appendChild(placeholder);
+          state.operators.forEach((operator) => {
+            if (!operator?.id) return;
+            const option = document.createElement('option');
+            option.value = operator.id;
+            option.textContent = operator.displayName;
+            select.appendChild(option);
+          });
+          const session = getValidOperatorSession(context, { silent: true, skipStatusUpdate: true });
+          const sessionValue = session?.operatorId ?? '';
+          select.value = sessionValue || existingValue;
+          select.disabled = !state.operators.length;
+        });
+        updateOperatorStatus('transfer');
+        updateOperatorStatus('purchase');
+        updateOperatorStatus('damage');
+      }
+
+      function renderDestinationOptions() {
+        if (!destinationSelect) return;
+        const existingValue = destinationSelect.value;
+        destinationSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = state.destinationOptions.length ? 'Choose destination' : 'No destinations';
+        destinationSelect.appendChild(placeholder);
+        state.destinationOptions.forEach((option) => {
+          if (!option?.id) return;
+          const opt = document.createElement('option');
+          opt.value = option.id;
+          opt.textContent = option.label ?? 'Destination';
+          destinationSelect.appendChild(opt);
+        });
+        const savedValue = state.destinationSelection ?? existingValue;
+        destinationSelect.value = savedValue || '';
+        destinationSelect.disabled = !state.destinationOptions.length;
+        syncDestinationPillLabel();
+      }
+
+      function showOperatorPrompt(context) {
+        const select = operatorSelects[context];
+        if (select) {
+          select.focus();
+        }
+      }
+
+      function getValidOperatorSession(context, options = {}) {
+        const { silent = false, skipStatusUpdate = false } = options;
+        const session = state.operatorSessions[context];
+        if (!session) return null;
+        if (session.expiresAt <= Date.now()) {
+          state.operatorSessions[context] = null;
+          if (!silent) {
+            showResult(formatOperatorLabel(context) + ' session expired. Please sign in again.', true);
+          }
+          if (!skipStatusUpdate) {
+            updateOperatorStatus(context);
+          }
+          return null;
+        }
+        return session;
+      }
+
+      function updateOperatorStatus(context) {
+        const select = operatorSelects[context];
+        const status = operatorStatusLabels[context];
+        const session = getValidOperatorSession(context, { silent: true, skipStatusUpdate: true });
+        const unlocked = Boolean(session);
+        if (status) {
+          status.textContent = unlocked ? 'Unlocked: ' + session.displayName : 'Locked';
+          status.dataset.state = unlocked ? 'unlocked' : 'locked';
+        }
+        if (select && select.value !== (unlocked ? session.operatorId : '')) {
+          select.value = unlocked ? session.operatorId : '';
+        }
+        enforceOperatorLocks();
+      }
+
+      function enforceOperatorLocks() {
+        const destinationSelected = Boolean(getSelectedDestination());
+        const transferUnlocked = Boolean(getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true }));
+        if (transferSubmit) {
+          transferSubmit.disabled = state.loading || !transferUnlocked || !destinationSelected;
+        }
+        const purchaseUnlocked = Boolean(getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true }));
+        if (purchaseSubmit) {
+          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !destinationSelected;
+        }
+        const damageUnlocked = Boolean(getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true }));
+        if (damageSubmit) {
+          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !destinationSelected;
+        }
+      }
+
+      function scheduleOperatorExpiryTimeout(context) {
+        if (!state.operatorSessionTimers?.hasOwnProperty(context)) return;
+        const timers = state.operatorSessionTimers;
+        window.clearTimeout(timers[context]);
+        timers[context] = null;
+        const session = state.operatorSessions[context];
+        if (!session) return;
+        const delay = Math.max(session.expiresAt - Date.now(), 0);
+        timers[context] = window.setTimeout(() => {
+          const activeSession = state.operatorSessions[context];
+          if (!activeSession || activeSession.expiresAt !== session.expiresAt) {
+            return;
+          }
+          timers[context] = null;
+          getValidOperatorSession(context);
+        }, delay);
+      }
+
+      function clearOperatorSession(context, notify = false) {
+        const hadSession = Boolean(state.operatorSessions[context]);
+        state.operatorSessions[context] = null;
+        if (state.operatorSessionTimers?.hasOwnProperty(context)) {
+          window.clearTimeout(state.operatorSessionTimers[context]);
+          state.operatorSessionTimers[context] = null;
+        }
+        if (operatorSelects[context]) {
+          operatorSelects[context].value = '';
+        }
+        updateOperatorStatus(context);
+        if (notify && hadSession) {
+          showResult(formatOperatorLabel(context) + ' locked.', false);
+        }
+        syncDestinationPillLabel();
+      }
+
+      function setOperatorSession(context, operator) {
+        state.operatorSessions[context] = {
+          operatorId: operator.id,
+          displayName: operator.displayName,
+          expiresAt: Date.now() + OPERATOR_SESSION_TTL_MS
+        };
+        scheduleOperatorExpiryTimeout(context);
+        updateOperatorStatus(context);
+      }
+
+      function ensureOperatorUnlocked(context, shouldPrompt = true) {
+        if (getValidOperatorSession(context)) {
+          return true;
+        }
+        if (shouldPrompt) {
+          showResult(formatOperatorLabel(context) + ' locked. Select an operator to continue.', true);
+          showOperatorPrompt(context);
+        }
+        return false;
+      }
+
+      function getDestinationOptionById(id) {
+        if (!id) return null;
+        const optionFromState = state.destinationOptions.find((option) => option.id === id);
+        if (optionFromState) return optionFromState;
+        const warehouseRecord = state.warehouses.find((w) => w.id === id);
+        if (warehouseRecord) {
+          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Destination warehouse' };
+        }
+        return null;
+      }
+
+      function getSelectedDestination() {
+        const id = state.destinationSelection;
+        if (!id) return null;
+        const option = getDestinationOptionById(id);
+        if (option) return option;
+        return { id, label: 'Destination warehouse' };
+      }
+
+      function showDestinationPrompt() {
+        destinationSelect?.focus();
+      }
+
+      function ensureDestinationSelected(context, shouldPrompt = true) {
+        if (getSelectedDestination()) {
+          return true;
+        }
+        if (shouldPrompt) {
+          showResult('Select a destination warehouse for ' + formatOperatorLabel(context) + '.', true);
+          showDestinationPrompt();
+        }
+        return false;
+      }
+
+      function syncDestinationPillLabel() {
+        if (!destLabel) return;
+        const selection = getSelectedDestination();
+        if (selection) {
+          destLabel.textContent = selection.label;
+        } else {
+          destLabel.textContent = 'Choose destination';
+        }
+      }
+
+      function handleDestinationSelection(warehouseId) {
+        const trimmed = warehouseId || '';
+        if (!trimmed) {
+          state.destinationSelection = null;
+          state.lockedDest = null;
+          if (destinationSelect && destinationSelect.value !== '') {
+            destinationSelect.value = '';
+          }
+          syncDestinationPillLabel();
+          enforceOperatorLocks();
+          return;
+        }
+        const option = getDestinationOptionById(trimmed);
+        if (!option) {
+          showResult('Destination unavailable. Refresh directory.', true);
+          renderDestinationOptions();
+          return;
+        }
+        state.destinationSelection = trimmed;
+        state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
+        if (destinationSelect && destinationSelect.value !== trimmed) {
+          destinationSelect.value = trimmed;
+        }
+        syncDestinationPillLabel();
+        enforceOperatorLocks();
+      }
+
+      function openOperatorModal(context, operator) {
+        if (!operatorModal || !operatorModalForm) return;
+        operatorModalTitle.textContent = 'Unlock ' + formatOperatorLabel(context);
+        operatorModalContext.textContent = 'Scan passcode for ' + operator.displayName + '.';
+        operatorPasscodeInput.value = '';
+        operatorModalError.textContent = '';
+        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        state.operatorUnlocking = false;
+        state.pendingOperatorSelection = { context, operator };
+        operatorModal.classList.add('active');
+        operatorModal.setAttribute('aria-hidden', 'false');
+        window.setTimeout(() => operatorPasscodeInput?.focus(), 10);
+      }
+
+      function closeOperatorModal() {
+        if (!operatorModal) return;
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && operatorModal.contains(active)) {
+          active.blur();
+        }
+        operatorModal.classList.remove('active');
+        operatorModal.setAttribute('aria-hidden', 'true');
+        operatorPasscodeInput.value = '';
+        operatorModalError.textContent = '';
+        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        state.operatorUnlocking = false;
+        state.pendingOperatorSelection = null;
+        focusActiveScanner();
+      }
+
+      function cancelPendingOperatorSelection() {
+        const pending = state.pendingOperatorSelection;
+        closeOperatorModal();
+        if (!pending) return;
+        const session = getValidOperatorSession(pending.context, { silent: true, skipStatusUpdate: true });
+        const select = operatorSelects[pending.context];
+        if (select) {
+          select.value = session?.operatorId ?? '';
+        }
+      }
+
+      async function submitOperatorUnlock(options = {}) {
+        const { silentMissing = false } = options;
+        if (!state.pendingOperatorSelection || state.operatorUnlocking) return;
+        const pending = state.pendingOperatorSelection;
+        const passcode = operatorPasscodeInput?.value?.trim();
+        if (!passcode) {
+          if (!silentMissing) {
+            operatorModalError.textContent = 'Passcode required.';
+            operatorPasscodeInput?.focus();
+          }
+          return;
+        }
+        state.operatorUnlocking = true;
+        operatorModalError.textContent = '';
+        try {
+          const isValid = await verifyOperatorPasscode(pending.operator.id, passcode);
+          if (!isValid) {
+            operatorModalError.textContent = 'Passcode incorrect.';
+            operatorPasscodeInput?.select();
+            state.operatorUnlocking = false;
+            return;
+          }
+          setOperatorSession(pending.context, pending.operator);
+          closeOperatorModal();
+          showResult(formatOperatorLabel(pending.context) + ' unlocked by ' + pending.operator.displayName + '.', false);
+        } catch (error) {
+          operatorModalError.textContent = error.message ?? 'Unable to verify passcode.';
+        } finally {
+          state.operatorUnlocking = false;
+        }
+      }
+
+      function queueOperatorAutoUnlock() {
+        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        const value = operatorPasscodeInput?.value?.trim();
+        if (!value) return;
+        operatorPasscodeAutoSubmitTimeoutId = window.setTimeout(() => {
+          submitOperatorUnlock({ silentMissing: true });
+        }, 200);
+      }
+
+      function handleOperatorSelection(context, operatorId) {
+        if (!operatorId) {
+          clearOperatorSession(context, false);
+          return;
+        }
+        const operator = state.operators.find((entry) => entry.id === operatorId);
+        if (!operator) {
+          showResult('Operator unavailable. Refresh directory.', true);
+          renderOperatorOptions();
+          return;
+        }
+        openOperatorModal(context, operator);
+      }
+
+      async function verifyOperatorPasscode(operatorId, passcode) {
+        const { data, error } = await supabase.rpc('verify_console_operator_passcode', {
+          p_operator_id: operatorId,
+          p_passcode: passcode
+        });
+        if (error) {
+          throw new Error(error.message ?? 'Verification failed');
+        }
+        return data === true;
+      }
+
 
       function renderSupplierOptions() {
         if (!purchaseSupplier) return;
@@ -2169,90 +2766,9 @@ function createHtml(config: {
         input.focus();
       }
 
-      function showNotesKeyboard(force = false) {
-        if (!notesKeyboard) return;
-        if (notesKeyboardSuppressed && !force) return;
-        notesKeyboardSuppressed = false;
-        notesKeyboard.style.display = 'grid';
-        notesKeyboard.classList.add('active');
-        notesKeyboard.setAttribute('aria-hidden', 'false');
-      }
-
-      function hideNotesKeyboard(options = {}) {
-        if (!notesKeyboard) return;
-        const { suppressUntilBlur = false } = options;
-        notesKeyboard.style.display = 'none';
-        notesKeyboard.classList.remove('active');
-        notesKeyboard.setAttribute('aria-hidden', 'true');
-        if (suppressUntilBlur) {
-          notesKeyboardSuppressed = true;
-        }
-      }
-
-      function insertNoteText(text) {
-        if (!purchaseNote || !text) return;
-        const start = purchaseNote.selectionStart ?? purchaseNote.value.length;
-        const end = purchaseNote.selectionEnd ?? purchaseNote.value.length;
-        const current = purchaseNote.value ?? '';
-        const next = current.slice(0, start) + text + current.slice(end);
-        purchaseNote.value = next;
-        const caret = start + text.length;
-        purchaseNote.setSelectionRange(caret, caret);
-        state.purchaseForm.note = purchaseNote.value;
-        purchaseNote.focus();
-      }
-
-      function deleteNoteChar() {
-        if (!purchaseNote) return;
-        const start = purchaseNote.selectionStart ?? purchaseNote.value.length;
-        const end = purchaseNote.selectionEnd ?? purchaseNote.value.length;
-        if (start === 0 && end === 0) return;
-        const current = purchaseNote.value ?? '';
-        const hasSelection = start !== end;
-        const next = hasSelection
-          ? current.slice(0, start) + current.slice(end)
-          : current.slice(0, Math.max(0, start - 1)) + current.slice(end);
-        const caret = hasSelection ? start : Math.max(0, start - 1);
-        purchaseNote.value = next;
-        purchaseNote.setSelectionRange(caret, caret);
-        state.purchaseForm.note = purchaseNote.value;
-        purchaseNote.focus();
-      }
-
-      function handleNotesAction(action) {
-        if (!action) return;
-        if (action === 'space') {
-          insertNoteText(' ');
-          return;
-        }
-        if (action === 'enter') {
-          insertNoteText(String.fromCharCode(10));
-          return;
-        }
-        if (action === 'delete') {
-          deleteNoteChar();
-          return;
-        }
-        if (action === 'clear') {
-          if (purchaseNote) {
-            purchaseNote.value = '';
-            purchaseNote.setSelectionRange(0, 0);
-            state.purchaseForm.note = '';
-            purchaseNote.focus();
-          }
-          return;
-        }
-        if (action === 'close') {
-          hideNotesKeyboard();
-          purchaseNote?.blur();
-          focusActiveScanner();
-          return;
-        }
-      }
-
       // Damage note virtual keyboard (kept ASCII-clean)
       function showDamageNotesKeyboard() {
-        if (!damageNotesKeyboard) return;
+        if (!damageNotesKeyboard || damageKeyboardSuppressed) return;
         damageNotesKeyboard.style.display = 'grid';
         damageNotesKeyboard.classList.add('active');
         damageNotesKeyboard.setAttribute('aria-hidden', 'false');
@@ -2314,10 +2830,12 @@ function createHtml(config: {
             damageNote.value = '';
             damageNote.setSelectionRange(0, 0);
             state.damageNote = '';
+            damageNote.focus();
           }
           return;
         }
         if (action === 'close') {
+          damageKeyboardSuppressed = true;
           hideDamageNotesKeyboard();
           damageNote?.blur();
           focusActiveScanner();
@@ -2337,11 +2855,7 @@ function createHtml(config: {
         if (purchaseReference) {
           purchaseReference.value = state.purchaseForm.referenceCode ?? '';
         }
-        if (purchaseNote) {
-          purchaseNote.value = state.purchaseForm.note ?? '';
-        }
         hideReferenceNumpad();
-        hideNotesKeyboard();
         focusActiveScanner();
       }
 
@@ -2349,7 +2863,6 @@ function createHtml(config: {
         applyViewState('transfer');
         setMode('transfer');
         hideReferenceNumpad();
-        hideNotesKeyboard();
         focusActiveScanner();
       }
 
@@ -2723,8 +3236,15 @@ function createHtml(config: {
 
       async function fetchWarehousesMetadata() {
         const params = new URLSearchParams();
-        if (lockedSourceId) params.append('locked_id', lockedSourceId);
-        if (lockedDestId) params.append('locked_id', lockedDestId);
+        const metadataIds = new Set();
+        if (lockedSourceId) metadataIds.add(lockedSourceId);
+        (DESTINATION_CHOICES || []).forEach((choice) => {
+          if (choice?.id) metadataIds.add(choice.id);
+        });
+        if (lockedDestId) metadataIds.add(lockedDestId);
+        metadataIds.forEach((id) => {
+          if (id) params.append('locked_id', id);
+        });
         const response = await fetch('/api/warehouses?' + params.toString(), {
           credentials: 'same-origin',
           headers: { Accept: 'application/json' },
@@ -2739,14 +3259,106 @@ function createHtml(config: {
         return list;
       }
 
+      async function fetchOperators() {
+        try {
+          const { data, error } = await supabase.rpc('console_operator_directory');
+          if (error) throw error;
+          const list = Array.isArray(data) ? data : [];
+          state.operators = list
+            .map((entry) => ({
+              id: entry?.id,
+              displayName: entry?.display_name ?? entry?.name ?? 'Operator',
+              authUserId: entry?.auth_user_id ?? null
+            }))
+            .filter((entry) => entry.id);
+          renderOperatorOptions();
+        } catch (error) {
+          console.warn('Failed to load operator directory', error);
+          showResult('Unable to load operator directory. Unlocks unavailable.', true);
+          state.operators = [];
+          renderOperatorOptions();
+        }
+      }
+
       async function fetchSuppliers() {
-        const { data, error } = await supabase.rpc('suppliers_for_warehouse', {
-          p_warehouse_id: lockedSourceId
-        });
-        if (error) throw error;
-        const list = Array.isArray(data) ? data : [];
+        const loadViaRpc = async (warehouseId) => {
+          if (!warehouseId) return [];
+          const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
+          if (error) {
+            const wrapped = new Error(error.message ?? 'suppliers_for_warehouse RPC failed');
+            wrapped.status = status;
+            wrapped.code = error.code;
+            throw wrapped;
+          }
+          return Array.isArray(data) ? data : [];
+        };
+
+        const loadViaLinkTable = async (warehouseId) => {
+          if (!warehouseId) return [];
+          const { data, error, status } = await supabase
+            .from('product_supplier_links')
+            .select('supplier:suppliers(id,name,contact_name,contact_phone,contact_email,active)')
+            .eq('warehouse_id', warehouseId)
+            .eq('active', true);
+          if (error) {
+            const wrapped = new Error(error.message ?? 'product_supplier_links fetch failed');
+            wrapped.status = status;
+            wrapped.code = error.code;
+            throw wrapped;
+          }
+          return (Array.isArray(data) ? data : [])
+            .map((row) => row?.supplier)
+            .filter(Boolean);
+        };
+
+        const loadAllSuppliers = async () => {
+          const { data, error, status } = await supabase
+            .from('suppliers')
+            .select('id,name,contact_name,contact_phone,contact_email,active')
+            .eq('active', true);
+          if (error) {
+            const wrapped = new Error(error.message ?? 'suppliers fetch failed');
+            wrapped.status = status;
+            wrapped.code = error.code;
+            throw wrapped;
+          }
+          return Array.isArray(data) ? data : [];
+        };
+
+        let list = [];
+        let lastError = null;
+
+        try {
+          list = await loadViaRpc(lockedSourceId);
+        } catch (error) {
+          lastError = error;
+          console.warn('Primary supplier fetch failed, attempting link-table fallback', error);
+        }
+
+        if (!list.length) {
+          try {
+            list = await loadViaLinkTable(lockedSourceId);
+          } catch (error) {
+            lastError = error;
+            console.warn('Link-table supplier fetch failed, attempting all active suppliers', error);
+          }
+        }
+
+        if (!list.length) {
+          try {
+            list = await loadAllSuppliers();
+          } catch (error) {
+            lastError = error;
+            console.warn('All-suppliers fetch failed', error);
+          }
+        }
+
         state.suppliers = list.filter((s) => s && s.active !== false);
         renderSupplierOptions();
+
+        if (!state.suppliers.length && lastError) {
+          throw lastError;
+        }
       }
 
       async function refreshMetadata() {
@@ -2755,15 +3367,35 @@ function createHtml(config: {
           console.log('warehouses payload', warehouses);
           state.warehouses = warehouses ?? [];
           const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
-          const destWarehouse = state.warehouses.find((w) => w.id === lockedDestId) ?? null;
           state.lockedSource = sourceWarehouse;
-          state.lockedDest = destWarehouse;
-          setLockedWarehouseLabels(sourceWarehouse, destWarehouse);
+          const hydratedDestinations = (DESTINATION_CHOICES || []).map((choice) => {
+            const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
+            return {
+              id: choice.id,
+              label: record?.name ?? choice.label ?? 'Destination warehouse'
+            };
+          });
+          state.destinationOptions = hydratedDestinations;
+          const hasSavedSelection = state.destinationSelection && hydratedDestinations.some((opt) => opt.id === state.destinationSelection);
+          if (!hasSavedSelection) {
+            state.destinationSelection = null;
+            state.lockedDest = null;
+            if (destinationSelect) {
+              destinationSelect.value = '';
+            }
+          } else {
+            state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
+          }
+          renderDestinationOptions();
+          setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
+            destMissingText: 'Choose destination'
+          });
+          syncDestinationPillLabel();
           if (!sourceWarehouse) {
             throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
           }
-          if (!destWarehouse) {
-            throw new Error('Locked destination warehouse is missing. Confirm the ID or mark it active in Supabase.');
+          if (!hydratedDestinations.length) {
+            throw new Error('Destination options missing. Confirm DESTINATION_CHOICES IDs exist in Supabase.');
           }
         } catch (error) {
           console.error('refreshMetadata failed', error);
@@ -2788,6 +3420,11 @@ function createHtml(config: {
         } catch (error) {
           console.warn('Failed to load supplier list', error);
           showResult('Unable to refresh supplier list. Continue scanning or retry later.', true);
+        }
+        try {
+          await fetchOperators();
+        } catch (error) {
+          console.warn('Failed to refresh operator directory', error);
         }
         renderCart();
         renderCart('damage');
@@ -2844,16 +3481,26 @@ function createHtml(config: {
         event.preventDefault();
         if (state.loading) return;
         const sourceId = lockedSourceId;
-        const destId = lockedDestId;
+        if (!ensureDestinationSelected('transfer')) {
+          return;
+        }
+        const destination = getSelectedDestination();
+        const destId = destination?.id;
+        if (!destId) {
+          showResult('Destination unavailable. Refresh and try again.', true);
+          return;
+        }
         const cart = getCart('transfer');
         if (!cart.length) {
+          showResult('Scan at least one product before submitting.', true);
+          return;
         }
-        if (action === 'enter') {
-          insertNoteText('\\n');
 
         state.loading = true;
-        submitButton.disabled = true;
-        submitButton.textContent = 'Submitting...';
+        if (transferSubmit) {
+          transferSubmit.disabled = true;
+          transferSubmit.textContent = 'Submitting...';
+        }
         try {
           const cartSnapshot = cart.map((item) => ({ ...item }));
           const payload = {
@@ -2907,14 +3554,19 @@ function createHtml(config: {
           showResult(error.message ?? 'Transfer failed', true);
         } finally {
           state.loading = false;
-          submitButton.disabled = false;
-          submitButton.textContent = 'Submit Transfer';
+          if (transferSubmit) {
+            transferSubmit.disabled = false;
+            transferSubmit.textContent = 'Submit Transfer';
+          }
         }
       }
 
       async function handleDamageSubmit(event) {
         event.preventDefault();
         if (state.damageSubmitting) return;
+        if (!ensureDestinationSelected('damage')) {
+          return;
+        }
         const warehouseId = lockedSourceId;
         if (!warehouseId) {
           showResult('Source warehouse unavailable for damages.', true);
@@ -2975,6 +3627,9 @@ function createHtml(config: {
       async function handlePurchaseSubmit(event) {
         event.preventDefault();
         if (state.purchaseSubmitting) return;
+        if (!ensureDestinationSelected('purchase')) {
+          return;
+        }
         const warehouseId = lockedSourceId;
         if (!warehouseId) {
           showResult('Source warehouse unavailable for purchase intake.', true);
@@ -2993,7 +3648,6 @@ function createHtml(config: {
           return;
         }
 
-        const noteValue = (purchaseNote?.value ?? state.purchaseForm.note ?? '').trim();
         const supplierId = state.purchaseForm.supplierId || null;
         const autoWhatsapp = true;
         const cartSnapshot = cart.map((item) => ({ ...item }));
@@ -3011,7 +3665,6 @@ function createHtml(config: {
         }
 
         state.purchaseForm.referenceCode = referenceInput;
-        state.purchaseForm.note = noteValue;
         state.purchaseSubmitting = true;
         if (purchaseSubmit) {
           purchaseSubmit.disabled = true;
@@ -3024,7 +3677,7 @@ function createHtml(config: {
             p_supplier_id: supplierId,
             p_reference_code: referenceInput,
             p_items: payloadItems,
-            p_note: noteValue || null,
+            p_note: null,
             p_auto_whatsapp: autoWhatsapp
           };
           const { data, error } = await supabase.rpc('record_purchase_receipt', payload);
@@ -3059,7 +3712,6 @@ function createHtml(config: {
             window: windowLabel,
             itemsBlock,
             items: lineItems,
-            note: noteValue || null,
             totalGross: grossTotal
           };
 
@@ -3270,6 +3922,7 @@ function createHtml(config: {
         if (qtyModal?.style.display === 'flex') return;
         window.setTimeout(() => {
           if (document.hidden) return;
+          if (shouldHoldScannerFocus()) return;
           focusActiveScanner();
         }, 50);
       });
@@ -3315,19 +3968,21 @@ function createHtml(config: {
         state.damageNote = damageNote.value ?? '';
       });
 
-      damageNote?.addEventListener('focus', () => {
+      const openDamageKeyboard = (event) => {
+        const pointerTriggered = event?.type === 'pointerdown';
+        if (!pointerTriggered && damageKeyboardSuppressed) {
+          return;
+        }
+        damageKeyboardSuppressed = false;
         showDamageNotesKeyboard();
-      });
+      };
 
-      damageNote?.addEventListener('pointerdown', () => {
-        showDamageNotesKeyboard();
-      });
+      damageNote?.addEventListener('focus', openDamageKeyboard);
+      damageNote?.addEventListener('pointerdown', openDamageKeyboard);
 
-      damageNotesKeyboard?.addEventListener('mousedown', (event) => {
+      damageNotesKeyboard?.addEventListener('pointerdown', (event) => {
         event.preventDefault();
-      });
-
-      damageNotesKeyboard?.addEventListener('click', (event) => {
+        event.stopPropagation();
         const target = event.target;
         if (!(target instanceof HTMLButtonElement)) return;
         const key = target.dataset.key;
@@ -3341,38 +3996,10 @@ function createHtml(config: {
         }
       });
 
-      purchaseNote?.addEventListener('input', () => {
-        state.purchaseForm.note = purchaseNote.value ?? '';
-      });
-
-      const showPurchaseNotesKeyboard = () => {
-        showNotesKeyboard();
-      };
-
-      purchaseNote?.addEventListener('focus', showPurchaseNotesKeyboard);
-      purchaseNote?.addEventListener('pointerdown', showPurchaseNotesKeyboard);
-
-      notesKeyboardOpen?.addEventListener('click', () => {
-        showNotesKeyboard(true);
-        purchaseNote?.focus();
-      });
-
-      notesKeyboard?.addEventListener('mousedown', (event) => {
+      damageNotesKeyboard?.addEventListener('click', (event) => {
+        // Prevent label default behavior (focusing the input) after button clicks.
         event.preventDefault();
-      });
-
-      notesKeyboard?.addEventListener('click', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const key = target.dataset.key;
-        const action = target.dataset.action;
-        if (key) {
-          insertNoteText(key);
-          return;
-        }
-        if (action) {
-          handleNotesAction(action);
-        }
+        event.stopPropagation();
       });
 
       purchaseBackButton?.addEventListener('click', (event) => {
@@ -3427,21 +4054,10 @@ function createHtml(config: {
           // Keep the keyboard open while interacting with it or its source input.
           window.clearTimeout(referenceNumpadHideTimeoutId);
           showReferenceNumpad();
-        } else {
-          hideReferenceNumpad();
-        }
-
-        const interactingWithNotesInput = target === purchaseNote || purchaseNote?.contains(target);
-        const interactingWithNotesKeyboard = notesKeyboard?.contains(target);
-        const interactingWithNotesTrigger = target === notesKeyboardOpen || notesKeyboardOpen?.contains(target);
-        if (interactingWithNotesInput || interactingWithNotesKeyboard || interactingWithNotesTrigger) {
-          showNotesKeyboard();
           return;
         }
-        hideNotesKeyboard();
+        hideReferenceNumpad();
       });
-
-      // Notes input removed; listeners intentionally omitted.
 
       referenceNumpad?.addEventListener('click', (event) => {
         const target = event.target;
@@ -3542,21 +4158,60 @@ function createHtml(config: {
         const target = event.target;
         const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
         const clickedReferenceNumpad = referenceNumpad?.contains(target);
-        const clickedNotesInput = target === purchaseNote || purchaseNote?.contains(target);
-        const clickedNotesKeyboard = notesKeyboard?.contains(target);
-        const clickedNotesTrigger = target === notesKeyboardOpen || notesKeyboardOpen?.contains(target);
+        const interactingWithDamageNotes =
+          target === damageNote || damageNote?.contains(target) || damageNotesKeyboard?.contains(target);
+        const interactingWithSupplier = target === purchaseSupplier || purchaseSupplier?.contains(target);
+
         if (
           clickedReferenceInput ||
           clickedReferenceNumpad ||
-          clickedNotesInput ||
-          clickedNotesKeyboard ||
-          clickedNotesTrigger
+          interactingWithDamageNotes ||
+          interactingWithSupplier
         ) {
           return;
         }
+
+        if (document.body.dataset.view === 'purchase') return;
+        if (shouldHoldScannerFocus(target instanceof HTMLElement ? target : undefined)) return;
+
         if (document.body.dataset.auth === 'true') {
           focusActiveScanner();
         }
+      });
+
+      Object.entries(operatorSelects).forEach(([context, select]) => {
+        if (!select) return;
+        select.addEventListener('change', (event) => {
+          const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
+          handleOperatorSelection(context, value);
+        });
+      });
+
+      destinationSelect?.addEventListener('change', (event) => {
+        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
+        handleDestinationSelection(value);
+      });
+
+      operatorModalForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitOperatorUnlock();
+      });
+
+      operatorPasscodeInput?.addEventListener('input', () => {
+        operatorModalError.textContent = '';
+        queueOperatorAutoUnlock();
+      });
+
+      operatorPasscodeInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submitOperatorUnlock();
+        }
+      });
+
+      operatorModalCancel?.addEventListener('click', (event) => {
+        event.preventDefault();
+        cancelPendingOperatorSelection();
       });
 
       loginWedge?.addEventListener('input', () => {
@@ -3589,7 +4244,6 @@ function createHtml(config: {
       purchaseForm?.addEventListener('submit', handlePurchaseSubmit);
       damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
-    }
     }
   </script>
 </body>
