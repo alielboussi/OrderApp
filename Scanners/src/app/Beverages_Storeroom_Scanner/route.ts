@@ -756,7 +756,8 @@ function createHtml(config: {
       gap: 12px;
       justify-content: flex-end;
     }
-    .purchase-actions button {
+    .purchase-actions button,
+    .purchase-actions .button {
       flex: 1;
       min-width: 180px;
     }
@@ -1304,7 +1305,7 @@ function createHtml(config: {
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
           <div class="purchase-actions">
-            <button type="button" id="purchase-back" class="button-outline">Back to Transfers</button>
+            <a id="purchase-back" class="button button-outline" href="." role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
           </div>
         </div>
@@ -1398,7 +1399,7 @@ function createHtml(config: {
             </div>
           </label>
           <div class="damage-actions">
-            <button type="button" id="damage-back" class="button-outline">Back to Transfers</button>
+            <a id="damage-back" class="button button-outline" href="." role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
           </div>
         </div>
@@ -2772,6 +2773,10 @@ function createHtml(config: {
           if (destLabel) {
             destLabel.textContent = 'Failed to load warehouses';
           }
+          setLockedWarehouseLabels(null, null, {
+            sourceMissingText: 'Unable to load warehouse (check Supabase connection)',
+            destMissingText: 'Unable to load warehouse (check Supabase connection)'
+          });
           throw error;
         }
 
@@ -3370,11 +3375,17 @@ function createHtml(config: {
         }
       });
 
-      purchaseBackButton?.addEventListener('click', () => {
+      purchaseBackButton?.addEventListener('click', (event) => {
+        if (event instanceof Event) {
+          event.preventDefault();
+        }
         exitPurchaseMode();
       });
 
-      damageBackButton?.addEventListener('click', () => {
+      damageBackButton?.addEventListener('click', (event) => {
+        if (event instanceof Event) {
+          event.preventDefault();
+        }
         exitDamageMode();
       });
 

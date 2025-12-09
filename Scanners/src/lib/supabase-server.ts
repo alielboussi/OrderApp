@@ -11,11 +11,21 @@ function getSupabaseUrl(): string {
 }
 
 function getServiceKey(): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for server-side requests.');
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_KEY ??
+    process.env.SUPABASE_SECRET;
+  if (serviceKey) {
+    return serviceKey;
   }
-  return key;
+
+  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anonKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY (or anon key fallback) is required for server-side requests.');
+  }
+
+  console.warn('[supabase-server] Falling back to anonymous key; set SUPABASE_SERVICE_ROLE_KEY for elevated access.');
+  return anonKey;
 }
 
 export function getServiceClient(): SupabaseClient {
