@@ -61,8 +61,9 @@ function createHtml(config: {
   destPillLabel: string;
   sourceWarehouseName: string;
   initialWarehousesJson: string;
+  initialView: 'transfer' | 'purchase' | 'damage';
 }) {
-  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson } = config;
+  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -209,7 +210,8 @@ function createHtml(config: {
       background: #0d0d12;
       color: #fff;
     }
-    button {
+    button,
+    .button {
       font-weight: 700;
       text-transform: uppercase;
       border-radius: 999px;
@@ -220,12 +222,18 @@ function createHtml(config: {
       color: #fff;
       cursor: pointer;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
     }
-    button:hover:not(:disabled) {
+    button:hover:not(:disabled),
+    .button:hover {
       transform: translateY(-2px);
       box-shadow: 0 18px 30px rgba(255, 0, 77, 0.35);
     }
-    button:disabled {
+    button:disabled,
+    .button.disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
@@ -839,7 +847,8 @@ function createHtml(config: {
       gap: 12px;
       margin-top: 8px;
     }
-    .transfer-actions button {
+    .transfer-actions button,
+    .transfer-actions .button {
       min-width: clamp(190px, 34%, 260px);
     }
     .damage-panel {
@@ -1054,7 +1063,7 @@ function createHtml(config: {
     }
   </style>
 </head>
-<body data-view="transfer" data-auth="true">
+<body data-view="${initialView}" data-auth="true">
   <input id="scanner-wedge" type="text" autocomplete="off" style="opacity:0; position:fixed; width:1px; height:1px; top:0; left:0;" />
   <main>
     <section id="auth-section" class="panel" style="display:none !important;">
@@ -1131,8 +1140,8 @@ function createHtml(config: {
 
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
-            <button type="button" id="purchase-open" class="button-outline">Log Purchase Intake</button>
-            <button type="button" id="damage-open" class="button-green">Log Damages</button>
+            <a id="purchase-open" class="button button-outline" href="?view=purchase" role="button">Log Purchase Intake</a>
+            <a id="damage-open" class="button button-green" href="?view=damage" role="button">Log Damages</a>
           </div>
         </form>
       </article>
@@ -1593,6 +1602,18 @@ function createHtml(config: {
 
       const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
 
+      function syncViewQuery(view) {
+        if (typeof window === 'undefined' || !window.history?.replaceState) return;
+        const url = new URL(window.location.href);
+        if (view === 'transfer') {
+          url.searchParams.delete('view');
+        } else {
+          url.searchParams.set('view', view);
+        }
+        const nextUrl = url.pathname + (url.search ? url.search : '') + url.hash;
+        window.history.replaceState(null, '', nextUrl);
+      }
+
       function syncViewVisibility(view) {
         const isPurchase = view === 'purchase';
         const isDamage = view === 'damage';
@@ -1625,6 +1646,7 @@ function createHtml(config: {
         document.body.classList.toggle('view-purchase', view === 'purchase');
         document.body.classList.toggle('view-damage', view === 'damage');
         syncViewVisibility(view);
+        syncViewQuery(view);
       }
 
       applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
@@ -3357,7 +3379,8 @@ function createHtml(config: {
         }
       });
 
-      purchaseOpenButton?.addEventListener('click', async () => {
+      purchaseOpenButton?.addEventListener('click', async (event) => {
+        event.preventDefault();
         try {
           if (!state.suppliers.length) {
             await fetchSuppliers();
@@ -3369,7 +3392,8 @@ function createHtml(config: {
         enterPurchaseMode();
       });
 
-      damageOpenButton?.addEventListener('click', () => {
+      damageOpenButton?.addEventListener('click', (event) => {
+        event.preventDefault();
         enterDamageMode();
       });
 
@@ -3620,10 +3644,14 @@ function createHtml(config: {
 </html>`;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!PROJECT_URL || !ANON_KEY) {
     return new NextResponse('Supabase environment variables are missing.', { status: 500 });
   }
+
+  const url = new URL(request.url);
+  const viewParam = (url.searchParams.get('view') ?? '').toLowerCase();
+  const initialView = viewParam === 'purchase' ? 'purchase' : viewParam === 'damage' ? 'damage' : 'transfer';
 
   const initialWarehouses = await preloadLockedWarehouses();
   const sourceWarehouse = initialWarehouses.find((w) => w.id === LOCKED_SOURCE_ID);
@@ -3633,6 +3661,7 @@ export async function GET() {
     destPillLabel: describeLockedWarehouse(destWarehouse, 'Loading...'),
     sourceWarehouseName: sourceWarehouse?.name ?? 'Loading...',
     initialWarehousesJson: serializeForScript(initialWarehouses),
+    initialView,
   });
 
   return new NextResponse(html, {
