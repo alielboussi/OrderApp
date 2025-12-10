@@ -199,8 +199,7 @@ export default function WarehouseTransfersWeb() {
   useEffect(() => {
     const loadWarehouses = async () => {
       try {
-        const search = new URLSearchParams(window.location.search);
-        const fromLocked = search.get("from_locked_id") || search.get("locked_from") || search.get("locked_id") || "";
+        const fromLocked = readLockedFrom();
         const lockedIds = fromLocked ? [fromLocked] : [];
         const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
         const data = await fetchJson<
