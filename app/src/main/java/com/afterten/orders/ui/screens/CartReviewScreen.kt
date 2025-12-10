@@ -131,7 +131,7 @@ fun CartReviewScreen(
         ) {
             item(key = "package_contains_note") {
                 Text(
-                    text = "Quantities below are in cases. Package Contains tells you how many individual units will be deducted per case.",
+                    text = "Quantities below are in receiving units. Each receiving unit deducts the listed consumption UOM count.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
@@ -173,7 +173,7 @@ fun CartReviewScreen(
                                         )
                                         formatPackageUnits(item.packageContains)?.let { units ->
                                             Text(
-                                                text = "Package Contains: $units units",
+                                                text = "1 ${item.uom.uppercase()} = $units ${item.consumptionUom.uppercase()}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = Color.White.copy(alpha = 0.85f)
                                             )
@@ -185,11 +185,11 @@ fun CartReviewScreen(
                                         qty = item.qty,
                                         onDec = {
                                             logger.event("QtyDecrement", mapOf("productId" to item.productId, "variationId" to (item.variationId ?: "")))
-                                            root.dec(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains)
+                                            root.dec(item.productId, item.variationId, item.name, item.uom, item.consumptionUom, item.unitPrice, item.packageContains)
                                         },
                                         onInc = {
                                             logger.event("QtyIncrement", mapOf("productId" to item.productId, "variationId" to (item.variationId ?: "")))
-                                            root.inc(item.productId, item.variationId, item.name, item.uom, item.unitPrice, item.packageContains)
+                                            root.inc(item.productId, item.variationId, item.name, item.uom, item.consumptionUom, item.unitPrice, item.packageContains)
                                         },
                                         onChange = { n ->
                                             logger.event(
@@ -200,7 +200,7 @@ fun CartReviewScreen(
                                                     "newQty" to n
                                                 )
                                             )
-                                            root.setQty(item.productId, item.variationId, item.name, item.uom, item.unitPrice, n, item.packageContains)
+                                            root.setQty(item.productId, item.variationId, item.name, item.uom, item.consumptionUom, item.unitPrice, n, item.packageContains)
                                         }
                                     )
                                 }

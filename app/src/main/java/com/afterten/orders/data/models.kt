@@ -9,24 +9,26 @@ data class ProductDto(
     val sku: String? = null,
     val name: String,
     @SerialName("image_url") val imageUrl: String? = null,
-    val uom: String,
+    @SerialName("receiving_uom") val uom: String,
+    @SerialName("consumption_uom") val consumptionUom: String = "each",
     val cost: Double,
     @SerialName("has_variations") val hasVariations: Boolean,
     val active: Boolean = true,
-    @SerialName("package_contains") val packageContains: Double = 1.0,
+    @SerialName("receiving_contains") val packageContains: Double = 1.0,
     @SerialName("default_warehouse_id") val defaultWarehouseId: String? = null
 )
 
 @Serializable
 data class VariationDto(
     val id: String,
-    @SerialName("product_id") val productId: String,
+    @SerialName("item_id") val productId: String,
     val name: String,
     @SerialName("image_url") val imageUrl: String? = null,
-    val uom: String,
+    @SerialName("receiving_uom") val uom: String,
+    @SerialName("consumption_uom") val consumptionUom: String = "each",
     val cost: Double,
     val active: Boolean = true,
-    @SerialName("package_contains") val packageContains: Double = 1.0,
+    @SerialName("receiving_contains") val packageContains: Double = 1.0,
     @SerialName("default_warehouse_id") val defaultWarehouseId: String? = null,
     val sku: String? = null
 )

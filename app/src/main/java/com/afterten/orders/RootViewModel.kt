@@ -66,6 +66,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         val variationId: String?,
         val name: String,
         val uom: String,
+        val consumptionUom: String,
         val unitPrice: Double,
         val qty: Int,
         val packageContains: Double
@@ -84,6 +85,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         variationId: String?,
         name: String,
         uom: String,
+        consumptionUom: String,
         unitPrice: Double,
         qty: Int,
         packageContains: Double = 1.0
@@ -98,7 +100,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
             if (qty <= 0) {
                 m.remove(k)
             } else {
-                m[k] = CartItem(productId, variationId, name, uom, unitPrice, qty, normalizedCaseSize)
+                m[k] = CartItem(productId, variationId, name, uom, consumptionUom, unitPrice, qty, normalizedCaseSize)
             }
         }
         // Persist to DB
@@ -110,6 +112,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
                     variationId = variationId,
                     name = name,
                     uom = uom,
+                    consumptionUom = consumptionUom,
                     unitPrice = unitPrice,
                     qty = qty,
                     packageContains = normalizedCaseSize
@@ -123,6 +126,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         variationId: String?,
         name: String,
         uom: String,
+        consumptionUom: String,
         unitPrice: Double,
         packageContains: Double = 1.0
     ) {
@@ -133,7 +137,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
             _cart.value[k]?.packageContains?.let { it > 0 } == true -> _cart.value[k]!!.packageContains
             else -> 1.0
         }
-        setQty(productId, variationId, name, uom, unitPrice, curr + 1, normalized)
+        setQty(productId, variationId, name, uom, consumptionUom, unitPrice, curr + 1, normalized)
     }
 
     fun dec(
@@ -141,6 +145,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         variationId: String?,
         name: String,
         uom: String,
+        consumptionUom: String,
         unitPrice: Double,
         packageContains: Double = 1.0
     ) {
@@ -151,7 +156,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
             _cart.value[k]?.packageContains?.let { it > 0 } == true -> _cart.value[k]!!.packageContains
             else -> 1.0
         }
-        setQty(productId, variationId, name, uom, unitPrice, (curr - 1).coerceAtLeast(0), normalized)
+        setQty(productId, variationId, name, uom, consumptionUom, unitPrice, (curr - 1).coerceAtLeast(0), normalized)
     }
 
     fun qty(productId: String, variationId: String?): Int = _cart.value[key(productId, variationId)]?.qty ?: 0
@@ -173,6 +178,7 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
                             it.variationId,
                             it.name,
                             it.uom,
+                            it.consumptionUom,
                             it.unitPrice,
                             it.qty,
                             (it.packageContains.takeIf { size -> size > 0 } ?: 1.0)

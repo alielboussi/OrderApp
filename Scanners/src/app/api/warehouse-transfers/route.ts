@@ -48,8 +48,8 @@ export async function GET(req: NextRequest) {
           product_id,
           variation_id,
           qty,
-          product:products ( id, name, uom ),
-          variation:product_variations ( id, name, uom )
+          product:catalog_items ( id, name, uom ),
+          variation:catalog_variants ( id, name, uom )
         )
       `
       )

@@ -190,7 +190,7 @@ fun ProductListScreen(
             )
 
             Text(
-                text = "Package Contains shows how many units are in one case. Ordering 1 case deducts that many units from the warehouse.",
+                text = "Receipts happen in receiving units (cases). The conversion line shows how many consumption units are deducted per case.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -299,7 +299,11 @@ private fun ProductCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         if (!item.hasVariations) {
-                            Text(text = item.uom, style = MaterialTheme.typography.bodySmall, color = Color.White)
+                            Text(
+                                text = "Order in ${item.uom.uppercase()}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White
+                            )
                         }
                         if (item.hasVariations) {
                             val mc = minVariationCost
@@ -320,7 +324,7 @@ private fun ProductCard(
                             )
                             formatPackageUnits(item.packageContains)?.let { units ->
                                 Text(
-                                    text = "Package Contains: $units units",
+                                    text = "1 ${item.uom.uppercase()} = $units ${item.consumptionUom.uppercase()}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.White.copy(alpha = 0.85f)
                                 )
@@ -336,15 +340,15 @@ private fun ProductCard(
                             qty = qty,
                             onDec = {
                                 logger.event("QtyDecrement", mapOf("productId" to item.id))
-                                root.dec(item.id, null, item.name, item.uom, item.cost, item.packageContains)
+                                root.dec(item.id, null, item.name, item.uom, item.consumptionUom, item.cost, item.packageContains)
                             },
                             onInc = {
                                 logger.event("QtyIncrement", mapOf("productId" to item.id))
-                                root.inc(item.id, null, item.name, item.uom, item.cost, item.packageContains)
+                                root.inc(item.id, null, item.name, item.uom, item.consumptionUom, item.cost, item.packageContains)
                             },
                             onChange = { n ->
                                 logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
-                                root.setQty(item.id, null, item.name, item.uom, item.cost, n, item.packageContains)
+                                root.setQty(item.id, null, item.name, item.uom, item.consumptionUom, item.cost, n, item.packageContains)
                             }
                         )
                     }
@@ -506,7 +510,7 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: Screen
             )
             formatPackageUnits(v.packageContains)?.let { units ->
                 Text(
-                    text = "Package Contains: $units units",
+                    text = "1 ${v.uom.uppercase()} = $units ${v.consumptionUom.uppercase()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.85f)
                 )
@@ -521,18 +525,18 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: Screen
             qty = qty,
             onDec = {
                 logger.event("VariationQtyDecrement", mapOf("productId" to v.productId, "variationId" to v.id))
-                root.dec(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains)
+                root.dec(v.productId, v.id, v.name, v.uom, v.consumptionUom, v.cost, v.packageContains)
             },
             onInc = {
                 logger.event("VariationQtyIncrement", mapOf("productId" to v.productId, "variationId" to v.id))
-                root.inc(v.productId, v.id, v.name, v.uom, v.cost, v.packageContains)
+                root.inc(v.productId, v.id, v.name, v.uom, v.consumptionUom, v.cost, v.packageContains)
             },
             onChange = { n ->
                 logger.event(
                     "VariationQtyChanged",
                     mapOf("productId" to v.productId, "variationId" to v.id, "newQty" to n)
                 )
-                root.setQty(v.productId, v.id, v.name, v.uom, v.cost, n, v.packageContains)
+                root.setQty(v.productId, v.id, v.name, v.uom, v.consumptionUom, v.cost, n, v.packageContains)
             }
         )
     }

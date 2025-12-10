@@ -2008,13 +2008,13 @@ function createHtml(config: {
         const [stockResult, productDefaultsResult, variationDefaultsResult] = await Promise.all([
           supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id').in('warehouse_id', warehouseIds),
           supabase
-            .from('products')
+            .from('catalog_items')
             .select('id')
             .eq('default_warehouse_id', lockedSourceId)
             .eq('active', true),
           supabase
-            .from('product_variations')
-            .select('product_id')
+            .from('catalog_variants')
+            .select('product_id:item_id')
             .eq('default_warehouse_id', lockedSourceId)
             .eq('active', true)
         ]);
@@ -2043,8 +2043,8 @@ function createHtml(config: {
         }
 
         const { data: products, error: prodErr } = await supabase
-          .from('products')
-          .select('id,name,has_variations,uom,sku,package_contains')
+          .from('catalog_items')
+          .select('id,name,has_variations,uom:receiving_uom,consumption_uom,sku,package_contains:receiving_contains')
           .in('id', Array.from(productIds))
           .eq('active', true)
           .order('name');
@@ -2076,9 +2076,9 @@ function createHtml(config: {
           return;
         }
         const { data, error } = await supabase
-          .from('product_variations')
-          .select('id,product_id,name,uom,sku,package_contains')
-          .in('product_id', productIds)
+          .from('catalog_variants')
+          .select('id,product_id:item_id,name,uom:receiving_uom,consumption_uom,sku,package_contains:receiving_contains')
+          .in('item_id', productIds)
           .eq('default_warehouse_id', lockedSourceId)
           .eq('active', true)
           .order('name');

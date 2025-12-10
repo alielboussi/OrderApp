@@ -29,7 +29,8 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     @Serializable
     data class VariationRef(
         @SerialName("name") val name: String? = null,
-        val uom: String? = null
+        @SerialName("receiving_uom") val uom: String? = null,
+        @SerialName("consumption_uom") val consumptionUom: String? = null
     )
 
     @Serializable
@@ -86,18 +87,21 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         @SerialName("product_id") val productId: String? = null,
         @SerialName("variation_id") val variationId: String? = null,
         val name: String,
-        val uom: String,
+        @SerialName("receiving_uom") val uom: String,
+        @SerialName("consumption_uom") val consumptionUom: String,
         val cost: Double,
         val qty: Double,
-        @SerialName("package_contains") val packageContains: Double? = null,
+        @SerialName("receiving_contains") val packageContains: Double? = null,
         @SerialName("qty_cases") val qtyCases: Double? = null,
-        @SerialName("products") val product: ProductRef? = null,
-        @SerialName("product_variations") val variation: VariationRef? = null
+        @SerialName("catalog_items") val product: ProductRef? = null,
+        @SerialName("catalog_variants") val variation: VariationRef? = null
     )
 
     suspend fun listOrderItems(jwt: String, orderId: String): List<OrderItemRow> {
         val select = encode(
-            "id,order_id,product_id,variation_id,products(name),product_variations(name,uom),name,uom,cost,qty,package_contains,qty_cases"
+            "id,order_id,product_id,variation_id,catalog_items(name)," +
+                "catalog_variants(name,receiving_uom,consumption_uom)," +
+                "name,receiving_uom,consumption_uom,cost,qty,receiving_contains,qty_cases"
         )
         val groupedOrder = encode("products(name).asc")
         val path = "/rest/v1/order_items?select=" + select + "&order_id=eq." + orderId + "&order=" + groupedOrder + "&order=name.asc"
@@ -132,7 +136,8 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         orderItemId: String,
         variationId: String,
         name: String,
-        uom: String,
+        receivingUom: String,
+        consumptionUom: String,
         cost: Double,
         packageContains: Double?,
         qtyUnits: Double
@@ -141,12 +146,13 @@ class OrderRepository(private val supabase: SupabaseProvider) {
             "id" to orderItemId,
             "variation_id" to variationId,
             "name" to name,
-            "uom" to uom,
+            "receiving_uom" to receivingUom,
+            "consumption_uom" to consumptionUom,
             "cost" to cost,
             "amount" to cost * qtyUnits
         )
         packageContains?.takeIf { it > 0 }?.let {
-            body["package_contains"] = it
+            body["receiving_contains"] = it
             body["qty_cases"] = qtyUnits / it
         }
         val resp = supabase.postWithJwt(

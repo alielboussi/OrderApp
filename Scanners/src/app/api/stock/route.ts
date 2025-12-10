@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     const productLookup = new Map<string, string>();
     if (productIds.length) {
       const { data: products, error: productsError } = await supabase
-        .from('products')
+        .from('catalog_items')
         .select('id,name')
         .in('id', productIds);
       if (productsError) {
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     const variationLookup = new Map<string, string | null>();
     if (variationIds.length) {
       const { data: variations, error: variationsError } = await supabase
-        .from('product_variations')
+        .from('catalog_variants')
         .select('id,name')
         .in('id', variationIds);
       if (variationsError) {

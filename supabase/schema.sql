@@ -1,411 +1,497 @@
--- Formatting helpers and any small schema utilities
--- Idempotent: safe to run multiple times
+-- Unified schema: catalog + warehouse layering + outlet tracking
+-- Replaces the legacy schema objects with the streamlined model described in the brief.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+BEGIN;
 
+-- ------------------------------------------------------------
+-- Enums
+-- ------------------------------------------------------------
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_type
-    WHERE typname = 'stock_location_type'
-      AND typnamespace = 'public'::regnamespace
-  ) THEN
-    CREATE TYPE public.stock_location_type AS ENUM ('warehouse', 'outlet');
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'stock_layer') THEN
+    CREATE TYPE public.stock_layer AS ENUM ('selling','production','materials');
   END IF;
 END $$;
 
-CREATE OR REPLACE FUNCTION public.format_order_number(outlet_name text, seq bigint)
-RETURNS text
-LANGUAGE sql
-SET search_path = pg_temp
-STABLE
-AS $$
-  WITH safe AS (
-    SELECT regexp_replace(trim(coalesce(outlet_name, 'Outlet')), '[^A-Za-z0-9_-]', '_', 'g') AS name
-  )
-  SELECT format('%s_%07d', name, seq) FROM safe;
-$$;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'item_kind') THEN
+    CREATE TYPE public.item_kind AS ENUM ('finished','ingredient');
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'qty_unit') THEN
+    CREATE TYPE public.qty_unit AS ENUM ('each','g','kg','mg','ml','l');
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'stock_reason') THEN
+    CREATE TYPE public.stock_reason AS ENUM ('order_fulfillment','outlet_sale','recipe_consumption');
+  END IF;
+
+  BEGIN
+    ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'order_fulfillment';
+    ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'outlet_sale';
+    ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'recipe_consumption';
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
 
 -- ------------------------------------------------------------
--- Role directory + assignment overhaul (2025-12-02)
+-- Core entities (warehouses, outlets, auth helpers)
 -- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.warehouses (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  code text,
+  kind text,
+  parent_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  stock_layer public.stock_layer NOT NULL DEFAULT 'selling',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_warehouses_code ON public.warehouses ((lower(code))) WHERE code IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.outlets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  code text,
+  channel text NOT NULL DEFAULT 'selling',
+  auth_user_id uuid UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_outlets_code ON public.outlets ((lower(code))) WHERE code IS NOT NULL;
+
+ALTER TABLE IF EXISTS public.outlets
+  DROP COLUMN IF EXISTS warehouse_id;
+
+CREATE TABLE IF NOT EXISTS public.platform_admins (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  granted_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS public.roles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  slug text NOT NULL UNIQUE,
+  slug text NOT NULL,
+  normalized_slug text GENERATED ALWAYS AS (lower(slug)) STORED,
   display_name text NOT NULL,
   description text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-INSERT INTO public.roles (slug, display_name, description)
-VALUES
-  ('admin', 'Administrator', 'Full access to every resource'),
-  ('supervisor', 'Outlet Supervisor', 'Approves and reviews outlet orders'),
-  ('outlet', 'Outlet Operator', 'Places orders on behalf of an outlet'),
-  ('transfers', 'Transfers', 'Night-shift transfer console operator')
-ON CONFLICT (slug) DO UPDATE SET
-  display_name = EXCLUDED.display_name,
-  description = EXCLUDED.description;
-
-ALTER TABLE IF EXISTS public.user_roles
-  DROP CONSTRAINT IF EXISTS user_roles_outlet_required_chk;
-
-DROP VIEW IF EXISTS public.current_user_roles;
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'user_roles'
-      AND column_name = 'role'
-      AND udt_name = 'role_type'
-  ) THEN
-    ALTER TABLE public.user_roles
-      ALTER COLUMN role TYPE text USING role::text;
-  END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS public.user_roles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role text NOT NULL,
-  outlet_id uuid REFERENCES public.outlets(id) ON DELETE CASCADE,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-INSERT INTO public.roles (slug, display_name)
-SELECT DISTINCT ur.role, initcap(replace(ur.role, '_', ' '))
-FROM public.user_roles ur
-LEFT JOIN public.roles r ON r.slug = ur.role
-WHERE r.slug IS NULL;
+CREATE INDEX IF NOT EXISTS idx_roles_normalized_slug ON public.roles(normalized_slug);
 
-ALTER TABLE IF EXISTS public.user_roles
-  DROP CONSTRAINT IF EXISTS user_roles_outlet_required_chk;
+CREATE TABLE IF NOT EXISTS public.user_roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
+  outlet_id uuid REFERENCES public.outlets(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, role_id, outlet_id)
+);
 
-ALTER TABLE public.user_roles
-  DROP CONSTRAINT IF EXISTS user_roles_role_slug_fkey;
+CREATE INDEX IF NOT EXISTS idx_user_roles_user ON public.user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_outlet ON public.user_roles(outlet_id);
 
--- Normalize legacy transfer slugs to the canonical Transfers slug
-UPDATE public.user_roles
-SET role = 'transfers'
-WHERE lower(role) IN ('warehouse_transfers', 'transfer_manager');
+DO $$
+DECLARE
+  role_records constant jsonb := jsonb_build_array(
+    jsonb_build_object('id', '8cafa111-b968-455c-bf4b-7bb8577daff7', 'slug', 'Outlet', 'display_name', 'Outlet Operator'),
+    jsonb_build_object('id', 'fb847394-0001-408a-83cc-791652db6cee', 'slug', 'Outlet Legacy', 'display_name', 'Outlet Operator (Legacy)'),
+    jsonb_build_object('id', 'e6523948-4c2c-41d8-8cbc-27aca489dbcb', 'slug', 'Main Branch Order Supervisor', 'display_name', 'Main Branch Order Supervisor'),
+    jsonb_build_object('id', '66f6f683-6f98-415b-a66a-923684b2823f', 'slug', 'Supervisor Legacy', 'display_name', 'Supervisor (Legacy)'),
+    jsonb_build_object('id', '89147a54-507d-420b-86b4-2089d64faecd', 'slug', 'Transfers', 'display_name', 'Warehouse Transfers'),
+    jsonb_build_object('id', '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c', 'slug', 'Admin', 'display_name', 'Warehouse Admin')
+  );
+  rec jsonb;
+BEGIN
+  FOR rec IN SELECT * FROM jsonb_array_elements(role_records)
+  LOOP
+    INSERT INTO public.roles(id, slug, display_name)
+    VALUES (
+      (rec->>'id')::uuid,
+      rec->>'slug',
+      rec->>'display_name'
+    ) ON CONFLICT (id) DO UPDATE SET
+      slug = EXCLUDED.slug,
+      display_name = EXCLUDED.display_name,
+      active = true;
+  END LOOP;
+END
+$$;
 
-DELETE FROM public.roles
-WHERE lower(slug) IN ('warehouse_transfers', 'transfer_manager')
-  AND slug <> 'transfers';
+-- ------------------------------------------------------------
+-- Warehouses
+-- ------------------------------------------------------------
+ALTER TABLE IF EXISTS public.warehouses
+  ADD COLUMN IF NOT EXISTS stock_layer public.stock_layer NOT NULL DEFAULT 'selling';
 
-ALTER TABLE public.user_roles
-  ADD CONSTRAINT user_roles_role_slug_fkey
-  FOREIGN KEY (role) REFERENCES public.roles(slug) ON DELETE RESTRICT;
+-- Map legacy kind metadata to the new enum once, defaulting to production for unknowns.
+UPDATE public.warehouses w
+SET stock_layer = CASE
+  WHEN lower(coalesce(w.kind, '')) IN ('main_coldroom','child_coldroom','selling_depot','outlet_warehouse') THEN 'selling'
+  ELSE 'production'
+END::public.stock_layer
+WHERE w.stock_layer = 'selling';
 
-DROP INDEX IF EXISTS ux_user_roles_user_role_outlet;
-CREATE UNIQUE INDEX IF NOT EXISTS ux_user_roles_user_role_outlet
-  ON public.user_roles (user_id, role, COALESCE(outlet_id, '00000000-0000-0000-0000-000000000000'::uuid))
-  WHERE active;
+-- ------------------------------------------------------------
+-- Catalog (shared by outlet selling and production materials)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.catalog_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  sku text,
+  item_kind public.item_kind NOT NULL,
+  base_unit public.qty_unit NOT NULL DEFAULT 'each',
+  consumption_uom text NOT NULL DEFAULT 'each',
+  purchase_pack_unit text NOT NULL DEFAULT 'each',
+  units_per_purchase_pack numeric NOT NULL DEFAULT 1 CHECK (units_per_purchase_pack > 0),
+  purchase_unit_mass numeric CHECK (purchase_unit_mass IS NULL OR purchase_unit_mass > 0),
+  purchase_unit_mass_uom public.qty_unit,
+  transfer_unit text NOT NULL DEFAULT 'each',
+  transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
+  cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  has_variations boolean NOT NULL DEFAULT false,
+  image_url text,
+  default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 
-CREATE INDEX IF NOT EXISTS idx_user_roles_active_role_user
-  ON public.user_roles (role, user_id)
-  WHERE active;
-
-ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS user_roles_select ON public.user_roles;
-CREATE POLICY user_roles_select ON public.user_roles
-  FOR SELECT
-  TO authenticated
-  USING (user_roles.user_id = auth.uid());
-
-DROP FUNCTION IF EXISTS public.has_role(public.role_type, uuid);
-DROP FUNCTION IF EXISTS public.has_role(public.role_type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_items_name_unique ON public.catalog_items ((lower(name)));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_items_sku_unique ON public.catalog_items ((lower(sku))) WHERE sku IS NOT NULL;
 
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1
-    FROM pg_type
-    WHERE typname = 'role_type'
-      AND typnamespace = 'public'::regnamespace
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_items' AND column_name = 'uom'
   ) THEN
-    DROP TYPE public.role_type;
+    ALTER TABLE public.catalog_items RENAME COLUMN uom TO consumption_uom;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_items' AND column_name = 'package_contains'
+  ) THEN
+    ALTER TABLE public.catalog_items RENAME COLUMN package_contains TO units_per_purchase_pack;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_items' AND column_name = 'receiving_contains'
+  ) THEN
+    ALTER TABLE public.catalog_items RENAME COLUMN receiving_contains TO units_per_purchase_pack;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_items' AND column_name = 'receiving_uom'
+  ) THEN
+    ALTER TABLE public.catalog_items RENAME COLUMN receiving_uom TO purchase_pack_unit;
   END IF;
 END $$;
 
-CREATE OR REPLACE VIEW public.current_user_roles AS
-SELECT
-  ur.role,
-  ur.outlet_id,
-  o.name AS outlet_name
-FROM public.user_roles ur
-LEFT JOIN public.outlets o ON o.id = ur.outlet_id
-WHERE ur.user_id = auth.uid()
-  AND ur.active;
+ALTER TABLE IF EXISTS public.catalog_items
+  ADD COLUMN IF NOT EXISTS consumption_uom text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS purchase_pack_unit text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS units_per_purchase_pack numeric NOT NULL DEFAULT 1 CHECK (units_per_purchase_pack > 0),
+  ADD COLUMN IF NOT EXISTS purchase_unit_mass numeric CHECK (purchase_unit_mass IS NULL OR purchase_unit_mass > 0),
+  ADD COLUMN IF NOT EXISTS purchase_unit_mass_uom public.qty_unit,
+  ADD COLUMN IF NOT EXISTS transfer_unit text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
+  ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  ADD COLUMN IF NOT EXISTS has_variations boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS image_url text,
+  ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
 
-CREATE OR REPLACE FUNCTION public.has_role(
-  p_user_id uuid,
-  p_role text,
-  p_outlet_id uuid DEFAULT NULL
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SET search_path TO 'pg_temp'
-AS $$
-  SELECT CASE
-    WHEN p_user_id IS NULL OR p_role IS NULL THEN FALSE
-    ELSE EXISTS (
-      SELECT 1
-      FROM public.user_roles ur
-      WHERE ur.user_id = p_user_id
-        AND ur.active
-        AND lower(ur.role) = lower(p_role)
-        AND (
-          p_outlet_id IS NULL
-          OR ur.outlet_id IS NOT DISTINCT FROM p_outlet_id
-        )
-    )
-  END;
-$$;
+CREATE TABLE IF NOT EXISTS public.catalog_variants (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  sku text,
+  consumption_uom text NOT NULL DEFAULT 'each',
+  purchase_pack_unit text NOT NULL DEFAULT 'each',
+  units_per_purchase_pack numeric NOT NULL DEFAULT 1 CHECK (units_per_purchase_pack > 0),
+  purchase_unit_mass numeric CHECK (purchase_unit_mass IS NULL OR purchase_unit_mass > 0),
+  purchase_unit_mass_uom public.qty_unit,
+  transfer_unit text NOT NULL DEFAULT 'each',
+  transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
+  cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  image_url text,
+  default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 
-CREATE OR REPLACE FUNCTION public.has_role(
-  p_user_id uuid,
-  p_role text
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SET search_path TO 'pg_temp'
-AS $$
-  SELECT public.has_role(p_user_id, p_role, NULL::uuid);
-$$;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_variants_name_unique ON public.catalog_variants (item_id, (lower(name)));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_variants_sku_unique ON public.catalog_variants ((lower(sku))) WHERE sku IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION public.has_role(
-  p_role text,
-  p_outlet_id uuid DEFAULT NULL
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'pg_temp'
-AS $$
-  SELECT public.has_role(auth.uid(), p_role, p_outlet_id);
-$$;
-
-CREATE OR REPLACE FUNCTION public.is_admin(
-  p_user_id uuid
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SET search_path TO 'pg_temp'
-AS $$
-  SELECT public.has_role(p_user_id, 'admin', NULL::uuid);
-$$;
-
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'pg_temp'
-AS $$
-  SELECT public.is_admin(auth.uid());
-$$;
-
-CREATE OR REPLACE FUNCTION public.tm_for_outlet(p_outlet_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public', 'auth'
-AS $$
-  SELECT public.has_role('transfers', p_outlet_id);
-$$;
-
-CREATE OR REPLACE FUNCTION public.tm_for_warehouse(p_warehouse_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public', 'auth'
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.warehouses w
-    WHERE w.id = p_warehouse_id
-      AND public.has_role('transfers', w.outlet_id)
-  );
-$$;
-
-CREATE OR REPLACE FUNCTION public.whoami_roles()
-RETURNS TABLE(user_id uuid, email text, is_admin boolean, roles text[], outlets jsonb, role_catalog jsonb)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'auth'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_email text;
-  v_is_admin boolean := false;
-  v_roles text[] := '{}';
-  v_outlets jsonb := '[]'::jsonb;
-  v_role_catalog jsonb := '[]'::jsonb;
-BEGIN
-  IF v_uid IS NULL THEN
-    RETURN QUERY SELECT NULL::uuid, NULL::text, FALSE, ARRAY[]::text[], '[]'::jsonb;
-    RETURN;
-  END IF;
-
-  SELECT u.email INTO v_email
-  FROM auth.users u
-  WHERE u.id = v_uid;
-
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.user_roles ur
-    WHERE ur.user_id = v_uid
-      AND ur.active
-      AND lower(ur.role) = 'admin'
-  ) INTO v_is_admin;
-
-  SELECT COALESCE(
-    ARRAY(
-      SELECT DISTINCT lower(ur.role)
-      FROM public.user_roles ur
-      WHERE ur.user_id = v_uid
-        AND ur.active
-      ORDER BY lower(ur.role)
-    ), '{}'
-  ) INTO v_roles;
-
-  SELECT COALESCE(
-    (
-      SELECT jsonb_agg(jsonb_build_object(
-        'outlet_id', o.id,
-        'outlet_name', o.name,
-        'roles', ARRAY(SELECT DISTINCT lower(ur_inner.role)
-                       FROM public.user_roles ur_inner
-                       WHERE ur_inner.user_id = v_uid
-                         AND ur_inner.active
-                         AND ur_inner.outlet_id = o.id
-                       ORDER BY lower(ur_inner.role)))
-      )
-      FROM public.outlets o
-      WHERE EXISTS (
-        SELECT 1
-        FROM public.user_roles ur
-        WHERE ur.user_id = v_uid
-          AND ur.active
-          AND ur.outlet_id = o.id
-      )
-    ), '[]'::jsonb
-  ) INTO v_outlets;
-
-  SELECT COALESCE(
-    (
-      SELECT jsonb_agg(jsonb_build_object(
-        'id', row_data.id,
-        'slug', row_data.slug,
-        'normalized_slug', row_data.slug_lower,
-        'display_name', row_data.display_name
-      ))
-      FROM (
-        SELECT DISTINCT r.id, r.slug, lower(r.slug) AS slug_lower, r.display_name
-        FROM public.roles r
-        JOIN public.user_roles ur
-          ON lower(ur.role) = lower(r.slug)
-        WHERE ur.user_id = v_uid
-          AND ur.active
-      ) AS row_data
-    ),
-    '[]'::jsonb
-  ) INTO v_role_catalog;
-
-  RETURN QUERY SELECT v_uid, v_email, COALESCE(v_is_admin, FALSE), COALESCE(v_roles, '{}'), COALESCE(v_outlets, '[]'::jsonb), COALESCE(v_role_catalog, '[]'::jsonb);
-END;
-$$;
-
--- ------------------------------------------------------------
--- Order workflow + signature pipeline enhancements (2025-11-24)
--- ------------------------------------------------------------
-
-
--- Outlet-friendly reporting helpers
-CREATE OR REPLACE VIEW public.outlet_order_log AS
-SELECT
-  o.id AS order_id,
-  o.order_number,
-  o.outlet_id,
-  outlets.name AS outlet_name,
-  o.status,
-  o.lock_stage,
-  o.created_at,
-  o.employee_signed_name,
-  o.supervisor_signed_name,
-  o.driver_signed_name,
-  o.offloader_signed_name,
-  o.pdf_path,
-  o.approved_pdf_path,
-  o.loaded_pdf_path,
-  o.offloaded_pdf_path
-FROM public.orders o
-JOIN public.outlets ON outlets.id = o.outlet_id;
-
-CREATE OR REPLACE VIEW public.outlet_product_order_totals AS
-SELECT
-  o.outlet_id,
-  outlets.name AS outlet_name,
-  ps.product_id,
-  prod.name AS product_name,
-  ps.variation_id,
-  pv.name AS variation_name,
-  SUM(coalesce(ps.qty_cases, 0)) AS total_qty_cases,
-  SUM(ps.qty_units) AS total_qty_units,
-  MIN(o.created_at) AS first_order_at,
-  MAX(o.created_at) AS last_order_at
-FROM public.products_sold ps
-JOIN public.orders o ON o.id = ps.order_id
-JOIN public.outlets ON outlets.id = o.outlet_id
-LEFT JOIN public.products prod ON prod.id = ps.product_id
-LEFT JOIN public.product_variations pv ON pv.id = ps.variation_id
-GROUP BY o.outlet_id, outlets.name, ps.product_id, prod.name, ps.variation_id, pv.name;
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type WHERE typname = 'order_lock_stage'
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_variants' AND column_name = 'uom'
   ) THEN
-    CREATE TYPE public.order_lock_stage AS ENUM ('outlet','supervisor','driver','offloader');
+    ALTER TABLE public.catalog_variants RENAME COLUMN uom TO consumption_uom;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_variants' AND column_name = 'package_contains'
+  ) THEN
+    ALTER TABLE public.catalog_variants RENAME COLUMN package_contains TO units_per_purchase_pack;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_variants' AND column_name = 'receiving_contains'
+  ) THEN
+    ALTER TABLE public.catalog_variants RENAME COLUMN receiving_contains TO units_per_purchase_pack;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'catalog_variants' AND column_name = 'receiving_uom'
+  ) THEN
+    ALTER TABLE public.catalog_variants RENAME COLUMN receiving_uom TO purchase_pack_unit;
   END IF;
 END $$;
 
-ALTER TABLE IF EXISTS public.orders
-  ADD COLUMN IF NOT EXISTS lock_stage public.order_lock_stage,
-  ADD COLUMN IF NOT EXISTS warehouse_deducted_at timestamptz,
-  ADD COLUMN IF NOT EXISTS warehouse_deducted_by uuid,
-  ADD COLUMN IF NOT EXISTS outlet_received_at timestamptz,
-  ADD COLUMN IF NOT EXISTS outlet_received_by uuid;
+ALTER TABLE IF EXISTS public.catalog_variants
+  ADD COLUMN IF NOT EXISTS consumption_uom text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS purchase_pack_unit text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS units_per_purchase_pack numeric NOT NULL DEFAULT 1 CHECK (units_per_purchase_pack > 0),
+  ADD COLUMN IF NOT EXISTS purchase_unit_mass numeric CHECK (purchase_unit_mass IS NULL OR purchase_unit_mass > 0),
+  ADD COLUMN IF NOT EXISTS purchase_unit_mass_uom public.qty_unit,
+  ADD COLUMN IF NOT EXISTS transfer_unit text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
+  ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  ADD COLUMN IF NOT EXISTS image_url text,
+  ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS public.stock_ledger (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  location_type text NOT NULL CHECK (location_type IN ('warehouse','outlet')),
+  warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  outlet_id uuid REFERENCES public.outlets(id) ON DELETE SET NULL,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  delta_units numeric NOT NULL,
+  reason public.stock_reason NOT NULL,
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  occurred_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ------------------------------------------------------------
+-- Recipes (finished item -> ingredient list)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.item_ingredient_recipes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  finished_item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  finished_variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  ingredient_item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE RESTRICT,
+  source_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  qty_per_unit numeric NOT NULL CHECK (qty_per_unit > 0),
+  qty_unit public.qty_unit NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_recipes_finished ON public.item_ingredient_recipes(finished_item_id, finished_variant_id);
+CREATE INDEX IF NOT EXISTS idx_recipes_ingredient ON public.item_ingredient_recipes(ingredient_item_id);
+
+ALTER TABLE IF EXISTS public.item_ingredient_recipes
+  ADD COLUMN IF NOT EXISTS source_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_recipes_source_warehouse ON public.item_ingredient_recipes(source_warehouse_id);
+
+-- ------------------------------------------------------------
+-- Transfer profiles (default rules for inter-warehouse moves)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.item_transfer_profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  from_warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  to_warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  transfer_unit text NOT NULL DEFAULT 'each',
+  transfer_quantity numeric NOT NULL CHECK (transfer_quantity > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_item_transfer_profile_scope
+  ON public.item_transfer_profiles (
+    item_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    from_warehouse_id,
+    to_warehouse_id
+  );
+
+CREATE INDEX IF NOT EXISTS idx_item_transfer_profile_from ON public.item_transfer_profiles(from_warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_item_transfer_profile_to ON public.item_transfer_profiles(to_warehouse_id);
+
+-- ------------------------------------------------------------
+-- Warehouse handling policies
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.item_warehouse_handling_policies (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  deduction_uom text NOT NULL DEFAULT 'each',
+  recipe_source boolean NOT NULL DEFAULT false,
+  damage_unit text NOT NULL DEFAULT 'each',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_item_warehouse_policy_scope
+  ON public.item_warehouse_handling_policies (
+    warehouse_id,
+    item_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+CREATE INDEX IF NOT EXISTS idx_item_warehouse_policy_deduction_unit
+  ON public.item_warehouse_handling_policies(deduction_uom);
+
+-- ------------------------------------------------------------
+-- Warehouse defaults (per stock layer)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.warehouse_defaults (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_warehouse_defaults_item_variant
+  ON public.warehouse_defaults (item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+DO $$
+BEGIN
+  IF to_regclass('public.outlet_stock_balances') IS NULL AND to_regclass('public.outlet_item_balances') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE public.outlet_item_balances RENAME TO outlet_stock_balances';
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.outlet_stock_balances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  sent_units numeric NOT NULL DEFAULT 0,
+  consumed_units numeric NOT NULL DEFAULT 0,
+  on_hand_units numeric GENERATED ALWAYS AS (sent_units - consumed_units) STORED,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+DROP INDEX IF EXISTS public.ux_outlet_item_balances_scope;
+DROP INDEX IF EXISTS public.idx_outlet_item_balances_outlet;
+DROP INDEX IF EXISTS public.idx_outlet_item_balances_item;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_outlet_stock_balances_scope
+  ON public.outlet_stock_balances (outlet_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE INDEX IF NOT EXISTS idx_outlet_stock_balances_outlet ON public.outlet_stock_balances(outlet_id);
+CREATE INDEX IF NOT EXISTS idx_outlet_stock_balances_item ON public.outlet_stock_balances(item_id, variant_id);
+
+CREATE TABLE IF NOT EXISTS public.outlet_sales (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  qty_units numeric NOT NULL CHECK (qty_units > 0),
+  is_production boolean NOT NULL DEFAULT false,
+  warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  sold_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outlet_sales_outlet ON public.outlet_sales(outlet_id, sold_at DESC);
+CREATE INDEX IF NOT EXISTS idx_outlet_sales_item ON public.outlet_sales(item_id, variant_id);
+
+CREATE TABLE IF NOT EXISTS public.outlet_deduction_mappings (
+  outlet_id uuid PRIMARY KEY REFERENCES public.outlets(id) ON DELETE CASCADE,
+  target_outlet_id uuid REFERENCES public.outlets(id) ON DELETE CASCADE,
+  target_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outlet_deduction_target ON public.outlet_deduction_mappings(target_outlet_id);
+
+CREATE TABLE IF NOT EXISTS public.outlet_stocktakes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  on_hand_at_snapshot numeric NOT NULL,
+  counted_qty numeric NOT NULL,
+  variance numeric GENERATED ALWAYS AS (on_hand_at_snapshot - counted_qty) STORED,
+  counted_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  counted_at timestamptz NOT NULL DEFAULT now(),
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outlet_stocktakes_outlet ON public.outlet_stocktakes(outlet_id, counted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_outlet_stocktakes_item ON public.outlet_stocktakes(item_id, variant_id);
+
+CREATE TABLE IF NOT EXISTS public.orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE RESTRICT,
+  order_number text,
+  status text NOT NULL DEFAULT 'draft',
+  locked boolean NOT NULL DEFAULT false,
+  approved_at timestamptz,
+  approved_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  tz text NOT NULL DEFAULT 'UTC',
+  pdf_path text,
+  approved_pdf_path text,
+  loaded_pdf_path text,
+  offloaded_pdf_path text,
+  employee_signed_name text,
+  employee_signature_path text,
+  employee_signed_at timestamptz,
+  supervisor_signed_name text,
+  supervisor_signature_path text,
+  supervisor_signed_at timestamptz,
+  driver_signed_name text,
+  driver_signature_path text,
+  driver_signed_at timestamptz,
+  offloader_signed_name text,
+  offloader_signature_path text,
+  offloader_signed_at timestamptz,
+  modified_by_supervisor boolean NOT NULL DEFAULT false,
+  modified_by_supervisor_name text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_outlet ON public.orders(outlet_id, status);
 
 ALTER TABLE IF EXISTS public.orders
-  ALTER COLUMN locked SET DEFAULT true,
-  ALTER COLUMN lock_stage SET DEFAULT 'outlet';
-
-UPDATE public.orders
-SET lock_stage = CASE
-    WHEN lower(coalesce(status, '')) IN ('offloaded','delivered') THEN 'offloader'::public.order_lock_stage
-    WHEN lower(coalesce(status, '')) = 'loaded' THEN 'driver'::public.order_lock_stage
-    WHEN lower(coalesce(status, '')) = 'approved' THEN 'supervisor'::public.order_lock_stage
-    ELSE 'outlet'::public.order_lock_stage
-  END
-WHERE lock_stage IS NULL
-  OR (lock_stage = 'outlet'::public.order_lock_stage AND lower(coalesce(status, '')) IN ('approved','loaded','offloaded','delivered'));
-
--- Ensure deprecated outlet login metadata is removed now that outlets.auth_user_id controls mapping.
-ALTER TABLE IF EXISTS public.outlets
-  DROP COLUMN IF EXISTS email;
-
--- New metadata required for multi-stage signing.
-ALTER TABLE IF EXISTS public.orders
+  ADD COLUMN IF NOT EXISTS order_number text,
+  ADD COLUMN IF NOT EXISTS locked boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS tz text NOT NULL DEFAULT 'UTC',
+  ADD COLUMN IF NOT EXISTS pdf_path text,
+  ADD COLUMN IF NOT EXISTS approved_pdf_path text,
+  ADD COLUMN IF NOT EXISTS loaded_pdf_path text,
+  ADD COLUMN IF NOT EXISTS offloaded_pdf_path text,
   ADD COLUMN IF NOT EXISTS employee_signed_name text,
   ADD COLUMN IF NOT EXISTS employee_signature_path text,
   ADD COLUMN IF NOT EXISTS employee_signed_at timestamptz,
@@ -418,2616 +504,487 @@ ALTER TABLE IF EXISTS public.orders
   ADD COLUMN IF NOT EXISTS offloader_signed_name text,
   ADD COLUMN IF NOT EXISTS offloader_signature_path text,
   ADD COLUMN IF NOT EXISTS offloader_signed_at timestamptz,
-  ADD COLUMN IF NOT EXISTS pdf_path text,
-  ADD COLUMN IF NOT EXISTS approved_pdf_path text,
-  ADD COLUMN IF NOT EXISTS loaded_pdf_path text,
-  ADD COLUMN IF NOT EXISTS offloaded_pdf_path text;
+  ADD COLUMN IF NOT EXISTS modified_by_supervisor boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS modified_by_supervisor_name text;
 
--- Ensure future inserts default to the new workflow vocabulary.
-ALTER TABLE IF EXISTS public.orders
-  ALTER COLUMN status SET DEFAULT 'Placed';
+CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_order_number ON public.orders(order_number) WHERE order_number IS NOT NULL;
 
--- Normalize any lingering legacy values so downstream filters behave.
-UPDATE public.orders SET status = 'Placed'
-WHERE lower(status) IN ('order placed', 'placed')
-  AND status <> 'Placed';
-
--- Normalize historical Offloaded -> Delivered terminology
-UPDATE public.orders
-SET status = 'Delivered'
-WHERE lower(coalesce(status, '')) = 'offloaded';
-
--- Expanded place_order RPC: captures employee signature metadata + pdf path.
-DROP FUNCTION IF EXISTS public.place_order(uuid, jsonb, text);
-
-CREATE OR REPLACE FUNCTION public.place_order(
-    p_outlet_id uuid,
-    p_items jsonb,
-    p_employee_name text,
-    p_signature_path text DEFAULT NULL,
-    p_pdf_path text DEFAULT NULL
-)
-RETURNS TABLE(order_id uuid, order_number text, created_at timestamptz)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_seq bigint;
-  v_order_id uuid;
-  v_order_number text;
-  v_created_at timestamptz;
-  v_employee_name text := nullif(btrim(coalesce(p_employee_name, '')), '');
-  v_sig_path text := nullif(btrim(p_signature_path), '');
-  v_pdf_path text := nullif(btrim(p_pdf_path), '');
-  v_primary_wh uuid;
-BEGIN
-  IF p_outlet_id IS NULL THEN
-    RAISE EXCEPTION 'p_outlet_id is required';
-  END IF;
-  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
-    RAISE EXCEPTION 'p_items must be a non-empty JSON array';
-  END IF;
-
-  INSERT INTO public.outlet_sequences AS os (outlet_id, next_seq)
-  VALUES (p_outlet_id, 1)
-  ON CONFLICT (outlet_id)
-  DO UPDATE SET next_seq = os.next_seq + 1
-  RETURNING os.next_seq INTO v_seq;
-
-  v_order_number := lpad(v_seq::text, 6, '0');
-
-  INSERT INTO public.orders (
-    outlet_id,
-    order_number,
-    status,
-    locked,
-    lock_stage,
-    tz,
-    created_at,
-    employee_signed_name,
-    employee_signature_path,
-    employee_signed_at,
-    pdf_path
-  )
-  VALUES (
-    p_outlet_id,
-    v_order_number,
-    'Placed',
-    true,
-    'outlet'::public.order_lock_stage,
-    coalesce(current_setting('TIMEZONE', true), 'UTC'),
-    now(),
-    v_employee_name,
-    v_sig_path,
-    CASE WHEN v_employee_name IS NOT NULL OR v_sig_path IS NOT NULL THEN now() ELSE NULL END,
-    v_pdf_path
-  )
-  RETURNING id, order_number, created_at
-  INTO v_order_id, v_order_number, v_created_at;
-
-  SELECT warehouse_id INTO v_primary_wh
-  FROM public.outlet_primary_warehouse
-  WHERE outlet_id = p_outlet_id;
-
-  WITH payload AS (
-    SELECT
-      i.product_id,
-      i.variation_id,
-      i.name,
-      i.uom,
-      i.cost,
-      coalesce(i.qty_cases, i.qty, 0)::numeric AS qty_cases,
-      i.warehouse_id AS warehouse_override
-    FROM jsonb_to_recordset(p_items) AS i(
-      product_id uuid,
-      variation_id uuid,
-      name text,
-      uom text,
-      cost numeric,
-      qty numeric,
-      qty_cases numeric,
-      warehouse_id uuid
-    )
-  )
-  INSERT INTO public.order_items (
-    order_id,
-    product_id,
-    variation_id,
-    name,
-    uom,
-    cost,
-    qty_cases,
-    package_contains,
-    qty,
-    amount,
-    warehouse_id
-  )
-  SELECT
-    v_order_id,
-    p_item.product_id,
-    p_item.variation_id,
-    p_item.name,
-    p_item.uom,
-    p_item.cost,
-    p_item.qty_cases,
-    coalesce(pv.package_contains, prod.package_contains, 1) AS package_contains,
-    p_item.qty_cases * coalesce(pv.package_contains, prod.package_contains, 1) AS qty_units,
-    coalesce(p_item.cost, 0)::numeric * (p_item.qty_cases * coalesce(pv.package_contains, prod.package_contains, 1)) AS amount,
-    coalesce(p_item.warehouse_override, pv.default_warehouse_id, prod.default_warehouse_id, v_primary_wh)
-  FROM payload p_item
-  LEFT JOIN public.products prod ON prod.id = p_item.product_id
-  LEFT JOIN public.product_variations pv ON pv.id = p_item.variation_id;
-
-  RETURN QUERY SELECT v_order_id, v_order_number, v_created_at;
-END;
-$$;
-
--- Supervisors: approve, lock, and attach signature/pdf metadata.
-CREATE OR REPLACE FUNCTION public.supervisor_approve_order(
-    p_order_id uuid,
-    p_supervisor_name text DEFAULT NULL,
-    p_signature_path text DEFAULT NULL,
-    p_pdf_path text DEFAULT NULL
-)
-RETURNS public.orders
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_order public.orders%ROWTYPE;
-  v_name text := nullif(btrim(coalesce(p_supervisor_name,
-                     (current_setting('request.jwt.claims', true)::jsonb ->> 'name'))), '');
-  v_sig text := nullif(btrim(p_signature_path), '');
-  v_pdf text := nullif(btrim(p_pdf_path), '');
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  IF NOT (public.is_admin(v_uid) OR public.has_role(v_uid, 'supervisor', v_order.outlet_id)) THEN
-    RAISE EXCEPTION 'not authorized to approve this order';
-  END IF;
-
-  UPDATE public.orders o
-         SET status = CASE
-           WHEN lower(coalesce(o.status, '')) IN ('loaded', 'delivered') THEN o.status
-           ELSE 'Approved'
-         END,
-         locked = true,
-         lock_stage = 'supervisor'::public.order_lock_stage,
-         approved_at = coalesce(o.approved_at, now()),
-         approved_by = coalesce(o.approved_by, v_uid),
-         supervisor_signed_name = coalesce(v_name, o.supervisor_signed_name),
-         supervisor_signature_path = coalesce(v_sig, o.supervisor_signature_path),
-         supervisor_signed_at = CASE
-             WHEN (v_name IS NOT NULL OR v_sig IS NOT NULL) THEN coalesce(o.supervisor_signed_at, now())
-             ELSE o.supervisor_signed_at
-         END,
-         pdf_path = coalesce(v_pdf, o.pdf_path),
-         approved_pdf_path = coalesce(v_pdf, o.approved_pdf_path)
-   WHERE o.id = p_order_id
-   RETURNING * INTO v_order;
-
-  PERFORM public.ensure_order_warehouse_deductions(p_order_id);
-
-  RETURN v_order;
-END;
-$$;
-
--- Supervisors: capture driver handoff + mark as loaded.
-CREATE OR REPLACE FUNCTION public.mark_order_loaded(
-    p_order_id uuid,
-    p_driver_name text,
-    p_signature_path text DEFAULT NULL,
-    p_pdf_path text DEFAULT NULL
-)
-RETURNS public.orders
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_order public.orders%ROWTYPE;
-  v_name text := nullif(btrim(p_driver_name), '');
-  v_sig text := nullif(btrim(p_signature_path), '');
-  v_pdf text := nullif(btrim(p_pdf_path), '');
-  v_status text;
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  IF NOT (public.is_admin(v_uid) OR public.has_role(v_uid, 'supervisor', v_order.outlet_id)) THEN
-    RAISE EXCEPTION 'not authorized to mark this order as loaded';
-  END IF;
-
-  v_status := lower(coalesce(v_order.status, ''));
-  IF v_status NOT IN ('approved', 'loaded', 'delivered') THEN
-    RAISE EXCEPTION 'order % must be approved before loading', p_order_id;
-  END IF;
-
-  UPDATE public.orders o
-         SET status = CASE
-           WHEN lower(coalesce(o.status, '')) = 'delivered' THEN o.status
-           ELSE 'Loaded'
-         END,
-         locked = true,
-         lock_stage = 'driver'::public.order_lock_stage,
-         driver_signed_name = coalesce(v_name, o.driver_signed_name),
-         driver_signature_path = coalesce(v_sig, o.driver_signature_path),
-         driver_signed_at = CASE
-             WHEN (v_name IS NOT NULL OR v_sig IS NOT NULL) THEN coalesce(o.driver_signed_at, now())
-             ELSE o.driver_signed_at
-         END,
-         pdf_path = coalesce(v_pdf, o.pdf_path),
-         loaded_pdf_path = coalesce(v_pdf, o.loaded_pdf_path)
-   WHERE o.id = p_order_id
-   RETURNING * INTO v_order;
-
-  RETURN v_order;
-END;
-$$;
-
--- Outlet/offloader step: capture receiving signature + final status.
-CREATE OR REPLACE FUNCTION public.mark_order_offloaded(
-    p_order_id uuid,
-    p_offloader_name text,
-    p_signature_path text DEFAULT NULL,
-    p_pdf_path text DEFAULT NULL
-)
-RETURNS public.orders
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_order public.orders%ROWTYPE;
-  v_name text := nullif(btrim(p_offloader_name), '');
-  v_sig text := nullif(btrim(p_signature_path), '');
-  v_pdf text := nullif(btrim(p_pdf_path), '');
-  v_status text;
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  IF NOT (public.is_admin(v_uid)
-          OR public.order_is_accessible(p_order_id, v_uid)) THEN
-    RAISE EXCEPTION 'not authorized to offload this order';
-  END IF;
-
-  v_status := lower(coalesce(v_order.status, ''));
-  IF v_status NOT IN ('loaded', 'delivered') THEN
-    RAISE EXCEPTION 'order % must be loaded before offloading', p_order_id;
-  END IF;
-
-  IF v_order.driver_signed_at IS NULL THEN
-    RAISE EXCEPTION 'driver signature required before offloading order %', p_order_id;
-  END IF;
-
-    UPDATE public.orders o
-      SET status = 'Delivered',
-         locked = true,
-         lock_stage = 'offloader'::public.order_lock_stage,
-         offloader_signed_name = coalesce(v_name, o.offloader_signed_name),
-         offloader_signature_path = coalesce(v_sig, o.offloader_signature_path),
-         offloader_signed_at = CASE
-             WHEN (v_name IS NOT NULL OR v_sig IS NOT NULL) THEN coalesce(o.offloader_signed_at, now())
-             ELSE o.offloader_signed_at
-         END,
-         pdf_path = coalesce(v_pdf, o.pdf_path),
-         offloaded_pdf_path = coalesce(v_pdf, o.offloaded_pdf_path)
-   WHERE o.id = p_order_id
-   RETURNING * INTO v_order;
-
-  PERFORM public.ensure_order_outlet_receipts(p_order_id);
-  PERFORM public.log_products_sold(p_order_id);
-
-  RETURN v_order;
-END;
-$$;
-
--- ------------------------------------------------------------
--- Outlet-auth consolidation (2025-11-29)
--- ------------------------------------------------------------
-
-ALTER TABLE IF EXISTS public.outlets
-  ADD COLUMN IF NOT EXISTS auth_user_id uuid;
-
-CREATE UNIQUE INDEX IF NOT EXISTS outlets_auth_user_id_key
-  ON public.outlets(auth_user_id)
-  WHERE auth_user_id IS NOT NULL;
-
-DO $$
-BEGIN
-  IF to_regclass('public.outlet_users') IS NOT NULL THEN
-    UPDATE public.outlets o
-    SET auth_user_id = m.user_id
-    FROM (
-      SELECT outlet_id, MIN(user_id::text)::uuid AS user_id
-      FROM public.outlet_users
-      GROUP BY outlet_id
-    ) AS m
-    WHERE o.id = m.outlet_id
-      AND (o.auth_user_id IS DISTINCT FROM m.user_id);
-  END IF;
-END $$;
-
-CREATE OR REPLACE FUNCTION public.outlet_auth_user_matches(
-  p_outlet_id uuid,
-  p_user_id uuid DEFAULT auth.uid()
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path TO 'pg_temp'
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.outlets o
-    WHERE o.id = p_outlet_id
-      AND o.auth_user_id = p_user_id
-  );
-$$;
-
-CREATE OR REPLACE FUNCTION public.next_order_number(
-  p_outlet_id uuid
-)
-RETURNS text
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'extensions', 'pg_temp'
-AS $$
-DECLARE
-  v_next bigint;
-  v_name text;
-  v_number text;
-  v_mapped uuid;
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
-  END IF;
-
-  SELECT id INTO v_mapped
-  FROM public.outlets
-  WHERE auth_user_id = auth.uid();
-
-  IF v_mapped IS NULL THEN
-    RAISE EXCEPTION 'no_outlet_mapping' USING ERRCODE = '42501';
-  END IF;
-
-  IF v_mapped <> p_outlet_id THEN
-    RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
-  END IF;
-
-  INSERT INTO public.outlet_sequences(outlet_id, next_seq)
-  VALUES (p_outlet_id, 1)
-  ON CONFLICT (outlet_id) DO NOTHING;
-
-  UPDATE public.outlet_sequences
-  SET next_seq = next_seq + 1
-  WHERE outlet_id = p_outlet_id
-  RETURNING next_seq - 1 INTO v_next;
-
-  SELECT name INTO v_name FROM public.outlets WHERE id = p_outlet_id;
-  v_number := v_name || to_char(v_next, 'FM0000000');
-  RETURN v_number;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.order_is_accessible(
-  p_order_id uuid,
-  p_user_id uuid
-)
-RETURNS boolean
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'pg_temp'
-AS $$
-DECLARE
-  target_outlet uuid;
-BEGIN
-  IF p_order_id IS NULL OR p_user_id IS NULL THEN
-    RETURN FALSE;
-  END IF;
-
-  SELECT outlet_id INTO target_outlet
-  FROM public.orders
-  WHERE id = p_order_id;
-
-  IF target_outlet IS NULL THEN
-    RETURN FALSE;
-  END IF;
-
-  IF public.is_admin(p_user_id) THEN
-    RETURN TRUE;
-  END IF;
-
-  RETURN (
-    target_outlet = ANY(COALESCE(public.member_outlet_ids(p_user_id), ARRAY[]::uuid[]))
-    OR public.outlet_auth_user_matches(target_outlet, p_user_id)
-    OR public.has_role_any_outlet(p_user_id, 'supervisor', target_outlet)
-    OR public.has_role_any_outlet(p_user_id, 'outlet', target_outlet)
-  );
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.whoami_outlet()
-RETURNS TABLE(outlet_id uuid, outlet_name text)
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path TO 'public', 'auth'
-AS $$
-  SELECT o.id, o.name
-  FROM public.outlets o
-  WHERE o.auth_user_id = auth.uid();
-$$;
-
-CREATE OR REPLACE FUNCTION public.tg_order_items_supervisor_qty_only()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path TO 'pg_temp'
-AS $$
-DECLARE
-  v_role text := lower(coalesce((current_setting('request.jwt.claims', true)::jsonb ->> 'role'), ''));
-  v_same_outlet boolean := false;
-BEGIN
-  IF v_role <> 'supervisor' THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.orders o
-    JOIN public.user_roles ur ON ur.outlet_id = o.outlet_id
-    WHERE o.id = NEW.order_id
-      AND ur.user_id = auth.uid()
-      AND ur.active
-      AND lower(ur.role) = 'supervisor'
-  ) INTO v_same_outlet;
-
-  IF NOT v_same_outlet THEN
-    RAISE EXCEPTION 'not allowed: supervisor not linked to this outlet';
-  END IF;
-
-  IF (NEW.order_id       IS DISTINCT FROM OLD.order_id) OR
-     (NEW.product_id     IS DISTINCT FROM OLD.product_id) OR
-     (NEW.variation_id   IS DISTINCT FROM OLD.variation_id) OR
-     (NEW.name           IS DISTINCT FROM OLD.name) OR
-     (NEW.uom            IS DISTINCT FROM OLD.uom) OR
-     (NEW.cost           IS DISTINCT FROM OLD.cost) OR
-     (NEW.amount         IS DISTINCT FROM OLD.amount) THEN
-    RAISE EXCEPTION 'supervisors may only update qty';
-  END IF;
-
-  IF NEW.qty IS NULL THEN
-    RAISE EXCEPTION 'qty cannot be null';
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
-DROP POLICY IF EXISTS assets_read ON public.assets;
-CREATE POLICY assets_read ON public.assets
-  FOR SELECT
-  TO public
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS alloc_read ON public.order_item_allocations;
-CREATE POLICY alloc_read ON public.order_item_allocations
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1
-      FROM public.orders o
-      JOIN public.outlets ot ON ot.id = o.outlet_id
-      WHERE o.id = order_item_allocations.order_id
-        AND ot.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS alloc_write ON public.order_item_allocations;
-CREATE POLICY alloc_write ON public.order_item_allocations
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.orders o
-      JOIN public.outlets ot ON ot.id = o.outlet_id
-      WHERE o.id = order_item_allocations.order_id
-        AND ot.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS orders_policy_insert ON public.orders;
-CREATE POLICY orders_policy_insert ON public.orders
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    is_admin(auth.uid())
-    OR orders.outlet_id = ANY(public.member_outlet_ids(auth.uid()))
-    OR public.outlet_auth_user_matches(orders.outlet_id, auth.uid())
-  );
-
-DROP POLICY IF EXISTS orders_policy_select ON public.orders;
-CREATE POLICY orders_policy_select ON public.orders
-  FOR SELECT
-  TO authenticated
-  USING (
-    is_admin(auth.uid())
-    OR orders.outlet_id = ANY(public.member_outlet_ids(auth.uid()))
-    OR public.outlet_auth_user_matches(orders.outlet_id, auth.uid())
-  );
-
-DROP POLICY IF EXISTS outlet_sequences_outlet_rw ON public.outlet_sequences;
-CREATE POLICY outlet_sequences_outlet_rw ON public.outlet_sequences
-  FOR ALL
-  TO public
-  USING (public.outlet_auth_user_matches(outlet_sequences.outlet_id, auth.uid()))
-  WITH CHECK (public.outlet_auth_user_matches(outlet_sequences.outlet_id, auth.uid()));
-
-DROP POLICY IF EXISTS outlets_self_select ON public.outlets;
-CREATE POLICY outlets_self_select ON public.outlets
-  FOR SELECT
-  TO public
-  USING (public.outlet_auth_user_matches(outlets.id, auth.uid()));
-
-DROP POLICY IF EXISTS product_variations_outlet_read ON public.product_variations;
-CREATE POLICY product_variations_outlet_read ON public.product_variations
-  FOR SELECT
-  TO public
-  USING (
-    (
-      EXISTS (
-        SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
-      )
-      OR public.has_role_any_outlet(auth.uid(), 'transfers')
-    )
-    AND active
-  );
-
-DROP POLICY IF EXISTS products_outlet_read ON public.products;
-CREATE POLICY products_outlet_read ON public.products
-  FOR SELECT
-  TO public
-  USING (
-    (
-      EXISTS (
-        SELECT 1 FROM public.outlets o WHERE o.auth_user_id = auth.uid()
-      )
-      OR public.has_role_any_outlet(auth.uid(), 'transfers')
-    )
-    AND active
-  );
-
-DROP POLICY IF EXISTS sl_read ON public.stock_ledger;
-CREATE POLICY sl_read ON public.stock_ledger
-  FOR SELECT
-  TO authenticated
-  USING (
-    (
-      stock_ledger.location_type = 'outlet'::public.stock_location_type
-      AND public.outlet_auth_user_matches(stock_ledger.location_id, auth.uid())
-    )
-    OR (
-      stock_ledger.location_type = 'warehouse'::public.stock_location_type
-      AND EXISTS (
-        SELECT 1
-        FROM public.warehouses w
-        JOIN public.outlets o ON o.id = w.outlet_id
-        WHERE w.id = stock_ledger.location_id
-          AND o.auth_user_id = auth.uid()
-      )
-    )
-  );
-
-DROP POLICY IF EXISTS sm_read ON public.stock_movements;
-CREATE POLICY sm_read ON public.stock_movements
-  FOR SELECT
-  TO authenticated
-  USING (
-    (
-      stock_movements.source_location_type = 'warehouse'::public.stock_location_type
-      AND EXISTS (
-        SELECT 1
-        FROM public.warehouses w
-        JOIN public.outlets o ON o.id = w.outlet_id
-        WHERE w.id = stock_movements.source_location_id
-          AND o.auth_user_id = auth.uid()
-      )
-    )
-    OR (
-      stock_movements.dest_location_type = 'warehouse'::public.stock_location_type
-      AND EXISTS (
-        SELECT 1
-        FROM public.warehouses w
-        JOIN public.outlets o ON o.id = w.outlet_id
-        WHERE w.id = stock_movements.dest_location_id
-          AND o.auth_user_id = auth.uid()
-      )
-    )
-    OR (
-      stock_movements.dest_location_type = 'outlet'::public.stock_location_type
-      AND public.outlet_auth_user_matches(stock_movements.dest_location_id, auth.uid())
-    )
-  );
-
-DROP POLICY IF EXISTS sm_update ON public.stock_movements;
-CREATE POLICY sm_update ON public.stock_movements
-  FOR UPDATE
-  TO authenticated
-  USING (
-    stock_movements.source_location_type = 'warehouse'::public.stock_location_type
-    AND EXISTS (
-      SELECT 1
-      FROM public.warehouses w
-      JOIN public.outlets o ON o.id = w.outlet_id
-      WHERE w.id = stock_movements.source_location_id
-        AND o.auth_user_id = auth.uid()
-    )
-  )
-  WITH CHECK (
-    stock_movements.source_location_type = 'warehouse'::public.stock_location_type
-    AND EXISTS (
-      SELECT 1
-      FROM public.warehouses w
-      JOIN public.outlets o ON o.id = w.outlet_id
-      WHERE w.id = stock_movements.source_location_id
-        AND o.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS sm_write ON public.stock_movements;
-CREATE POLICY sm_write ON public.stock_movements
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    stock_movements.source_location_type = 'warehouse'::public.stock_location_type
-    AND EXISTS (
-      SELECT 1
-      FROM public.warehouses w
-      JOIN public.outlets o ON o.id = w.outlet_id
-      WHERE w.id = stock_movements.source_location_id
-        AND o.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS wh_read ON public.warehouses;
-CREATE POLICY wh_read ON public.warehouses
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.outlets o
-      WHERE o.id = warehouses.outlet_id
-        AND o.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS wh_update ON public.warehouses;
-CREATE POLICY wh_update ON public.warehouses
-  FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.outlets o
-      WHERE o.id = warehouses.outlet_id
-        AND o.auth_user_id = auth.uid()
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.outlets o
-      WHERE o.id = warehouses.outlet_id
-        AND o.auth_user_id = auth.uid()
-    )
-  );
-
-DROP POLICY IF EXISTS wh_write ON public.warehouses;
-CREATE POLICY wh_write ON public.warehouses
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.outlets o
-      WHERE o.id = warehouses.outlet_id
-        AND o.auth_user_id = auth.uid()
-    )
-  );
-
-DO $$
-BEGIN
-  IF to_regclass('storage.objects') IS NOT NULL THEN
-    BEGIN
-      EXECUTE 'DROP POLICY IF EXISTS "Outlet insert orders (auth.uid)" ON storage.objects';
-    EXCEPTION WHEN undefined_object THEN NULL; END;
-
-    BEGIN
-      EXECUTE 'DROP POLICY IF EXISTS "Outlet update orders (auth.uid)" ON storage.objects';
-    EXCEPTION WHEN undefined_object THEN NULL; END;
-
-    BEGIN
-      EXECUTE 'DROP POLICY IF EXISTS "Outlet delete orders (auth.uid)" ON storage.objects';
-    EXCEPTION WHEN undefined_object THEN NULL; END;
-  END IF;
-END $$;
-
-DROP TABLE IF EXISTS public.outlet_users;
-
--- ------------------------------------------------------------
--- Order-ledger posting + sold logging helpers
--- ------------------------------------------------------------
-
-CREATE OR REPLACE FUNCTION public.ensure_order_warehouse_deductions(
-  p_order_id uuid
-)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_order public.orders%ROWTYPE;
-  v_primary uuid;
-  v_uid uuid := auth.uid();
-  v_rows int := 0;
-BEGIN
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  IF v_order.warehouse_deducted_at IS NOT NULL THEN
-    RETURN;
-  END IF;
-
-  SELECT warehouse_id INTO v_primary
-  FROM public.outlet_primary_warehouse
-  WHERE outlet_id = v_order.outlet_id;
-
-  IF v_primary IS NULL THEN
-    SELECT w.id INTO v_primary
-    FROM public.warehouses w
-    WHERE w.outlet_id = v_order.outlet_id
-    LIMIT 1;
-  END IF;
-
-  INSERT INTO public.stock_ledger(
-    location_type,
-    location_id,
-    product_id,
-    variation_id,
-    qty_change,
-    reason,
-    ref_order_id,
-    note
-  )
-  SELECT
-    'warehouse',
-    COALESCE(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, v_primary),
-    oi.product_id,
-    oi.variation_id,
-    -oi.qty,
-    'order_fulfillment',
-    oi.order_id,
-    format('Order %s warehouse deduction', COALESCE(v_order.order_number, oi.order_id::text))
-  FROM public.order_items oi
-  LEFT JOIN public.product_variations pv ON pv.id = oi.variation_id
-  LEFT JOIN public.products prod ON prod.id = oi.product_id
-  WHERE oi.order_id = p_order_id
-    AND COALESCE(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, v_primary) IS NOT NULL
-    AND oi.qty > 0;
-
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  IF COALESCE(v_rows, 0) = 0 THEN
-    RAISE EXCEPTION 'no warehouse assignments found for order %', p_order_id;
-  END IF;
-
-  UPDATE public.orders
-  SET warehouse_deducted_at = now(),
-      warehouse_deducted_by = COALESCE(v_uid, warehouse_deducted_by)
-  WHERE id = p_order_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.ensure_order_outlet_receipts(
-  p_order_id uuid
-)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_order public.orders%ROWTYPE;
-  v_uid uuid := auth.uid();
-  v_rows int := 0;
-BEGIN
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  IF v_order.outlet_received_at IS NOT NULL THEN
-    RETURN;
-  END IF;
-
-  INSERT INTO public.stock_ledger(
-    location_type,
-    location_id,
-    product_id,
-    variation_id,
-    qty_change,
-    reason,
-    ref_order_id,
-    note
-  )
-  SELECT
-    'outlet',
-    v_order.outlet_id,
-    oi.product_id,
-    oi.variation_id,
-    oi.qty,
-    'order_delivery',
-    oi.order_id,
-    format('Order %s outlet receipt', COALESCE(v_order.order_number, oi.order_id::text))
-  FROM public.order_items oi
-  WHERE oi.order_id = p_order_id
-    AND oi.qty > 0;
-
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  IF COALESCE(v_rows, 0) = 0 THEN
-    RAISE EXCEPTION 'no line items to receive for order %', p_order_id;
-  END IF;
-
-  UPDATE public.orders
-  SET outlet_received_at = now(),
-      outlet_received_by = COALESCE(v_uid, outlet_received_by)
-  WHERE id = p_order_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.log_products_sold(
-  p_order_id uuid,
-  p_recorded_stage text DEFAULT 'delivered'
-)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_order public.orders%ROWTYPE;
-  v_primary uuid;
-  v_uid uuid := auth.uid();
-  v_stage text := lower(coalesce(p_recorded_stage, 'delivered'));
-BEGIN
-  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'order % not found', p_order_id;
-  END IF;
-
-  SELECT warehouse_id INTO v_primary
-  FROM public.outlet_primary_warehouse
-  WHERE outlet_id = v_order.outlet_id;
-
-  IF v_primary IS NULL THEN
-    SELECT w.id INTO v_primary
-    FROM public.warehouses w
-    WHERE w.outlet_id = v_order.outlet_id
-    LIMIT 1;
-  END IF;
-
-  DELETE FROM public.products_sold WHERE order_id = p_order_id;
-
-  INSERT INTO public.products_sold(
-    order_id,
-    order_item_id,
-    outlet_id,
-    product_id,
-    variation_id,
-    warehouse_id,
-    qty_cases,
-    package_contains,
-    qty_units,
-    recorded_stage,
-    recorded_at,
-    recorded_by
-  )
-  SELECT
-    oi.order_id,
-    oi.id,
-    v_order.outlet_id,
-    oi.product_id,
-    oi.variation_id,
-    COALESCE(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, v_primary),
-    oi.qty_cases,
-    oi.package_contains,
-    oi.qty,
-    v_stage,
-    COALESCE(v_order.offloader_signed_at, now()),
-    COALESCE(v_uid, v_order.approved_by)
-  FROM public.order_items oi
-  LEFT JOIN public.product_variations pv ON pv.id = oi.variation_id
-  LEFT JOIN public.products prod ON prod.id = oi.product_id
-  WHERE oi.order_id = p_order_id
-    AND COALESCE(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, v_primary) IS NOT NULL
-    AND oi.qty > 0;
-END;
-$$;
-
--- ------------------------------------------------------------
--- Branch + standardized case sizing (2025-11-25)
--- ------------------------------------------------------------
-
--- Ensure products/variations can declare preferred source warehouse.
-ALTER TABLE IF EXISTS public.products
-  ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id);
-
-ALTER TABLE IF EXISTS public.product_variations
-  ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id);
-
-ALTER TABLE IF EXISTS public.warehouses
-  DROP COLUMN IF EXISTS branch_id,
-  ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'child_coldroom'
-    CHECK (kind IN ('main_coldroom','child_coldroom','selling_depot','outlet_warehouse'));
-
-DROP TABLE IF EXISTS public.branches;
-
-DO $$
-BEGIN
-  UPDATE public.warehouses
-  SET kind = CASE
-    WHEN parent_warehouse_id IS NULL THEN 'main_coldroom'
-    ELSE coalesce(kind, 'child_coldroom')
-  END
-  WHERE kind IS NULL OR (parent_warehouse_id IS NULL AND kind <> 'main_coldroom');
-END $$;
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'case_size_units'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'package_contains'
-  ) THEN
-    ALTER TABLE public.products RENAME COLUMN case_size_units TO package_contains;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'units_per_uom'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'package_contains'
-  ) THEN
-    ALTER TABLE public.products RENAME COLUMN units_per_uom TO package_contains;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'product_variations' AND column_name = 'case_size_units'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'product_variations' AND column_name = 'package_contains'
-  ) THEN
-    ALTER TABLE public.product_variations RENAME COLUMN case_size_units TO package_contains;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'product_variations' AND column_name = 'units_per_uom'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'product_variations' AND column_name = 'package_contains'
-  ) THEN
-    ALTER TABLE public.product_variations RENAME COLUMN units_per_uom TO package_contains;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'case_size_units'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'package_contains'
-  ) THEN
-    ALTER TABLE public.order_items RENAME COLUMN case_size_units TO package_contains;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'units_per_uom'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'package_contains'
-  ) THEN
-    ALTER TABLE public.order_items RENAME COLUMN units_per_uom TO package_contains;
-  END IF;
-END $$;
-
-ALTER TABLE IF EXISTS public.products
-  ADD COLUMN IF NOT EXISTS package_contains numeric NOT NULL DEFAULT 1 CHECK (package_contains > 0);
-
--- Ensure products and variations expose unique SKU barcodes (2025-12-02)
-ALTER TABLE IF EXISTS public.products
-  ADD COLUMN IF NOT EXISTS sku text;
-
-ALTER TABLE IF EXISTS public.product_variations
-  ADD COLUMN IF NOT EXISTS sku text;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_unique
-  ON public.products ((lower(sku)))
-  WHERE sku IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variations_sku_unique
-  ON public.product_variations ((lower(sku)))
-  WHERE sku IS NOT NULL;
-
--- ------------------------------------------------------------
--- Supplier registry (2025-12-06)
--- ------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.suppliers (
+CREATE TABLE IF NOT EXISTS public.order_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  contact_name text,
-  contact_phone text,
-  contact_email text,
-  notes text,
-  active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_name_unique
-  ON public.suppliers ((lower(name)));
-
-ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS suppliers_rw ON public.suppliers;
-CREATE POLICY suppliers_rw
-  ON public.suppliers
-  FOR ALL
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  )
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
--- Supplier scoping per warehouse/product (2025-12-08)
-CREATE TABLE IF NOT EXISTS public.product_supplier_links (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE CASCADE,
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
-  supplier_id uuid NOT NULL REFERENCES public.suppliers(id) ON DELETE RESTRICT,
-  active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_product_supplier_links_scope
-  ON public.product_supplier_links (
-    warehouse_id,
-    supplier_id,
-    product_id,
-    COALESCE(variation_id, '00000000-0000-0000-0000-000000000000'::uuid)
-  );
-
-CREATE INDEX IF NOT EXISTS idx_product_supplier_links_active
-  ON public.product_supplier_links (warehouse_id, product_id, variation_id, active)
-  WHERE active;
-
-ALTER TABLE public.product_supplier_links ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS psl_select_any ON public.product_supplier_links;
-CREATE POLICY psl_select_any
-  ON public.product_supplier_links
-  FOR SELECT
-  USING (auth.uid() IS NOT NULL);
-
-DROP POLICY IF EXISTS psl_admin_rw ON public.product_supplier_links;
-CREATE POLICY psl_admin_rw
-  ON public.product_supplier_links
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-CREATE OR REPLACE FUNCTION public.suppliers_for_warehouse(p_warehouse_id uuid)
-RETURNS TABLE(
-  id uuid,
+  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE RESTRICT,
+  variation_id uuid REFERENCES public.catalog_variants(id) ON DELETE RESTRICT,
+  warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   name text,
-  contact_name text,
-  contact_phone text,
-  contact_email text,
-  active boolean
-)
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT DISTINCT
-    s.id,
-    s.name,
-    s.contact_name,
-    s.contact_phone,
-    s.contact_email,
-    s.active
-  FROM public.suppliers s
-  JOIN public.product_supplier_links psl ON psl.supplier_id = s.id
-  WHERE psl.warehouse_id = p_warehouse_id
-    AND psl.active
-    AND s.active
-  ORDER BY s.name;
-$$;
-
--- Allow assigning multiple suppliers to a product/variation within a warehouse
-CREATE OR REPLACE FUNCTION public.set_product_suppliers(
-  p_warehouse_id uuid,
-  p_product_id uuid,
-  p_supplier_ids uuid[],
-  p_variation_id uuid DEFAULT NULL,
-  p_active boolean DEFAULT true
-)
-RETURNS TABLE(
-  supplier_id uuid,
-  product_id uuid,
-  variation_id uuid,
-  warehouse_id uuid,
-  active boolean
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.has_role_any_outlet(v_uid, 'transfers')
-  ) THEN
-    RAISE EXCEPTION 'not authorized';
-  END IF;
-
-  -- Normalize input (unique, non-null supplier IDs)
-  WITH normalized AS (
-    SELECT DISTINCT sid AS supplier_id
-    FROM unnest(coalesce(p_supplier_ids, '{}')) AS sid
-    WHERE sid IS NOT NULL
-  )
-  -- Remove links that are no longer selected
-  DELETE FROM public.product_supplier_links psl
-  WHERE psl.warehouse_id = p_warehouse_id
-    AND psl.product_id = p_product_id
-    AND (psl.variation_id IS NOT DISTINCT FROM p_variation_id)
-    AND NOT EXISTS (
-      SELECT 1 FROM normalized n WHERE n.supplier_id = psl.supplier_id
-    );
-
-  -- Upsert active links for the provided suppliers
-  INSERT INTO public.product_supplier_links(
-    warehouse_id,
-    product_id,
-    variation_id,
-    supplier_id,
-    active
-  )
-  SELECT
-    p_warehouse_id,
-    p_product_id,
-    p_variation_id,
-    n.supplier_id,
-    COALESCE(p_active, true)
-  FROM normalized n
-  ON CONFLICT ON CONSTRAINT ux_product_supplier_links_scope
-  DO UPDATE SET
-    active = EXCLUDED.active,
-    updated_at = now();
-
-  RETURN QUERY
-  SELECT
-    supplier_id,
-    product_id,
-    variation_id,
-    warehouse_id,
-    active
-  FROM public.product_supplier_links
-  WHERE warehouse_id = p_warehouse_id
-    AND product_id = p_product_id
-    AND (variation_id IS NOT DISTINCT FROM p_variation_id);
-END;
-$$;
-
--- ------------------------------------------------------------
--- Kiosk operator credentials (2025-12-09)
--- ------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.console_operators (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  display_name text NOT NULL,
-  passcode_hash text NOT NULL,
-  auth_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS console_operator_display_name_key
-  ON public.console_operators ((lower(display_name)));
-
-ALTER TABLE public.console_operators ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS console_operators_admin_rw ON public.console_operators;
-CREATE POLICY console_operators_admin_rw
-  ON public.console_operators
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-CREATE OR REPLACE FUNCTION public.console_operator_directory()
-RETURNS TABLE(
-  id uuid,
-  display_name text,
-  auth_user_id uuid
-)
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path TO 'public', 'auth'
-AS $$
-  SELECT id, display_name, auth_user_id
-  FROM public.console_operators
-  WHERE active
-  ORDER BY display_name;
-$$;
-
-CREATE OR REPLACE FUNCTION public.verify_console_operator_passcode(
-  p_operator_id uuid,
-  p_passcode text
-)
-RETURNS boolean
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_hash text;
-BEGIN
-  IF p_operator_id IS NULL OR p_passcode IS NULL THEN
-    RETURN FALSE;
-  END IF;
-
-  SELECT passcode_hash INTO v_hash
-  FROM public.console_operators
-  WHERE id = p_operator_id
-    AND active;
-
-  IF v_hash IS NULL THEN
-    RETURN FALSE;
-  END IF;
-
-  RETURN crypt(p_passcode, v_hash) = v_hash;
-END;
-$$;
-
--- ------------------------------------------------------------
--- Stock entry logging + warehouse transfer portal (2025-11-27)
--- ------------------------------------------------------------
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type WHERE typname = 'stock_entry_kind'
-  ) THEN
-    CREATE TYPE public.stock_entry_kind AS ENUM ('initial','purchase','closing');
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type t
-    JOIN pg_enum e ON e.enumtypid = t.oid
-    WHERE t.typname = 'stock_entry_kind' AND e.enumlabel = 'damage'
-  ) THEN
-    ALTER TYPE public.stock_entry_kind ADD VALUE IF NOT EXISTS 'damage';
-  END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS public.warehouse_stock_entries (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
-  entry_kind public.stock_entry_kind NOT NULL,
-  qty numeric NOT NULL CHECK (qty > 0),
-  note text,
-  recorded_by uuid NOT NULL DEFAULT auth.uid(),
-  recorded_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Damages log (deductions recorded against a warehouse/product/variation)
-CREATE TABLE IF NOT EXISTS public.damages (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE CASCADE,
-  qty numeric NOT NULL CHECK (qty > 0),
+  consumption_uom text NOT NULL DEFAULT 'each',
+  receiving_uom text NOT NULL DEFAULT 'each',
+  cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  receiving_contains numeric,
   qty_cases numeric,
-  package_contains numeric,
-  note text,
-  recorded_by uuid NOT NULL DEFAULT auth.uid(),
-  recorded_at timestamptz NOT NULL DEFAULT now(),
-  source_entry_id uuid REFERENCES public.warehouse_stock_entries(id) ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_damages_warehouse ON public.damages(warehouse_id, recorded_at DESC);
-CREATE INDEX IF NOT EXISTS idx_damages_product ON public.damages(product_id, variation_id);
-
-ALTER TABLE public.damages ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS damages_select ON public.damages;
-CREATE POLICY damages_select
-  ON public.damages
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-DROP POLICY IF EXISTS damages_admin_rw ON public.damages;
-CREATE POLICY damages_admin_rw
-  ON public.damages
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-DROP POLICY IF EXISTS damages_insert ON public.damages;
-CREATE POLICY damages_insert
-  ON public.damages
-  FOR INSERT
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-CREATE INDEX IF NOT EXISTS idx_wse_warehouse ON public.warehouse_stock_entries(warehouse_id);
-CREATE INDEX IF NOT EXISTS idx_wse_product ON public.warehouse_stock_entries(product_id);
-CREATE INDEX IF NOT EXISTS idx_wse_variation ON public.warehouse_stock_entries(variation_id);
-
--- ------------------------------------------------------------
--- Purchase receipts + entry audit (2025-12-06)
--- ------------------------------------------------------------
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type WHERE typname = 'warehouse_purchase_status'
-  ) THEN
-    CREATE TYPE public.warehouse_purchase_status AS ENUM ('draft','received','partial','cancelled');
-  END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS public.warehouse_purchase_receipts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE CASCADE,
-  supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
-  reference_code text NOT NULL,
-  status public.warehouse_purchase_status NOT NULL DEFAULT 'received',
-  note text,
-  auto_whatsapp boolean NOT NULL DEFAULT true,
-  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  recorded_by uuid NOT NULL DEFAULT auth.uid(),
-  recorded_at timestamptz NOT NULL DEFAULT now(),
-  received_at timestamptz,
-  total_units numeric NOT NULL DEFAULT 0,
-  total_lines integer NOT NULL DEFAULT 0
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wpr_unique_ref
-  ON public.warehouse_purchase_receipts(warehouse_id, lower(reference_code));
-
-CREATE INDEX IF NOT EXISTS idx_wpr_supplier
-  ON public.warehouse_purchase_receipts(supplier_id);
-
-ALTER TABLE public.warehouse_purchase_receipts ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS wpr_select_access ON public.warehouse_purchase_receipts;
-CREATE POLICY wpr_select_access
-  ON public.warehouse_purchase_receipts
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR EXISTS (
-      SELECT 1
-      FROM public.warehouses w
-      WHERE w.id = warehouse_purchase_receipts.warehouse_id
-        AND (
-          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
-          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
-        )
-    )
-  );
-
-DROP POLICY IF EXISTS wpr_write_access ON public.warehouse_purchase_receipts;
-CREATE POLICY wpr_write_access
-  ON public.warehouse_purchase_receipts
-  FOR ALL
-  USING (
-    public.is_admin(auth.uid())
-    OR EXISTS (
-      SELECT 1
-      FROM public.warehouses w
-      WHERE w.id = warehouse_purchase_receipts.warehouse_id
-        AND (
-          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
-          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
-        )
-    )
-  )
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR EXISTS (
-      SELECT 1
-      FROM public.warehouses w
-      WHERE w.id = warehouse_purchase_receipts.warehouse_id
-        AND (
-          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
-          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
-        )
-    )
-  );
-
-CREATE TABLE IF NOT EXISTS public.warehouse_purchase_items (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  receipt_id uuid NOT NULL REFERENCES public.warehouse_purchase_receipts(id) ON DELETE CASCADE,
-  stock_entry_id uuid NOT NULL REFERENCES public.warehouse_stock_entries(id) ON DELETE CASCADE,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE RESTRICT,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
-  qty_units numeric NOT NULL CHECK (qty_units > 0),
-  qty_cases numeric,
-  package_contains numeric,
-  unit_cost numeric,
-  note text,
-  created_by uuid NOT NULL DEFAULT auth.uid(),
+  amount numeric,
+  qty numeric NOT NULL CHECK (qty > 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_wpi_receipt ON public.warehouse_purchase_items(receipt_id);
-CREATE INDEX IF NOT EXISTS idx_wpi_product ON public.warehouse_purchase_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_item ON public.order_items(product_id, variation_id);
 
-ALTER TABLE public.warehouse_purchase_items ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS wpi_select_access ON public.warehouse_purchase_items;
-CREATE POLICY wpi_select_access
-  ON public.warehouse_purchase_items
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR EXISTS (
-      SELECT 1
-      FROM public.warehouse_purchase_receipts r
-      JOIN public.warehouses w ON w.id = r.warehouse_id
-      WHERE r.id = warehouse_purchase_items.receipt_id
-        AND (
-          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
-          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
-        )
-    )
-  );
-
-DROP POLICY IF EXISTS wpi_write_access ON public.warehouse_purchase_items;
-CREATE POLICY wpi_write_access
-  ON public.warehouse_purchase_items
-  FOR ALL
-  USING (
-    public.is_admin(auth.uid())
-    OR EXISTS (
-      SELECT 1
-      FROM public.warehouse_purchase_receipts r
-      JOIN public.warehouses w ON w.id = r.warehouse_id
-      WHERE r.id = warehouse_purchase_items.receipt_id
-        AND (
-          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
-          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
-        )
-    )
-  )
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR EXISTS (
-      SELECT 1
-      FROM public.warehouse_purchase_receipts r
-      JOIN public.warehouses w ON w.id = r.warehouse_id
-      WHERE r.id = warehouse_purchase_items.receipt_id
-        AND (
-          public.has_role_any_outlet(auth.uid(), 'transfers', w.outlet_id)
-          OR public.outlet_auth_user_matches(w.outlet_id, auth.uid())
-        )
-    )
-  );
-
-CREATE TABLE IF NOT EXISTS public.warehouse_stock_entry_events (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  entry_id uuid NOT NULL REFERENCES public.warehouse_stock_entries(id) ON DELETE CASCADE,
-  event_type text NOT NULL,
-  payload jsonb,
-  recorded_by uuid,
-  recorded_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS public.outlet_order_counters (
+  outlet_id uuid PRIMARY KEY REFERENCES public.outlets(id) ON DELETE CASCADE,
+  last_value bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_wsee_entry ON public.warehouse_stock_entry_events(entry_id);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'uom'
+  ) THEN
+    ALTER TABLE public.order_items RENAME COLUMN uom TO consumption_uom;
+  END IF;
 
-ALTER TABLE public.warehouse_stock_entry_events ENABLE ROW LEVEL SECURITY;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'order_items' AND column_name = 'package_contains'
+  ) THEN
+    ALTER TABLE public.order_items RENAME COLUMN package_contains TO receiving_contains;
+  END IF;
+END $$;
 
-DROP POLICY IF EXISTS wsee_select ON public.warehouse_stock_entry_events;
-CREATE POLICY wsee_select
-  ON public.warehouse_stock_entry_events
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+ALTER TABLE IF EXISTS public.order_items
+  ADD COLUMN IF NOT EXISTS name text,
+  ADD COLUMN IF NOT EXISTS consumption_uom text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS receiving_uom text NOT NULL DEFAULT 'each',
+  ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  ADD COLUMN IF NOT EXISTS receiving_contains numeric,
+  ADD COLUMN IF NOT EXISTS qty_cases numeric,
+  ADD COLUMN IF NOT EXISTS amount numeric;
+
+-- ------------------------------------------------------------
+-- Stock ledger normalization (single history table)
+-- ------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'stock_ledger' AND column_name = 'product_id'
+  ) THEN
+    ALTER TABLE public.stock_ledger RENAME COLUMN product_id TO item_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'stock_ledger' AND column_name = 'variation_id'
+  ) THEN
+    ALTER TABLE public.stock_ledger RENAME COLUMN variation_id TO variant_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'stock_ledger' AND column_name = 'qty_change'
+  ) THEN
+    ALTER TABLE public.stock_ledger RENAME COLUMN qty_change TO delta_units;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'stock_ledger' AND column_name = 'context'
+  ) THEN
+    ALTER TABLE public.stock_ledger ADD COLUMN context jsonb;
+  END IF;
+END $$;
+
+-- ------------------------------------------------------------
+-- Functions
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF p_user_id IS NULL THEN
+    RETURN false;
+  END IF;
+  RETURN EXISTS (SELECT 1 FROM public.platform_admins pa WHERE pa.user_id = p_user_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.outlet_auth_user_matches(p_outlet_id uuid, p_user_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF p_user_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF public.is_admin(p_user_id) THEN
+    RETURN true;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.outlets o
+    WHERE o.id = p_outlet_id AND o.auth_user_id = p_user_id AND o.active
   );
+END;
+$$;
 
-DROP POLICY IF EXISTS wsee_insert ON public.warehouse_stock_entry_events;
-CREATE POLICY wsee_insert
-  ON public.warehouse_stock_entry_events
-  FOR INSERT
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
+CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)
+RETURNS uuid[]
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT COALESCE(
+    CASE
+      WHEN p_user_id IS NULL THEN NULL
+      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)
+      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)
+    END,
+    '{}'
   );
+$$;
 
-CREATE OR REPLACE FUNCTION public.log_warehouse_stock_entry_event()
+CREATE OR REPLACE FUNCTION public.member_outlet_ids()
+RETURNS SETOF uuid
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));
+$$;
+
+CREATE OR REPLACE FUNCTION public.default_outlet_id(p_user uuid DEFAULT NULL)
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_temp'
+AS $$
+  SELECT (public.member_outlet_ids(COALESCE(p_user, (select auth.uid()))))[1];
+$$;
+
+CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF p_item_id IS NULL THEN
+    RETURN;
+  END IF;
+  UPDATE public.catalog_items ci
+  SET has_variations = EXISTS (
+        SELECT 1 FROM public.catalog_variants v
+        WHERE v.item_id = ci.id AND v.active
+      ),
+      updated_at = now()
+  WHERE ci.id = p_item_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.catalog_variants_flag_sync()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
+DECLARE
+  v_new uuid;
+  v_old uuid;
 BEGIN
-  INSERT INTO public.warehouse_stock_entry_events(
-    entry_id,
-    event_type,
-    payload,
-    recorded_by
-  ) VALUES (
-    NEW.id,
-    lower(TG_OP),
-    jsonb_build_object(
-      'entry_kind', NEW.entry_kind,
-      'qty', NEW.qty,
-      'previous_qty', NEW.previous_qty,
-      'current_qty', NEW.current_qty,
-      'supplier_id', NEW.supplier_id,
-      'reference_code', NEW.reference_code,
-      'source_purchase_id', NEW.source_purchase_id
-    ),
-    COALESCE(NEW.recorded_by, auth.uid())
-  );
+  v_new := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.item_id ELSE NULL END;
+  v_old := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.item_id ELSE NULL END;
+
+  IF v_new IS NOT NULL THEN
+    PERFORM public.refresh_catalog_has_variations(v_new);
+  END IF;
+  IF v_old IS NOT NULL AND (v_new IS NULL OR v_old <> v_new) THEN
+    PERFORM public.refresh_catalog_has_variations(v_old);
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
   RETURN NEW;
 END;
 $$;
 
-DROP TRIGGER IF EXISTS tr_wse_audit ON public.warehouse_stock_entries;
-CREATE TRIGGER tr_wse_audit
-  AFTER INSERT OR UPDATE ON public.warehouse_stock_entries
-  FOR EACH ROW
-  EXECUTE FUNCTION public.log_warehouse_stock_entry_event();
+DROP TRIGGER IF EXISTS trg_catalog_variants_flag_sync ON public.catalog_variants;
+CREATE TRIGGER trg_catalog_variants_flag_sync
+AFTER INSERT OR UPDATE OR DELETE ON public.catalog_variants
+FOR EACH ROW EXECUTE FUNCTION public.catalog_variants_flag_sync();
 
-ALTER TABLE IF EXISTS public.warehouse_stock_entries
-  ADD COLUMN IF NOT EXISTS qty_cases numeric,
-  ADD COLUMN IF NOT EXISTS package_contains numeric,
-  ADD COLUMN IF NOT EXISTS supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS reference_code text,
-  ADD COLUMN IF NOT EXISTS unit_cost numeric,
-  ADD COLUMN IF NOT EXISTS source_purchase_id uuid REFERENCES public.warehouse_purchase_receipts(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS previous_qty numeric,
-  ADD COLUMN IF NOT EXISTS current_qty numeric;
+UPDATE public.catalog_items ci
+SET has_variations = EXISTS (
+  SELECT 1 FROM public.catalog_variants v
+  WHERE v.item_id = ci.id AND v.active
+);
 
-UPDATE public.warehouse_stock_entries wse
-SET package_contains = COALESCE(
-      wse.package_contains,
-      (SELECT pv.package_contains FROM public.product_variations pv WHERE pv.id = wse.variation_id),
-      (SELECT prod.package_contains FROM public.products prod WHERE prod.id = wse.product_id),
-      1
-    )
-WHERE wse.package_contains IS NULL;
-
-UPDATE public.warehouse_stock_entries wse
-SET qty_cases = CASE
-    WHEN COALESCE(wse.package_contains, 0) <= 0 THEN NULL
-    ELSE wse.qty / NULLIF(wse.package_contains, 0)
-  END
-WHERE wse.qty_cases IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_wse_supplier ON public.warehouse_stock_entries(supplier_id);
-CREATE INDEX IF NOT EXISTS idx_wse_reference_code ON public.warehouse_stock_entries((lower(reference_code)));
-CREATE INDEX IF NOT EXISTS idx_wse_source_purchase ON public.warehouse_stock_entries(source_purchase_id);
-
-ALTER TABLE public.warehouse_stock_entries ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS wse_select_admin ON public.warehouse_stock_entries;
-CREATE POLICY wse_select_admin
-  ON public.warehouse_stock_entries
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-DROP POLICY IF EXISTS wse_write_admin ON public.warehouse_stock_entries;
-CREATE POLICY wse_write_admin
-  ON public.warehouse_stock_entries
-  FOR INSERT
-  WITH CHECK (
-    recorded_by = auth.uid()
-    AND (
-      public.is_admin(auth.uid())
-      OR public.has_role_any_outlet(auth.uid(), 'transfers')
-    )
-  );
-
-DROP POLICY IF EXISTS wse_update_admin ON public.warehouse_stock_entries;
-CREATE POLICY wse_update_admin
-  ON public.warehouse_stock_entries
-  FOR UPDATE
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-CREATE OR REPLACE FUNCTION public.record_stock_entry(
-  p_warehouse_id uuid,
-  p_product_id uuid,
-  p_entry_kind public.stock_entry_kind,
-  p_qty numeric,
-  p_variation_id uuid DEFAULT NULL,
-  p_note text DEFAULT NULL,
-  p_qty_input_mode text DEFAULT 'auto',
-  p_supplier_id uuid DEFAULT NULL,
-  p_reference_code text DEFAULT NULL,
-  p_unit_cost numeric DEFAULT NULL,
-  p_source_purchase_id uuid DEFAULT NULL
-)
-RETURNS public.warehouse_stock_entries
+CREATE OR REPLACE FUNCTION public.whoami_outlet()
+RETURNS TABLE(outlet_id uuid, outlet_name text)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
   v_uid uuid := auth.uid();
-  v_entry public.warehouse_stock_entries%ROWTYPE;
-  v_previous numeric := 0;
-  v_target numeric := 0;
-  v_pkg numeric := 1;
-  v_qty_units numeric := 0;
-  v_qty_cases numeric := NULL;
-  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));
-  v_reference text := NULL;
 BEGIN
   IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
+    RETURN;
   END IF;
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.has_role_any_outlet(v_uid, 'transfers')
-  ) THEN
-    RAISE EXCEPTION 'not authorized';
-  END IF;
-  IF p_qty IS NULL OR p_qty <= 0 THEN
-    RAISE EXCEPTION 'quantity must be positive';
-  END IF;
-
-  v_reference := nullif(btrim(p_reference_code), '');
-
-  SELECT coalesce(
-           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),
-           (SELECT package_contains FROM public.products WHERE id = p_product_id),
-           1
-         )
-    INTO v_pkg;
-
-  IF v_mode NOT IN ('auto','units','cases') THEN
-    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;
-  END IF;
-  IF v_mode = 'auto' THEN
-    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;
-  END IF;
-
-  IF v_mode = 'cases' THEN
-    v_qty_cases := p_qty;
-    v_qty_units := p_qty * v_pkg;
-  ELSE
-    v_qty_units := p_qty;
-    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;
-  END IF;
-  v_target := v_qty_units;
-
-  SELECT coalesce(qty, 0)
-    INTO v_previous
-    FROM public.warehouse_stock_current
-   WHERE warehouse_id = p_warehouse_id
-     AND product_id = p_product_id
-     AND (variation_id IS NOT DISTINCT FROM p_variation_id);
-
-  IF p_entry_kind = 'purchase' THEN
-    v_target := v_previous + v_qty_units;
-  ELSIF p_entry_kind = 'damage' THEN
-    v_target := GREATEST(v_previous - v_qty_units, 0);
-  END IF;
-
-  INSERT INTO public.warehouse_stock_entries(
-    warehouse_id,
-    product_id,
-    variation_id,
-    entry_kind,
-    qty,
-    qty_cases,
-    package_contains,
-    note,
-    recorded_by,
-    supplier_id,
-    reference_code,
-    unit_cost,
-    source_purchase_id,
-    previous_qty,
-    current_qty
-  ) VALUES (
-    p_warehouse_id,
-    p_product_id,
-    p_variation_id,
-    p_entry_kind,
-    v_qty_units,
-    v_qty_cases,
-    v_pkg,
-    p_note,
-    v_uid,
-    p_supplier_id,
-    v_reference,
-    p_unit_cost,
-    p_source_purchase_id,
-    v_previous,
-    v_target
-  ) RETURNING * INTO v_entry;
-
-  PERFORM public.record_stocktake(
-    p_warehouse_id,
-    p_product_id,
-    v_target,
-    p_variation_id,
-    coalesce(p_note, p_entry_kind::text),
-    'units'
-  );
-
-  RETURN v_entry;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.record_damage(
-  p_warehouse_id uuid,
-  p_items jsonb,
-  p_note text DEFAULT NULL
-)
-RETURNS TABLE(
-  id uuid,
-  warehouse_id uuid,
-  product_id uuid,
-  variation_id uuid,
-  qty numeric,
-  qty_cases numeric,
-  package_contains numeric,
-  note text,
-  recorded_by uuid,
-  recorded_at timestamptz
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_note text := nullif(btrim(p_note), '');
-  v_item jsonb;
-  v_entry public.warehouse_stock_entries%ROWTYPE;
-  v_row public.damages%ROWTYPE;
-  v_qty numeric;
-  v_product uuid;
-  v_variation uuid;
-  v_item_note text;
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF p_warehouse_id IS NULL THEN
-    RAISE EXCEPTION 'warehouse_id is required';
-  END IF;
-  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
-    RAISE EXCEPTION 'p_items must be a non-empty json array';
-  END IF;
-
-  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
-    v_product := (v_item->>'product_id')::uuid;
-    v_variation := NULLIF(v_item->>'variation_id', '')::uuid;
-    v_qty := (v_item->>'qty')::numeric;
-    v_item_note := nullif(btrim(coalesce(v_item->>'note', v_note)), '');
-
-    IF v_product IS NULL THEN
-      RAISE EXCEPTION 'product_id is required for each item';
-    END IF;
-    IF v_qty IS NULL OR v_qty <= 0 THEN
-      RAISE EXCEPTION 'qty must be positive for each item';
-    END IF;
-
-    v_entry := public.record_stock_entry(
-      p_warehouse_id,
-      v_product,
-      'damage',
-      v_qty,
-      v_variation,
-      v_item_note,
-      'units',
-      NULL,
-      NULL,
-      NULL,
-      NULL
-    );
-
-    INSERT INTO public.damages(
-      warehouse_id,
-      product_id,
-      variation_id,
-      qty,
-      qty_cases,
-      package_contains,
-      note,
-      recorded_by,
-      source_entry_id
-    ) VALUES (
-      p_warehouse_id,
-      v_product,
-      v_variation,
-      v_qty,
-      v_entry.qty_cases,
-      v_entry.package_contains,
-      v_item_note,
-      coalesce(v_entry.recorded_by, v_uid),
-      v_entry.id
-    ) RETURNING * INTO v_row;
-
-    RETURN QUERY SELECT v_row.*;
-  END LOOP;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.record_purchase_receipt(
-  p_warehouse_id uuid,
-  p_supplier_id uuid,
-  p_reference_code text,
-  p_items jsonb,
-  p_note text DEFAULT NULL,
-  p_auto_whatsapp boolean DEFAULT true
-)
-RETURNS public.warehouse_purchase_receipts
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_receipt public.warehouse_purchase_receipts%ROWTYPE;
-  v_entry public.warehouse_stock_entries%ROWTYPE;
-  v_item RECORD;
-  v_outlet uuid;
-  v_reference text := nullif(btrim(p_reference_code), '');
-  v_total numeric := 0;
-  v_lines integer := 0;
-  v_items_count integer := 0;
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF p_warehouse_id IS NULL THEN
-    RAISE EXCEPTION 'warehouse_id is required';
-  END IF;
-  IF v_reference IS NULL THEN
-    RAISE EXCEPTION 'reference_code is required';
-  END IF;
-  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
-    RAISE EXCEPTION 'p_items must be a non-empty json array';
-  END IF;
-
-  SELECT outlet_id INTO v_outlet
-  FROM public.warehouses
-  WHERE id = p_warehouse_id;
-
-  IF v_outlet IS NULL THEN
-    RAISE EXCEPTION 'warehouse % not found', p_warehouse_id;
-  END IF;
-
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.outlet_auth_user_matches(v_outlet, v_uid)
-    OR public.has_role_any_outlet(v_uid, 'transfers', v_outlet)
-  ) THEN
-    RAISE EXCEPTION 'not authorized for this warehouse intake';
-  END IF;
-
-  v_items_count := jsonb_array_length(p_items);
-
-  INSERT INTO public.warehouse_purchase_receipts(
-    outlet_id,
-    warehouse_id,
-    supplier_id,
-    reference_code,
-    status,
-    note,
-    auto_whatsapp,
-    metadata,
-    recorded_by,
-    recorded_at
-  ) VALUES (
-    v_outlet,
-    p_warehouse_id,
-    p_supplier_id,
-    v_reference,
-    'received',
-    p_note,
-    COALESCE(p_auto_whatsapp, true),
-    jsonb_build_object('items_count', v_items_count),
-    v_uid,
-    now()
-  ) RETURNING * INTO v_receipt;
-
-  FOR v_item IN
-    SELECT
-      (value->>'product_id')::uuid AS product_id,
-      NULLIF(value->>'variation_id', '')::uuid AS variation_id,
-      COALESCE(NULLIF(value->>'qty', '')::numeric, 0) AS qty_value,
-      CASE
-        WHEN lower(NULLIF(value->>'qty_input_mode', '')) IN ('units','cases') THEN lower(NULLIF(value->>'qty_input_mode', ''))
-        ELSE 'auto'
-      END AS qty_mode,
-      NULLIF(btrim(value->>'note'), '') AS note,
-      NULLIF(value->>'unit_cost', '')::numeric AS unit_cost
-    FROM jsonb_array_elements(p_items) value
-  LOOP
-    IF v_item.product_id IS NULL THEN
-      RAISE EXCEPTION 'purchase item missing product_id';
-    END IF;
-    IF v_item.qty_value IS NULL OR v_item.qty_value <= 0 THEN
-      RAISE EXCEPTION 'purchase qty must be positive for %', v_item.product_id;
-    END IF;
-
-    v_entry := public.record_stock_entry(
-      p_warehouse_id := p_warehouse_id,
-      p_product_id := v_item.product_id,
-      p_entry_kind := 'purchase',
-      p_qty := v_item.qty_value,
-      p_variation_id := v_item.variation_id,
-      p_note := COALESCE(v_item.note, p_note, format('Purchase %s', v_reference)),
-      p_qty_input_mode := v_item.qty_mode,
-      p_supplier_id := p_supplier_id,
-      p_reference_code := v_reference,
-      p_unit_cost := v_item.unit_cost,
-      p_source_purchase_id := v_receipt.id
-    );
-
-    INSERT INTO public.warehouse_purchase_items(
-      receipt_id,
-      stock_entry_id,
-      product_id,
-      variation_id,
-      qty_units,
-      qty_cases,
-      package_contains,
-      unit_cost,
-      note,
-      created_by
-    ) VALUES (
-      v_receipt.id,
-      v_entry.id,
-      v_entry.product_id,
-      v_entry.variation_id,
-      v_entry.qty,
-      v_entry.qty_cases,
-      v_entry.package_contains,
-      v_item.unit_cost,
-      COALESCE(v_item.note, p_note),
-      v_uid
-    );
-
-    v_total := v_total + v_entry.qty;
-    v_lines := v_lines + 1;
-  END LOOP;
-
-  UPDATE public.warehouse_purchase_receipts
-  SET total_units = v_total,
-      total_lines = v_lines,
-      received_at = COALESCE(received_at, now())
-  WHERE id = v_receipt.id
-  RETURNING * INTO v_receipt;
-
-  RETURN v_receipt;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.report_stock_entry_balances(
-    p_warehouse_id uuid DEFAULT NULL,
-    p_product_id uuid DEFAULT NULL,
-    p_variation_id uuid DEFAULT NULL,
-    p_search text DEFAULT NULL
-)
-RETURNS TABLE(
-    warehouse_id uuid,
-    warehouse_name text,
-    product_id uuid,
-    product_name text,
-    variation_id uuid,
-    variation_name text,
-    initial_qty numeric,
-    purchase_qty numeric,
-    closing_qty numeric,
-    current_stock numeric
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_query text := coalesce(p_search, '');
-BEGIN
-  IF v_uid IS NULL OR NOT public.is_admin(v_uid) THEN
-    RAISE EXCEPTION 'not authorized';
-  END IF;
-
   RETURN QUERY
-  SELECT
-    e.warehouse_id,
-    w.name AS warehouse_name,
-    e.product_id,
-    p.name AS product_name,
-    e.variation_id,
-    pv.name AS variation_name,
-    SUM(CASE WHEN e.entry_kind = 'initial' THEN e.qty ELSE 0 END) AS initial_qty,
-    SUM(CASE WHEN e.entry_kind = 'purchase' THEN e.qty ELSE 0 END) AS purchase_qty,
-    SUM(CASE WHEN e.entry_kind = 'closing' THEN e.qty ELSE 0 END) AS closing_qty,
-    SUM(CASE WHEN e.entry_kind = 'initial' THEN e.qty ELSE 0 END)
-      + SUM(CASE WHEN e.entry_kind = 'purchase' THEN e.qty ELSE 0 END)
-      - SUM(CASE WHEN e.entry_kind = 'closing' THEN e.qty ELSE 0 END) AS current_stock
-  FROM public.warehouse_stock_entries e
-  JOIN public.warehouses w ON w.id = e.warehouse_id
-  JOIN public.products p ON p.id = e.product_id
-  LEFT JOIN public.product_variations pv ON pv.id = e.variation_id
-  WHERE (p_warehouse_id IS NULL OR e.warehouse_id = p_warehouse_id)
-    AND (p_product_id IS NULL OR e.product_id = p_product_id)
-    AND (p_variation_id IS NULL OR e.variation_id = p_variation_id)
-    AND (
-      v_query = ''
-      OR p.name ILIKE '%' || v_query || '%'
-      OR coalesce(pv.name, '') ILIKE '%' || v_query || '%'
-    )
-  GROUP BY e.warehouse_id, w.name, e.product_id, p.name, e.variation_id, pv.name
-  ORDER BY p.name, COALESCE(pv.name, ''), w.name;
+  SELECT o.id, o.name
+  FROM public.outlets o
+  WHERE o.active AND o.auth_user_id = v_uid;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(
-    p_source uuid,
-    p_destination uuid,
-    p_items jsonb,
-    p_note text DEFAULT NULL
+CREATE OR REPLACE FUNCTION public.whoami_roles()
+RETURNS TABLE(
+  user_id uuid,
+  email text,
+  is_admin boolean,
+  roles text[],
+  outlets jsonb,
+  role_catalog jsonb
 )
-RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
   v_uid uuid := auth.uid();
-  v_src_outlet uuid;
-  v_dest_outlet uuid;
-  v_mov_id uuid;
-  v_items jsonb := COALESCE(p_items, '[]'::jsonb);
-  v_item record;
+  v_email text;
+  v_is_admin boolean := false;
+  v_roles text[] := ARRAY[]::text[];
+  v_outlets jsonb := '[]'::jsonb;
+  v_role_catalog jsonb := '[]'::jsonb;
 BEGIN
   IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF p_source IS NULL OR p_destination IS NULL OR p_source = p_destination THEN
-    RAISE EXCEPTION 'source and destination warehouses are required';
+    RETURN;
   END IF;
 
-  SELECT outlet_id INTO v_src_outlet FROM public.warehouses WHERE id = p_source;
-  SELECT outlet_id INTO v_dest_outlet FROM public.warehouses WHERE id = p_destination;
-  IF v_src_outlet IS NULL OR v_dest_outlet IS NULL THEN
-    RAISE EXCEPTION 'warehouse not found';
+  SELECT email INTO v_email FROM auth.users WHERE id = v_uid;
+  v_is_admin := EXISTS (SELECT 1 FROM public.platform_admins WHERE user_id = v_uid);
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(r) - 'description' - 'active' - 'created_at'), '[]'::jsonb)
+    INTO v_role_catalog
+  FROM (
+    SELECT id, slug, normalized_slug, display_name
+    FROM public.roles
+    WHERE active
+    ORDER BY display_name
+  ) r;
+
+  SELECT COALESCE(array_agg(DISTINCT COALESCE(r.slug, r.display_name)), ARRAY[]::text[])
+    INTO v_roles
+  FROM public.user_roles ur
+  JOIN public.roles r ON r.id = ur.role_id
+  WHERE ur.user_id = v_uid AND ur.outlet_id IS NULL;
+
+  IF v_is_admin THEN
+    v_roles := array_append(v_roles, 'admin');
   END IF;
 
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.has_role(v_uid, 'transfers', v_src_outlet)
-    OR public.has_role(v_uid, 'transfers', v_dest_outlet)
-  ) THEN
-    RAISE EXCEPTION 'not authorized';
-  END IF;
+  WITH raw_outlets AS (
+    SELECT o.id,
+           o.name,
+           TRUE AS via_auth_mapping
+    FROM public.outlets o
+    WHERE o.active AND o.auth_user_id = v_uid
 
-  IF jsonb_array_length(v_items) = 0 THEN
-    RAISE EXCEPTION 'at least one line item is required';
-  END IF;
+    UNION ALL
 
-  INSERT INTO public.stock_movements(
-    status,
-    source_location_type,
-    source_location_id,
-    dest_location_type,
-    dest_location_id,
-    note
-  ) VALUES (
-    'approved',
-    'warehouse',
-    p_source,
-    'warehouse',
-    p_destination,
-    p_note
-  ) RETURNING id INTO v_mov_id;
+    SELECT o.id,
+           o.name,
+           FALSE AS via_auth_mapping
+    FROM public.user_roles ur
+    JOIN public.outlets o ON o.id = ur.outlet_id
+    WHERE ur.user_id = v_uid AND o.active
+  ),
+  outlet_sources AS (
+    SELECT id,
+           name,
+           bool_or(via_auth_mapping) AS via_auth_mapping
+    FROM raw_outlets
+    GROUP BY id, name
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'outlet_id', src.id,
+        'outlet_name', src.name,
+        'roles', (
+          SELECT COALESCE(array_agg(DISTINCT COALESCE(r.slug, r.display_name)), ARRAY[]::text[])
+          FROM public.user_roles ur2
+          JOIN public.roles r ON r.id = ur2.role_id
+          WHERE ur2.user_id = v_uid AND ur2.outlet_id = src.id
+        ) || CASE WHEN src.via_auth_mapping THEN ARRAY['Outlet']::text[] ELSE ARRAY[]::text[] END
+      )
+    ),
+    '[]'::jsonb
+  ) INTO v_outlets
+  FROM outlet_sources src;
 
-  FOR v_item IN
-    SELECT
-      (item->>'product_id')::uuid AS product_id,
-      (item->>'variation_id')::uuid AS variation_id,
-      COALESCE((item->>'qty')::numeric, 0) AS qty
-    FROM jsonb_array_elements(v_items) AS item
-  LOOP
-    IF v_item.product_id IS NULL OR v_item.qty <= 0 THEN
-      RAISE EXCEPTION 'each item requires product_id and positive qty';
-    END IF;
-
-    INSERT INTO public.stock_movement_items(
-      movement_id,
-      product_id,
-      variation_id,
-      qty
-    ) VALUES (
-      v_mov_id,
-      v_item.product_id,
-      v_item.variation_id,
-      v_item.qty
-    );
-  END LOOP;
-
-  PERFORM public.complete_stock_movement(v_mov_id);
-  RETURN v_mov_id;
+  RETURN QUERY SELECT v_uid, v_email, v_is_admin, v_roles, v_outlets, v_role_catalog;
 END;
 $$;
 
-ALTER TABLE IF EXISTS public.product_variations
-  ADD COLUMN IF NOT EXISTS package_contains numeric NOT NULL DEFAULT 1 CHECK (package_contains > 0);
-
--- Allow catalog admins to edit variation-level size/pack metadata via Supabase UI.
-ALTER TABLE IF EXISTS public.product_variations ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS product_variations_admin_rw ON public.product_variations;
-CREATE POLICY product_variations_admin_rw ON public.product_variations
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-ALTER TABLE IF EXISTS public.order_items
-  ADD COLUMN IF NOT EXISTS qty_cases numeric,
-  ADD COLUMN IF NOT EXISTS package_contains numeric NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS warehouse_id uuid REFERENCES public.warehouses(id);
-
-UPDATE public.order_items
-SET
-  qty_cases = coalesce(qty_cases, qty),
-  package_contains = coalesce(package_contains, 1)
-WHERE qty_cases IS NULL OR package_contains IS NULL;
-
-UPDATE public.order_items oi
-SET warehouse_id = coalesce(
-      oi.warehouse_id,
-      (SELECT pv.default_warehouse_id FROM public.product_variations pv WHERE pv.id = oi.variation_id),
-      (SELECT prod.default_warehouse_id FROM public.products prod WHERE prod.id = oi.product_id)
-    )
-WHERE oi.warehouse_id IS NULL;
-
-DROP POLICY IF EXISTS order_items_updates_unlocked_only ON public.order_items;
-CREATE POLICY order_items_updates_unlocked_only
-  ON public.order_items
-  AS RESTRICTIVE
-  FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1
-      FROM public.orders o
-      WHERE o.id = order_items.order_id
-        AND (
-          NOT o.locked
-          OR public.is_admin(auth.uid())
-          OR public.has_role(auth.uid(), 'supervisor', o.outlet_id)
-        )
-    )
-  );
-
-DROP FUNCTION IF EXISTS public.report_pack_consumption(timestamptz, timestamptz, uuid, uuid);
-DROP VIEW IF EXISTS public.order_pack_consumption;
-DROP FUNCTION IF EXISTS public.refresh_order_pack_expansions(uuid);
-DROP TABLE IF EXISTS public.order_pack_expansions CASCADE;
-DROP TABLE IF EXISTS public.product_pack_configs CASCADE;
-
-CREATE TABLE IF NOT EXISTS public.products_sold (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id uuid NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
-  order_item_id uuid NOT NULL REFERENCES public.order_items(id) ON DELETE CASCADE,
-  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
-  qty_cases numeric,
-  package_contains numeric NOT NULL DEFAULT 1 CHECK (package_contains > 0),
-  qty_units numeric NOT NULL CHECK (qty_units > 0),
-  recorded_stage text NOT NULL DEFAULT 'delivered',
-  recorded_at timestamptz NOT NULL DEFAULT now(),
-  recorded_by uuid DEFAULT auth.uid(),
-  UNIQUE(order_item_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_products_sold_order ON public.products_sold(order_id);
-CREATE INDEX IF NOT EXISTS idx_products_sold_product ON public.products_sold(product_id, variation_id);
-
-ALTER TABLE public.products_sold ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS products_sold_admin_rw ON public.products_sold;
-CREATE POLICY products_sold_admin_rw ON public.products_sold
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-DROP POLICY IF EXISTS products_sold_members_select ON public.products_sold;
-CREATE POLICY products_sold_members_select ON public.products_sold
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.order_is_accessible(order_id, auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-INSERT INTO public.products_sold(
-  order_id,
-  order_item_id,
-  outlet_id,
-  product_id,
-  variation_id,
-  warehouse_id,
-  qty_cases,
-  package_contains,
-  qty_units,
-  recorded_stage,
-  recorded_at,
-  recorded_by
-)
-SELECT
-  oi.order_id,
-  oi.id,
-  o.outlet_id,
-  oi.product_id,
-  oi.variation_id,
-  COALESCE(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, opw.warehouse_id),
-  oi.qty_cases,
-  oi.package_contains,
-  oi.qty,
-  'delivered',
-  COALESCE(o.offloader_signed_at, now()),
-  o.approved_by
-FROM public.order_items oi
-JOIN public.orders o ON o.id = oi.order_id
-LEFT JOIN public.product_variations pv ON pv.id = oi.variation_id
-LEFT JOIN public.products prod ON prod.id = oi.product_id
-LEFT JOIN public.outlet_primary_warehouse opw ON opw.outlet_id = o.outlet_id
-WHERE lower(coalesce(o.status, '')) IN ('offloaded','delivered')
-  AND NOT EXISTS (
-    SELECT 1 FROM public.products_sold ps WHERE ps.order_item_id = oi.id
-  )
-  AND COALESCE(oi.warehouse_id, pv.default_warehouse_id, prod.default_warehouse_id, opw.warehouse_id) IS NOT NULL;
-
-CREATE OR REPLACE VIEW public.variances_sold AS
-SELECT *
-FROM public.products_sold
-WHERE variation_id IS NOT NULL;
-
--- View retained for backward compatibility; now sources data from products_sold.
-CREATE OR REPLACE VIEW public.order_pack_consumption AS
-SELECT
-  ps.order_item_id AS id,
-  ps.order_id,
-  o.order_number,
-  o.outlet_id,
-  outlets.name AS outlet_name,
-  ps.warehouse_id,
-  w.name AS warehouse_name,
-  ps.product_id,
-  prod.name AS product_name,
-  ps.variation_id,
-  pv.name AS variation_name,
-  coalesce(oi.uom, pv.uom, prod.uom, 'Case') AS pack_label,
-  coalesce(ps.qty_cases, ps.qty_units) AS packs_ordered,
-  coalesce(ps.package_contains, pv.package_contains, prod.package_contains, 1) AS units_per_pack,
-  ps.qty_units AS units_total,
-  o.created_at,
-  o.status
-FROM public.products_sold ps
-JOIN public.orders o ON o.id = ps.order_id
-JOIN public.outlets ON outlets.id = o.outlet_id
-LEFT JOIN public.order_items oi ON oi.id = ps.order_item_id
-LEFT JOIN public.products prod ON prod.id = ps.product_id
-LEFT JOIN public.product_variations pv ON pv.id = ps.variation_id
-LEFT JOIN public.warehouses w ON w.id = ps.warehouse_id;
-
-CREATE OR REPLACE FUNCTION public.report_pack_consumption(
-    p_from timestamptz,
-    p_to timestamptz,
-    p_location uuid DEFAULT NULL,
-    p_warehouse uuid DEFAULT NULL
-)
-RETURNS SETOF public.order_pack_consumption
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT *
-  FROM public.order_pack_consumption opc
-  WHERE (p_from IS NULL OR opc.created_at >= p_from)
-    AND (p_to IS NULL OR opc.created_at <= p_to)
-    AND (p_location IS NULL OR opc.outlet_id = p_location)
-    AND (p_warehouse IS NULL OR opc.warehouse_id = p_warehouse)
-    AND (
-      public.is_admin(auth.uid())
-      OR opc.outlet_id = ANY(public.member_outlet_ids(auth.uid()))
-    );
-$$;
-
--- Allow stocktake adjustments via ledger.
-ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'stocktake_adjustment';
-ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'pos_sale';
-
--- ------------------------------------------------------------
--- POS sales ingestion + recipe-driven deductions
--- ------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.pos_sales (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
-  qty_units numeric NOT NULL CHECK (qty_units > 0),
-  qty_cases numeric,
-  package_contains numeric NOT NULL DEFAULT 1 CHECK (package_contains > 0),
-  sale_reference text,
-  sale_source text,
-  sold_at timestamptz NOT NULL DEFAULT now(),
-  recorded_by uuid NOT NULL DEFAULT auth.uid(),
-  recorded_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_pos_sales_outlet ON public.pos_sales(outlet_id, sold_at DESC);
-
-ALTER TABLE public.pos_sales ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS pos_sales_select ON public.pos_sales;
-CREATE POLICY pos_sales_select ON public.pos_sales
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(pos_sales.outlet_id, auth.uid())
-  );
-
-DROP POLICY IF EXISTS pos_sales_write ON public.pos_sales;
-CREATE POLICY pos_sales_write ON public.pos_sales
-  FOR ALL
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(pos_sales.outlet_id, auth.uid())
-  )
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(pos_sales.outlet_id, auth.uid())
-  );
-
-CREATE OR REPLACE FUNCTION public.record_pos_sale(
-  p_outlet_id uuid,
-  p_product_id uuid,
-  p_qty numeric,
-  p_variation_id uuid DEFAULT NULL,
-  p_sale_reference text DEFAULT NULL,
-  p_sale_source text DEFAULT 'pos',
-  p_sold_at timestamptz DEFAULT now(),
-  p_qty_input_mode text DEFAULT 'auto'
-)
-RETURNS public.pos_sales
+CREATE OR REPLACE FUNCTION public.next_order_number(p_outlet_id uuid)
+RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_uid uuid := auth.uid();
-  v_pkg numeric := 1;
-  v_qty_units numeric := 0;
-  v_qty_cases numeric := NULL;
-  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));
-  v_sale public.pos_sales%ROWTYPE;
-  v_primary_wh uuid;
-  v_fallback_wh uuid;
-  v_deductions int := 0;
+  v_prefix text;
+  v_next bigint;
+BEGIN
+  IF p_outlet_id IS NULL THEN
+    RAISE EXCEPTION 'outlet id required for numbering';
+  END IF;
+
+  INSERT INTO public.outlet_order_counters(outlet_id, last_value)
+  VALUES (p_outlet_id, 1)
+  ON CONFLICT (outlet_id)
+  DO UPDATE SET last_value = public.outlet_order_counters.last_value + 1,
+                updated_at = now()
+  RETURNING last_value INTO v_next;
+
+  SELECT COALESCE(NULLIF(o.code, ''), substr(o.id::text, 1, 4)) INTO v_prefix
+  FROM public.outlets o
+  WHERE o.id = p_outlet_id;
+
+  v_prefix := COALESCE(v_prefix, 'OUT');
+  v_prefix := upper(regexp_replace(v_prefix, '[^A-Za-z0-9]', '', 'g'));
+  RETURN v_prefix || '-' || lpad(v_next::text, 4, '0');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.mark_order_modified(
+  p_order_id uuid,
+  p_supervisor_name text DEFAULT NULL
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  UPDATE public.orders
+  SET modified_by_supervisor = true,
+      modified_by_supervisor_name = COALESCE(NULLIF(p_supervisor_name, ''), modified_by_supervisor_name),
+      updated_at = now()
+  WHERE id = p_order_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(
+  p_item_id uuid,
+  p_qty_units numeric,
+  p_warehouse_id uuid,
+  p_variant_id uuid DEFAULT NULL,
+  p_context jsonb DEFAULT '{}'::jsonb
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
   rec record;
 BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF p_outlet_id IS NULL OR p_product_id IS NULL THEN
-    RAISE EXCEPTION 'outlet_id and product_id are required';
-  END IF;
-  IF p_qty IS NULL OR p_qty <= 0 THEN
-    RAISE EXCEPTION 'quantity must be positive';
-  END IF;
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.outlet_auth_user_matches(p_outlet_id, v_uid)
-  ) THEN
-    RAISE EXCEPTION 'not authorized to record POS sale for this outlet';
+  IF p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN
+    RAISE EXCEPTION 'item + qty required for recipe deductions';
   END IF;
 
-  SELECT coalesce(
-           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),
-           (SELECT package_contains FROM public.products WHERE id = p_product_id),
-           1
-         )
-    INTO v_pkg;
-
-  IF v_mode NOT IN ('auto','units','cases') THEN
-    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;
+  IF p_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'warehouse required for recipe deductions';
   END IF;
-  IF v_mode = 'auto' THEN
-    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;
-  END IF;
-
-  IF v_mode = 'cases' THEN
-    v_qty_cases := p_qty;
-    v_qty_units := p_qty * v_pkg;
-  ELSE
-    v_qty_units := p_qty;
-    v_qty_cases := CASE WHEN v_pkg > 0 THEN p_qty / v_pkg ELSE NULL END;
-  END IF;
-
-  INSERT INTO public.pos_sales(
-    outlet_id,
-    product_id,
-    variation_id,
-    qty_units,
-    qty_cases,
-    package_contains,
-    sale_reference,
-    sale_source,
-    sold_at,
-    recorded_by
-  ) VALUES (
-    p_outlet_id,
-    p_product_id,
-    p_variation_id,
-    v_qty_units,
-    v_qty_cases,
-    v_pkg,
-    nullif(btrim(p_sale_reference), ''),
-    nullif(btrim(coalesce(p_sale_source, 'pos')), ''),
-    coalesce(p_sold_at, now()),
-    v_uid
-  ) RETURNING * INTO v_sale;
 
   FOR rec IN
-    SELECT *
-    FROM public.recipe_deductions_for_product(p_product_id, p_variation_id, v_qty_units)
+    SELECT ingredient_item_id, qty_per_unit
+    FROM public.item_ingredient_recipes
+    WHERE finished_item_id = p_item_id
+      AND (finished_variant_id IS NULL OR finished_variant_id = p_variant_id)
+      AND active
   LOOP
-    v_deductions := v_deductions + 1;
-    IF rec.warehouse_id IS NULL THEN
-      RAISE EXCEPTION 'recipe warehouse missing for ingredient %', rec.ingredient_product_id;
-    END IF;
     INSERT INTO public.stock_ledger(
       location_type,
-      location_id,
-      product_id,
-      variation_id,
-      qty_change,
+      warehouse_id,
+      item_id,
+      variant_id,
+      delta_units,
       reason,
-      ref_order_id,
-      note
+      context
     ) VALUES (
       'warehouse',
-      rec.warehouse_id,
-      rec.ingredient_product_id,
-      rec.ingredient_variation_id,
-      -rec.qty_to_deduct,
-      'pos_sale',
+      p_warehouse_id,
+      rec.ingredient_item_id,
       NULL,
-      format('POS sale %s (%s)', v_sale.id, coalesce(v_sale.sale_reference, 'n/a'))
+      -1 * (p_qty_units * rec.qty_per_unit),
+      'recipe_consumption',
+      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')
     );
   END LOOP;
+END;
+$$;
 
-  IF v_deductions = 0 THEN
-    SELECT warehouse_id INTO v_primary_wh
-    FROM public.outlet_primary_warehouse
-    WHERE outlet_id = p_outlet_id;
+CREATE OR REPLACE FUNCTION public.record_outlet_sale(
+  p_outlet_id uuid,
+  p_item_id uuid,
+  p_qty_units numeric,
+  p_variant_id uuid DEFAULT NULL,
+  p_is_production boolean DEFAULT false,
+  p_warehouse_id uuid DEFAULT NULL,
+  p_sold_at timestamptz DEFAULT now(),
+  p_context jsonb DEFAULT '{}'::jsonb
+) RETURNS public.outlet_sales
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_sale public.outlet_sales%ROWTYPE;
+  v_map record;
+  v_deduct_outlet uuid;
+  v_deduct_wh uuid;
+BEGIN
+  IF p_outlet_id IS NULL OR p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN
+    RAISE EXCEPTION 'outlet, item, qty required';
+  END IF;
 
-    IF v_primary_wh IS NULL THEN
-      SELECT w.id INTO v_primary_wh
-      FROM public.warehouses w
-      WHERE w.outlet_id = p_outlet_id
-      LIMIT 1;
-    END IF;
+  SELECT outlet_id, target_outlet_id, target_warehouse_id INTO v_map
+  FROM public.outlet_deduction_mappings
+  WHERE outlet_id = p_outlet_id;
 
-    SELECT coalesce(
-             (SELECT default_warehouse_id FROM public.product_variations WHERE id = p_variation_id),
-             (SELECT default_warehouse_id FROM public.products WHERE id = p_product_id),
-             v_primary_wh
-           ) INTO v_fallback_wh;
+  v_deduct_outlet := coalesce(v_map.target_outlet_id, p_outlet_id);
+  v_deduct_wh := coalesce(p_warehouse_id, v_map.target_warehouse_id);
 
-    IF v_fallback_wh IS NULL THEN
-      RAISE EXCEPTION 'no warehouse available for POS sale %', v_sale.id;
-    END IF;
+  INSERT INTO public.outlet_sales(
+    outlet_id, item_id, variant_id, qty_units, is_production, warehouse_id, sold_at, created_by, context
+  ) VALUES (
+    p_outlet_id, p_item_id, p_variant_id, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context
+  ) RETURNING * INTO v_sale;
 
-    INSERT INTO public.stock_ledger(
-      location_type,
-      location_id,
-      product_id,
-      variation_id,
-      qty_change,
-      reason,
-      ref_order_id,
-      note
-    ) VALUES (
-      'warehouse',
-      v_fallback_wh,
-      p_product_id,
-      p_variation_id,
-      -v_qty_units,
-      'pos_sale',
-      NULL,
-      format('POS sale %s fallback deduction', v_sale.id)
+  INSERT INTO public.outlet_stock_balances(outlet_id, item_id, variant_id, sent_units, consumed_units)
+  VALUES (p_outlet_id, p_item_id, p_variant_id, 0, p_qty_units)
+  ON CONFLICT (outlet_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  DO UPDATE SET
+    consumed_units = public.outlet_stock_balances.consumed_units + EXCLUDED.consumed_units,
+    updated_at = now();
+
+  IF coalesce(p_is_production, false) THEN
+    PERFORM public.apply_recipe_deductions(
+      p_item_id,
+      p_qty_units,
+      v_deduct_wh,
+      p_variant_id,
+      jsonb_build_object('source', 'outlet_sale', 'outlet_id', p_outlet_id, 'deduct_outlet_id', v_deduct_outlet, 'sale_id', v_sale.id)
     );
   END IF;
 
@@ -3035,718 +992,506 @@ BEGIN
 END;
 $$;
 
-CREATE TABLE IF NOT EXISTS public.warehouse_stocktakes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id),
-  product_id uuid NOT NULL REFERENCES public.products(id),
-  variation_id uuid REFERENCES public.product_variations(id),
-  counted_qty numeric NOT NULL,
-  delta numeric NOT NULL,
-  note text,
-  recorded_by uuid NOT NULL DEFAULT auth.uid(),
-  recorded_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE IF EXISTS public.warehouse_stocktakes
-  ADD COLUMN IF NOT EXISTS counted_cases numeric,
-  ADD COLUMN IF NOT EXISTS package_contains numeric;
-
-UPDATE public.warehouse_stocktakes wst
-SET package_contains = COALESCE(
-      wst.package_contains,
-      (SELECT pv.package_contains FROM public.product_variations pv WHERE pv.id = wst.variation_id),
-      (SELECT prod.package_contains FROM public.products prod WHERE prod.id = wst.product_id),
-      1
-    )
-WHERE wst.package_contains IS NULL;
-
-UPDATE public.warehouse_stocktakes wst
-SET counted_cases = CASE
-    WHEN COALESCE(wst.package_contains, 0) <= 0 THEN NULL
-    ELSE wst.counted_qty / NULLIF(wst.package_contains, 0)
-  END
-WHERE wst.counted_cases IS NULL;
-
-ALTER TABLE public.warehouse_stocktakes ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS warehouse_stocktakes_select ON public.warehouse_stocktakes;
-CREATE POLICY warehouse_stocktakes_select ON public.warehouse_stocktakes
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-DROP POLICY IF EXISTS warehouse_stocktakes_admin_rw ON public.warehouse_stocktakes;
-CREATE POLICY warehouse_stocktakes_admin_rw ON public.warehouse_stocktakes
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-CREATE OR REPLACE FUNCTION public.record_stocktake(
-  p_warehouse_id uuid,
-  p_product_id uuid,
-  p_counted_qty numeric,
-  p_variation_id uuid DEFAULT NULL,
-  p_note text DEFAULT NULL,
-  p_qty_input_mode text DEFAULT 'auto'
-)
-RETURNS public.warehouse_stocktakes
+CREATE OR REPLACE FUNCTION public.record_order_fulfillment(
+  p_order_id uuid
+) RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_uid uuid := auth.uid();
-  v_current numeric := 0;
-  v_delta numeric := 0;
-  v_row public.warehouse_stocktakes%ROWTYPE;
-  v_pkg numeric := 1;
-  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));
-  v_qty_units numeric := coalesce(p_counted_qty, 0);
-  v_qty_cases numeric := NULL;
+  oi record;
+  v_order public.orders%ROWTYPE;
+  v_wh uuid;
 BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-
-  SELECT coalesce(
-           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),
-           (SELECT package_contains FROM public.products WHERE id = p_product_id),
-           1
-         )
-    INTO v_pkg;
-
-  IF v_mode NOT IN ('auto','units','cases') THEN
-    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;
-  END IF;
-  IF v_mode = 'auto' THEN
-    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;
-  END IF;
-
-  IF v_mode = 'cases' THEN
-    v_qty_cases := coalesce(p_counted_qty, 0);
-    v_qty_units := v_qty_cases * v_pkg;
-  ELSE
-    v_qty_units := coalesce(p_counted_qty, 0);
-    v_qty_cases := CASE WHEN v_pkg > 0 THEN v_qty_units / v_pkg ELSE NULL END;
-  END IF;
-
-  SELECT coalesce(qty, 0)
-    INTO v_current
-    FROM public.warehouse_stock_current
-   WHERE warehouse_id = p_warehouse_id
-     AND product_id = p_product_id
-     AND (variation_id IS NOT DISTINCT FROM p_variation_id);
-
-  v_delta := v_qty_units - v_current;
-
-  INSERT INTO public.warehouse_stocktakes (
-    warehouse_id,
-    product_id,
-    variation_id,
-    counted_qty,
-    counted_cases,
-    package_contains,
-    delta,
-    note,
-    recorded_by
-  ) VALUES (
-    p_warehouse_id,
-    p_product_id,
-    p_variation_id,
-    v_qty_units,
-    v_qty_cases,
-    v_pkg,
-    v_delta,
-    p_note,
-    v_uid
-  ) RETURNING * INTO v_row;
-
-  IF v_delta <> 0 THEN
-    INSERT INTO public.stock_ledger(
-      location_type,
-      location_id,
-      product_id,
-      variation_id,
-      qty_change,
-      reason,
-      ref_order_id,
-      note
-    ) VALUES (
-      'warehouse',
-      p_warehouse_id,
-      p_product_id,
-      p_variation_id,
-      v_delta,
-      'stocktake_adjustment',
-      NULL,
-      p_note
-    );
-  END IF;
-
-  RETURN v_row;
-END;
-$$;
-
--- ------------------------------------------------------------
--- Outlet stock periods, stocktakes, and balance tracking
--- ------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.outlet_stock_periods (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
-  period_start timestamptz NOT NULL,
-  period_end timestamptz,
-  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
-  created_by uuid DEFAULT auth.uid(),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  closed_at timestamptz
-);
-
-CREATE INDEX IF NOT EXISTS idx_outlet_stock_periods_outlet ON public.outlet_stock_periods(outlet_id, status);
-
-ALTER TABLE public.outlet_stock_periods ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS outlet_stock_periods_select ON public.outlet_stock_periods;
-CREATE POLICY outlet_stock_periods_select ON public.outlet_stock_periods
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stock_periods.outlet_id, auth.uid())
-  );
-
-DROP POLICY IF EXISTS outlet_stock_periods_manage ON public.outlet_stock_periods;
-CREATE POLICY outlet_stock_periods_manage ON public.outlet_stock_periods
-  FOR ALL
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stock_periods.outlet_id, auth.uid())
-  )
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stock_periods.outlet_id, auth.uid())
-  );
-
-CREATE TABLE IF NOT EXISTS public.outlet_stocktakes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
-  period_id uuid REFERENCES public.outlet_stock_periods(id) ON DELETE SET NULL,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
-  counted_qty numeric NOT NULL CHECK (counted_qty >= 0),
-  counted_cases numeric,
-  package_contains numeric NOT NULL DEFAULT 1 CHECK (package_contains > 0),
-  snapshot_kind text NOT NULL DEFAULT 'spot' CHECK (snapshot_kind IN ('opening','closing','spot')),
-  note text,
-  recorded_by uuid NOT NULL DEFAULT auth.uid(),
-  recorded_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_outlet_stocktakes_outlet ON public.outlet_stocktakes(outlet_id, snapshot_kind);
-
-ALTER TABLE public.outlet_stocktakes ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS outlet_stocktakes_select ON public.outlet_stocktakes;
-CREATE POLICY outlet_stocktakes_select ON public.outlet_stocktakes
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stocktakes.outlet_id, auth.uid())
-  );
-
-DROP POLICY IF EXISTS outlet_stocktakes_manage ON public.outlet_stocktakes;
-CREATE POLICY outlet_stocktakes_manage ON public.outlet_stocktakes
-  FOR ALL
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stocktakes.outlet_id, auth.uid())
-  )
-  WITH CHECK (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stocktakes.outlet_id, auth.uid())
-  );
-
-CREATE TABLE IF NOT EXISTS public.outlet_stock_balances (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  period_id uuid NOT NULL REFERENCES public.outlet_stock_periods(id) ON DELETE CASCADE,
-  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE SET NULL,
-  opening_qty numeric NOT NULL DEFAULT 0,
-  ordered_qty numeric NOT NULL DEFAULT 0,
-  pos_sales_qty numeric NOT NULL DEFAULT 0,
-  expected_qty numeric NOT NULL DEFAULT 0,
-  actual_qty numeric,
-  variance_qty numeric,
-  closing_qty numeric,
-  computed_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(period_id, product_id, variation_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_outlet_stock_balances_outlet ON public.outlet_stock_balances(outlet_id, period_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_outlet_stock_balances_null_variation
-  ON public.outlet_stock_balances(period_id, product_id)
-  WHERE variation_id IS NULL;
-
-ALTER TABLE public.outlet_stock_balances ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS outlet_stock_balances_select ON public.outlet_stock_balances;
-CREATE POLICY outlet_stock_balances_select ON public.outlet_stock_balances
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.outlet_auth_user_matches(outlet_stock_balances.outlet_id, auth.uid())
-  );
-
-CREATE OR REPLACE FUNCTION public.start_outlet_stock_period(
-  p_outlet_id uuid,
-  p_period_start timestamptz DEFAULT now()
-)
-RETURNS public.outlet_stock_periods
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_period public.outlet_stock_periods%ROWTYPE;
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF p_outlet_id IS NULL THEN
-    RAISE EXCEPTION 'outlet_id is required';
-  END IF;
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.outlet_auth_user_matches(p_outlet_id, v_uid)
-  ) THEN
-    RAISE EXCEPTION 'not authorized to start stock period';
-  END IF;
-
-  PERFORM 1
-  FROM public.outlet_stock_periods
-  WHERE outlet_id = p_outlet_id
-    AND status = 'open';
-  IF FOUND THEN
-    RAISE EXCEPTION 'outlet % already has an open stock period', p_outlet_id;
-  END IF;
-
-  INSERT INTO public.outlet_stock_periods(
-    outlet_id,
-    period_start,
-    status,
-    created_by
-  ) VALUES (
-    p_outlet_id,
-    coalesce(p_period_start, now()),
-    'open',
-    v_uid
-  ) RETURNING * INTO v_period;
-
-  RETURN v_period;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.close_outlet_stock_period(
-  p_period_id uuid,
-  p_period_end timestamptz DEFAULT now()
-)
-RETURNS public.outlet_stock_periods
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_period public.outlet_stock_periods%ROWTYPE;
-BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-
-  SELECT * INTO v_period
-  FROM public.outlet_stock_periods
-  WHERE id = p_period_id
-  FOR UPDATE;
-
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'stock period % not found', p_period_id;
+    RAISE EXCEPTION 'order % not found', p_order_id;
   END IF;
 
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.outlet_auth_user_matches(v_period.outlet_id, v_uid)
-  ) THEN
-    RAISE EXCEPTION 'not authorized to close this stock period';
-  END IF;
+  FOR oi IN
+    SELECT oi.id, oi.order_id, oi.product_id AS item_id, oi.variation_id AS variant_id, oi.qty, oi.warehouse_id
+    FROM public.order_items oi
+    WHERE oi.order_id = p_order_id AND oi.qty > 0
+  LOOP
+    v_wh := coalesce(oi.warehouse_id, (
+      SELECT wd.warehouse_id FROM public.warehouse_defaults wd
+      WHERE wd.item_id = oi.item_id AND (wd.variant_id IS NULL OR wd.variant_id = oi.variant_id)
+      ORDER BY wd.variant_id NULLS LAST LIMIT 1
+    ));
 
-  UPDATE public.outlet_stock_periods
-     SET status = 'closed',
-         period_end = coalesce(p_period_end, now()),
-         closed_at = now()
-   WHERE id = p_period_id
-   RETURNING * INTO v_period;
+    IF v_wh IS NULL THEN
+      RAISE EXCEPTION 'no warehouse mapping for item %', oi.item_id;
+    END IF;
 
-  PERFORM public.refresh_outlet_stock_balances(v_period.id);
+    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)
+    VALUES ('warehouse', v_wh, oi.item_id, oi.variant_id, -1 * oi.qty, 'order_fulfillment', jsonb_build_object('order_id', p_order_id, 'order_item_id', oi.id));
 
-  RETURN v_period;
+    INSERT INTO public.outlet_stock_balances(outlet_id, item_id, variant_id, sent_units, consumed_units)
+    VALUES (v_order.outlet_id, oi.item_id, oi.variant_id, oi.qty, 0)
+    ON CONFLICT (outlet_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
+    DO UPDATE SET sent_units = public.outlet_stock_balances.sent_units + EXCLUDED.sent_units,
+                  updated_at = now();
+  END LOOP;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.record_outlet_stocktake(
-  p_outlet_id uuid,
-  p_product_id uuid,
-  p_counted_qty numeric,
-  p_variation_id uuid DEFAULT NULL,
-  p_period_id uuid DEFAULT NULL,
-  p_snapshot_kind text DEFAULT 'spot',
-  p_note text DEFAULT NULL,
-  p_qty_input_mode text DEFAULT 'auto'
-)
-RETURNS public.outlet_stocktakes
+CREATE OR REPLACE FUNCTION public.order_is_accessible(
+  p_order_id uuid,
+  p_user_id uuid
+) RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_uid uuid := auth.uid();
-  v_pkg numeric := 1;
-  v_mode text := lower(coalesce(p_qty_input_mode, 'auto'));
-  v_qty_units numeric := coalesce(p_counted_qty, 0);
-  v_qty_cases numeric := NULL;
-  v_row public.outlet_stocktakes%ROWTYPE;
-  v_kind text := lower(coalesce(p_snapshot_kind, 'spot'));
+  target_outlet uuid;
 BEGIN
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'not authenticated';
-  END IF;
-  IF p_outlet_id IS NULL OR p_product_id IS NULL THEN
-    RAISE EXCEPTION 'outlet_id and product_id are required';
-  END IF;
-  IF NOT (
-    public.is_admin(v_uid)
-    OR public.outlet_auth_user_matches(p_outlet_id, v_uid)
-  ) THEN
-    RAISE EXCEPTION 'not authorized to record outlet stocktake';
+  IF p_order_id IS NULL OR p_user_id IS NULL THEN
+    RETURN false;
   END IF;
 
-  SELECT coalesce(
-           (SELECT package_contains FROM public.product_variations WHERE id = p_variation_id),
-           (SELECT package_contains FROM public.products WHERE id = p_product_id),
-           1
-         )
-    INTO v_pkg;
-
-  IF v_mode NOT IN ('auto','units','cases') THEN
-    RAISE EXCEPTION 'invalid qty_input_mode %', p_qty_input_mode;
-  END IF;
-  IF v_mode = 'auto' THEN
-    v_mode := CASE WHEN v_pkg > 1 THEN 'cases' ELSE 'units' END;
+  SELECT outlet_id INTO target_outlet FROM public.orders WHERE id = p_order_id;
+  IF target_outlet IS NULL THEN
+    RETURN false;
   END IF;
 
-  IF v_mode = 'cases' THEN
-    v_qty_cases := coalesce(p_counted_qty, 0);
-    v_qty_units := v_qty_cases * v_pkg;
-  ELSE
-    v_qty_units := coalesce(p_counted_qty, 0);
-    v_qty_cases := CASE WHEN v_pkg > 0 THEN v_qty_units / v_pkg ELSE NULL END;
+  IF public.is_admin(p_user_id) THEN
+    RETURN true;
   END IF;
 
-  IF v_kind NOT IN ('opening','closing','spot') THEN
-    RAISE EXCEPTION 'invalid snapshot_kind %', p_snapshot_kind;
-  END IF;
-
-  INSERT INTO public.outlet_stocktakes(
-    outlet_id,
-    period_id,
-    product_id,
-    variation_id,
-    counted_qty,
-    counted_cases,
-    package_contains,
-    snapshot_kind,
-    note,
-    recorded_by
-  ) VALUES (
-    p_outlet_id,
-    p_period_id,
-    p_product_id,
-    p_variation_id,
-    v_qty_units,
-    v_qty_cases,
-    v_pkg,
-    v_kind,
-    p_note,
-    v_uid
-  ) RETURNING * INTO v_row;
-
-  IF p_period_id IS NOT NULL THEN
-    PERFORM public.refresh_outlet_stock_balances(p_period_id);
-  END IF;
-
-  RETURN v_row;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.refresh_outlet_stock_balances(
-  p_period_id uuid
-)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_period public.outlet_stock_periods%ROWTYPE;
-  v_period_end timestamptz;
-BEGIN
-  SELECT * INTO v_period
-  FROM public.outlet_stock_periods
-  WHERE id = p_period_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'stock period % not found', p_period_id;
-  END IF;
-
-  v_period_end := coalesce(v_period.period_end, now());
-
-  DELETE FROM public.outlet_stock_balances
-  WHERE period_id = p_period_id;
-
-  WITH ordered AS (
-    SELECT
-      ps.product_id,
-      ps.variation_id,
-      SUM(ps.qty_units) AS ordered_qty
-    FROM public.products_sold ps
-    JOIN public.orders o ON o.id = ps.order_id
-    WHERE o.outlet_id = v_period.outlet_id
-      AND o.created_at >= v_period.period_start
-      AND o.created_at < v_period_end
-    GROUP BY ps.product_id, ps.variation_id
-  ),
-  sales AS (
-    SELECT
-      product_id,
-      variation_id,
-      SUM(qty_units) AS sales_qty
-    FROM public.pos_sales
-    WHERE outlet_id = v_period.outlet_id
-      AND sold_at >= v_period.period_start
-      AND sold_at < v_period_end
-    GROUP BY product_id, variation_id
-  ),
-  opening AS (
-    SELECT
-      product_id,
-      variation_id,
-      SUM(counted_qty) AS opening_qty
-    FROM public.outlet_stocktakes
-    WHERE outlet_id = v_period.outlet_id
-      AND period_id = v_period.id
-      AND snapshot_kind = 'opening'
-    GROUP BY product_id, variation_id
-  ),
-  closing AS (
-    SELECT
-      product_id,
-      variation_id,
-      SUM(counted_qty) AS actual_qty
-    FROM public.outlet_stocktakes
-    WHERE outlet_id = v_period.outlet_id
-      AND period_id = v_period.id
-      AND snapshot_kind = 'closing'
-    GROUP BY product_id, variation_id
-  ),
-  combos AS (
-    SELECT DISTINCT product_id, variation_id
-    FROM (
-      SELECT product_id, variation_id FROM ordered
-      UNION
-      SELECT product_id, variation_id FROM sales
-      UNION
-      SELECT product_id, variation_id FROM opening
-      UNION
-      SELECT product_id, variation_id FROM closing
-    ) AS unioned
-  )
-  INSERT INTO public.outlet_stock_balances(
-    id,
-    period_id,
-    outlet_id,
-    product_id,
-    variation_id,
-    opening_qty,
-    ordered_qty,
-    pos_sales_qty,
-    expected_qty,
-    actual_qty,
-    variance_qty,
-    closing_qty,
-    computed_at
-  )
-  SELECT
-    gen_random_uuid(),
-    v_period.id,
-    v_period.outlet_id,
-    c.product_id,
-    c.variation_id,
-    coalesce(op.opening_qty, 0),
-    coalesce(ord.ordered_qty, 0),
-    coalesce(s.sales_qty, 0),
-    coalesce(op.opening_qty, 0) + coalesce(ord.ordered_qty, 0) - coalesce(s.sales_qty, 0) AS expected_qty,
-    cl.actual_qty,
-    CASE
-      WHEN cl.actual_qty IS NULL THEN NULL
-      ELSE cl.actual_qty - (coalesce(op.opening_qty, 0) + coalesce(ord.ordered_qty, 0) - coalesce(s.sales_qty, 0))
-    END AS variance_qty,
-    coalesce(cl.actual_qty, coalesce(op.opening_qty, 0) + coalesce(ord.ordered_qty, 0) - coalesce(s.sales_qty, 0)),
-    now()
-  FROM combos c
-  LEFT JOIN ordered ord ON ord.product_id = c.product_id AND ord.variation_id IS NOT DISTINCT FROM c.variation_id
-  LEFT JOIN sales s ON s.product_id = c.product_id AND s.variation_id IS NOT DISTINCT FROM c.variation_id
-  LEFT JOIN opening op ON op.product_id = c.product_id AND op.variation_id IS NOT DISTINCT FROM c.variation_id
-  LEFT JOIN closing cl ON cl.product_id = c.product_id AND cl.variation_id IS NOT DISTINCT FROM c.variation_id;
-
+  RETURN (
+    target_outlet = ANY(COALESCE(public.member_outlet_ids(p_user_id), ARRAY[]::uuid[]))
+    OR public.outlet_auth_user_matches(target_outlet, p_user_id)
+  );
 END;
 $$;
 
 -- ------------------------------------------------------------
--- Recipe-driven deductions scaffolding (2025-11-29)
+-- Storage buckets (orders PDFs + signatures)
 -- ------------------------------------------------------------
-
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type WHERE typname = 'recipe_measure_unit'
-  ) THEN
-    CREATE TYPE public.recipe_measure_unit AS ENUM (
-      'grams',
-      'kilograms',
-      'milligrams',
-      'litres',
-      'millilitres',
-      'units'
-    );
+  IF to_regclass('storage.buckets') IS NULL THEN
+    RAISE NOTICE 'storage.buckets not found; skipping bucket bootstrap';
+  ELSE
+    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    SELECT 'orders', 'orders', true, NULL::bigint, ARRAY['application/pdf']::text[]
+    WHERE NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'orders');
+
+    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    SELECT 'signatures', 'signatures', true, NULL::bigint, ARRAY['image/png','image/jpeg']::text[]
+    WHERE NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'signatures');
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS public.product_recipes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  variation_id uuid REFERENCES public.product_variations(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  active boolean NOT NULL DEFAULT true,
-  notes text,
-  created_by uuid NOT NULL DEFAULT auth.uid(),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_product_recipes_product_variation
-  ON public.product_recipes(product_id, variation_id NULLS LAST)
-  WHERE active;
-
-ALTER TABLE public.product_recipes ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS product_recipes_admin_rw ON public.product_recipes;
-CREATE POLICY product_recipes_admin_rw ON public.product_recipes
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-DROP POLICY IF EXISTS product_recipes_transfer_ro ON public.product_recipes;
-CREATE POLICY product_recipes_transfer_ro ON public.product_recipes
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-CREATE TABLE IF NOT EXISTS public.product_recipe_ingredients (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  recipe_id uuid NOT NULL REFERENCES public.product_recipes(id) ON DELETE CASCADE,
-  ingredient_product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE RESTRICT,
-  ingredient_variation_id uuid REFERENCES public.product_variations(id) ON DELETE RESTRICT,
-  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
-  measure_unit public.recipe_measure_unit NOT NULL,
-  qty_per_sale numeric NOT NULL CHECK (qty_per_sale > 0),
-  note text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe
-  ON public.product_recipe_ingredients(recipe_id);
-
-ALTER TABLE public.product_recipe_ingredients ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS recipe_ingredients_admin_rw ON public.product_recipe_ingredients;
-CREATE POLICY recipe_ingredients_admin_rw ON public.product_recipe_ingredients
-  FOR ALL
-  USING (public.is_admin(auth.uid()))
-  WITH CHECK (public.is_admin(auth.uid()));
-
-DROP POLICY IF EXISTS recipe_ingredients_transfer_ro ON public.product_recipe_ingredients;
-CREATE POLICY recipe_ingredients_transfer_ro ON public.product_recipe_ingredients
-  FOR SELECT
-  USING (
-    public.is_admin(auth.uid())
-    OR public.has_role_any_outlet(auth.uid(), 'transfers')
-  );
-
-CREATE OR REPLACE FUNCTION public.touch_product_recipe()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
+DO $$
 BEGIN
-  NEW.updated_at := now();
-  RETURN NEW;
-END;
-$$;
+  IF to_regclass('storage.objects') IS NULL THEN
+    RAISE NOTICE 'storage.objects not found; skipping storage policy bootstrap';
+    RETURN;
+  END IF;
 
-DROP TRIGGER IF EXISTS tr_product_recipes_touch ON public.product_recipes;
-CREATE TRIGGER tr_product_recipes_touch
-  BEFORE UPDATE ON public.product_recipes
-  FOR EACH ROW
-  EXECUTE FUNCTION public.touch_product_recipe();
+  BEGIN
+    EXECUTE 'DROP POLICY IF EXISTS "insert_orders_by_outlet_prefix" ON storage.objects';
+  EXCEPTION WHEN undefined_object THEN NULL; END;
 
-CREATE OR REPLACE FUNCTION public.recipe_deductions_for_product(
-  p_product_id uuid,
-  p_variation_id uuid DEFAULT NULL,
-  p_qty_units numeric DEFAULT 1
-)
-RETURNS TABLE (
-  warehouse_id uuid,
-  ingredient_product_id uuid,
-  ingredient_variation_id uuid,
-  measure_unit public.recipe_measure_unit,
-  qty_to_deduct numeric
-)
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  WITH candidate AS (
-    SELECT pr.id
-    FROM public.product_recipes pr
-    WHERE pr.product_id = p_product_id
-      AND pr.active
+  BEGIN
+    EXECUTE 'DROP POLICY IF EXISTS "insert_signatures_by_outlet_prefix" ON storage.objects';
+  EXCEPTION WHEN undefined_object THEN NULL; END;
+
+  EXECUTE $policy$
+    CREATE POLICY "insert_orders_by_outlet_prefix"
+    ON storage.objects
+    FOR INSERT TO authenticated
+    WITH CHECK (
+      bucket_id = 'orders'
       AND (
-        pr.variation_id IS NULL OR pr.variation_id = p_variation_id
+        public.is_admin(auth.uid())
+        OR EXISTS (
+          SELECT 1 FROM unnest(public.member_outlet_ids(auth.uid())) AS oid
+          WHERE path_tokens[1] = oid::text
+        )
       )
-    ORDER BY (pr.variation_id IS NOT NULL) DESC, pr.updated_at DESC
-    LIMIT 1
-  )
-  SELECT
-    pri.warehouse_id,
-    pri.ingredient_product_id,
-    pri.ingredient_variation_id,
-    pri.measure_unit,
-    pri.qty_per_sale * coalesce(p_qty_units, 1)
-  FROM candidate c
-  JOIN public.product_recipe_ingredients pri ON pri.recipe_id = c.id;
+      AND name ~ '^[0-9a-fA-F-]+/.+'
+    );
+  $policy$;
+
+  EXECUTE $policy$
+    CREATE POLICY "insert_signatures_by_outlet_prefix"
+    ON storage.objects
+    FOR INSERT TO authenticated
+    WITH CHECK (
+      bucket_id = 'signatures'
+      AND (
+        public.is_admin(auth.uid())
+        OR EXISTS (
+          SELECT 1 FROM unnest(public.member_outlet_ids(auth.uid())) AS oid
+          WHERE path_tokens[1] = oid::text
+        )
+      )
+      AND name ~ '^[0-9a-fA-F-]+/.+'
+    );
+  $policy$;
+END $$;
+
+-- ------------------------------------------------------------
+-- Reporting views (outlet + warehouse layer summaries)
+-- ------------------------------------------------------------
+CREATE OR REPLACE VIEW public.outlet_stock_summary AS
+SELECT
+  osb.outlet_id,
+  osb.item_id,
+  ci.name AS item_name,
+  osb.variant_id,
+  cv.name AS variant_name,
+  osb.sent_units,
+  osb.consumed_units,
+  osb.on_hand_units
+FROM public.outlet_stock_balances osb
+LEFT JOIN public.catalog_items ci ON ci.id = osb.item_id
+LEFT JOIN public.catalog_variants cv ON cv.id = osb.variant_id;
+
+CREATE OR REPLACE VIEW public.warehouse_layer_stock AS
+SELECT
+  w.id AS warehouse_id,
+  w.stock_layer,
+  sl.item_id,
+  ci.name AS item_name,
+  sl.variant_id,
+  cv.name AS variant_name,
+  SUM(sl.delta_units) AS net_units
+FROM public.stock_ledger sl
+JOIN public.warehouses w ON w.id = sl.warehouse_id
+LEFT JOIN public.catalog_items ci ON ci.id = sl.item_id
+LEFT JOIN public.catalog_variants cv ON cv.id = sl.variant_id
+WHERE sl.location_type = 'warehouse'
+GROUP BY w.id, w.stock_layer, sl.item_id, ci.name, sl.variant_id, cv.name;
+
+-- ------------------------------------------------------------
+-- Policies
+-- ------------------------------------------------------------
+ALTER TABLE public.catalog_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.catalog_variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.item_ingredient_recipes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_defaults ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlet_stock_balances ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlet_sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlet_deduction_mappings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlet_stocktakes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlet_order_counters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouses ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS catalog_items_admin_rw ON public.catalog_items;
+CREATE POLICY catalog_items_admin_rw ON public.catalog_items FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS catalog_items_select_active ON public.catalog_items;
+CREATE POLICY catalog_items_select_active ON public.catalog_items
+  FOR SELECT TO authenticated
+  USING (auth.uid() IS NOT NULL AND active);
+
+DROP POLICY IF EXISTS catalog_variants_admin_rw ON public.catalog_variants;
+CREATE POLICY catalog_variants_admin_rw ON public.catalog_variants FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS catalog_variants_select_active ON public.catalog_variants;
+CREATE POLICY catalog_variants_select_active ON public.catalog_variants
+  FOR SELECT TO authenticated
+  USING (auth.uid() IS NOT NULL AND active);
+
+DROP POLICY IF EXISTS item_recipes_admin_rw ON public.item_ingredient_recipes;
+CREATE POLICY item_recipes_admin_rw ON public.item_ingredient_recipes FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_defaults_admin_rw ON public.warehouse_defaults;
+CREATE POLICY warehouse_defaults_admin_rw ON public.warehouse_defaults FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS outlet_stock_balances_admin_rw ON public.outlet_stock_balances;
+CREATE POLICY outlet_stock_balances_admin_rw ON public.outlet_stock_balances FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS outlet_sales_admin_rw ON public.outlet_sales;
+CREATE POLICY outlet_sales_admin_rw ON public.outlet_sales FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS outlet_deduction_mappings_admin_rw ON public.outlet_deduction_mappings;
+CREATE POLICY outlet_deduction_mappings_admin_rw ON public.outlet_deduction_mappings FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS outlet_sales_insert_ops ON public.outlet_sales;
+CREATE POLICY outlet_sales_insert_ops ON public.outlet_sales FOR INSERT TO authenticated WITH CHECK (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS outlet_stock_balances_ro ON public.outlet_stock_balances;
+CREATE POLICY outlet_stock_balances_ro ON public.outlet_stock_balances FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS outlet_balances_scoped ON public.outlet_stock_balances;
+CREATE POLICY outlet_balances_scoped ON public.outlet_stock_balances
+  FOR ALL TO authenticated
+  USING (public.outlet_auth_user_matches(outlet_id, auth.uid()))
+  WITH CHECK (public.outlet_auth_user_matches(outlet_id, auth.uid()));
+
+DROP POLICY IF EXISTS outlet_stocktakes_admin_rw ON public.outlet_stocktakes;
+CREATE POLICY outlet_stocktakes_admin_rw ON public.outlet_stocktakes FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS outlet_stocktakes_ro ON public.outlet_stocktakes;
+CREATE POLICY outlet_stocktakes_ro ON public.outlet_stocktakes FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS outlet_stocktakes_scoped ON public.outlet_stocktakes;
+CREATE POLICY outlet_stocktakes_scoped ON public.outlet_stocktakes
+  FOR ALL TO authenticated
+  USING (public.outlet_auth_user_matches(outlet_id, auth.uid()))
+  WITH CHECK (public.outlet_auth_user_matches(outlet_id, auth.uid()));
+
+DROP POLICY IF EXISTS outlet_sales_scoped ON public.outlet_sales;
+CREATE POLICY outlet_sales_scoped ON public.outlet_sales
+  FOR ALL TO authenticated
+  USING (public.outlet_auth_user_matches(outlet_id, auth.uid()))
+  WITH CHECK (public.outlet_auth_user_matches(outlet_id, auth.uid()));
+
+DROP POLICY IF EXISTS warehouses_admin_rw ON public.warehouses;
+CREATE POLICY warehouses_admin_rw ON public.warehouses
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouses_select_scoped ON public.warehouses;
+CREATE POLICY warehouses_select_scoped ON public.warehouses
+  FOR SELECT TO authenticated
+  USING (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS outlets_admin_rw ON public.outlets;
+CREATE POLICY outlets_admin_rw ON public.outlets
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS outlets_select_scoped ON public.outlets;
+CREATE POLICY outlets_select_scoped ON public.outlets
+  FOR SELECT TO authenticated
+  USING (
+    public.is_admin(auth.uid())
+    OR id = ANY(public.member_outlet_ids(auth.uid()))
+  );
+
+DROP POLICY IF EXISTS outlet_order_counters_admin_rw ON public.outlet_order_counters;
+CREATE POLICY outlet_order_counters_admin_rw ON public.outlet_order_counters
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS platform_admins_admin_rw ON public.platform_admins;
+CREATE POLICY platform_admins_admin_rw ON public.platform_admins
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS platform_admins_self_select ON public.platform_admins;
+CREATE POLICY platform_admins_self_select ON public.platform_admins
+  FOR SELECT TO authenticated
+  USING (public.is_admin(auth.uid()) OR user_id = auth.uid());
+
+DROP POLICY IF EXISTS roles_admin_rw ON public.roles;
+CREATE POLICY roles_admin_rw ON public.roles
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS roles_select_all ON public.roles;
+CREATE POLICY roles_select_all ON public.roles
+  FOR SELECT TO authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS user_roles_admin_rw ON public.user_roles;
+CREATE POLICY user_roles_admin_rw ON public.user_roles
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS user_roles_self_select ON public.user_roles;
+CREATE POLICY user_roles_self_select ON public.user_roles
+  FOR SELECT TO authenticated
+  USING (public.is_admin(auth.uid()) OR user_id = auth.uid());
+
+DROP POLICY IF EXISTS stock_ledger_admin_rw ON public.stock_ledger;
+CREATE POLICY stock_ledger_admin_rw ON public.stock_ledger
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+-- Consolidated RLS for orders + order_items
+ALTER TABLE IF EXISTS public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.order_items ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  -- Drop legacy policies on orders
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_select_access ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_select_member_outlets ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_select_admin_all ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_outlet_rw ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_insert_outlet_or_admin ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_update_admin_only ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_select ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_insert ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_update ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS orders_policy_delete ON public.orders'; EXCEPTION WHEN undefined_object THEN NULL; END;
+
+  -- Create consolidated policies for orders
+  EXECUTE $orders$
+    CREATE POLICY orders_policy_select
+    ON public.orders
+    FOR SELECT TO authenticated
+    USING (
+      public.is_admin((select auth.uid()))
+      OR outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
+    );
+  $orders$;
+
+  EXECUTE $orders$
+    CREATE POLICY orders_policy_insert
+    ON public.orders
+    FOR INSERT TO authenticated
+    WITH CHECK (
+      public.is_admin((select auth.uid()))
+      OR outlet_id = ANY (public.member_outlet_ids((select auth.uid())))
+    );
+  $orders$;
+
+  EXECUTE $orders$
+    CREATE POLICY orders_policy_update
+    ON public.orders
+    FOR UPDATE TO authenticated
+    USING (public.is_admin((select auth.uid())))
+    WITH CHECK (public.is_admin((select auth.uid())));
+  $orders$;
+
+  EXECUTE $orders$
+    CREATE POLICY orders_policy_delete
+    ON public.orders
+    FOR DELETE TO authenticated
+    USING (public.is_admin((select auth.uid())));
+  $orders$;
+
+  -- Drop any existing order_items policies
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS supervisor_update_qty_only ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_select_access ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_select_member_outlets ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_select_admin_all ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_insert_access ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_update_supervisor_or_admin ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_update_supervisor_admin ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_delete_admin_only ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_outlet_rw ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_select ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_insert ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_update ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+  BEGIN EXECUTE 'DROP POLICY IF EXISTS order_items_policy_delete ON public.order_items'; EXCEPTION WHEN undefined_object THEN NULL; END;
+
+  EXECUTE $order_items$
+    CREATE POLICY order_items_policy_select
+    ON public.order_items
+    FOR SELECT TO authenticated
+    USING (public.order_is_accessible(order_id, (select auth.uid())));
+  $order_items$;
+
+  EXECUTE $order_items$
+    CREATE POLICY order_items_policy_insert
+    ON public.order_items
+    FOR INSERT TO authenticated
+    WITH CHECK (public.order_is_accessible(order_id, (select auth.uid())));
+  $order_items$;
+
+  EXECUTE $order_items$
+    CREATE POLICY order_items_policy_update
+    ON public.order_items
+    FOR UPDATE TO authenticated
+    USING (public.order_is_accessible(order_id, (select auth.uid())))
+    WITH CHECK (public.order_is_accessible(order_id, (select auth.uid())));
+  $order_items$;
+
+  EXECUTE $order_items$
+    CREATE POLICY order_items_policy_delete
+    ON public.order_items
+    FOR DELETE TO authenticated
+    USING (public.is_admin((select auth.uid())));
+  $order_items$;
+END
 $$;
+
+-- Ensure Supabase Realtime publication tracks the core tables the app subscribes to
+DO $$
+DECLARE
+  t text;
+  tables text[] := ARRAY[
+    'orders',
+    'order_items',
+    'outlets',
+    'warehouses',
+    'outlet_stock_balances',
+    'outlet_sales',
+    'stock_ledger'
+  ];
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    EXECUTE 'CREATE PUBLICATION supabase_realtime';
+  END IF;
+
+  FOREACH t IN ARRAY tables LOOP
+    IF EXISTS (
+      SELECT 1
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = t
+        AND c.relkind IN ('r','p')
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime'
+        AND schemaname = 'public'
+        AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I.%I', 'public', t);
+    END IF;
+  END LOOP;
+END
+$$;
+
+-- ------------------------------------------------------------
+-- Legacy cleanup (drops old parallel tables/views)
+-- ------------------------------------------------------------
+DROP VIEW IF EXISTS public.outlet_product_order_totals CASCADE;
+DROP VIEW IF EXISTS public.order_pack_consumption CASCADE;
+DROP VIEW IF EXISTS public.variances_sold CASCADE;
+DROP VIEW IF EXISTS public.outlet_order_log CASCADE;
+DROP VIEW IF EXISTS public.outlet_stock_current CASCADE;
+DROP VIEW IF EXISTS public.warehouse_stock_current CASCADE;
+DROP VIEW IF EXISTS public.warehouse_group_stock_current CASCADE;
+
+DROP TABLE IF EXISTS public.product_recipes CASCADE;
+DROP TABLE IF EXISTS public.product_recipe_ingredients CASCADE;
+DROP TABLE IF EXISTS public.products CASCADE;
+DROP TABLE IF EXISTS public.product_variations CASCADE;
+DROP TABLE IF EXISTS public.products_sold CASCADE;
+DROP TABLE IF EXISTS public.pos_sales CASCADE;
+DROP TABLE IF EXISTS public.warehouse_stock_entries CASCADE;
+DROP TABLE IF EXISTS public.warehouse_stock_entry_events CASCADE;
+DROP TABLE IF EXISTS public.warehouse_purchase_items CASCADE;
+DROP TABLE IF EXISTS public.warehouse_purchase_receipts CASCADE;
+DROP TABLE IF EXISTS public.damages CASCADE;
+DROP TABLE IF EXISTS public.outlet_stock_periods CASCADE;
+DROP TABLE IF EXISTS public.stock_movements CASCADE;
+DROP TABLE IF EXISTS public.stock_movement_items CASCADE;
+DROP TABLE IF EXISTS public.warehouse_stocktakes CASCADE;
+DROP TABLE IF EXISTS public.product_supplier_links CASCADE;
+DROP TABLE IF EXISTS public.suppliers CASCADE;
+DROP TABLE IF EXISTS public.console_operators CASCADE;
+DROP TABLE IF EXISTS public.assets CASCADE;
+
+DROP TYPE IF EXISTS public.stock_entry_kind CASCADE;
+DROP TYPE IF EXISTS public.stock_location_type CASCADE;
+DROP TYPE IF EXISTS public.order_lock_stage CASCADE;
+DROP TYPE IF EXISTS public.role_type CASCADE;
+
+COMMIT;
 

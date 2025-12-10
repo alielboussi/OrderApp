@@ -43,8 +43,8 @@ class ProductRepository(
 
     suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
-            "/rest/v1/products?active=eq.true&select=" +
-                "id,sku,name,image_url,uom,cost,has_variations,active,package_contains,default_warehouse_id",
+            "/rest/v1/catalog_items?active=eq.true&select=" +
+                "id,sku,name,image_url,receiving_uom,consumption_uom,cost,has_variations,active,receiving_contains,default_warehouse_id",
             jwt
         )
         // If Supabase returns an error object, surface a friendly message instead of a JSON parse crash
@@ -57,6 +57,7 @@ class ProductRepository(
                 name = it.name,
                 imageUrl = it.imageUrl,
                 uom = it.uom,
+                consumptionUom = it.consumptionUom,
                 cost = it.cost,
                 hasVariations = it.hasVariations,
                 active = it.active,
@@ -75,8 +76,8 @@ class ProductRepository(
 
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
-            "/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=" +
-                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id,sku",
+            "/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&select=" +
+                "id,item_id,name,image_url,receiving_uom,consumption_uom,cost,active,receiving_contains,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -89,6 +90,7 @@ class ProductRepository(
                 name = it.name,
                 imageUrl = it.imageUrl,
                 uom = it.uom,
+                consumptionUom = it.consumptionUom,
                 cost = it.cost,
                 active = it.active,
                 packageContains = it.packageContains,
@@ -101,8 +103,8 @@ class ProductRepository(
 
     suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
-            "/rest/v1/product_variations?active=eq.true&select=" +
-                "id,product_id,name,image_url,uom,cost,active,package_contains,default_warehouse_id,sku",
+            "/rest/v1/catalog_variants?active=eq.true&select=" +
+                "id,item_id,name,image_url,receiving_uom,consumption_uom,cost,active,receiving_contains,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -115,6 +117,7 @@ class ProductRepository(
                 name = it.name,
                 imageUrl = it.imageUrl,
                 uom = it.uom,
+                consumptionUom = it.consumptionUom,
                 cost = it.cost,
                 active = it.active,
                 packageContains = it.packageContains,

@@ -18,6 +18,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -310,7 +311,7 @@ class SupabaseProvider(context: Context) {
                 // Allow admin and transfer managers to sign in without an outlet mapping; outlet-specific actions should request context in UI
                 LoginPack(jwt, refresh, expiresAtMillis, "", "", userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor, roleDescriptors)
             } else {
-                error("No outlet mapping found for this user. Please add the user to public.outlet_users or assign them a role via whoami_roles.")
+                error("No outlet mapping found for this user. Please link their auth user to an outlet (outlets.auth_user_id) or assign them a role surfaced by whoami_roles.")
             }
         )
     }
@@ -379,7 +380,11 @@ class SupabaseProvider(context: Context) {
         @SerialName("product_id") val productId: String? = null,
         @SerialName("variation_id") val variationId: String? = null,
         val name: String,
-        val uom: String,
+        @SerialName("receiving_uom")
+        @JsonNames("uom")
+        val receivingUom: String = "each",
+        @SerialName("consumption_uom")
+        val consumptionUom: String = "each",
         val cost: Double,
         val qty: Double,
         @SerialName("qty_cases") val qtyCases: Double? = null,
@@ -698,20 +703,22 @@ class SupabaseProvider(context: Context) {
     data class SimpleProduct(
         val id: String,
         val name: String,
-        val uom: String,
+        @SerialName("receiving_uom") val uom: String,
+        @SerialName("consumption_uom") val consumptionUom: String = "each",
         val sku: String? = null,
         @SerialName("has_variations") val hasVariations: Boolean = false,
-        @SerialName("package_contains") val packageContains: Double? = null
+        @SerialName("receiving_contains") val packageContains: Double? = null
     )
 
     @Serializable
     data class SimpleVariation(
         val id: String,
-        @SerialName("product_id") val productId: String,
+        @SerialName("item_id") val productId: String,
         val name: String,
-        val uom: String,
+        @SerialName("receiving_uom") val uom: String,
+        @SerialName("consumption_uom") val consumptionUom: String = "each",
         val cost: Double? = null,
-        @SerialName("package_contains") val packageContains: Double? = null,
+        @SerialName("receiving_contains") val packageContains: Double? = null,
         val sku: String? = null
     )
 
@@ -860,8 +867,8 @@ class SupabaseProvider(context: Context) {
         urlBuilder.append(
             "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
                 "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
-                "product:products!stock_movement_items_product_id_fkey(name,uom,sku,cost)," +
-                "variation:product_variations!stock_movement_items_variation_id_fkey(name,uom,sku))"
+                "product:catalog_items!stock_movement_items_product_id_fkey(name,uom,sku,cost)," +
+                "variation:catalog_variants!stock_movement_items_variation_id_fkey(name,uom,sku))"
         )
         urlBuilder.append("&source_location_type=eq.warehouse&dest_location_type=eq.warehouse")
         sourceWarehouseId?.takeIf { it.isNotBlank() }?.let {
@@ -1035,7 +1042,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val url = "$supabaseUrl/rest/v1/products?active=eq.true&select=id,name,uom,sku,has_variations,package_contains&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,receiving_uom,consumption_uom,sku,has_variations,receiving_contains&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1045,7 +1052,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/product_variations?product_id=eq.$productId&active=eq.true&select=id,product_id,name,uom,cost,package_contains,sku&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&select=id,item_id,name,receiving_uom,consumption_uom,cost,receiving_contains,sku&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1055,7 +1062,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listAllVariations(jwt: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/product_variations?active=eq.true&select=id,product_id,name,uom,cost,package_contains,sku&order=product_id.asc,name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_variants?active=eq.true&select=id,item_id,name,receiving_uom,consumption_uom,cost,receiving_contains,sku&order=item_id.asc,name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1087,7 +1094,7 @@ class SupabaseProvider(context: Context) {
     suspend fun fetchStocktakeLog(jwt: String, warehouseId: String?, limit: Int = 200): List<StocktakeLogRow> {
         val urlBuilder = StringBuilder()
         urlBuilder.append("$supabaseUrl/rest/v1/warehouse_stocktakes")
-        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,counted_qty,delta,note,recorded_by,recorded_at,product:products(name),variation:product_variations(name)")
+        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,counted_qty,delta,note,recorded_by,recorded_at,product:catalog_items(name),variation:catalog_variants(name)")
         urlBuilder.append("&order=recorded_at.desc")
         urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
         warehouseId?.let { urlBuilder.append("&warehouse_id=eq.").append(it) }
@@ -1111,7 +1118,7 @@ class SupabaseProvider(context: Context) {
     ): List<StockEntryRow> {
         val urlBuilder = StringBuilder()
         urlBuilder.append("$supabaseUrl/rest/v1/warehouse_stock_entries")
-        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,entry_kind,qty,note,recorded_by,recorded_at,product:products(name),variation:product_variations(name),warehouse:warehouses(name)")
+        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,entry_kind,qty,note,recorded_by,recorded_at,product:catalog_items(name),variation:catalog_variants(name),warehouse:warehouses(name)")
         urlBuilder.append("&order=recorded_at.desc")
         urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
         warehouseId?.let { urlBuilder.append("&warehouse_id=eq.").append(it) }
@@ -1500,11 +1507,12 @@ class SupabaseProvider(context: Context) {
         @SerialName("product_id") val productId: String?,
         @SerialName("variation_id") val variationId: String?,
         val name: String,
-        val uom: String,
+        @SerialName("receiving_uom") val receivingUom: String,
+        @SerialName("consumption_uom") val consumptionUom: String,
         val cost: Double,
         val qty: Double,
         @SerialName("qty_cases") val qtyCases: Double?,
-        @SerialName("package_contains") val packageContains: Double,
+        @SerialName("receiving_contains") val packageContains: Double,
         @SerialName("warehouse_id") val warehouseId: String?,
         val amount: Double
     )
@@ -1556,7 +1564,8 @@ class SupabaseProvider(context: Context) {
                 productId = it.productId,
                 variationId = it.variationId,
                 name = it.name,
-                uom = it.uom,
+                receivingUom = it.receivingUom,
+                consumptionUom = it.consumptionUom,
                 cost = it.cost,
                 qty = qtyUnits,
                 qtyCases = qtyCases,

@@ -286,13 +286,16 @@ fun SupervisorOrderDetailScreen(
             val qtyUnits = rowItem.qty
             val cost = variation.cost ?: rowItem.cost
             val packageContains = variation.packageContains?.takeIf { it > 0 }
+            val receivingUom = variation.uom
+            val consumptionUom = variation.consumptionUom
             runCatching {
                 repo.updateOrderItemVariation(
                     jwt = s.token,
                     orderItemId = rowItem.id,
                     variationId = variation.id,
                     name = variation.name.ifBlank { rowItem.name },
-                    uom = variation.uom,
+                    receivingUom = receivingUom,
+                    consumptionUom = consumptionUom,
                     cost = cost,
                     packageContains = packageContains,
                     qtyUnits = qtyUnits
@@ -303,12 +306,14 @@ fun SupervisorOrderDetailScreen(
                         it.copy(
                             variationId = variation.id,
                             name = variation.name.ifBlank { rowItem.name },
-                            uom = variation.uom,
+                            uom = receivingUom,
+                            consumptionUom = consumptionUom,
                             cost = cost,
                             packageContains = packageContains ?: it.packageContains,
                             variation = OrderRepository.VariationRef(
                                 name = variation.name,
-                                uom = variation.uom
+                                uom = receivingUom,
+                                consumptionUom = consumptionUom
                             )
                         )
                     } else it
@@ -687,7 +692,7 @@ private fun SupervisorItemCard(
                 )
                 formatPackageUnits(row.packageContains)?.let { units ->
                     Text(
-                        text = "Package Contains: $units units",
+                        text = "1 ${row.uom.uppercase()} = $units ${row.consumptionUom.uppercase()}",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.85f)
                     )
@@ -807,7 +812,7 @@ private fun VariationSelector(
                             Text(variationLabel(variation))
                             formatPackageUnits(variation.packageContains)?.let { units ->
                                 Text(
-                                    text = "Package Contains: $units units",
+                                    text = "1 ${variation.uom.uppercase()} = $units ${variation.consumptionUom.uppercase()}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -827,7 +832,7 @@ private fun VariationSelector(
 
 private fun variationLabel(variation: SupabaseProvider.SimpleVariation): String {
     val uom = variation.uom.takeIf { it.isNotBlank() }
-    return if (uom != null) "${variation.name} (${uom})" else variation.name
+    return if (uom != null) "${variation.name} (${uom.uppercase()})" else variation.name
 }
 
 @Composable

@@ -4,7 +4,7 @@ Consolidated Next.js app that serves both the Main Warehouse and Beverages Store
 
 ### Prerequisites
 
-- Supabase project with the `warehouse_stock_current` view (or equivalent) plus the `transfer_units_between_warehouses` RPC, `warehouses`, `products`, and `product_variations` tables.
+- Supabase project with the `warehouse_stock_current` view (or equivalent) plus the `transfer_units_between_warehouses` RPC, `warehouses`, `catalog_items`, and `catalog_variants` tables.
 - Vercel account (or any Next.js-compatible host) for deploying `Scanners`.
 - Supabase service-role key so the Vercel API routes can read warehouse/product data.
 
