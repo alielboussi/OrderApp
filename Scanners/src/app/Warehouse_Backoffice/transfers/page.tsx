@@ -29,6 +29,7 @@ interface TransferRow {
   note?: string | null;
   created_at?: string | null;
   completed_at?: string | null;
+  reference_code?: string | null;
   items: TransferItem[];
 }
 
@@ -131,6 +132,8 @@ export default function WarehouseTransfersWeb() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const lockedPathRef = useRef<string | null>(null);
   const allowNavRef = useRef(false);
+  const [lockedFromId, setLockedFromId] = useState("");
+  const lockedFromActive = lockedFromId.trim().length > 0;
   const hasActiveFilters = Boolean(
     sourceId || destId || startDate || endDate || searchQuery.trim()
   );
@@ -154,6 +157,10 @@ export default function WarehouseTransfersWeb() {
     allowNavRef.current = true;
     router.push("/Warehouse_Backoffice");
   };
+
+  useEffect(() => {
+    setLockedFromId(readLockedFrom());
+  }, []);
 
   // Lock URL endpoint to keep kiosk devices on the transfers view
   useEffect(() => {
@@ -199,7 +206,7 @@ export default function WarehouseTransfersWeb() {
   useEffect(() => {
     const loadWarehouses = async () => {
       try {
-        const fromLocked = readLockedFrom();
+        const fromLocked = lockedFromId.trim();
         const lockedIds = fromLocked ? [fromLocked] : [];
         const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
         const data = await fetchJson<
@@ -216,14 +223,19 @@ export default function WarehouseTransfersWeb() {
       }
     };
     loadWarehouses();
-  }, []);
+  }, [lockedFromId]);
+
+  useEffect(() => {
+    if (lockedFromActive) {
+      setSourceId(lockedFromId.trim());
+    }
+  }, [lockedFromActive, lockedFromId]);
 
   const loadTransfers = async () => {
     setLoading(true);
     setError(null);
     try {
-      const search = new URLSearchParams(window.location.search);
-      const fromLocked = search.get("from_locked_id") || search.get("locked_from") || search.get("locked_id") || "";
+      const fromLocked = lockedFromId.trim();
       const lockedIds = fromLocked ? [fromLocked] : [];
       const params = new URLSearchParams();
       if (sourceId) params.set("sourceId", sourceId);
@@ -247,7 +259,7 @@ export default function WarehouseTransfersWeb() {
   useEffect(() => {
     loadTransfers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceId, destId, startDate, endDate, manualRefreshTick]);
+  }, [sourceId, destId, startDate, endDate, manualRefreshTick, lockedFromId]);
 
   const filteredTransfers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -332,10 +344,11 @@ export default function WarehouseTransfersWeb() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <LabeledSelect
                 label="From warehouse"
-                value={sourceId}
+                value={lockedFromActive ? lockedFromId : sourceId}
                 onChange={setSourceId}
                 options={warehouses}
-                placeholder="Any warehouse"
+                placeholder={lockedFromActive ? "Locked to source warehouse" : "Any warehouse"}
+                locked={lockedFromActive}
               />
               <LabeledSelect
                 label="To warehouse"
@@ -364,7 +377,7 @@ export default function WarehouseTransfersWeb() {
                 <button
                   style={styles.dangerPill}
                   onClick={() => {
-                    setSourceId("");
+                    setSourceId(lockedFromActive ? lockedFromId : "");
                     setDestId("");
                     setStartDate("");
                     setEndDate("");
@@ -472,13 +485,20 @@ function LabeledSelect(props: {
   onChange: (v: string) => void;
   options: Warehouse[];
   placeholder?: string;
+  locked?: boolean;
 }) {
-  const { label, value, onChange, options, placeholder } = props;
+  const { label, value, onChange, options, placeholder, locked } = props;
+  const lockSelection = Boolean(locked && options.length <= 1);
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <span style={styles.label}>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={styles.select}>
-        <option value="">{placeholder ?? "Any"}</option>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={styles.select}
+        disabled={lockSelection}
+      >
+        {lockSelection ? null : <option value="">{placeholder ?? "Any"}</option>}
         {options.map((w) => (
           <option key={w.id} value={w.id}>
             {w.name}

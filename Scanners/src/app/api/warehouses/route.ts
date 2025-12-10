@@ -57,7 +57,16 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const includeInactiveParam = url.searchParams.get('include_inactive');
     const includeInactive = includeInactiveParam === '1' || includeInactiveParam === 'true';
-    const lockedIds = Array.from(new Set(url.searchParams.getAll('locked_id').filter(Boolean)));
+    const lockedIdCandidates = [
+      ...url.searchParams.getAll('locked_id'),
+      url.searchParams.get('fromLockedId'),
+      url.searchParams.get('from_locked_id'),
+      url.searchParams.get('locked_from'),
+      url.searchParams.get('lockedWarehouseId'),
+      url.searchParams.get('lockedWarehouse'),
+      url.searchParams.get('locked_source_id'),
+    ].filter((value) => typeof value === 'string' && value.trim().length > 0);
+    const lockedIds = Array.from(new Set(lockedIdCandidates.map((value) => value.trim())));
 
     let warehouseRecords: WarehouseRecord[] = [];
     try {

@@ -8,6 +8,10 @@ import type { WarehouseDamage } from "@/types/damages";
 
 const AUTO_REFRESH_MS = 120_000; // 2 minutes
 const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/damages";
+const ALLOWED_FROM_WAREHOUSE_IDS = [
+  "f71a25d0-9ec2-454d-a606-93cfaa3c606b", // Beverages Storeroom
+  "0c9ddd9e-d42c-475f-9232-5e9d649b0916", // Main Warehouse
+];
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url, { cache: "no-store" });
@@ -104,12 +108,33 @@ export default function WarehouseDamagesWeb() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const lockedPathRef = useRef<string | null>(null);
   const allowNavRef = useRef(false);
+  const [lockedFromId, setLockedFromId] = useState("");
+  const lockedFromActive = lockedFromId.trim().length > 0;
   const hasActiveFilters = Boolean(warehouseId || startDate || endDate || searchQuery.trim());
+
+  const readLockedFrom = () => {
+    if (typeof window === "undefined") return "";
+    const search = new URLSearchParams(window.location.search);
+    return (
+      search.get("from_locked_id") ||
+      search.get("fromLockedId") ||
+      search.get("locked_from") ||
+      search.get("locked_id") ||
+      search.get("lockedWarehouseId") ||
+      search.get("lockedWarehouse") ||
+      search.get("locked_source_id") ||
+      ""
+    ).trim();
+  };
 
   const handleBack = () => {
     allowNavRef.current = true;
     router.push("/Warehouse_Backoffice");
   };
+
+  useEffect(() => {
+    setLockedFromId(readLockedFrom());
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -152,13 +177,13 @@ export default function WarehouseDamagesWeb() {
   useEffect(() => {
     const loadWarehouses = async () => {
       try {
-        const search = new URLSearchParams(window.location.search);
-        const fromLocked = search.get("from_locked_id") || search.get("locked_from") || search.get("locked_id") || "";
+        const fromLocked = lockedFromId.trim();
         const lockedIds = fromLocked ? [fromLocked] : [];
         const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
         const data = await fetchJson<Warehouse[] | { warehouses?: Warehouse[]; data?: Warehouse[] }>(`/api/warehouses${qs}`);
         const list = normalizeList<Warehouse>(data, ["warehouses", "data"]);
-        const filtered = lockedIds.length ? list.filter((w) => lockedIds.includes(w.id)) : list;
+        const allowed = list.filter((w) => ALLOWED_FROM_WAREHOUSE_IDS.includes(w.id));
+        const filtered = lockedIds.length ? allowed.filter((w) => lockedIds.includes(w.id)) : allowed;
         if (fromLocked && filtered.some((w) => w.id === fromLocked)) {
           setWarehouseId(fromLocked);
         }
@@ -168,14 +193,19 @@ export default function WarehouseDamagesWeb() {
       }
     };
     loadWarehouses();
-  }, []);
+  }, [lockedFromId]);
+
+  useEffect(() => {
+    if (lockedFromActive) {
+      setWarehouseId(lockedFromId.trim());
+    }
+  }, [lockedFromActive, lockedFromId]);
 
   const loadDamages = async () => {
     setLoading(true);
     setError(null);
     try {
-      const search = new URLSearchParams(window.location.search);
-      const fromLocked = search.get("from_locked_id") || search.get("locked_from") || search.get("locked_id") || "";
+      const fromLocked = lockedFromId.trim();
       const lockedIds = fromLocked ? [fromLocked] : [];
       const params = new URLSearchParams();
       if (warehouseId) params.set("warehouseId", warehouseId);
@@ -196,7 +226,7 @@ export default function WarehouseDamagesWeb() {
   useEffect(() => {
     loadDamages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [warehouseId, startDate, endDate, manualRefreshTick]);
+  }, [warehouseId, startDate, endDate, manualRefreshTick, lockedFromId]);
 
   const filteredDamages = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -277,10 +307,11 @@ export default function WarehouseDamagesWeb() {
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <LabeledSelect
               label="Warehouse"
-              value={warehouseId}
+              value={lockedFromActive ? lockedFromId : warehouseId}
               onChange={setWarehouseId}
               options={warehouses}
-              placeholder="Any warehouse"
+              placeholder={lockedFromActive ? "Locked to source warehouse" : "Any warehouse"}
+              locked={lockedFromActive}
             />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <LabeledDate label="From date" value={formatDateRangeValue(startDate)} onChange={setStartDate} />
@@ -301,7 +332,7 @@ export default function WarehouseDamagesWeb() {
                 <button
                   style={styles.dangerPill}
                   onClick={() => {
-                    setWarehouseId("");
+                    setWarehouseId(lockedFromActive ? lockedFromId : "");
                     setStartDate("");
                     setEndDate("");
                     setSearchQuery("");
@@ -388,18 +419,26 @@ function LabeledSelect({
   onChange,
   options,
   placeholder,
+  locked,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Warehouse[];
   placeholder?: string;
+  locked?: boolean;
 }) {
+  const lockSelection = Boolean(locked && options.length <= 1);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <label style={styles.label}>{label}</label>
-      <select style={styles.select} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{placeholder || "Select"}</option>
+      <select
+        style={styles.select}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={lockSelection}
+      >
+        {lockSelection ? null : <option value="">{placeholder || "Select"}</option>}
         {options.map((opt) => (
           <option key={opt.id} value={opt.id}>
             {opt.name}

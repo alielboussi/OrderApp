@@ -13,6 +13,9 @@ export async function GET(req: NextRequest) {
       url.searchParams.get('from_locked_id')?.trim() ||
       url.searchParams.get('locked_from')?.trim() ||
       url.searchParams.get('locked_id')?.trim() ||
+      url.searchParams.get('lockedWarehouseId')?.trim() ||
+      url.searchParams.get('lockedWarehouse')?.trim() ||
+      url.searchParams.get('locked_source_id')?.trim() ||
       null;
     const startDateParam = url.searchParams.get('startDate')?.trim() || null;
     const endDateParam = url.searchParams.get('endDate')?.trim() || null;

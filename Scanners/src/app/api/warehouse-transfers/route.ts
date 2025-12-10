@@ -16,6 +16,9 @@ export async function GET(req: NextRequest) {
       url.searchParams.get('from_locked_id')?.trim() ||
       url.searchParams.get('locked_from')?.trim() ||
       url.searchParams.get('locked_id')?.trim() ||
+      url.searchParams.get('lockedWarehouseId')?.trim() ||
+      url.searchParams.get('lockedWarehouse')?.trim() ||
+      url.searchParams.get('locked_source_id')?.trim() ||
       null;
     const limitParamRaw = url.searchParams.get('limit');
     const limitParam = limitParamRaw === null ? Number.NaN : Number(limitParamRaw);
