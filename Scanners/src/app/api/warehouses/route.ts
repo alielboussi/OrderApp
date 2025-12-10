@@ -65,7 +65,7 @@ export async function GET(request: Request) {
       url.searchParams.get('lockedWarehouseId'),
       url.searchParams.get('lockedWarehouse'),
       url.searchParams.get('locked_source_id'),
-    ].filter((value) => typeof value === 'string' && value.trim().length > 0);
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
     const lockedIds = Array.from(new Set(lockedIdCandidates.map((value) => value.trim())));
 
     let warehouseRecords: WarehouseRecord[] = [];
