@@ -190,7 +190,7 @@ fun ProductListScreen(
             )
 
             Text(
-                text = "Receipts happen in receiving units (cases). The conversion line shows how many consumption units are deducted per case.",
+                text = "Orders are captured in purchase pack units (cases). The conversion line shows how many consumption units are deducted per pack.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -300,7 +300,7 @@ private fun ProductCard(
                     Column(Modifier.weight(1f)) {
                         if (!item.hasVariations) {
                             Text(
-                                text = "Order in ${item.uom.uppercase()}",
+                                text = "Order in ${item.purchasePackUnit.uppercase()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White
                             )
@@ -322,9 +322,9 @@ private fun ProductCard(
                                 fontWeight = FontWeight.Medium,
                                 color = Color.White.copy(alpha = 0.95f)
                             )
-                            formatPackageUnits(item.packageContains)?.let { units ->
+                            formatPackageUnits(item.unitsPerPurchasePack)?.let { units ->
                                 Text(
-                                    text = "1 ${item.uom.uppercase()} = $units ${item.consumptionUom.uppercase()}",
+                                    text = "1 ${item.purchasePackUnit.uppercase()} = $units ${item.consumptionUom.uppercase()}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.White.copy(alpha = 0.85f)
                                 )
@@ -340,15 +340,15 @@ private fun ProductCard(
                             qty = qty,
                             onDec = {
                                 logger.event("QtyDecrement", mapOf("productId" to item.id))
-                                root.dec(item.id, null, item.name, item.uom, item.consumptionUom, item.cost, item.packageContains)
+                                root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
                             },
                             onInc = {
                                 logger.event("QtyIncrement", mapOf("productId" to item.id))
-                                root.inc(item.id, null, item.name, item.uom, item.consumptionUom, item.cost, item.packageContains)
+                                root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
                             },
                             onChange = { n ->
                                 logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
-                                root.setQty(item.id, null, item.name, item.uom, item.consumptionUom, item.cost, n, item.packageContains)
+                                root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
                             }
                         )
                     }
@@ -508,9 +508,9 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: Screen
                 fontWeight = FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.95f)
             )
-            formatPackageUnits(v.packageContains)?.let { units ->
+            formatPackageUnits(v.unitsPerPurchasePack)?.let { units ->
                 Text(
-                    text = "1 ${v.uom.uppercase()} = $units ${v.consumptionUom.uppercase()}",
+                    text = "1 ${v.purchasePackUnit.uppercase()} = $units ${v.consumptionUom.uppercase()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.85f)
                 )
@@ -521,22 +521,22 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: Screen
 
         // Right: UOM centered above the qty text field, with red outlined -/+ buttons
         VariationQtyControls(
-            uom = v.uom,
+            uom = v.purchasePackUnit,
             qty = qty,
             onDec = {
                 logger.event("VariationQtyDecrement", mapOf("productId" to v.productId, "variationId" to v.id))
-                root.dec(v.productId, v.id, v.name, v.uom, v.consumptionUom, v.cost, v.packageContains)
+                root.dec(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, v.unitsPerPurchasePack)
             },
             onInc = {
                 logger.event("VariationQtyIncrement", mapOf("productId" to v.productId, "variationId" to v.id))
-                root.inc(v.productId, v.id, v.name, v.uom, v.consumptionUom, v.cost, v.packageContains)
+                root.inc(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, v.unitsPerPurchasePack)
             },
             onChange = { n ->
                 logger.event(
                     "VariationQtyChanged",
                     mapOf("productId" to v.productId, "variationId" to v.id, "newQty" to n)
                 )
-                root.setQty(v.productId, v.id, v.name, v.uom, v.consumptionUom, v.cost, n, v.packageContains)
+                root.setQty(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, n, v.unitsPerPurchasePack)
             }
         )
     }

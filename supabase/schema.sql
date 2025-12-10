@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS public.catalog_items (
   transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
   has_variations boolean NOT NULL DEFAULT false,
+  outlet_order_visible boolean NOT NULL DEFAULT true,
   image_url text,
   default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   active boolean NOT NULL DEFAULT true,
@@ -210,6 +211,7 @@ ALTER TABLE IF EXISTS public.catalog_items
   ADD COLUMN IF NOT EXISTS transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
   ADD COLUMN IF NOT EXISTS has_variations boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS outlet_order_visible boolean NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS image_url text,
   ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
 
@@ -226,6 +228,7 @@ CREATE TABLE IF NOT EXISTS public.catalog_variants (
   transfer_unit text NOT NULL DEFAULT 'each',
   transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  outlet_order_visible boolean NOT NULL DEFAULT true,
   image_url text,
   default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   active boolean NOT NULL DEFAULT true,
@@ -274,6 +277,7 @@ ALTER TABLE IF EXISTS public.catalog_variants
   ADD COLUMN IF NOT EXISTS transfer_unit text NOT NULL DEFAULT 'each',
   ADD COLUMN IF NOT EXISTS transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  ADD COLUMN IF NOT EXISTS outlet_order_visible boolean NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS image_url text,
   ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
 
@@ -681,7 +685,7 @@ BEGIN
   UPDATE public.catalog_items ci
   SET has_variations = EXISTS (
         SELECT 1 FROM public.catalog_variants v
-        WHERE v.item_id = ci.id AND v.active
+      WHERE v.item_id = ci.id AND v.active AND v.outlet_order_visible
       ),
       updated_at = now()
   WHERE ci.id = p_item_id;
@@ -721,9 +725,9 @@ AFTER INSERT OR UPDATE OR DELETE ON public.catalog_variants
 FOR EACH ROW EXECUTE FUNCTION public.catalog_variants_flag_sync();
 
 UPDATE public.catalog_items ci
-SET has_variations = EXISTS (
+  SET has_variations = EXISTS (
   SELECT 1 FROM public.catalog_variants v
-  WHERE v.item_id = ci.id AND v.active
+  WHERE v.item_id = ci.id AND v.active AND v.outlet_order_visible
 );
 
 CREATE OR REPLACE FUNCTION public.whoami_outlet()

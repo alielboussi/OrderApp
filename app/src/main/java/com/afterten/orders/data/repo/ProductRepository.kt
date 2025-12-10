@@ -43,8 +43,9 @@ class ProductRepository(
 
     suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
-            "/rest/v1/catalog_items?active=eq.true&select=" +
-                "id,sku,name,image_url,receiving_uom,consumption_uom,cost,has_variations,active,receiving_contains,default_warehouse_id",
+            "/rest/v1/catalog_items?active=eq.true&outlet_order_visible=eq.true&select=" +
+                "id,sku,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
+                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,has_variations,outlet_order_visible,active,default_warehouse_id",
             jwt
         )
         // If Supabase returns an error object, surface a friendly message instead of a JSON parse crash
@@ -56,12 +57,17 @@ class ProductRepository(
                 sku = it.sku,
                 name = it.name,
                 imageUrl = it.imageUrl,
-                uom = it.uom,
+                purchasePackUnit = it.purchasePackUnit,
                 consumptionUom = it.consumptionUom,
+                unitsPerPurchasePack = it.unitsPerPurchasePack,
+                transferUnit = it.transferUnit,
+                transferQuantity = it.transferQuantity,
+                purchaseUnitMass = it.purchaseUnitMass,
+                purchaseUnitMassUom = it.purchaseUnitMassUom,
                 cost = it.cost,
                 hasVariations = it.hasVariations,
+                outletOrderVisible = it.outletOrderVisible,
                 active = it.active,
-                packageContains = it.packageContains,
                 defaultWarehouseId = it.defaultWarehouseId
             )
         }
@@ -76,8 +82,9 @@ class ProductRepository(
 
     suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
-            "/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&select=" +
-                "id,item_id,name,image_url,receiving_uom,consumption_uom,cost,active,receiving_contains,default_warehouse_id,sku",
+            "/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&outlet_order_visible=eq.true&select=" +
+                "id,item_id,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
+                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -89,11 +96,16 @@ class ProductRepository(
                 sku = it.sku,
                 name = it.name,
                 imageUrl = it.imageUrl,
-                uom = it.uom,
+                purchasePackUnit = it.purchasePackUnit,
                 consumptionUom = it.consumptionUom,
+                unitsPerPurchasePack = it.unitsPerPurchasePack,
+                transferUnit = it.transferUnit,
+                transferQuantity = it.transferQuantity,
+                purchaseUnitMass = it.purchaseUnitMass,
+                purchaseUnitMassUom = it.purchaseUnitMassUom,
                 cost = it.cost,
                 active = it.active,
-                packageContains = it.packageContains,
+                outletOrderVisible = it.outletOrderVisible,
                 defaultWarehouseId = it.defaultWarehouseId
             )
         }
@@ -103,8 +115,9 @@ class ProductRepository(
 
     suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
-            "/rest/v1/catalog_variants?active=eq.true&select=" +
-                "id,item_id,name,image_url,receiving_uom,consumption_uom,cost,active,receiving_contains,default_warehouse_id,sku",
+            "/rest/v1/catalog_variants?active=eq.true&outlet_order_visible=eq.true&select=" +
+                "id,item_id,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
+                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -116,11 +129,16 @@ class ProductRepository(
                 sku = it.sku,
                 name = it.name,
                 imageUrl = it.imageUrl,
-                uom = it.uom,
+                purchasePackUnit = it.purchasePackUnit,
                 consumptionUom = it.consumptionUom,
+                unitsPerPurchasePack = it.unitsPerPurchasePack,
+                transferUnit = it.transferUnit,
+                transferQuantity = it.transferQuantity,
+                purchaseUnitMass = it.purchaseUnitMass,
+                purchaseUnitMassUom = it.purchaseUnitMassUom,
                 cost = it.cost,
                 active = it.active,
-                packageContains = it.packageContains,
+                outletOrderVisible = it.outletOrderVisible,
                 defaultWarehouseId = it.defaultWarehouseId
             )
         }

@@ -41,8 +41,11 @@ object RoleGuards {
     val Outlet = RoleGuard(
         id = "8cafa111-b968-455c-bf4b-7bb8577daff7",
         slug = "Outlet",
-        legacySlugs = setOf("outlet", "outlet_operator"),
-        additionalIds = setOf("fb847394-0001-408a-83cc-791652db6cee")
+        legacySlugs = setOf("outlet", "outlet_operator", "outlet_ordering"),
+        additionalIds = setOf(
+            "fb847394-0001-408a-83cc-791652db6cee",
+            "f13d4e3f-f84d-4193-924a-e2e914aff928"
+        )
     )
     val Supervisor = RoleGuard(
         id = "e6523948-4c2c-41d8-8cbc-27aca489dbcb",

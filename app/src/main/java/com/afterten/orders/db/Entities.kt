@@ -10,12 +10,17 @@ data class ProductEntity(
     val sku: String?,
     val name: String,
     val imageUrl: String?,
-    val uom: String,
+    val purchasePackUnit: String,
     val consumptionUom: String,
+    val unitsPerPurchasePack: Double,
+    val transferUnit: String,
+    val transferQuantity: Double,
+    val purchaseUnitMass: Double?,
+    val purchaseUnitMassUom: String?,
     val cost: Double,
     val hasVariations: Boolean,
+    val outletOrderVisible: Boolean,
     val active: Boolean,
-    @ColumnInfo(name = "receivingContains") val packageContains: Double,
     val defaultWarehouseId: String?
 )
 
@@ -26,11 +31,16 @@ data class VariationEntity(
     val sku: String?,
     val name: String,
     val imageUrl: String?,
-    val uom: String,
+    val purchasePackUnit: String,
     val consumptionUom: String,
+    val unitsPerPurchasePack: Double,
+    val transferUnit: String,
+    val transferQuantity: Double,
+    val purchaseUnitMass: Double?,
+    val purchaseUnitMassUom: String?,
     val cost: Double,
     val active: Boolean,
-    @ColumnInfo(name = "receivingContains") val packageContains: Double,
+    val outletOrderVisible: Boolean,
     val defaultWarehouseId: String?
 )
 
@@ -40,11 +50,11 @@ data class DraftCartItemEntity(
     val productId: String,
     val variationId: String?,
     val name: String,
-    val uom: String,
+    val purchasePackUnit: String,
     val consumptionUom: String,
     val unitPrice: Double,
     val qty: Int,
-    @ColumnInfo(name = "receivingContains") val packageContains: Double
+    val unitsPerPurchasePack: Double
 )
 
 @Entity(tableName = "pending_orders")

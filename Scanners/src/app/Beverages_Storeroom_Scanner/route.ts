@@ -2044,7 +2044,7 @@ function createHtml(config: {
 
         const { data: products, error: prodErr } = await supabase
           .from('catalog_items')
-          .select('id,name,has_variations,uom:receiving_uom,consumption_uom,sku,package_contains:receiving_contains')
+          .select('id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
           .in('id', Array.from(productIds))
           .eq('active', true)
           .order('name');
@@ -2077,7 +2077,7 @@ function createHtml(config: {
         }
         const { data, error } = await supabase
           .from('catalog_variants')
-          .select('id,product_id:item_id,name,uom:receiving_uom,consumption_uom,sku,package_contains:receiving_contains')
+          .select('id,product_id:item_id,name,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
           .in('item_id', productIds)
           .eq('default_warehouse_id', lockedSourceId)
           .eq('active', true)

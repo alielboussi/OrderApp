@@ -125,6 +125,12 @@
                     "data_type": "numeric",
                     "column_name": "transfer_quantity",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "true",
+                    "data_type": "boolean",
+                    "column_name": "outlet_order_visible",
+                    "is_nullable": "NO"
                 }
             ],
             "indexes": [
@@ -278,6 +284,12 @@
                     "default": "1",
                     "data_type": "numeric",
                     "column_name": "transfer_quantity",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "true",
+                    "data_type": "boolean",
+                    "column_name": "outlet_order_visible",
                     "is_nullable": "NO"
                 }
             ],
@@ -2430,7 +2442,7 @@
         },
         {
             "arguments": "p_item_id uuid",
-            "definition": "CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_item_id IS NULL THEN\r\n    RETURN;\r\n  END IF;\r\n  UPDATE public.catalog_items ci\r\n  SET has_variations = EXISTS (\r\n        SELECT 1 FROM public.catalog_variants v\r\n        WHERE v.item_id = ci.id AND v.active\r\n      ),\r\n      updated_at = now()\r\n  WHERE ci.id = p_item_id;\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_item_id IS NULL THEN\r\n    RETURN;\r\n  END IF;\r\n  UPDATE public.catalog_items ci\r\n  SET has_variations = EXISTS (\r\n        SELECT 1 FROM public.catalog_variants v\r\n      WHERE v.item_id = ci.id AND v.active AND v.outlet_order_visible\r\n      ),\r\n      updated_at = now()\r\n  WHERE ci.id = p_item_id;\r\nEND;\r\n$function$\n",
             "return_type": "void",
             "function_name": "refresh_catalog_has_variations"
         },

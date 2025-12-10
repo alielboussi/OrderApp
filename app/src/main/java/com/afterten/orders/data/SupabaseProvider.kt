@@ -703,11 +703,12 @@ class SupabaseProvider(context: Context) {
     data class SimpleProduct(
         val id: String,
         val name: String,
-        @SerialName("receiving_uom") val uom: String,
+        @SerialName("purchase_pack_unit") val uom: String,
         @SerialName("consumption_uom") val consumptionUom: String = "each",
         val sku: String? = null,
         @SerialName("has_variations") val hasVariations: Boolean = false,
-        @SerialName("receiving_contains") val packageContains: Double? = null
+        @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
+        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true
     )
 
     @Serializable
@@ -715,11 +716,12 @@ class SupabaseProvider(context: Context) {
         val id: String,
         @SerialName("item_id") val productId: String,
         val name: String,
-        @SerialName("receiving_uom") val uom: String,
+        @SerialName("purchase_pack_unit") val uom: String,
         @SerialName("consumption_uom") val consumptionUom: String = "each",
         val cost: Double? = null,
-        @SerialName("receiving_contains") val packageContains: Double? = null,
-        val sku: String? = null
+        @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
+        val sku: String? = null,
+        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true
     )
 
     @Serializable
@@ -1042,7 +1044,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val url = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,receiving_uom,consumption_uom,sku,has_variations,receiving_contains&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&outlet_order_visible=eq.true&select=id,name,purchase_pack_unit,consumption_uom,sku,has_variations,units_per_purchase_pack,outlet_order_visible&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1052,7 +1054,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&select=id,item_id,name,receiving_uom,consumption_uom,cost,receiving_contains,sku&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&outlet_order_visible=eq.true&select=id,item_id,name,purchase_pack_unit,consumption_uom,cost,units_per_purchase_pack,sku,outlet_order_visible&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1062,7 +1064,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listAllVariations(jwt: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/catalog_variants?active=eq.true&select=id,item_id,name,receiving_uom,consumption_uom,cost,receiving_contains,sku&order=item_id.asc,name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_variants?active=eq.true&outlet_order_visible=eq.true&select=id,item_id,name,purchase_pack_unit,consumption_uom,cost,units_per_purchase_pack,sku,outlet_order_visible&order=item_id.asc,name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")

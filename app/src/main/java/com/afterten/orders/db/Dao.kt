@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ProductDao {
-    @Query("select * from products where active = 1 order by name")
+    @Query("select * from products where active = 1 and outletOrderVisible = 1 order by name")
     fun listenProducts(): Flow<List<ProductEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -20,10 +20,10 @@ interface ProductDao {
 
 @Dao
 interface VariationDao {
-    @Query("select * from product_variations where productId = :productId and active = 1 order by name")
+    @Query("select * from product_variations where productId = :productId and active = 1 and outletOrderVisible = 1 order by name")
     fun listenByProduct(productId: String): Flow<List<VariationEntity>>
 
-    @Query("select * from product_variations where active = 1")
+    @Query("select * from product_variations where active = 1 and outletOrderVisible = 1")
     fun listenAll(): Flow<List<VariationEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

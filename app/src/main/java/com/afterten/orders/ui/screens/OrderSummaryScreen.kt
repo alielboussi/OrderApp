@@ -193,7 +193,7 @@ fun OrderSummaryScreen(
                             modifier = Modifier.weight(1f)
                         )
                         Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
-                        Text(item.uom, modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
+                        Text(item.purchasePackUnit, modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                         Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                         Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
                     }
@@ -364,7 +364,7 @@ fun OrderSummaryScreen(
                                                 PdfLine(
                                                     name = it.name,
                                                     qty = it.qty.toDouble(),
-                                                    uom = it.uom,
+                                                    uom = it.purchasePackUnit,
                                                     unitPrice = it.unitPrice
                                                 )
                                             }
@@ -400,18 +400,18 @@ fun OrderSummaryScreen(
                                     // Place order on server with employee name
                                     val itemsReq = cart.map {
                                         val qtyCases = it.qty.toDouble()
-                                        val packageContains = it.packageContains.takeIf { size -> size > 0 } ?: 1.0
-                                        val qtyUnits = qtyCases * packageContains
+                                                val unitsPerPack = it.unitsPerPurchasePack.takeIf { size -> size > 0 } ?: 1.0
+                                                val qtyUnits = qtyCases * unitsPerPack
                                         SupabaseProvider.PlaceOrderItem(
                                             productId = it.productId,
                                             variationId = it.variationId,
                                             name = it.name,
-                                            receivingUom = it.uom,
+                                                    receivingUom = it.purchasePackUnit,
                                             consumptionUom = it.consumptionUom,
                                             cost = it.unitPrice,
                                             qty = qtyUnits,
                                             qtyCases = qtyCases,
-                                            packageContains = packageContains
+                                                    packageContains = unitsPerPack
                                         )
                                     }
                                     var placedRemotely = false
