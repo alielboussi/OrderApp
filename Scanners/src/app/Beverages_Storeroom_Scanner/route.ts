@@ -3,13 +3,13 @@ import { getServiceClient } from '@/lib/supabase-server';
 
 const PROJECT_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const LOCKED_SOURCE_ID = 'e028dee8-28ca-42b8-978f-4d4e41c22540';
+const LOCKED_SOURCE_ID = 'f71a25d0-9ec2-454d-a606-93cfaa3c606b';
 const DESTINATION_CHOICES = [
-  { id: '0c2fd4c2-ffdd-4f35-a51e-c88c94b759ed', label: 'Till 1 & Till 2 Fridges' },
-  { id: '331b436a-ae04-4b7f-a7ee-f8d653f9914e', label: 'Quick Corner Fridges' }
+  { id: 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15', label: 'Primary Destination' },
+  { id: 'f6ef00d4-ee56-4d4a-87e3-392b6509c673', label: 'Secondary Destination' }
 ] as const;
-const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '0c2fd4c2-ffdd-4f35-a51e-c88c94b759ed';
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_current';
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15';
+const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
 const MULTIPLY_QTY_BY_PACKAGE = false;
 const OPERATOR_SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
 const OPERATOR_CONTEXT_LABELS = {
@@ -1378,8 +1378,8 @@ function createHtml(config: {
   <div id="operator-passcode-modal" aria-hidden="true">
     <form id="operator-passcode-form">
       <h3 id="operator-modal-title">Unlock Console</h3>
-      <p id="operator-modal-context">Provide passcode to continue.</p>
-      <input type="password" id="operator-passcode-input" placeholder="Scan or type passcode" autocomplete="one-time-code" inputmode="numeric" />
+      <p id="operator-modal-context">Scan or type the operator password to continue.</p>
+      <input type="password" id="operator-passcode-input" placeholder="Scan or type password" autocomplete="current-password" />
       <p id="operator-modal-error" class="operator-modal-error"></p>
       <div class="operator-modal-actions">
         <button type="button" id="operator-modal-cancel">Cancel</button>
@@ -1411,7 +1411,7 @@ function createHtml(config: {
                 <option value="">Select operator</option>
               </select>
             </label>
-            <p class="operator-auth-hint">Unlock purchases with the assigned passcode. Sessions auto-expire after 20 minutes.</p>
+            <p class="operator-auth-hint">Unlock purchases with the assigned Supabase password. Sessions auto-expire after 20 minutes.</p>
           </section>
           <h3>Purchase Intake</h3>
           <div class="purchase-grid">
@@ -1621,6 +1621,7 @@ function createHtml(config: {
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
   <script>
+    (function () {
     const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
@@ -1628,17 +1629,64 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
-    const REQUIRED_ROLE = 'transfers';
-    const REQUIRED_ROLE_ID = '89147a54-507d-420b-86b4-2089d64faecd';
+    const SESSION_STORAGE_KEY = 'beverage-kiosk-session-v2';
+    const PASSWORD_STORAGE_KEY = 'beverage-password-verifier-v2';
+    const REQUIRED_ROLE = 'supervisor';
+    const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
-    const ALLOWED_ROLE_SLUGS = ['transfers', 'admin'];
-    const REQUIRED_ROLE_LABEL = 'Transfers';
+    const ALLOWED_ROLE_SLUGS = ['supervisor', 'administrator'];
+    const REQUIRED_ROLE_LABEL = 'Supervisor';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
-      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { detectSessionInUrl: true, persistSession: true }
+      if (window.__beverageAppInitialized) {
+        console.debug('Beverage scanner already initialized; skipping duplicate bootstrap');
+        return;
+      }
+      window.__beverageAppInitialized = true;
+      const supabaseClients = (window.__supabaseClients = window.__supabaseClients || {});
+      const supabaseClientCache = (window.__supabaseClientCache = window.__supabaseClientCache || {});
+
+      (function patchConsoleWarnOnce() {
+        if (window.__supabaseWarnPatched) return;
+        window.__supabaseWarnPatched = true;
+        const originalWarn = console.warn.bind(console);
+        console.warn = (...args) => {
+          const msg = typeof args[0] === 'string' ? args[0] : '';
+          if (msg.includes('Multiple GoTrueClient instances detected')) return;
+          originalWarn(...args);
+        };
+      })();
+
+      function getSupabaseClient(cacheKey, options) {
+        if (supabaseClientCache[cacheKey]) return supabaseClientCache[cacheKey];
+        const GoTrue = window.supabase?.GoTrueClient;
+        if (GoTrue?.nextInstanceID && Object.prototype.hasOwnProperty.call(GoTrue.nextInstanceID, cacheKey)) {
+          delete GoTrue.nextInstanceID[cacheKey];
+        }
+        const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, options);
+        supabaseClientCache[cacheKey] = client;
+        return client;
+      }
+
+      const supabase = supabaseClients.beverageSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
+        auth: {
+          detectSessionInUrl: true,
+          persistSession: true,
+          storageKey: SESSION_STORAGE_KEY
+        }
       });
+      supabaseClients.beverageSession = supabase;
+
+      const passwordVerifier = supabaseClients.beveragePassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
+        auth: {
+          detectSessionInUrl: false,
+          persistSession: false,
+          autoRefreshToken: false,
+          storageKey: PASSWORD_STORAGE_KEY
+        }
+      });
+      supabaseClients.beveragePassword = passwordVerifier;
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -1808,7 +1856,7 @@ function createHtml(config: {
       const operatorModalForm = document.getElementById('operator-passcode-form');
       const operatorModalTitle = document.getElementById('operator-modal-title');
       const operatorModalContext = document.getElementById('operator-modal-context');
-      const operatorPasscodeInput = document.getElementById('operator-passcode-input');
+      const operatorPasswordInput = document.getElementById('operator-passcode-input');
       const operatorModalError = document.getElementById('operator-modal-error');
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
 
@@ -1908,7 +1956,7 @@ function createHtml(config: {
       const SCAN_FLUSH_DELAY_MS = 90;
       let referenceNumpadHideTimeoutId = null;
       let damageKeyboardSuppressed = false;
-      let operatorPasscodeAutoSubmitTimeoutId = null;
+      let operatorPasswordAutoSubmitTimeoutId = null;
 
       const cartElements = {
         transfer: {
@@ -2006,7 +2054,7 @@ function createHtml(config: {
         }
 
         const [stockResult, productDefaultsResult, variationDefaultsResult] = await Promise.all([
-          supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id').in('warehouse_id', warehouseIds),
+          supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
           supabase
             .from('catalog_items')
             .select('id')
@@ -2107,7 +2155,7 @@ function createHtml(config: {
       function shouldHoldScannerFocus(element) {
         const active = element instanceof HTMLElement ? element : document.activeElement;
         if (!active || active === document.body) return false;
-        if (active === operatorPasscodeInput) return true;
+        if (active === operatorPasswordInput) return true;
         if (active === purchaseReference) return true;
         if (active === damageNote) return true;
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
@@ -2530,15 +2578,15 @@ function createHtml(config: {
       function openOperatorModal(context, operator) {
         if (!operatorModal || !operatorModalForm) return;
         operatorModalTitle.textContent = 'Unlock ' + formatOperatorLabel(context);
-        operatorModalContext.textContent = 'Scan passcode for ' + operator.displayName + '.';
-        operatorPasscodeInput.value = '';
+        operatorModalContext.textContent = 'Scan password for ' + operator.displayName + '.';
+        operatorPasswordInput.value = '';
         operatorModalError.textContent = '';
-        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
         state.operatorUnlocking = false;
         state.pendingOperatorSelection = { context, operator };
         operatorModal.classList.add('active');
         operatorModal.setAttribute('aria-hidden', 'false');
-        window.setTimeout(() => operatorPasscodeInput?.focus(), 10);
+        window.setTimeout(() => operatorPasswordInput?.focus(), 10);
       }
 
       function closeOperatorModal() {
@@ -2549,9 +2597,9 @@ function createHtml(config: {
         }
         operatorModal.classList.remove('active');
         operatorModal.setAttribute('aria-hidden', 'true');
-        operatorPasscodeInput.value = '';
+        operatorPasswordInput.value = '';
         operatorModalError.textContent = '';
-        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
         state.operatorUnlocking = false;
         state.pendingOperatorSelection = null;
         focusActiveScanner();
@@ -2572,21 +2620,21 @@ function createHtml(config: {
         const { silentMissing = false } = options;
         if (!state.pendingOperatorSelection || state.operatorUnlocking) return;
         const pending = state.pendingOperatorSelection;
-        const passcode = operatorPasscodeInput?.value?.trim();
-        if (!passcode) {
+        const password = operatorPasswordInput?.value?.trim();
+        if (!password) {
           if (!silentMissing) {
-            operatorModalError.textContent = 'Passcode required.';
-            operatorPasscodeInput?.focus();
+            operatorModalError.textContent = 'Password required.';
+            operatorPasswordInput?.focus();
           }
           return;
         }
         state.operatorUnlocking = true;
         operatorModalError.textContent = '';
         try {
-          const isValid = await verifyOperatorPasscode(pending.operator.id, passcode);
+          const isValid = await verifyOperatorPassword(pending.operator, password);
           if (!isValid) {
-            operatorModalError.textContent = 'Passcode incorrect.';
-            operatorPasscodeInput?.select();
+            operatorModalError.textContent = 'Password incorrect.';
+            operatorPasswordInput?.select();
             state.operatorUnlocking = false;
             return;
           }
@@ -2594,17 +2642,17 @@ function createHtml(config: {
           closeOperatorModal();
           showResult(formatOperatorLabel(pending.context) + ' unlocked by ' + pending.operator.displayName + '.', false);
         } catch (error) {
-          operatorModalError.textContent = error.message ?? 'Unable to verify passcode.';
+          operatorModalError.textContent = error.message ?? 'Unable to verify password.';
         } finally {
           state.operatorUnlocking = false;
         }
       }
 
       function queueOperatorAutoUnlock() {
-        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
-        const value = operatorPasscodeInput?.value?.trim();
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
+        const value = operatorPasswordInput?.value?.trim();
         if (!value) return;
-        operatorPasscodeAutoSubmitTimeoutId = window.setTimeout(() => {
+        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
           submitOperatorUnlock({ silentMissing: true });
         }, 200);
       }
@@ -2623,15 +2671,22 @@ function createHtml(config: {
         openOperatorModal(context, operator);
       }
 
-      async function verifyOperatorPasscode(operatorId, passcode) {
-        const { data, error } = await supabase.rpc('verify_console_operator_passcode', {
-          p_operator_id: operatorId,
-          p_passcode: passcode
+      async function verifyOperatorPassword(operator, password) {
+        if (!operator?.email) {
+          throw new Error('Operator email missing. Ask an administrator to update the directory.');
+        }
+        const { data, error } = await passwordVerifier.auth.signInWithPassword({
+          email: operator.email,
+          password
         });
         if (error) {
           throw new Error(error.message ?? 'Verification failed');
         }
-        return data === true;
+        await passwordVerifier.auth.signOut().catch(() => undefined);
+        if (data?.session?.user?.id !== operator.authUserId) {
+          throw new Error('Operator profile mismatch. Contact an administrator.');
+        }
+        return true;
       }
 
 
@@ -3260,17 +3315,47 @@ function createHtml(config: {
       }
 
       async function fetchOperators() {
-        try {
-          const { data, error } = await supabase.rpc('console_operator_directory');
-          if (error) throw error;
-          const list = Array.isArray(data) ? data : [];
-          state.operators = list
+        const normalizeOperators = (input) =>
+          (Array.isArray(input) ? input : [])
             .map((entry) => ({
               id: entry?.id,
               displayName: entry?.display_name ?? entry?.name ?? 'Operator',
-              authUserId: entry?.auth_user_id ?? null
+              authUserId: entry?.auth_user_id ?? null,
+              email: entry?.email ?? null
             }))
             .filter((entry) => entry.id);
+
+        const loadViaRpc = async () => {
+          const { data, error } = await supabase.rpc('console_operator_directory');
+          if (error) {
+            throw error;
+          }
+          return data;
+        };
+
+        const loadViaOperatorApi = async () => {
+          const response = await fetch('/api/operators', {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+            credentials: 'same-origin'
+          });
+          if (!response.ok) {
+            throw new Error('operators api failed with status ' + response.status);
+          }
+          const payload = await response.json();
+          return payload?.operators ?? [];
+        };
+
+        try {
+          let rawList = [];
+          try {
+            rawList = await loadViaRpc();
+          } catch (rpcError) {
+            console.warn('console_operator_directory rpc failed, attempting operator API fallback', rpcError);
+            rawList = await loadViaOperatorApi();
+          }
+          state.operators = normalizeOperators(rawList);
           renderOperatorOptions();
         } catch (error) {
           console.warn('Failed to load operator directory', error);
@@ -4198,12 +4283,12 @@ function createHtml(config: {
         submitOperatorUnlock();
       });
 
-      operatorPasscodeInput?.addEventListener('input', () => {
+      operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
         queueOperatorAutoUnlock();
       });
 
-      operatorPasscodeInput?.addEventListener('keydown', (event) => {
+      operatorPasswordInput?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
           submitOperatorUnlock();
@@ -4246,6 +4331,7 @@ function createHtml(config: {
       damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
     }
+    })();
   </script>
 </body>
 </html>`;

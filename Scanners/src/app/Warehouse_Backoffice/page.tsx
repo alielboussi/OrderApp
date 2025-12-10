@@ -12,6 +12,22 @@ const actionCards = [
     path: "/Warehouse_Backoffice/transfers",
     status: "live" as const,
   },
+  {
+    title: "Warehouse Damages",
+    body: "Audit all damage deductions.",
+    cta: "View Damages",
+    accent: "#f97316",
+    path: "/Warehouse_Backoffice/damages",
+    status: "live" as const,
+  },
+  {
+    title: "Warehouse Purchases",
+    body: "Review received purchase receipts.",
+    cta: "View Purchases",
+    accent: "#22c55e",
+    path: "/Warehouse_Backoffice/purchases",
+    status: "live" as const,
+  },
 ];
 
 export default function WarehouseBackofficeDashboard() {

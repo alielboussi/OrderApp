@@ -3,14 +3,13 @@ import { getServiceClient } from '@/lib/supabase-server';
 
 const PROJECT_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const LOCKED_SOURCE_ID = '09e0898f-359d-4373-a1ab-d9ba8be5b35b';
+const LOCKED_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const DESTINATION_CHOICES = [
-  { id: '2a82c629-fdf8-487b-a473-699b88c1e18f', label: 'Accountant Offices' },
-  { id: '9a12caa0-c116-4137-8ea5-74bb0de77fae', label: 'Kitchen' },
-  { id: 'a9e27d38-7a24-4474-96cd-840e8cff33f5', label: 'Food Preparation Area' }
+  { id: 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15', label: 'Primary Destination' },
+  { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' }
 ] as const;
-const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '2a82c629-fdf8-487b-a473-699b88c1e18f';
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_current';
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15';
+const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
 const MULTIPLY_QTY_BY_PACKAGE = true;
 const OPERATOR_SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
 const OPERATOR_CONTEXT_LABELS = {
@@ -1307,7 +1306,7 @@ function createHtml(config: {
                 <option value="">Select operator</option>
               </select>
             </label>
-            <p class="operator-auth-hint">Transfers stay locked until a valid operator signs in. Sessions auto-expire after 20 minutes.</p>
+            <p class="operator-auth-hint">Transfers stay locked until an operator scans their Supabase password. Sessions auto-expire after 20 minutes.</p>
           </section>
           <section id="cart-section">
             <div class="cart-head">
@@ -1379,8 +1378,8 @@ function createHtml(config: {
   <div id="operator-passcode-modal" aria-hidden="true">
     <form id="operator-passcode-form">
       <h3 id="operator-modal-title">Unlock Console</h3>
-      <p id="operator-modal-context">Provide passcode to continue.</p>
-      <input type="password" id="operator-passcode-input" placeholder="Scan or type passcode" autocomplete="one-time-code" inputmode="numeric" />
+      <p id="operator-modal-context">Scan or type the operator password to continue.</p>
+      <input type="password" id="operator-passcode-input" placeholder="Scan or type password" autocomplete="current-password" />
       <p id="operator-modal-error" class="operator-modal-error"></p>
       <div class="operator-modal-actions">
         <button type="button" id="operator-modal-cancel">Cancel</button>
@@ -1412,7 +1411,7 @@ function createHtml(config: {
                 <option value="">Select operator</option>
               </select>
             </label>
-            <p class="operator-auth-hint">Unlock purchases with the assigned passcode. Sessions auto-expire after 20 minutes.</p>
+            <p class="operator-auth-hint">Unlock purchases with your Supabase password. Sessions auto-expire after 20 minutes.</p>
           </section>
           <h3>Purchase Intake</h3>
           <div class="purchase-grid">
@@ -1539,7 +1538,7 @@ function createHtml(config: {
                 <option value="">Select operator</option>
               </select>
             </label>
-            <p class="operator-auth-hint">Damages stay locked until an operator signs in. Auto-lock after 20 minutes.</p>
+            <p class="operator-auth-hint">Damages stay locked until an operator scans their Supabase password. Auto-lock after 20 minutes.</p>
           </section>
           <h3>Log Damages</h3>
           <div class="cart-head">
@@ -1622,6 +1621,7 @@ function createHtml(config: {
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
   <script>
+    (function () {
     const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
@@ -1629,17 +1629,67 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
-    const REQUIRED_ROLE = 'transfers';
-    const REQUIRED_ROLE_ID = '89147a54-507d-420b-86b4-2089d64faecd';
+    const SESSION_STORAGE_KEY = 'mw-kiosk-session-v2';
+    const PASSWORD_STORAGE_KEY = 'mw-password-verifier-v2';
+    const REQUIRED_ROLE = 'supervisor';
+    const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
-    const ALLOWED_ROLE_SLUGS = ['transfers', 'admin'];
-    const REQUIRED_ROLE_LABEL = 'Transfers';
+    const ALLOWED_ROLE_SLUGS = ['supervisor', 'administrator'];
+    const REQUIRED_ROLE_LABEL = 'Supervisor';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
-      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { detectSessionInUrl: true, persistSession: true }
+      if (window.__mwAppInitialized) {
+        console.debug('Main warehouse scanner already initialized; skipping duplicate bootstrap');
+        return;
+      }
+      window.__mwAppInitialized = true;
+      const supabaseClients = (window.__supabaseClients = window.__supabaseClients || {});
+      const supabaseClientCache = (window.__supabaseClientCache = window.__supabaseClientCache || {});
+
+      // Suppress the noisy multi-instance warning; we already guard with a shared cache per storage key.
+      (function patchConsoleWarnOnce() {
+        if (window.__supabaseWarnPatched) return;
+        window.__supabaseWarnPatched = true;
+        const originalWarn = console.warn.bind(console);
+        console.warn = (...args) => {
+          const msg = typeof args[0] === 'string' ? args[0] : '';
+          if (msg.includes('Multiple GoTrueClient instances detected')) return;
+          originalWarn(...args);
+        };
+      })();
+
+      function getSupabaseClient(cacheKey, options) {
+        if (supabaseClientCache[cacheKey]) return supabaseClientCache[cacheKey];
+        // Reset GoTrueClient instance counter for this storage key to suppress duplicate warnings when
+        // the page is hot-reloaded or the script executes twice in dev tooling.
+        const GoTrue = window.supabase?.GoTrueClient;
+        if (GoTrue?.nextInstanceID && Object.prototype.hasOwnProperty.call(GoTrue.nextInstanceID, cacheKey)) {
+          delete GoTrue.nextInstanceID[cacheKey];
+        }
+        const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, options);
+        supabaseClientCache[cacheKey] = client;
+        return client;
+      }
+
+      const supabase = supabaseClients.mwSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
+        auth: {
+          detectSessionInUrl: true,
+          persistSession: true,
+          storageKey: SESSION_STORAGE_KEY
+        }
       });
+      supabaseClients.mwSession = supabase;
+
+      const passwordVerifier = supabaseClients.mwPassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
+        auth: {
+          detectSessionInUrl: false,
+          persistSession: false,
+          autoRefreshToken: false,
+          storageKey: PASSWORD_STORAGE_KEY
+        }
+      });
+      supabaseClients.mwPassword = passwordVerifier;
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -1685,7 +1735,8 @@ function createHtml(config: {
           damage: null
         },
         pendingOperatorSelection: null,
-        operatorUnlocking: false
+        operatorUnlocking: false,
+        supplierDirectoryDisabled: false
       };
 
       state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
@@ -1809,7 +1860,7 @@ function createHtml(config: {
       const operatorModalForm = document.getElementById('operator-passcode-form');
       const operatorModalTitle = document.getElementById('operator-modal-title');
       const operatorModalContext = document.getElementById('operator-modal-context');
-      const operatorPasscodeInput = document.getElementById('operator-passcode-input');
+      const operatorPasswordInput = document.getElementById('operator-passcode-input');
       const operatorModalError = document.getElementById('operator-modal-error');
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
 
@@ -1909,7 +1960,7 @@ function createHtml(config: {
       const SCAN_FLUSH_DELAY_MS = 90;
       let referenceNumpadHideTimeoutId = null;
       let damageKeyboardSuppressed = false;
-      let operatorPasscodeAutoSubmitTimeoutId = null;
+      let operatorPasswordAutoSubmitTimeoutId = null;
 
       const cartElements = {
         transfer: {
@@ -2006,36 +2057,40 @@ function createHtml(config: {
           return [];
         }
 
-        const [stockResult, productDefaultsResult, variationDefaultsResult] = await Promise.all([
-          supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id').in('warehouse_id', warehouseIds),
+        const [stockResult, lockedItemsResult, lockedVariantsResult] = await Promise.all([
+          supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
           supabase
             .from('catalog_items')
             .select('id')
-            .eq('default_warehouse_id', lockedSourceId)
+            .eq('locked_from_warehouse_id', lockedSourceId)
             .eq('active', true),
           supabase
             .from('catalog_variants')
             .select('product_id:item_id')
-            .eq('default_warehouse_id', lockedSourceId)
+            .eq('locked_from_warehouse_id', lockedSourceId)
             .eq('active', true)
         ]);
 
         if (stockResult.error) throw stockResult.error;
-        if (productDefaultsResult.error) throw productDefaultsResult.error;
-        if (variationDefaultsResult.error) throw variationDefaultsResult.error;
+        if (lockedItemsResult.error) throw lockedItemsResult.error;
+        if (lockedVariantsResult.error) throw lockedVariantsResult.error;
 
-        const productIds = new Set();
-        (stockResult.data ?? []).forEach((row) => {
-          if (row?.product_id) productIds.add(row.product_id);
+        const lockedProductIds = new Set();
+        (lockedItemsResult.data ?? []).forEach((row) => {
+          if (row?.id) lockedProductIds.add(row.id);
         });
-        (productDefaultsResult.data ?? []).forEach((row) => {
-          if (row?.id) productIds.add(row.id);
-        });
+
+        const productIds = new Set(lockedProductIds);
         const productsWithWarehouseVariations = new Set();
-        (variationDefaultsResult.data ?? []).forEach((row) => {
-          if (row?.product_id) {
+        (lockedVariantsResult.data ?? []).forEach((row) => {
+          if (!row?.product_id) return;
+          lockedProductIds.add(row.product_id);
+          productIds.add(row.product_id);
+          productsWithWarehouseVariations.add(row.product_id);
+        });
+        (stockResult.data ?? []).forEach((row) => {
+          if (row?.product_id && lockedProductIds.has(row.product_id)) {
             productIds.add(row.product_id);
-            productsWithWarehouseVariations.add(row.product_id);
           }
         });
 
@@ -2047,6 +2102,7 @@ function createHtml(config: {
           .from('catalog_items')
           .select('id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
           .in('id', Array.from(productIds))
+          .eq('locked_from_warehouse_id', lockedSourceId)
           .eq('active', true)
           .order('name');
         if (prodErr) throw prodErr;
@@ -2080,7 +2136,7 @@ function createHtml(config: {
           .from('catalog_variants')
           .select('id,product_id:item_id,name,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
           .in('item_id', productIds)
-          .eq('default_warehouse_id', lockedSourceId)
+          .eq('locked_from_warehouse_id', lockedSourceId)
           .eq('active', true)
           .order('name');
         if (error) throw error;
@@ -2108,7 +2164,7 @@ function createHtml(config: {
       function shouldHoldScannerFocus(element) {
         const active = element instanceof HTMLElement ? element : document.activeElement;
         if (!active || active === document.body) return false;
-        if (active === operatorPasscodeInput) return true;
+        if (active === operatorPasswordInput) return true;
         if (active === purchaseReference) return true;
         if (active === damageNote) return true;
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
@@ -2531,15 +2587,15 @@ function createHtml(config: {
       function openOperatorModal(context, operator) {
         if (!operatorModal || !operatorModalForm) return;
         operatorModalTitle.textContent = 'Unlock ' + formatOperatorLabel(context);
-        operatorModalContext.textContent = 'Scan passcode for ' + operator.displayName + '.';
-        operatorPasscodeInput.value = '';
+        operatorModalContext.textContent = 'Scan password for ' + operator.displayName + '.';
+        operatorPasswordInput.value = '';
         operatorModalError.textContent = '';
-        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
         state.operatorUnlocking = false;
         state.pendingOperatorSelection = { context, operator };
         operatorModal.classList.add('active');
         operatorModal.setAttribute('aria-hidden', 'false');
-        window.setTimeout(() => operatorPasscodeInput?.focus(), 10);
+        window.setTimeout(() => operatorPasswordInput?.focus(), 10);
       }
 
       function closeOperatorModal() {
@@ -2550,9 +2606,9 @@ function createHtml(config: {
         }
         operatorModal.classList.remove('active');
         operatorModal.setAttribute('aria-hidden', 'true');
-        operatorPasscodeInput.value = '';
+        operatorPasswordInput.value = '';
         operatorModalError.textContent = '';
-        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
         state.operatorUnlocking = false;
         state.pendingOperatorSelection = null;
         focusActiveScanner();
@@ -2573,21 +2629,21 @@ function createHtml(config: {
         const { silentMissing = false } = options;
         if (!state.pendingOperatorSelection || state.operatorUnlocking) return;
         const pending = state.pendingOperatorSelection;
-        const passcode = operatorPasscodeInput?.value?.trim();
-        if (!passcode) {
+        const password = operatorPasswordInput?.value?.trim();
+        if (!password) {
           if (!silentMissing) {
-            operatorModalError.textContent = 'Passcode required.';
-            operatorPasscodeInput?.focus();
+            operatorModalError.textContent = 'Password required.';
+            operatorPasswordInput?.focus();
           }
           return;
         }
         state.operatorUnlocking = true;
         operatorModalError.textContent = '';
         try {
-          const isValid = await verifyOperatorPasscode(pending.operator.id, passcode);
+          const isValid = await verifyOperatorPassword(pending.operator, password);
           if (!isValid) {
-            operatorModalError.textContent = 'Passcode incorrect.';
-            operatorPasscodeInput?.select();
+            operatorModalError.textContent = 'Password incorrect.';
+            operatorPasswordInput?.select();
             state.operatorUnlocking = false;
             return;
           }
@@ -2595,17 +2651,17 @@ function createHtml(config: {
           closeOperatorModal();
           showResult(formatOperatorLabel(pending.context) + ' unlocked by ' + pending.operator.displayName + '.', false);
         } catch (error) {
-          operatorModalError.textContent = error.message ?? 'Unable to verify passcode.';
+          operatorModalError.textContent = error.message ?? 'Unable to verify password.';
         } finally {
           state.operatorUnlocking = false;
         }
       }
 
       function queueOperatorAutoUnlock() {
-        window.clearTimeout(operatorPasscodeAutoSubmitTimeoutId);
-        const value = operatorPasscodeInput?.value?.trim();
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
+        const value = operatorPasswordInput?.value?.trim();
         if (!value) return;
-        operatorPasscodeAutoSubmitTimeoutId = window.setTimeout(() => {
+        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
           submitOperatorUnlock({ silentMissing: true });
         }, 200);
       }
@@ -2623,16 +2679,22 @@ function createHtml(config: {
         }
         openOperatorModal(context, operator);
       }
-
-      async function verifyOperatorPasscode(operatorId, passcode) {
-        const { data, error } = await supabase.rpc('verify_console_operator_passcode', {
-          p_operator_id: operatorId,
-          p_passcode: passcode
+      async function verifyOperatorPassword(operator, password) {
+        if (!operator?.email) {
+          throw new Error('Operator email missing. Ask an administrator to update the directory.');
+        }
+        const { data, error } = await passwordVerifier.auth.signInWithPassword({
+          email: operator.email,
+          password
         });
         if (error) {
           throw new Error(error.message ?? 'Verification failed');
         }
-        return data === true;
+        await passwordVerifier.auth.signOut().catch(() => undefined);
+        if (data?.session?.user?.id !== operator.authUserId) {
+          throw new Error('Operator profile mismatch. Contact an administrator.');
+        }
+        return true;
       }
 
 
@@ -2641,9 +2703,13 @@ function createHtml(config: {
         purchaseSupplier.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = state.suppliers.length ? 'Select supplier' : 'No active suppliers';
+        placeholder.textContent = state.suppliers.length
+          ? 'Select supplier'
+          : state.supplierDirectoryDisabled
+            ? 'Supplier directory unavailable'
+            : 'No active suppliers';
         purchaseSupplier.appendChild(placeholder);
-        if (!state.suppliers.length) {
+        if (!state.suppliers.length || state.supplierDirectoryDisabled) {
           purchaseSupplier.disabled = true;
           state.purchaseForm.supplierId = '';
           purchaseSupplier.value = '';
@@ -3236,42 +3302,122 @@ function createHtml(config: {
       }
 
       async function fetchWarehousesMetadata() {
-        const params = new URLSearchParams();
-        const metadataIds = new Set();
-        if (lockedSourceId) metadataIds.add(lockedSourceId);
-        (DESTINATION_CHOICES || []).forEach((choice) => {
-          if (choice?.id) metadataIds.add(choice.id);
-        });
-        if (lockedDestId) metadataIds.add(lockedDestId);
-        metadataIds.forEach((id) => {
-          if (id) params.append('locked_id', id);
-        });
-        const response = await fetch('/api/warehouses?' + params.toString(), {
-          credentials: 'same-origin',
-          headers: { Accept: 'application/json' },
-          cache: 'no-store'
-        });
-        if (!response.ok) {
-          const detail = await response.text().catch(() => '');
-          throw new Error(detail || 'Failed to load warehouse metadata.');
+        const destinationIds = Array.isArray(DESTINATION_CHOICES)
+          ? DESTINATION_CHOICES.map((choice) => (choice && typeof choice.id === 'string' ? choice.id : null)).filter(Boolean)
+          : [];
+        const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
+
+        const loadViaRpc = async () => {
+          const { data, error } = await supabase.rpc('console_locked_warehouses', {
+            p_include_inactive: false,
+            p_locked_ids: lockedIds.length ? lockedIds : null
+          });
+          if (error) throw error;
+          return Array.isArray(data) ? data : [];
+        };
+
+        const loadViaServiceApi = async () => {
+          const params = new URLSearchParams();
+          if (lockedIds.length) {
+            lockedIds.forEach((id) => params.append('locked_id', id));
+          }
+          params.set('include_inactive', '0');
+          const query = params.toString();
+          const querySuffix = query ? '?' + query : '';
+          const response = await fetch('/api/warehouses' + querySuffix, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+            credentials: 'same-origin'
+          });
+          if (!response.ok) {
+            throw new Error('warehouses api failed with status ' + response.status);
+          }
+          const payload = await response.json();
+          const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
+          return list.map((record) => ({
+            id: record?.id,
+            name: record?.name,
+            parent_warehouse_id: record?.parent_warehouse_id,
+            kind: record?.kind,
+            active: record?.active
+          }));
+        };
+
+        const loadViaTable = async () => {
+          const selectColumns = 'id,name,parent_warehouse_id,kind';
+          const { data, error } = await supabase
+            .from('warehouses')
+            .select(selectColumns)
+            .order('name');
+          if (error) throw error;
+          const rows = (Array.isArray(data) ? data : []).map((row) => ({ ...row, active: row?.active ?? true }));
+          if (!lockedIds.length) return rows;
+          const missingIds = lockedIds.filter((id) => id && !rows.some((row) => row?.id === id));
+          if (!missingIds.length) return rows;
+          const { data: lockedRows, error: lockedErr } = await supabase
+            .from('warehouses')
+            .select(selectColumns)
+            .in('id', missingIds);
+          if (lockedErr) throw lockedErr;
+          const hydratedLockedRows = (Array.isArray(lockedRows) ? lockedRows : []).map((row) => ({ ...row, active: row?.active ?? true }));
+          return rows.concat(hydratedLockedRows);
+        };
+
+        try {
+          return await loadViaRpc();
+        } catch (error) {
+          console.warn('console_locked_warehouses rpc failed, attempting service API fallback', error);
+          try {
+            return await loadViaServiceApi();
+          } catch (apiError) {
+            console.warn('warehouses API fallback failed, falling back to direct table', apiError);
+            return await loadViaTable();
+          }
         }
-        const payload = await response.json().catch(() => ({}));
-        const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
-        return list;
       }
 
       async function fetchOperators() {
-        try {
-          const { data, error } = await supabase.rpc('console_operator_directory');
-          if (error) throw error;
-          const list = Array.isArray(data) ? data : [];
-          state.operators = list
+        const normalizeOperators = (input) =>
+          (Array.isArray(input) ? input : [])
             .map((entry) => ({
               id: entry?.id,
               displayName: entry?.display_name ?? entry?.name ?? 'Operator',
               authUserId: entry?.auth_user_id ?? null
             }))
             .filter((entry) => entry.id);
+
+        const loadViaRpc = async () => {
+          const { data, error } = await supabase.rpc('console_operator_directory');
+          if (error) {
+            throw error;
+          }
+          return data;
+        };
+
+        const loadViaOperatorApi = async () => {
+          const response = await fetch('/api/operators', {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+            credentials: 'same-origin'
+          });
+          if (!response.ok) {
+            throw new Error('operators api failed with status ' + response.status);
+          }
+          const payload = await response.json();
+          return payload?.operators ?? [];
+        };
+
+        try {
+          let rawList = [];
+          try {
+            rawList = await loadViaRpc();
+          } catch (rpcError) {
+            console.warn('console_operator_directory rpc failed, attempting operator API fallback', rpcError);
+            rawList = await loadViaOperatorApi();
+          }
+          state.operators = normalizeOperators(rawList);
           renderOperatorOptions();
         } catch (error) {
           console.warn('Failed to load operator directory', error);
@@ -3281,7 +3427,36 @@ function createHtml(config: {
         }
       }
 
+      function isMissingSupplierDirectoryError(error) {
+        if (!error) return false;
+        const code = typeof error.code === 'string' ? error.code : '';
+        const message = String(error.message ?? error.details ?? '').toLowerCase();
+        if (code === 'PGRST202') {
+          return true;
+        }
+        return (
+          message.includes('suppliers_for_warehouse') ||
+          message.includes('product_supplier_links') ||
+          message.includes('suppliers')
+        );
+      }
+
+      function disableSupplierDirectory(reason) {
+        if (!state.supplierDirectoryDisabled) {
+          state.supplierDirectoryDisabled = true;
+          console.warn('Supplier directory disabled. Schema objects missing.', reason);
+          showResult('Supplier directory unavailable until the schema syncs. Transfers remain available.', true);
+        }
+        state.suppliers = [];
+        renderSupplierOptions();
+      }
+
       async function fetchSuppliers() {
+        if (state.supplierDirectoryDisabled) {
+          renderSupplierOptions();
+          return;
+        }
+
         const loadViaRpc = async (warehouseId) => {
           if (!warehouseId) return [];
           const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
@@ -3332,6 +3507,10 @@ function createHtml(config: {
         try {
           list = await loadViaRpc(lockedSourceId);
         } catch (error) {
+          if (isMissingSupplierDirectoryError(error)) {
+            disableSupplierDirectory(error);
+            return;
+          }
           lastError = error;
           console.warn('Primary supplier fetch failed, attempting link-table fallback', error);
         }
@@ -3340,6 +3519,10 @@ function createHtml(config: {
           try {
             list = await loadViaLinkTable(lockedSourceId);
           } catch (error) {
+            if (isMissingSupplierDirectoryError(error)) {
+              disableSupplierDirectory(error);
+              return;
+            }
             lastError = error;
             console.warn('Link-table supplier fetch failed, attempting all active suppliers', error);
           }
@@ -3349,6 +3532,10 @@ function createHtml(config: {
           try {
             list = await loadAllSuppliers();
           } catch (error) {
+            if (isMissingSupplierDirectoryError(error)) {
+              disableSupplierDirectory(error);
+              return;
+            }
             lastError = error;
             console.warn('All-suppliers fetch failed', error);
           }
@@ -3358,6 +3545,10 @@ function createHtml(config: {
         renderSupplierOptions();
 
         if (!state.suppliers.length && lastError) {
+          if (isMissingSupplierDirectoryError(lastError)) {
+            disableSupplierDirectory(lastError);
+            return;
+          }
           throw lastError;
         }
       }
@@ -4199,12 +4390,12 @@ function createHtml(config: {
         submitOperatorUnlock();
       });
 
-      operatorPasscodeInput?.addEventListener('input', () => {
+      operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
         queueOperatorAutoUnlock();
       });
 
-      operatorPasscodeInput?.addEventListener('keydown', (event) => {
+      operatorPasswordInput?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
           submitOperatorUnlock();
@@ -4247,6 +4438,7 @@ function createHtml(config: {
       damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
     }
+    })();
   </script>
 </body>
 </html>`;

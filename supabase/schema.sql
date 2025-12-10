@@ -37,6 +37,9 @@ BEGIN
     ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'order_fulfillment';
     ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'outlet_sale';
     ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'recipe_consumption';
+    ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'warehouse_transfer';
+    ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'damage';
+    ALTER TYPE public.stock_reason ADD VALUE IF NOT EXISTS 'purchase_receipt';
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
@@ -51,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.warehouses (
   kind text,
   parent_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   stock_layer public.stock_layer NOT NULL DEFAULT 'selling',
+  active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -95,6 +99,7 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   role_id uuid NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
   outlet_id uuid REFERENCES public.outlets(id) ON DELETE CASCADE,
+  display_name text,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, role_id, outlet_id)
 );
@@ -102,15 +107,15 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
 CREATE INDEX IF NOT EXISTS idx_user_roles_user ON public.user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_outlet ON public.user_roles(outlet_id);
 
+ALTER TABLE IF EXISTS public.user_roles
+  ADD COLUMN IF NOT EXISTS display_name text;
+
 DO $$
 DECLARE
   role_records constant jsonb := jsonb_build_array(
-    jsonb_build_object('id', '8cafa111-b968-455c-bf4b-7bb8577daff7', 'slug', 'Outlet', 'display_name', 'Outlet Operator'),
-    jsonb_build_object('id', 'fb847394-0001-408a-83cc-791652db6cee', 'slug', 'Outlet Legacy', 'display_name', 'Outlet Operator (Legacy)'),
-    jsonb_build_object('id', 'e6523948-4c2c-41d8-8cbc-27aca489dbcb', 'slug', 'Main Branch Order Supervisor', 'display_name', 'Main Branch Order Supervisor'),
-    jsonb_build_object('id', '66f6f683-6f98-415b-a66a-923684b2823f', 'slug', 'Supervisor Legacy', 'display_name', 'Supervisor (Legacy)'),
-    jsonb_build_object('id', '89147a54-507d-420b-86b4-2089d64faecd', 'slug', 'Transfers', 'display_name', 'Warehouse Transfers'),
-    jsonb_build_object('id', '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c', 'slug', 'Admin', 'display_name', 'Warehouse Admin')
+    jsonb_build_object('id', '8cafa111-b968-455c-bf4b-7bb8577daff7', 'slug', 'Branch', 'display_name', 'Branch'),
+    jsonb_build_object('id', 'eef421e0-ce06-4518-93c4-6bb6525f6742', 'slug', 'Supervisor', 'display_name', 'Supervisor'),
+    jsonb_build_object('id', '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c', 'slug', 'Administrator', 'display_name', 'Administrator')
   );
   rec jsonb;
 BEGIN
@@ -133,7 +138,8 @@ $$;
 -- Warehouses
 -- ------------------------------------------------------------
 ALTER TABLE IF EXISTS public.warehouses
-  ADD COLUMN IF NOT EXISTS stock_layer public.stock_layer NOT NULL DEFAULT 'selling';
+  ADD COLUMN IF NOT EXISTS stock_layer public.stock_layer NOT NULL DEFAULT 'selling',
+  ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
 
 -- Map legacy kind metadata to the new enum once, defaulting to production for unknowns.
 UPDATE public.warehouses w
@@ -161,6 +167,7 @@ CREATE TABLE IF NOT EXISTS public.catalog_items (
   transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
   has_variations boolean NOT NULL DEFAULT false,
+  locked_from_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   outlet_order_visible boolean NOT NULL DEFAULT true,
   image_url text,
   default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
@@ -211,9 +218,17 @@ ALTER TABLE IF EXISTS public.catalog_items
   ADD COLUMN IF NOT EXISTS transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
   ADD COLUMN IF NOT EXISTS has_variations boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS locked_from_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS outlet_order_visible boolean NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS image_url text,
   ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_catalog_items_locked_from ON public.catalog_items(locked_from_warehouse_id);
+
+UPDATE public.catalog_items
+SET locked_from_warehouse_id = default_warehouse_id
+WHERE locked_from_warehouse_id IS NULL
+  AND default_warehouse_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.catalog_variants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -228,6 +243,7 @@ CREATE TABLE IF NOT EXISTS public.catalog_variants (
   transfer_unit text NOT NULL DEFAULT 'each',
   transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  locked_from_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   outlet_order_visible boolean NOT NULL DEFAULT true,
   image_url text,
   default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
@@ -277,9 +293,98 @@ ALTER TABLE IF EXISTS public.catalog_variants
   ADD COLUMN IF NOT EXISTS transfer_unit text NOT NULL DEFAULT 'each',
   ADD COLUMN IF NOT EXISTS transfer_quantity numeric NOT NULL DEFAULT 1 CHECK (transfer_quantity > 0),
   ADD COLUMN IF NOT EXISTS cost numeric NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  ADD COLUMN IF NOT EXISTS locked_from_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS outlet_order_visible boolean NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS image_url text,
   ADD COLUMN IF NOT EXISTS default_warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_catalog_variants_locked_from ON public.catalog_variants(locked_from_warehouse_id);
+
+UPDATE public.catalog_variants cv
+SET locked_from_warehouse_id = COALESCE(cv.default_warehouse_id, ci.locked_from_warehouse_id)
+FROM public.catalog_items ci
+WHERE cv.item_id = ci.id
+  AND cv.locked_from_warehouse_id IS NULL
+  AND (cv.default_warehouse_id IS NOT NULL OR ci.locked_from_warehouse_id IS NOT NULL);
+
+-- ------------------------------------------------------------
+-- Suppliers and sourcing links (ingredient products & variants)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.suppliers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  whatsapp_number text,
+  notes text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_name_unique ON public.suppliers ((lower(name)));
+
+CREATE TABLE IF NOT EXISTS public.product_supplier_links (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  supplier_id uuid NOT NULL REFERENCES public.suppliers(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE CASCADE,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE CASCADE,
+  warehouse_id uuid REFERENCES public.warehouses(id) ON DELETE CASCADE,
+  preferred boolean NOT NULL DEFAULT false,
+  notes text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_supplier_item_variant_warehouse
+  ON public.product_supplier_links (
+    supplier_id,
+    item_id,
+    COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    COALESCE(warehouse_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
+
+CREATE INDEX IF NOT EXISTS idx_product_supplier_links_supplier ON public.product_supplier_links(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_product_supplier_links_item ON public.product_supplier_links(item_id);
+CREATE INDEX IF NOT EXISTS idx_product_supplier_links_variant ON public.product_supplier_links(variant_id);
+CREATE INDEX IF NOT EXISTS idx_product_supplier_links_warehouse ON public.product_supplier_links(warehouse_id);
+
+CREATE OR REPLACE FUNCTION public.suppliers_for_warehouse(p_warehouse_id uuid)
+RETURNS TABLE(
+  id uuid,
+  name text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  active boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT DISTINCT
+    s.id,
+    s.name,
+    s.contact_name,
+    s.contact_phone,
+    s.contact_email,
+    s.active
+  FROM public.product_supplier_links psl
+  JOIN public.suppliers s ON s.id = psl.supplier_id
+  WHERE s.active
+    AND psl.active
+    AND (
+      p_warehouse_id IS NULL
+      OR psl.warehouse_id IS NULL
+      OR psl.warehouse_id = p_warehouse_id
+    );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.suppliers_for_warehouse(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.suppliers_for_warehouse(uuid) TO anon;
 
 CREATE TABLE IF NOT EXISTS public.stock_ledger (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -671,6 +776,64 @@ SET search_path TO 'pg_temp'
 AS $$
   SELECT (public.member_outlet_ids(COALESCE(p_user, (select auth.uid()))))[1];
 $$;
+
+CREATE OR REPLACE FUNCTION public.console_operator_directory()
+RETURNS TABLE(
+  id uuid,
+  display_name text,
+  name text,
+  email text,
+  auth_user_id uuid
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT DISTINCT
+    u.id,
+    COALESCE(ur.display_name, u.raw_user_meta_data->>'display_name', u.email, 'Operator') AS display_name,
+    COALESCE(ur.display_name, u.raw_user_meta_data->>'display_name', u.email, 'Operator') AS name,
+    u.email,
+    u.id AS auth_user_id
+  FROM public.user_roles ur
+  JOIN auth.users u ON u.id = ur.user_id
+  WHERE ur.role_id = 'eef421e0-ce06-4518-93c4-6bb6525f6742'
+    AND (u.is_anonymous IS NULL OR u.is_anonymous = false)
+    AND u.email IS NOT NULL;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.console_operator_directory() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.console_operator_directory() TO anon;
+
+CREATE OR REPLACE FUNCTION public.console_locked_warehouses(
+  p_include_inactive boolean DEFAULT false,
+  p_locked_ids uuid[] DEFAULT NULL
+)
+RETURNS TABLE(
+  id uuid,
+  name text,
+  parent_warehouse_id uuid,
+  kind text,
+  active boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  ids uuid[] := ARRAY(SELECT DISTINCT unnest(COALESCE(p_locked_ids, ARRAY[]::uuid[])));
+BEGIN
+  RETURN QUERY
+  SELECT w.id, w.name, w.parent_warehouse_id, w.kind, w.active
+  FROM public.warehouses w
+  WHERE p_include_inactive
+        OR w.active
+        OR (array_length(ids, 1) IS NOT NULL AND w.id = ANY(ids));
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.console_locked_warehouses(boolean, uuid[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.console_locked_warehouses(boolean, uuid[]) TO anon;
 
 CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)
 RETURNS void
@@ -1072,6 +1235,383 @@ END;
 $$;
 
 -- ------------------------------------------------------------
+-- Warehouse ledgered actions (transfer, damage, purchase receipts)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.warehouse_transfer_counters (
+  id integer PRIMARY KEY DEFAULT 1,
+  last_value bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.warehouse_transfer_counters(id, last_value)
+VALUES (1, 0)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.next_transfer_reference()
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_next bigint;
+BEGIN
+  INSERT INTO public.warehouse_transfer_counters(id, last_value)
+  VALUES (1, 1)
+  ON CONFLICT (id)
+  DO UPDATE SET last_value = public.warehouse_transfer_counters.last_value + 1,
+                updated_at = now()
+  RETURNING last_value INTO v_next;
+
+  RETURN 'WT-' || lpad(v_next::text, 6, '0');
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.warehouse_transfers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  reference_code text NOT NULL,
+  source_warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
+  destination_warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
+  note text,
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_warehouse_transfers_reference ON public.warehouse_transfers(reference_code);
+CREATE INDEX IF NOT EXISTS idx_warehouse_transfers_source ON public.warehouse_transfers(source_warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_warehouse_transfers_destination ON public.warehouse_transfers(destination_warehouse_id);
+
+CREATE TABLE IF NOT EXISTS public.warehouse_transfer_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  transfer_id uuid NOT NULL REFERENCES public.warehouse_transfers(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE RESTRICT,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE RESTRICT,
+  qty_units numeric NOT NULL CHECK (qty_units > 0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transfer_items_transfer ON public.warehouse_transfer_items(transfer_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_items_item ON public.warehouse_transfer_items(item_id, variant_id);
+
+CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(
+  p_source uuid,
+  p_destination uuid,
+  p_items jsonb,
+  p_note text DEFAULT NULL
+) RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  rec record;
+  v_transfer_id uuid;
+  v_reference text;
+BEGIN
+  IF p_source IS NULL OR p_destination IS NULL THEN
+    RAISE EXCEPTION 'source and destination are required';
+  END IF;
+
+  IF p_source = p_destination THEN
+    RAISE EXCEPTION 'source and destination cannot match';
+  END IF;
+
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'at least one line item is required';
+  END IF;
+
+  v_reference := public.next_transfer_reference();
+
+  INSERT INTO public.warehouse_transfers(
+    reference_code,
+    source_warehouse_id,
+    destination_warehouse_id,
+    note,
+    context,
+    created_by
+  ) VALUES (
+    v_reference,
+    p_source,
+    p_destination,
+    p_note,
+    coalesce(p_items, '[]'::jsonb),
+    auth.uid()
+  ) RETURNING id INTO v_transfer_id;
+
+  FOR rec IN
+    SELECT
+      (elem->>'product_id')::uuid AS item_id,
+      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,
+      (elem->>'qty')::numeric AS qty_units
+    FROM jsonb_array_elements(p_items) elem
+  LOOP
+    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN
+      RAISE EXCEPTION 'each line needs product_id and qty > 0';
+    END IF;
+
+    INSERT INTO public.warehouse_transfer_items(transfer_id, item_id, variant_id, qty_units)
+    VALUES (v_transfer_id, rec.item_id, rec.variant_id, rec.qty_units);
+
+    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)
+    VALUES (
+      'warehouse',
+      p_source,
+      rec.item_id,
+      rec.variant_id,
+      -1 * rec.qty_units,
+      'warehouse_transfer',
+      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'out')
+    );
+
+    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)
+    VALUES (
+      'warehouse',
+      p_destination,
+      rec.item_id,
+      rec.variant_id,
+      rec.qty_units,
+      'warehouse_transfer',
+      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'in')
+    );
+  END LOOP;
+
+  RETURN v_reference;
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.warehouse_damages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
+  note text,
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_warehouse_damages_warehouse ON public.warehouse_damages(warehouse_id);
+
+CREATE TABLE IF NOT EXISTS public.warehouse_damage_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  damage_id uuid NOT NULL REFERENCES public.warehouse_damages(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE RESTRICT,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE RESTRICT,
+  qty_units numeric NOT NULL CHECK (qty_units > 0),
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_damage_items_damage ON public.warehouse_damage_items(damage_id);
+CREATE INDEX IF NOT EXISTS idx_damage_items_item ON public.warehouse_damage_items(item_id, variant_id);
+
+CREATE OR REPLACE FUNCTION public.record_damage(
+  p_warehouse_id uuid,
+  p_items jsonb,
+  p_note text DEFAULT NULL
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  rec record;
+  v_damage_id uuid;
+BEGIN
+  IF p_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'warehouse_id is required';
+  END IF;
+
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'at least one damage line is required';
+  END IF;
+
+  INSERT INTO public.warehouse_damages(warehouse_id, note, context, created_by)
+  VALUES (p_warehouse_id, p_note, coalesce(p_items, '[]'::jsonb), auth.uid())
+  RETURNING id INTO v_damage_id;
+
+  FOR rec IN
+    SELECT
+      (elem->>'product_id')::uuid AS item_id,
+      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,
+      (elem->>'qty')::numeric AS qty_units,
+      NULLIF(elem->>'note', '') AS line_note
+    FROM jsonb_array_elements(p_items) elem
+  LOOP
+    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN
+      RAISE EXCEPTION 'each damage line needs product_id and qty > 0';
+    END IF;
+
+    INSERT INTO public.warehouse_damage_items(damage_id, item_id, variant_id, qty_units, note)
+    VALUES (v_damage_id, rec.item_id, rec.variant_id, rec.qty_units, rec.line_note);
+
+    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)
+    VALUES (
+      'warehouse',
+      p_warehouse_id,
+      rec.item_id,
+      rec.variant_id,
+      -1 * rec.qty_units,
+      'damage',
+      jsonb_build_object('damage_id', v_damage_id, 'note', coalesce(rec.line_note, p_note))
+    );
+  END LOOP;
+
+  RETURN v_damage_id;
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.warehouse_purchase_receipt_counters (
+  id integer PRIMARY KEY DEFAULT 1,
+  last_value bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.warehouse_purchase_receipt_counters(id, last_value)
+VALUES (1, 0)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.next_purchase_receipt_reference()
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_next bigint;
+BEGIN
+  INSERT INTO public.warehouse_purchase_receipt_counters(id, last_value)
+  VALUES (1, 1)
+  ON CONFLICT (id)
+  DO UPDATE SET last_value = public.warehouse_purchase_receipt_counters.last_value + 1,
+                updated_at = now()
+  RETURNING last_value INTO v_next;
+
+  RETURN 'PR-' || lpad(v_next::text, 6, '0');
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.warehouse_purchase_receipts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  warehouse_id uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
+  supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
+  reference_code text NOT NULL,
+  note text,
+  auto_whatsapp boolean NOT NULL DEFAULT false,
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  recorded_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  received_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_purchase_receipts_reference_per_warehouse
+  ON public.warehouse_purchase_receipts(warehouse_id, reference_code);
+CREATE INDEX IF NOT EXISTS idx_purchase_receipts_supplier ON public.warehouse_purchase_receipts(supplier_id);
+
+CREATE TABLE IF NOT EXISTS public.warehouse_purchase_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  receipt_id uuid NOT NULL REFERENCES public.warehouse_purchase_receipts(id) ON DELETE CASCADE,
+  item_id uuid NOT NULL REFERENCES public.catalog_items(id) ON DELETE RESTRICT,
+  variant_id uuid REFERENCES public.catalog_variants(id) ON DELETE RESTRICT,
+  qty_units numeric NOT NULL CHECK (qty_units > 0),
+  qty_input_mode text NOT NULL DEFAULT 'units',
+  unit_cost numeric,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_items_receipt ON public.warehouse_purchase_items(receipt_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_items_item ON public.warehouse_purchase_items(item_id, variant_id);
+
+CREATE OR REPLACE FUNCTION public.record_purchase_receipt(
+  p_warehouse_id uuid,
+  p_items jsonb,
+  p_supplier_id uuid DEFAULT NULL,
+  p_reference_code text DEFAULT NULL,
+  p_note text DEFAULT NULL,
+  p_auto_whatsapp boolean DEFAULT false
+) RETURNS public.warehouse_purchase_receipts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  rec record;
+  v_receipt public.warehouse_purchase_receipts%ROWTYPE;
+  v_reference text;
+BEGIN
+  IF p_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'warehouse_id is required';
+  END IF;
+
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'at least one purchase item is required';
+  END IF;
+
+  v_reference := COALESCE(NULLIF(p_reference_code, ''), public.next_purchase_receipt_reference());
+
+  INSERT INTO public.warehouse_purchase_receipts(
+    warehouse_id,
+    supplier_id,
+    reference_code,
+    note,
+    auto_whatsapp,
+    context,
+    recorded_by
+  ) VALUES (
+    p_warehouse_id,
+    p_supplier_id,
+    v_reference,
+    p_note,
+    coalesce(p_auto_whatsapp, false),
+    coalesce(p_items, '[]'::jsonb),
+    auth.uid()
+  ) RETURNING * INTO v_receipt;
+
+  FOR rec IN
+    SELECT
+      (elem->>'product_id')::uuid AS item_id,
+      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,
+      (elem->>'qty')::numeric AS qty_units,
+      COALESCE(NULLIF(elem->>'qty_input_mode', ''), 'units') AS qty_input_mode,
+      NULLIF(elem->>'unit_cost', '')::numeric AS unit_cost
+    FROM jsonb_array_elements(p_items) elem
+  LOOP
+    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN
+      RAISE EXCEPTION 'each purchase line needs product_id and qty > 0';
+    END IF;
+
+    INSERT INTO public.warehouse_purchase_items(
+      receipt_id,
+      item_id,
+      variant_id,
+      qty_units,
+      qty_input_mode,
+      unit_cost
+    ) VALUES (
+      v_receipt.id,
+      rec.item_id,
+      rec.variant_id,
+      rec.qty_units,
+      rec.qty_input_mode,
+      rec.unit_cost
+    );
+
+    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)
+    VALUES (
+      'warehouse',
+      p_warehouse_id,
+      rec.item_id,
+      rec.variant_id,
+      rec.qty_units,
+      'purchase_receipt',
+      jsonb_build_object('receipt_id', v_receipt.id, 'reference_code', v_receipt.reference_code, 'supplier_id', p_supplier_id)
+    );
+  END LOOP;
+
+  RETURN v_receipt;
+END;
+$$;
+
+-- ------------------------------------------------------------
 -- Storage buckets (orders PDFs + signatures)
 -- ------------------------------------------------------------
 DO $$
@@ -1190,6 +1730,12 @@ ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.warehouses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_transfers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_transfer_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_damages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_damage_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_purchase_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_purchase_items ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS catalog_items_admin_rw ON public.catalog_items;
 CREATE POLICY catalog_items_admin_rw ON public.catalog_items FOR ALL TO public USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()));
@@ -1318,6 +1864,42 @@ CREATE POLICY user_roles_self_select ON public.user_roles
 
 DROP POLICY IF EXISTS stock_ledger_admin_rw ON public.stock_ledger;
 CREATE POLICY stock_ledger_admin_rw ON public.stock_ledger
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_transfers_admin_rw ON public.warehouse_transfers;
+CREATE POLICY warehouse_transfers_admin_rw ON public.warehouse_transfers
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_transfer_items_admin_rw ON public.warehouse_transfer_items;
+CREATE POLICY warehouse_transfer_items_admin_rw ON public.warehouse_transfer_items
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_damages_admin_rw ON public.warehouse_damages;
+CREATE POLICY warehouse_damages_admin_rw ON public.warehouse_damages
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_damage_items_admin_rw ON public.warehouse_damage_items;
+CREATE POLICY warehouse_damage_items_admin_rw ON public.warehouse_damage_items
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_purchase_receipts_admin_rw ON public.warehouse_purchase_receipts;
+CREATE POLICY warehouse_purchase_receipts_admin_rw ON public.warehouse_purchase_receipts
+  FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS warehouse_purchase_items_admin_rw ON public.warehouse_purchase_items;
+CREATE POLICY warehouse_purchase_items_admin_rw ON public.warehouse_purchase_items
   FOR ALL TO authenticated
   USING (public.is_admin(auth.uid()))
   WITH CHECK (public.is_admin(auth.uid()));
@@ -1480,15 +2062,11 @@ DROP TABLE IF EXISTS public.products_sold CASCADE;
 DROP TABLE IF EXISTS public.pos_sales CASCADE;
 DROP TABLE IF EXISTS public.warehouse_stock_entries CASCADE;
 DROP TABLE IF EXISTS public.warehouse_stock_entry_events CASCADE;
-DROP TABLE IF EXISTS public.warehouse_purchase_items CASCADE;
-DROP TABLE IF EXISTS public.warehouse_purchase_receipts CASCADE;
 DROP TABLE IF EXISTS public.damages CASCADE;
 DROP TABLE IF EXISTS public.outlet_stock_periods CASCADE;
 DROP TABLE IF EXISTS public.stock_movements CASCADE;
 DROP TABLE IF EXISTS public.stock_movement_items CASCADE;
 DROP TABLE IF EXISTS public.warehouse_stocktakes CASCADE;
-DROP TABLE IF EXISTS public.product_supplier_links CASCADE;
-DROP TABLE IF EXISTS public.suppliers CASCADE;
 DROP TABLE IF EXISTS public.console_operators CASCADE;
 DROP TABLE IF EXISTS public.assets CASCADE;
 

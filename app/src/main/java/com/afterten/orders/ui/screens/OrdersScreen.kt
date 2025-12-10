@@ -59,7 +59,7 @@ fun OrdersScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val logger = rememberScreenLogger("Orders")
 
-    if (!session.hasRole(RoleGuards.Outlet)) {
+    if (!session.hasRole(RoleGuards.Branch)) {
         AccessDeniedCard(
             title = "Outlet access required",
             message = "Only outlet operators can review placed orders or submit offloader signatures.",

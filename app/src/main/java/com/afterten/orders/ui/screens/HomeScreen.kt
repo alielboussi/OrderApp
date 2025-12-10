@@ -38,30 +38,28 @@ fun HomeScreen(
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
-    val hasWarehouseAdmin = session.hasRole(RoleGuards.WarehouseAdmin)
-    val hasTransferRole = session.hasRole(RoleGuards.Transfers)
+    val hasAdministrator = session.hasRole(RoleGuards.Administrator)
     val hasSupervisorRole = session.hasRole(RoleGuards.Supervisor)
-    val hasOutletRole = session.hasRole(RoleGuards.Outlet)
-    val canAccessTransfers = hasTransferRole || hasWarehouseAdmin
+    val hasBranchRole = session.hasRole(RoleGuards.Branch)
+    val canAccessTransfers = hasSupervisorRole || hasAdministrator
     val logger = rememberScreenLogger("Home")
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))
     }
-    LaunchedEffect(session?.outletId, hasWarehouseAdmin, hasTransferRole, hasSupervisorRole, hasOutletRole) {
+    LaunchedEffect(session?.outletId, hasAdministrator, hasSupervisorRole, hasBranchRole) {
         logger.state(
             state = "SessionChanged",
             props = mapOf(
                 "outletId" to (session?.outletId ?: ""),
-                "hasWarehouseAdmin" to hasWarehouseAdmin,
-                "hasTransferRole" to hasTransferRole,
+                "hasAdministrator" to hasAdministrator,
                 "hasSupervisorRole" to hasSupervisorRole,
-                "hasOutletRole" to hasOutletRole
+                "hasBranchRole" to hasBranchRole
             )
         )
     }
 
-    if (session != null && !hasWarehouseAdmin && !hasTransferRole && !hasSupervisorRole && !hasOutletRole) {
+    if (session != null && !hasAdministrator && !hasSupervisorRole && !hasBranchRole) {
         AccessDeniedCard(
             title = "No roles assigned",
             message = "Your account does not have access to any dashboards. Ask an administrator to assign a role.",
@@ -98,7 +96,7 @@ fun HomeScreen(
         Text(text = session?.outletName ?: "", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
         when {
-            hasWarehouseAdmin -> {
+            hasAdministrator -> {
                 // Admin home: offer both native Compose and kiosk web dashboards
                 Button(
                     modifier = Modifier.fillMaxWidth(),
@@ -129,7 +127,7 @@ fun HomeScreen(
                     enabled = session != null
                 ) { Text("Outlet Orders") }
             }
-            hasOutletRole -> {
+            hasBranchRole -> {
                 // Regular outlet user: Create and Orders
                 Button(
                     modifier = Modifier.fillMaxWidth(),
@@ -159,17 +157,6 @@ fun HomeScreen(
                         enabled = session != null
                     ) { Text("Stock Transfers") }
                 }
-            }
-            hasTransferRole -> {
-                // TM home: only Transfers
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("TransfersTapped")
-                        onTransfers()
-                    },
-                    enabled = session != null
-                ) { Text("Stock Transfers") }
             }
             else -> {
                 AccessDeniedCard(

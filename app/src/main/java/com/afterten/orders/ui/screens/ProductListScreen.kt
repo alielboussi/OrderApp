@@ -67,7 +67,7 @@ fun ProductListScreen(
     val scope = rememberCoroutineScope()
     val session by root.session.collectAsState()
 
-    if (!session.hasRole(RoleGuards.Outlet)) {
+    if (!session.hasRole(RoleGuards.Branch)) {
         AccessDeniedCard(
             title = "Outlet access required",
             message = "Only outlet operators can browse and place orders.",

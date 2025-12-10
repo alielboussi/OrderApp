@@ -3,37 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-
-// Types approximated from the Android WarehousesAdminScreen
-interface Warehouse {
-  id: string;
-  name: string;
-}
-
-interface TransferItem {
-  id: string;
-  product_id?: string | null;
-  variation_id?: string | null;
-  qty: number;
-  product?: { id?: string; name?: string | null; uom?: string | null } | null;
-  variation?: { id?: string; name?: string | null; uom?: string | null } | null;
-}
-
-interface TransferRow {
-  id: string;
-  source_location_id?: string | null;
-  dest_location_id?: string | null;
-  source?: { id?: string; name?: string | null } | null;
-  dest?: { id?: string; name?: string | null } | null;
-  status?: string | null;
-  note?: string | null;
-  created_at?: string | null;
-  completed_at?: string | null;
-  items: TransferItem[];
-}
+import type { Warehouse } from "@/types/warehouse";
+import type { WarehouseDamage } from "@/types/damages";
 
 const AUTO_REFRESH_MS = 120_000; // 2 minutes
-const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/transfers";
+const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/damages";
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url, { cache: "no-store" });
@@ -116,12 +90,11 @@ function normalizeErrorMessage(err: unknown): string {
   return raw;
 }
 
-export default function WarehouseTransfersWeb() {
+export default function WarehouseDamagesWeb() {
   const router = useRouter();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [transfers, setTransfers] = useState<TransferRow[]>([]);
-  const [sourceId, setSourceId] = useState("");
-  const [destId, setDestId] = useState("");
+  const [damages, setDamages] = useState<WarehouseDamage[]>([]);
+  const [warehouseId, setWarehouseId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -131,31 +104,13 @@ export default function WarehouseTransfersWeb() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const lockedPathRef = useRef<string | null>(null);
   const allowNavRef = useRef(false);
-  const hasActiveFilters = Boolean(
-    sourceId || destId || startDate || endDate || searchQuery.trim()
-  );
-
-  const readLockedFrom = () => {
-    if (typeof window === "undefined") return "";
-    const search = new URLSearchParams(window.location.search);
-    return (
-      search.get("from_locked_id") ||
-      search.get("fromLockedId") ||
-      search.get("locked_from") ||
-      search.get("locked_id") ||
-      search.get("lockedWarehouseId") ||
-      search.get("lockedWarehouse") ||
-      search.get("locked_source_id") ||
-      ""
-    ).trim();
-  };
+  const hasActiveFilters = Boolean(warehouseId || startDate || endDate || searchQuery.trim());
 
   const handleBack = () => {
     allowNavRef.current = true;
     router.push("/Warehouse_Backoffice");
   };
 
-  // Lock URL endpoint to keep kiosk devices on the transfers view
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -183,14 +138,12 @@ export default function WarehouseTransfersWeb() {
     };
   }, []);
 
-  // Keep the top-of-page dashboard buttons visible on load
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "auto" });
     }
   }, []);
 
-  // Auto refresh every five minutes
   useEffect(() => {
     const id = window.setInterval(() => setManualRefreshTick((v) => v + 1), AUTO_REFRESH_MS);
     return () => window.clearInterval(id);
@@ -203,13 +156,11 @@ export default function WarehouseTransfersWeb() {
         const fromLocked = search.get("from_locked_id") || search.get("locked_from") || search.get("locked_id") || "";
         const lockedIds = fromLocked ? [fromLocked] : [];
         const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
-        const data = await fetchJson<
-          Warehouse[] | { warehouses?: Warehouse[]; data?: Warehouse[] }
-        >(`/api/warehouses${qs}`);
+        const data = await fetchJson<Warehouse[] | { warehouses?: Warehouse[]; data?: Warehouse[] }>(`/api/warehouses${qs}`);
         const list = normalizeList<Warehouse>(data, ["warehouses", "data"]);
         const filtered = lockedIds.length ? list.filter((w) => lockedIds.includes(w.id)) : list;
         if (fromLocked && filtered.some((w) => w.id === fromLocked)) {
-          setSourceId(fromLocked);
+          setWarehouseId(fromLocked);
         }
         setWarehouses(filtered);
       } catch (err) {
@@ -219,7 +170,7 @@ export default function WarehouseTransfersWeb() {
     loadWarehouses();
   }, []);
 
-  const loadTransfers = async () => {
+  const loadDamages = async () => {
     setLoading(true);
     setError(null);
     try {
@@ -227,47 +178,40 @@ export default function WarehouseTransfersWeb() {
       const fromLocked = search.get("from_locked_id") || search.get("locked_from") || search.get("locked_id") || "";
       const lockedIds = fromLocked ? [fromLocked] : [];
       const params = new URLSearchParams();
-      if (sourceId) params.set("sourceId", sourceId);
-      if (destId) params.set("destId", destId);
+      if (warehouseId) params.set("warehouseId", warehouseId);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
       lockedIds.forEach((id) => params.append("fromLockedId", id));
-      const url = `/api/warehouse-transfers?${params.toString()}`;
-      const data = await fetchJson<
-        TransferRow[] | { transfers?: TransferRow[]; data?: TransferRow[] }
-      >(url);
-      const list = normalizeList<TransferRow>(data, ["transfers", "data"]);
-      setTransfers(list);
+      const url = `/api/warehouse-damages?${params.toString()}`;
+      const data = await fetchJson<WarehouseDamage[] | { damages?: WarehouseDamage[]; data?: WarehouseDamage[] }>(url);
+      const list = normalizeList<WarehouseDamage>(data, ["damages", "data"]);
+      setDamages(list);
     } catch (err) {
-      setError(normalizeErrorMessage(err) || "Unable to load transfers");
+      setError(normalizeErrorMessage(err) || "Unable to load damages");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTransfers();
+    loadDamages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceId, destId, startDate, endDate, manualRefreshTick]);
+  }, [warehouseId, startDate, endDate, manualRefreshTick]);
 
-  const filteredTransfers = useMemo(() => {
+  const filteredDamages = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const sorted = [...transfers].sort((a, b) => {
+    const sorted = [...damages].sort((a, b) => {
       const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return bDate - aDate; // newest first
+      return bDate - aDate;
     });
     const base = q
-      ? sorted.filter((t) => {
+      ? sorted.filter((d) => {
           const haystack = [
-            t.source?.name,
-            t.dest?.name,
-            t.note,
-            t.items
-              ?.map(
-                (i) =>
-                  `${i.product?.name ?? ""} ${i.variation?.name ?? ""} ${i.product_id ?? ""} ${i.variation_id ?? ""}`
-              )
+            d.warehouse?.name,
+            d.note,
+            d.items
+              ?.map((i) => `${i.item?.name ?? ""} ${i.variant?.name ?? ""} ${i.item_id ?? ""} ${i.variant_id ?? ""}`)
               .join(" ") ?? "",
           ]
             .join(" ")
@@ -276,12 +220,13 @@ export default function WarehouseTransfersWeb() {
         })
       : sorted;
     return hasActiveFilters ? base : base.slice(0, 3);
-  }, [transfers, searchQuery, hasActiveFilters]);
+  }, [damages, searchQuery, hasActiveFilters]);
 
   const warehouseMap = useMemo(() => {
-    const list = Array.isArray(warehouses) ? warehouses : [];
     const map = new Map<string, string>();
-    list.forEach((w) => map.set(w.id, w.name));
+    (warehouses ?? []).forEach((w) => {
+      if (w?.id) map.set(w.id, w.name ?? "Warehouse");
+    });
     return map;
   }, [warehouses]);
 
@@ -301,7 +246,7 @@ export default function WarehouseTransfersWeb() {
           <button
             style={{ ...styles.iconBtn, ...(loading ? styles.iconBtnSpin : null) }}
             onClick={() => setManualRefreshTick((v) => v + 1)}
-            title="Refresh transfers"
+            title="Refresh damages"
           >
             Refresh
           </button>
@@ -317,7 +262,7 @@ export default function WarehouseTransfersWeb() {
         </header>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={styles.h1}>Warehouse Transfers</h1>
+          <h1 style={styles.h1}>Warehouse Damages</h1>
           <p style={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
           <p style={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
         </section>
@@ -330,22 +275,13 @@ export default function WarehouseTransfersWeb() {
 
         <section style={styles.panel}>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <LabeledSelect
-                label="From warehouse"
-                value={sourceId}
-                onChange={setSourceId}
-                options={warehouses}
-                placeholder="Any warehouse"
-              />
-              <LabeledSelect
-                label="To warehouse"
-                value={destId}
-                onChange={setDestId}
-                options={warehouses}
-                placeholder="Any warehouse"
-              />
-            </div>
+            <LabeledSelect
+              label="Warehouse"
+              value={warehouseId}
+              onChange={setWarehouseId}
+              options={warehouses}
+              placeholder="Any warehouse"
+            />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <LabeledDate label="From date" value={formatDateRangeValue(startDate)} onChange={setStartDate} />
               <LabeledDate label="To date" value={formatDateRangeValue(endDate)} onChange={setEndDate} />
@@ -358,15 +294,14 @@ export default function WarehouseTransfersWeb() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Warehouse, product, SKU, note"
+                  placeholder="Warehouse, product, note"
                 />
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
                   style={styles.dangerPill}
                   onClick={() => {
-                    setSourceId("");
-                    setDestId("");
+                    setWarehouseId("");
                     setStartDate("");
                     setEndDate("");
                     setSearchQuery("");
@@ -379,79 +314,60 @@ export default function WarehouseTransfersWeb() {
             </div>
             {error && <p style={{ color: "#FF8B99", fontSize: 14 }}>{error}</p>}
             <div style={styles.listShell}>
-              {loading && transfers.length === 0 ? (
-                <div style={styles.centered}>Loading transfers...</div>
-              ) : filteredTransfers.length === 0 ? (
-                <div style={styles.centered}>No transfers match the current filters.</div>
+              {loading && damages.length === 0 ? (
+                <div style={styles.centered}>Loading damages...</div>
+              ) : filteredDamages.length === 0 ? (
+                <div style={styles.centered}>No damages match the current filters.</div>
               ) : (
                 <div style={styles.listScroll}>
-                  {filteredTransfers.map((t) => {
-                    const sourceName =
-                      warehouseMap.get(t.source_location_id ?? "") ||
-                      t.source?.name ||
-                      t.source_location_id ||
-                      "Unknown source";
-                    const destName =
-                      warehouseMap.get(t.dest_location_id ?? "") ||
-                      t.dest?.name ||
-                      t.dest_location_id ||
-                      "Unknown destination";
-                    const expanded = expandedId === t.id;
-                    const statusValue = t.status?.toLowerCase() ?? "";
-                    const isCompleted = statusValue === "completed";
+                  {filteredDamages.map((d) => {
+                    const warehouseName = d.warehouse?.name || warehouseMap.get(d.warehouse_id ?? "") || d.warehouse_id || "Unknown warehouse";
+                    const expanded = expandedId === d.id;
                     return (
-                      <article key={t.id} style={styles.card}>
+                      <article key={d.id} style={styles.card}>
                         <div style={styles.cardHeader}>
                           <div style={{ flex: 1 }}>
-                            <p style={styles.cardTitle}>
-                              {sourceName} <span style={{ color: "#ffffff66" }}>-</span> {destName}
-                            </p>
-                            <p style={styles.cardSub}>{formatTimestamp(t.created_at)}</p>
-                            {t.reference_code ? (
-                              <p style={styles.cardSub}>Ref: {t.reference_code}</p>
-                            ) : null}
+                            <p style={styles.cardTitle}>{warehouseName}</p>
+                            <p style={styles.cardSub}>{formatTimestamp(d.created_at)}</p>
+                            <p style={styles.cardSub}>Ref: {d.id.slice(0, 8)}</p>
                           </div>
                           <span
                             style={{
                               ...styles.statusChip,
-                              backgroundColor: isCompleted ? "#FF1B2D33" : "transparent",
-                              borderColor: "#FF1B2D",
+                              backgroundColor: "#f9731633",
+                              borderColor: "#f97316",
                             }}
                           >
-                            {titleCase(t.status)}
+                            {titleCase("logged")}
                           </span>
                           <button
                             style={styles.iconBtn}
-                            onClick={() => toggleExpand(t.id)}
+                            onClick={() => toggleExpand(d.id)}
                             aria-label="Toggle expand"
                           >
                             {expanded ? "^" : "v"}
                           </button>
                         </div>
-                        {t.note && <p style={styles.cardNote}>Note: {t.note}</p>}
-                        {t.completed_at && (
-                          <p style={styles.cardSub}>Completed {formatTimestamp(t.completed_at)}</p>
-                        )}
-                        {expanded && (
-                          <div style={styles.itemsBlock}>
-                            {t.items?.map((item) => (
-                              <div key={item.id} style={styles.itemRow}>
-                                <div>
-                                  <p style={styles.itemName}>
-                                    {item.product?.name ?? "Unknown product"}
-                                    {item.variation?.name ? (
-                                      <span style={styles.itemSub}> - {item.variation.name}</span>
-                                    ) : null}
-                                  </p>
-                                  <p style={styles.itemSub}>{item.product_id ?? item.variation_id ?? "Item"}</p>
-                                </div>
-                                <div style={{ textAlign: "right" }}>
-                                  <p style={styles.itemQty}>{item.qty}</p>
-                                  <p style={styles.itemSub}>{item.variation?.uom ?? item.product?.uom ?? "units"}</p>
-                                </div>
+
+                        <p style={styles.cardNote}>{d.note || "No note"}</p>
+
+                        <div style={styles.itemsList}>
+                          {(expanded ? d.items : d.items.slice(0, 3)).map((item) => (
+                            <div key={item.id} style={styles.itemRow}>
+                              <div>
+                                <p style={styles.itemTitle}>{item.item?.name ?? "Item"}</p>
+                                {item.variant?.name ? <p style={styles.itemSub}>{item.variant.name}</p> : null}
+                                {item.note ? <p style={styles.itemSub}>Note: {item.note}</p> : null}
                               </div>
-                            ))}
-                          </div>
+                              <div style={styles.qtyBadge}>- {item.qty}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {d.items.length > 3 && (
+                          <button style={styles.expandBtn} onClick={() => toggleExpand(d.id)}>
+                            {expanded ? "Hide items" : `Show all ${d.items.length} items`}
+                          </button>
                         )}
                       </article>
                     );
@@ -459,7 +375,6 @@ export default function WarehouseTransfersWeb() {
                 </div>
               )}
             </div>
-            <p style={styles.footerText}>Syncs automatically every 5 minutes - Use refresh to pull now</p>
           </div>
         </section>
       </main>
@@ -467,244 +382,273 @@ export default function WarehouseTransfersWeb() {
   );
 }
 
-function LabeledSelect(props: {
+function LabeledSelect({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   options: Warehouse[];
   placeholder?: string;
 }) {
-  const { label, value, onChange, options, placeholder } = props;
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={styles.label}>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={styles.select}>
-        <option value="">{placeholder ?? "Any"}</option>
-        {options.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={styles.label}>{label}</label>
+      <select style={styles.select} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{placeholder || "Select"}</option>
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {opt.name}
           </option>
         ))}
       </select>
-    </label>
+    </div>
   );
 }
 
-function LabeledDate(props: { label: string; value: string; onChange: (v: string) => void }) {
-  const { label, value, onChange } = props;
+function LabeledDate({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={styles.label}>{label}</span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={styles.select}
-      />
-    </label>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={styles.label}>{label}</label>
+      <input style={styles.select} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
   );
 }
 
 const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: "100vh",
-    minWidth: "320px",
-    background: "radial-gradient(circle at top, #111827 0%, #050a1b 60%)",
-    color: "#fff",
+    background: "radial-gradient(circle at 20% 20%, #182647, #060b16 70%)",
     display: "flex",
     justifyContent: "center",
-    padding: "24px",
+    padding: "40px 24px",
+    color: "#f4f6ff",
+    fontFamily: '"Space Grotesk", "Segoe UI", system-ui, sans-serif',
   },
   shell: {
     width: "100%",
-    maxWidth: "1200px",
-    minHeight: "1080px",
+    maxWidth: 1280,
     display: "flex",
     flexDirection: "column",
-    gap: "18px",
+    gap: 24,
   },
   header: {
     display: "flex",
+    gap: 12,
     alignItems: "center",
-    gap: "12px",
-    padding: "16px 18px",
-    borderRadius: "24px",
-    background: "#131C35",
-    border: "1px solid rgba(255,255,255,0.1)",
-    boxShadow: "0 18px 50px rgba(0,0,0,0.65)",
   },
-  h1: { fontSize: 28, fontWeight: 700, margin: 0 },
-  subtle: { color: "#ffffffb3", fontSize: 14, margin: 0 },
   primaryBtn: {
-    background: "linear-gradient(100deg, #ff1b2d, #ff445a)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 999,
-    padding: "10px 20px",
+    background: "#f97316",
+    border: "1px solid #f97316",
+    color: "#0b1020",
+    borderRadius: 14,
+    padding: "10px 14px",
     fontWeight: 700,
     cursor: "pointer",
-    boxShadow: "0 4px 20px rgba(255,27,45,0.35)",
+  },
+  linkBtn: {
+    background: "transparent",
+    border: "1px solid #ffffff33",
+    color: "#e5edff",
+    borderRadius: 14,
+    padding: "10px 14px",
+    fontWeight: 600,
+    cursor: "pointer",
   },
   iconBtn: {
-    background: "transparent",
-    border: "1px solid rgba(255,255,255,0.3)",
-    color: "#fff",
-    borderRadius: "999px",
-    padding: 10,
+    background: "#0f172a",
+    border: "1px solid #1f2a44",
+    color: "#e5edff",
+    borderRadius: 12,
+    padding: "10px 14px",
     cursor: "pointer",
-    minWidth: 40,
+    transition: "transform 160ms ease",
   },
   iconBtnSpin: {
     animation: "spin 1s linear infinite",
   },
-  linkBtn: {
-    background: "transparent",
-    border: "none",
-    color: "#ffffffcc",
-    cursor: "pointer",
-    fontWeight: 600,
+  h1: {
+    margin: 0,
+    fontSize: 32,
+    letterSpacing: -0.5,
   },
-  progressBarWrap: {
-    width: "100%",
-    height: 8,
-    borderRadius: 8,
-    overflow: "hidden",
-    background: "rgba(255,255,255,0.08)",
-  },
-  progressBar: {
-    width: "33%",
-    height: "100%",
-    background: "#FF1B2D",
-    animation: "pulse 1.2s ease-in-out infinite",
-  },
-  panel: {
-    borderRadius: 24,
-    border: "1px solid rgba(255,255,255,0.1)",
-    background: "#131C35",
-    boxShadow: "0 25px 70px rgba(0,0,0,0.7)",
-    padding: 24,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: 0.08,
-    textTransform: "uppercase",
-    color: "#ffffffb3",
-  },
-  select: {
-    width: "100%",
-    borderRadius: 18,
-    border: "1.5px solid #ff1b2d",
-    padding: "12px 14px",
-    background: "#0c152b",
-    color: "#fff",
+  subtle: {
+    margin: 0,
+    color: "#c6d2ff",
     fontSize: 14,
   },
+  panel: {
+    background: "rgba(6,11,22,0.75)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 24,
+    padding: 20,
+    boxShadow: "0 20px 40px rgba(0,0,0,0.45)",
+  },
+  label: {
+    fontSize: 13,
+    color: "#c7d2fe",
+    letterSpacing: 0.4,
+  },
+  select: {
+    background: "#0f172a",
+    border: "1px solid #1f2a44",
+    color: "#e5edff",
+    borderRadius: 12,
+    padding: "12px 12px",
+    minHeight: 44,
+  },
   searchBox: {
-    border: "1.5px solid #ff1b2d",
-    borderRadius: 18,
-    padding: "10px 14px",
-    background: "#0c152b",
+    background: "#0f172a",
+    border: "1px solid #1f2a44",
+    borderRadius: 12,
+    padding: "10px 12px",
   },
   searchInput: {
     width: "100%",
     background: "transparent",
     border: "none",
+    color: "#e5edff",
+    fontSize: 16,
     outline: "none",
-    color: "#fff",
-    fontSize: 14,
   },
   dangerPill: {
-    border: "1px solid rgba(255,27,45,0.6)",
-    background: "rgba(255,27,45,0.15)",
-    color: "#fff",
-    padding: "10px 16px",
+    background: "#1f2937",
+    border: "1px solid #f97316",
+    color: "#f97316",
     borderRadius: 999,
+    padding: "10px 16px",
     cursor: "pointer",
-    fontWeight: 700,
   },
   listShell: {
-    minHeight: 480,
-    borderRadius: 20,
     border: "1px solid rgba(255,255,255,0.05)",
-    background: "#0c152b",
-    padding: 12,
+    borderRadius: 18,
+    background: "rgba(15,23,42,0.75)",
+    minHeight: 180,
   },
   listScroll: {
     display: "flex",
     flexDirection: "column",
-    gap: 12,
-    maxHeight: 520,
-    overflowY: "auto",
-    paddingRight: 6,
+    gap: 16,
+    padding: 16,
+    maxHeight: "70vh",
+    overflow: "auto",
   },
   centered: {
-    height: 480,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#ffffffb3",
+    padding: 24,
+    textAlign: "center",
+    color: "#cbd5f5",
   },
   card: {
-    borderRadius: 20,
-    border: "1.5px solid rgba(255,27,45,0.6)",
-    background: "#131C35",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 18,
     padding: 16,
-    boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
+    background: "linear-gradient(135deg, rgba(27,31,46,0.9), rgba(20,24,39,0.9))",
   },
   cardHeader: {
     display: "flex",
-    alignItems: "center",
     gap: 12,
+    alignItems: "center",
   },
-  cardTitle: { margin: 0, fontSize: 18, fontWeight: 700 },
-  cardSub: { margin: 0, fontSize: 13, color: "#ffffff99" },
-  statusChip: {
-    border: "1px solid #ff1b2d",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 11,
-    textTransform: "uppercase",
+  cardTitle: {
+    margin: 0,
+    fontSize: 18,
     fontWeight: 700,
-    color: "#fff",
   },
-  cardNote: { marginTop: 8, marginBottom: 0, color: "#ffffffcc", fontSize: 13 },
-  itemsBlock: {
-    marginTop: 12,
+  cardSub: {
+    margin: "4px 0",
+    color: "#cbd5f5",
+    fontSize: 13,
+  },
+  statusChip: {
+    borderRadius: 999,
+    padding: "6px 10px",
+    border: "1px solid #f97316",
+    color: "#f97316",
+    fontWeight: 700,
+    letterSpacing: 0.5,
+  },
+  cardNote: {
+    margin: "8px 0 12px",
+    color: "#cbd5f5",
+    fontSize: 14,
+  },
+  itemsList: {
     display: "flex",
     flexDirection: "column",
     gap: 10,
-    background: "rgba(0,0,0,0.2)",
-    padding: 10,
-    borderRadius: 12,
   },
   itemRow: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 12,
+    alignItems: "center",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    padding: "10px 12px",
+    background: "rgba(15,23,42,0.6)",
   },
-  itemName: { margin: 0, fontSize: 14, fontWeight: 600 },
-  itemSub: { margin: 0, fontSize: 12, color: "#ffffff80" },
-  itemQty: { margin: 0, fontSize: 16, fontWeight: 700 },
-  footerText: {
-    color: "#ffffff80",
-    fontSize: 12,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
+  itemTitle: {
+    margin: 0,
+    fontWeight: 600,
+  },
+  itemSub: {
+    margin: "4px 0 0",
+    color: "#cbd5f5",
+    fontSize: 13,
+  },
+  qtyBadge: {
+    background: "#f97316",
+    color: "#0b1020",
+    borderRadius: 12,
+    padding: "8px 10px",
+    fontWeight: 800,
+  },
+  expandBtn: {
+    marginTop: 10,
+    background: "transparent",
+    border: "1px solid #ffffff33",
+    color: "#e5edff",
+    borderRadius: 12,
+    padding: "8px 12px",
+    cursor: "pointer",
+  },
+  progressBarWrap: {
+    width: "100%",
+    height: 4,
+    background: "#0f172a",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  progressBar: {
+    width: "40%",
+    height: "100%",
+    background: "linear-gradient(90deg, #f97316, #fb923c)",
+    animation: "loading 1s linear infinite",
   },
 };
 
 const globalStyles = `
-@keyframes pulse {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(50%); }
-  100% { transform: translateX(200%); }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+button {
+  background: none;
+  border: none;
 }
+
+button:hover {
+  transform: translateY(-1px);
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #ff1b2d; border-radius: 999px; }
+
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
 `;

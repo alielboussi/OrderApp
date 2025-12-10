@@ -11,7 +11,7 @@ export type TransferWarehouseRef = {
 
 export type TransferItem = {
   id: string;
-  movement_id?: string | null;
+  transfer_id?: string | null;
   product_id?: string | null;
   variation_id?: string | null;
   qty: number;
@@ -21,6 +21,7 @@ export type TransferItem = {
 
 export type WarehouseTransfer = {
   id: string;
+  reference_code?: string | null;
   status?: string | null;
   note?: string | null;
   created_at: string;

@@ -11,6 +11,12 @@ export async function GET(req: NextRequest) {
     const destId = url.searchParams.get('destId')?.trim() || null;
     const startDateParam = url.searchParams.get('startDate')?.trim() || null;
     const endDateParam = url.searchParams.get('endDate')?.trim() || null;
+    const fromLocked =
+      url.searchParams.get('fromLockedId')?.trim() ||
+      url.searchParams.get('from_locked_id')?.trim() ||
+      url.searchParams.get('locked_from')?.trim() ||
+      url.searchParams.get('locked_id')?.trim() ||
+      null;
     const limitParamRaw = url.searchParams.get('limit');
     const limitParam = limitParamRaw === null ? Number.NaN : Number(limitParamRaw);
     const limit = Number.isFinite(limitParam)
@@ -32,37 +38,36 @@ export async function GET(req: NextRequest) {
 
     const supabase = getServiceClient();
     let query = supabase
-      .from('stock_movements')
+      .from('warehouse_transfers')
       .select(
         `
         id,
-        status,
+        reference_code,
         note,
         created_at,
-        completed_at,
-        source_location_id,
-        dest_location_id,
-        items:stock_movement_items (
+        source_warehouse_id,
+        destination_warehouse_id,
+        items:warehouse_transfer_items (
           id,
-          movement_id,
-          product_id,
-          variation_id,
-          qty,
-          product:catalog_items ( id, name, uom ),
-          variation:catalog_variants ( id, name, uom )
+          transfer_id,
+          item_id,
+          variant_id,
+          qty_units,
+          item:catalog_items ( id, name ),
+          variant:catalog_variants ( id, name )
         )
       `
       )
-      .eq('source_location_type', 'warehouse')
-      .eq('dest_location_type', 'warehouse')
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (sourceId) {
-      query = query.eq('source_location_id', sourceId);
+      query = query.eq('source_warehouse_id', sourceId);
+    } else if (fromLocked) {
+      query = query.eq('source_warehouse_id', fromLocked);
     }
     if (destId) {
-      query = query.eq('dest_location_id', destId);
+      query = query.eq('destination_warehouse_id', destId);
     }
     if (startIso) {
       query = query.gte('created_at', startIso);
@@ -82,8 +87,8 @@ export async function GET(req: NextRequest) {
 
     const warehouseIds = new Set<string>();
     (data ?? []).forEach((transfer) => {
-      if (transfer.source_location_id) warehouseIds.add(transfer.source_location_id);
-      if (transfer.dest_location_id) warehouseIds.add(transfer.dest_location_id);
+      if ((transfer as any).source_warehouse_id) warehouseIds.add((transfer as any).source_warehouse_id as string);
+      if ((transfer as any).destination_warehouse_id) warehouseIds.add((transfer as any).destination_warehouse_id as string);
     });
 
     const warehouseMap = new Map<string, string | null>();
@@ -103,21 +108,31 @@ export async function GET(req: NextRequest) {
     }
 
     const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => {
-      const sourceName = transfer.source?.name ?? (transfer.source_location_id ? warehouseMap.get(transfer.source_location_id) ?? null : null);
-      const destName = transfer.dest?.name ?? (transfer.dest_location_id ? warehouseMap.get(transfer.dest_location_id) ?? null : null);
+      const sourceIdValue = (transfer as any).source_warehouse_id as string | null;
+      const destIdValue = (transfer as any).destination_warehouse_id as string | null;
+      const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;
+      const destName = destIdValue ? warehouseMap.get(destIdValue) ?? null : null;
 
       return {
-        ...transfer,
-        source: transfer.source_location_id
-          ? { id: transfer.source_location_id, name: sourceName }
-          : null,
-        dest: transfer.dest_location_id
-          ? { id: transfer.dest_location_id, name: destName }
-          : null,
-        items: Array.isArray(transfer.items)
-          ? transfer.items.map((item) => ({
-              ...item,
-              qty: Number(item?.qty) || 0,
+        id: transfer.id,
+        reference_code: (transfer as any).reference_code ?? null,
+        status: 'completed',
+        note: transfer.note ?? null,
+        created_at: transfer.created_at ?? null,
+        completed_at: transfer.created_at ?? null,
+        source_location_id: sourceIdValue,
+        dest_location_id: destIdValue,
+        source: sourceIdValue ? { id: sourceIdValue, name: sourceName } : null,
+        dest: destIdValue ? { id: destIdValue, name: destName } : null,
+        items: Array.isArray((transfer as any).items)
+          ? ((transfer as any).items as Array<TransferItem & { qty_units?: number | string | null }>).map((item) => ({
+              id: item.id,
+              transfer_id: (item as any).transfer_id ?? null,
+              product_id: item.product_id ?? (item as any).item_id ?? null,
+              variation_id: item.variation_id ?? (item as any).variant_id ?? null,
+              qty: Number((item as any).qty_units ?? item.qty ?? 0) || 0,
+              product: (item as any).item ?? item.product ?? null,
+              variation: (item as any).variant ?? item.variation ?? null,
             }))
           : [],
       };

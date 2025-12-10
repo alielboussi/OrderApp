@@ -38,30 +38,29 @@ class RoleGuard(
 }
 
 object RoleGuards {
-    val Outlet = RoleGuard(
+    val Branch = RoleGuard(
         id = "8cafa111-b968-455c-bf4b-7bb8577daff7",
-        slug = "Outlet",
-        legacySlugs = setOf("outlet", "outlet_operator", "outlet_ordering"),
+        slug = "Branch",
+        legacySlugs = setOf("outlet", "branch", "outlet_operator", "outlet_ordering"),
         additionalIds = setOf(
             "fb847394-0001-408a-83cc-791652db6cee",
             "f13d4e3f-f84d-4193-924a-e2e914aff928"
         )
     )
     val Supervisor = RoleGuard(
-        id = "e6523948-4c2c-41d8-8cbc-27aca489dbcb",
-        slug = "Main Branch Order Supervisor",
-        legacySlugs = setOf("supervisor", "main_branch_order_supervisor"),
-        additionalIds = setOf("66f6f683-6f98-415b-a66a-923684b2823f")
+        id = "eef421e0-ce06-4518-93c4-6bb6525f6742",
+        slug = "Supervisor",
+        legacySlugs = setOf("supervisor", "main_branch_order_supervisor", "transfers", "warehouse_transfers"),
+        additionalIds = setOf(
+            "e6523948-4c2c-41d8-8cbc-27aca489dbcb",
+            "66f6f683-6f98-415b-a66a-923684b2823f",
+            "89147a54-507d-420b-86b4-2089d64faecd"
+        )
     )
-    val Transfers = RoleGuard(
-        slug = "Transfers",
-        legacySlugs = setOf("transfer_manager", "warehouse_transfers", "transfers"),
-        additionalIds = setOf("89147a54-507d-420b-86b4-2089d64faecd")
-    )
-    val WarehouseAdmin = RoleGuard(
+    val Administrator = RoleGuard(
         id = "6b9e657a-6131-4a0b-8afa-0ce260f8ed0c",
-        slug = "admin",
-        legacySlugs = setOf("administrator")
+        slug = "Administrator",
+        legacySlugs = setOf("administrator", "admin", "warehouse_admin")
     )
 }
 
