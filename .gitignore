@@ -2,10 +2,19 @@
 .gradle/
 local.properties
 /.kotlin/
+/.gradle/
 /build/
 /app/build/
 /app/.cxx/
 /.cxx/
+**/.kotlin/
+**/.gradle/
+**/build/
+**/.cxx/
+**/intermediates/
+**/kspCaches/
+**/generated/
+**/.idea/caches/
 /captures/
 .externalNativeBuild/
 
