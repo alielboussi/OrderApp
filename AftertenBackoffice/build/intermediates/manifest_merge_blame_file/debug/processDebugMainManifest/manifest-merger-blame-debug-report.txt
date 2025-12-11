@@ -55,8 +55,8 @@
 32-->C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:12:9-57
 33        <activity
 33-->C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:13:9-20:20
-34            android:name="com.afterten.orders.WarehouseBackofficeMobileActivity"
-34-->C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:14:13-62
+34            android:name="com.afterten.orders.warehouse_backoffice_mobile.WarehouseBackofficeMobileActivity"
+34-->C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:14:13-109
 35            android:exported="true" >
 35-->C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:15:13-36
 36            <intent-filter>

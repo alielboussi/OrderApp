@@ -166,12 +166,12 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] C:\Users\aliel\.gradle\cach
 		ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:7:9-35
 	android:theme
 		ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:12:9-57
-activity#com.afterten.orders.WarehouseBackofficeMobileActivity
+activity#com.afterten.orders.warehouse_backoffice_mobile.WarehouseBackofficeMobileActivity
 ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:13:9-20:20
 	android:exported
 		ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:15:13-36
 	android:name
-		ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:14:13-62
+		ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:14:13-109
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
 ADDED from C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\AndroidManifest.xml:16:13-19:29
 action#android.intent.action.MAIN

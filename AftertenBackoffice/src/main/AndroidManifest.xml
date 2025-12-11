@@ -11,7 +11,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.WarehouseBackoffice">
         <activity
-            android:name=".WarehouseBackofficeMobileActivity"
+            android:name="com.afterten.orders.warehouse_backoffice_mobile.WarehouseBackofficeMobileActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
