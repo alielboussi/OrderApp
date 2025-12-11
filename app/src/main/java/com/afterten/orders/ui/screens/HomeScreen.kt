@@ -31,9 +31,6 @@ import com.afterten.orders.ui.components.AccessDeniedCard
 fun HomeScreen(
     onCreateOrder: () -> Unit,
     onViewOrders: () -> Unit,
-    onTransfers: () -> Unit,
-    onAdminWarehouses: () -> Unit,
-    onOpenWarehouseBackoffice: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
 ) {
@@ -41,7 +38,6 @@ fun HomeScreen(
     val hasAdministrator = session.hasRole(RoleGuards.Administrator)
     val hasSupervisorRole = session.hasRole(RoleGuards.Supervisor)
     val hasBranchRole = session.hasRole(RoleGuards.Branch)
-    val canAccessTransfers = hasSupervisorRole || hasAdministrator
     val logger = rememberScreenLogger("Home")
 
     LaunchedEffect(Unit) {
@@ -97,25 +93,6 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         when {
             hasAdministrator -> {
-                // Admin home: can access every surface (branch ordering, supervisor approvals, transfers, and admin dashboards)
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("WarehouseAdminHubTapped")
-                        onAdminWarehouses()
-                    },
-                    enabled = session != null
-                ) { Text("Warehouse Admin Dashboard") }
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("WarehouseBackofficeTapped")
-                        onOpenWarehouseBackoffice()
-                    },
-                    enabled = session != null
-                ) { Text("Warehouse Backoffice (Web)") }
-                Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
@@ -164,17 +141,6 @@ fun HomeScreen(
                     },
                     enabled = (session?.outletId?.isNotEmpty() == true)
                 ) { Text("Orders") }
-                if (canAccessTransfers) {
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            logger.event("TransfersTapped")
-                            onTransfers()
-                        },
-                        enabled = session != null
-                    ) { Text("Stock Transfers") }
-                }
             }
             else -> {
                 AccessDeniedCard(

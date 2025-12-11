@@ -56,6 +56,15 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        getByName("main") {
+            java.srcDirs(
+                "src/main/java",
+                "../warehouse_backoffice_mobile"
+            )
+        }
+    }
+
     // With Kotlin 2.0+, Compose compiler is provided via the kotlin-compose plugin.
 
     kotlinOptions {

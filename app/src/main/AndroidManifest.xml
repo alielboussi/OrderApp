@@ -18,5 +18,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".warehouse_backoffice_mobile.WarehouseBackofficeMobileActivity"
+            android:exported="true"
+            android:label="Afterten Backoffice"
+            android:icon="@drawable/warehouse_backoffice_mobile_icon"
+            android:roundIcon="@drawable/warehouse_backoffice_mobile_icon">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
