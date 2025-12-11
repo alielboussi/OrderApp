@@ -1732,7 +1732,8 @@ function createHtml(config: {
           damage: null
         },
         pendingOperatorSelection: null,
-        operatorUnlocking: false
+        operatorUnlocking: false,
+        networkOffline: false
       };
 
       state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
@@ -1742,6 +1743,13 @@ function createHtml(config: {
       function reportClientReady() {
         console.log('client script ready');
         showLoginInfo('Client ready. Waiting for session...');
+      }
+
+      function markOfflineIfNetworkError(error) {
+        const message = error?.message || '';
+        if (message.includes('Failed to fetch') || message.includes('ENOTFOUND') || message.includes('ERR_NAME_NOT_RESOLVED')) {
+          state.networkOffline = true;
+        }
       }
 
       window.addEventListener('error', (event) => {
@@ -2053,6 +2061,11 @@ function createHtml(config: {
           return [];
         }
 
+        if (state.networkOffline) {
+          console.warn('Skipping product fetch: network offline');
+          return [];
+        }
+
         const loadStockAndDefaults = async () => {
           const [stockResult, productDefaultsResult, variationDefaultsResult] = await Promise.all([
             supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
@@ -2103,6 +2116,7 @@ function createHtml(config: {
           const { productIds, productsWithWarehouseVariations } = await loadStockAndDefaults();
           return await loadProducts(productIds, productsWithWarehouseVariations);
         } catch (error) {
+          markOfflineIfNetworkError(error);
           console.warn('Product fetch failed, attempting minimal fallback', error);
           // Provide a minimal stub so the UI can continue showing destination labels even if Supabase is unreachable.
           return [];
@@ -2149,9 +2163,16 @@ function createHtml(config: {
       }
 
       async function safePreloadVariations(productIds) {
+        if (state.networkOffline) {
+          console.warn('Skipping variation preload: network offline');
+          state.variations = new Map();
+          state.variationIndex = new Map();
+          return;
+        }
         try {
           await preloadVariations(productIds);
         } catch (error) {
+          markOfflineIfNetworkError(error);
           console.warn('Variation preload failed; continuing without variation index', error);
           state.variations = new Map();
           state.variationIndex = new Map();
@@ -3366,14 +3387,17 @@ function createHtml(config: {
         try {
           return await loadViaRpc();
         } catch (error) {
+          markOfflineIfNetworkError(error);
           console.warn('console_locked_warehouses rpc failed, attempting service API fallback', error);
           try {
             return await loadViaServiceApi();
           } catch (apiError) {
+            markOfflineIfNetworkError(apiError);
             console.warn('warehouses API fallback failed, falling back to direct table', apiError);
             try {
               return await loadViaTable();
             } catch (tableError) {
+              markOfflineIfNetworkError(tableError);
               console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
               if (Array.isArray(state.warehouses) && state.warehouses.length) {
                 return state.warehouses;
@@ -3395,6 +3419,13 @@ function createHtml(config: {
       }
 
       async function fetchOperators() {
+        if (state.networkOffline) {
+          console.warn('Skipping operator fetch: network offline');
+          state.operators = [];
+          renderOperatorOptions();
+          return;
+        }
+
         const normalizeOperators = (input) =>
           (Array.isArray(input) ? input : [])
             .map((entry) => ({
@@ -3438,6 +3469,7 @@ function createHtml(config: {
           state.operators = normalizeOperators(rawList);
           renderOperatorOptions();
         } catch (error) {
+          markOfflineIfNetworkError(error);
           console.warn('Failed to load operator directory', error);
           showResult('Unable to load operator directory. Unlocks unavailable.', true);
           state.operators = [];
@@ -3446,6 +3478,13 @@ function createHtml(config: {
       }
 
       async function fetchSuppliers() {
+        if (state.networkOffline) {
+          console.warn('Skipping supplier fetch: network offline');
+          state.suppliers = [];
+          renderSupplierOptions();
+          return;
+        }
+
         const loadViaRpc = async (warehouseId) => {
           if (!warehouseId) return [];
           const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
@@ -3522,6 +3561,7 @@ function createHtml(config: {
         renderSupplierOptions();
 
         if (!state.suppliers.length && lastError) {
+          markOfflineIfNetworkError(lastError);
           throw lastError;
         }
       }
