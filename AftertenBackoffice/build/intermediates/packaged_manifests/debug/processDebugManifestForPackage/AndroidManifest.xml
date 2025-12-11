@@ -29,7 +29,7 @@
         android:label="Afterten Backoffice"
         android:roundIcon="@drawable/warehouse_backoffice_mobile_icon"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar" >
+        android:theme="@style/Theme.WarehouseBackoffice" >
         <activity
             android:name="com.afterten.orders.WarehouseBackofficeMobileActivity"
             android:exported="true" >

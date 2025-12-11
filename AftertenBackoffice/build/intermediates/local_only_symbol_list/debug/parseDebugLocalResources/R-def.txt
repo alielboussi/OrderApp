@@ -1,3 +1,4 @@
 R_DEF: Internal format may change without notice
 local
 drawable warehouse_backoffice_mobile_icon
+style Theme.WarehouseBackoffice
