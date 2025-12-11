@@ -13,3 +13,5 @@ plugins {
 
 rootProject.name = "Afterten Orders App"
 include(":app")
+include(":AftertenBackoffice")
+project(":AftertenBackoffice").projectDir = file("AftertenBackoffice")
