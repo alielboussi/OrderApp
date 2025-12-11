@@ -2053,57 +2053,60 @@ function createHtml(config: {
           return [];
         }
 
-        const [stockResult, productDefaultsResult, variationDefaultsResult] = await Promise.all([
-          supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
-          supabase
+        const loadStockAndDefaults = async () => {
+          const [stockResult, productDefaultsResult, variationDefaultsResult] = await Promise.all([
+            supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
+            supabase.from('catalog_items').select('id').eq('default_warehouse_id', lockedSourceId).eq('active', true),
+            supabase.from('catalog_variants').select('product_id:item_id').eq('default_warehouse_id', lockedSourceId).eq('active', true)
+          ]);
+
+          if (stockResult.error) throw stockResult.error;
+          if (productDefaultsResult.error) throw productDefaultsResult.error;
+          if (variationDefaultsResult.error) throw variationDefaultsResult.error;
+
+          const productIds = new Set();
+          (stockResult.data ?? []).forEach((row) => {
+            if (row?.product_id) productIds.add(row.product_id);
+          });
+          (productDefaultsResult.data ?? []).forEach((row) => {
+            if (row?.id) productIds.add(row.id);
+          });
+          const productsWithWarehouseVariations = new Set();
+          (variationDefaultsResult.data ?? []).forEach((row) => {
+            if (row?.product_id) {
+              productIds.add(row.product_id);
+              productsWithWarehouseVariations.add(row.product_id);
+            }
+          });
+          return { productIds, productsWithWarehouseVariations };
+        };
+
+        const loadProducts = async (productIds, productsWithWarehouseVariations) => {
+          if (!productIds.size) return [];
+          const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
-            .select('id')
-            .eq('default_warehouse_id', lockedSourceId)
-            .eq('active', true),
-          supabase
-            .from('catalog_variants')
-            .select('product_id:item_id')
-            .eq('default_warehouse_id', lockedSourceId)
+            .select('id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
+            .in('id', Array.from(productIds))
             .eq('active', true)
-        ]);
+            .order('name');
+          if (prodErr) throw prodErr;
+          return (products ?? []).map((product) => {
+            if (!product?.id) return product;
+            if (productsWithWarehouseVariations.has(product.id)) {
+              return { ...product, has_variations: true };
+            }
+            return product;
+          });
+        };
 
-        if (stockResult.error) throw stockResult.error;
-        if (productDefaultsResult.error) throw productDefaultsResult.error;
-        if (variationDefaultsResult.error) throw variationDefaultsResult.error;
-
-        const productIds = new Set();
-        (stockResult.data ?? []).forEach((row) => {
-          if (row?.product_id) productIds.add(row.product_id);
-        });
-        (productDefaultsResult.data ?? []).forEach((row) => {
-          if (row?.id) productIds.add(row.id);
-        });
-        const productsWithWarehouseVariations = new Set();
-        (variationDefaultsResult.data ?? []).forEach((row) => {
-          if (row?.product_id) {
-            productIds.add(row.product_id);
-            productsWithWarehouseVariations.add(row.product_id);
-          }
-        });
-
-        if (!productIds.size) {
+        try {
+          const { productIds, productsWithWarehouseVariations } = await loadStockAndDefaults();
+          return await loadProducts(productIds, productsWithWarehouseVariations);
+        } catch (error) {
+          console.warn('Product fetch failed, attempting minimal fallback', error);
+          // Provide a minimal stub so the UI can continue showing destination labels even if Supabase is unreachable.
           return [];
         }
-
-        const { data: products, error: prodErr } = await supabase
-          .from('catalog_items')
-          .select('id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
-          .in('id', Array.from(productIds))
-          .eq('active', true)
-          .order('name');
-        if (prodErr) throw prodErr;
-        return (products ?? []).map((product) => {
-          if (!product?.id) return product;
-          if (productsWithWarehouseVariations.has(product.id)) {
-            return { ...product, has_variations: true };
-          }
-          return product;
-        });
       }
 
       function indexVariationKey(key, variation) {
@@ -2143,6 +2146,16 @@ function createHtml(config: {
             indexVariationKey(variation.sku, variation);
           }
         });
+      }
+
+      async function safePreloadVariations(productIds) {
+        try {
+          await preloadVariations(productIds);
+        } catch (error) {
+          console.warn('Variation preload failed; continuing without variation index', error);
+          state.variations = new Map();
+          state.variationIndex = new Map();
+        }
       }
 
       function focusActiveScanner() {
@@ -3566,7 +3579,7 @@ function createHtml(config: {
 
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
-        await preloadVariations(state.products.map((p) => p.id));
+        await safePreloadVariations(state.products.map((p) => p.id));
         try {
           await fetchSuppliers();
         } catch (error) {
