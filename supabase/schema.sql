@@ -110,30 +110,6 @@ CREATE INDEX IF NOT EXISTS idx_user_roles_outlet ON public.user_roles(outlet_id)
 ALTER TABLE IF EXISTS public.user_roles
   ADD COLUMN IF NOT EXISTS display_name text;
 
-DO $$
-DECLARE
-  role_records constant jsonb := jsonb_build_array(
-    jsonb_build_object('id', '8cafa111-b968-455c-bf4b-7bb8577daff7', 'slug', 'Branch', 'display_name', 'Branch'),
-    jsonb_build_object('id', 'eef421e0-ce06-4518-93c4-6bb6525f6742', 'slug', 'Supervisor', 'display_name', 'Supervisor'),
-    jsonb_build_object('id', '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c', 'slug', 'Administrator', 'display_name', 'Administrator')
-  );
-  rec jsonb;
-BEGIN
-  FOR rec IN SELECT * FROM jsonb_array_elements(role_records)
-  LOOP
-    INSERT INTO public.roles(id, slug, display_name)
-    VALUES (
-      (rec->>'id')::uuid,
-      rec->>'slug',
-      rec->>'display_name'
-    ) ON CONFLICT (id) DO UPDATE SET
-      slug = EXCLUDED.slug,
-      display_name = EXCLUDED.display_name,
-      active = true;
-  END LOOP;
-END
-$$;
-
 -- ------------------------------------------------------------
 -- Warehouses
 -- ------------------------------------------------------------

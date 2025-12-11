@@ -62,6 +62,11 @@ object RoleGuards {
         slug = "Administrator",
         legacySlugs = setOf("administrator", "admin", "warehouse_admin")
     )
+
+    // Aliases to keep older screens/routes working while enforcing the new role split
+    val Outlet: RoleGuard = Branch
+    val Transfers: RoleGuard = Supervisor
+    val WarehouseAdmin: RoleGuard = Administrator
 }
 
 fun OutletSession?.hasRole(guard: RoleGuard): Boolean {

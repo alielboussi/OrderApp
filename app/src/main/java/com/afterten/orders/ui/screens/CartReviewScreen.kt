@@ -50,10 +50,11 @@ fun CartReviewScreen(
     val products by repo.listenProducts().collectAsState(initial = emptyList())
     val logger = rememberScreenLogger("CartReview")
 
-    if (!session.hasRole(RoleGuards.Outlet)) {
+    val hasAccess = session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Administrator)
+    if (!hasAccess) {
         AccessDeniedCard(
-            title = "Outlet access required",
-            message = "Only outlet operators can review carts and submit orders.",
+            title = "Branch access required",
+            message = "Only branch (outlet) operators or administrators can review carts and submit orders.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )

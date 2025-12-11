@@ -90,10 +90,11 @@ fun OrderSummaryScreen(
     var lastName by remember { mutableStateOf("") }
     val logger = rememberScreenLogger("OrderSummary")
 
-    if (!session.hasRole(RoleGuards.Branch)) {
+    val hasAccess = session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Administrator)
+    if (!hasAccess) {
         AccessDeniedCard(
-            title = "Outlet access required",
-            message = "Only outlet operators can capture employee, driver, and offloader signatures.",
+            title = "Branch access required",
+            message = "Only branch (outlet) operators or administrators can capture employee, driver, and offloader signatures.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )

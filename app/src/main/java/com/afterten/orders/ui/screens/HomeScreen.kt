@@ -97,7 +97,7 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         when {
             hasAdministrator -> {
-                // Admin home: offer both native Compose and kiosk web dashboards
+                // Admin home: can access every surface (branch ordering, supervisor approvals, transfers, and admin dashboards)
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
@@ -115,6 +115,24 @@ fun HomeScreen(
                     },
                     enabled = session != null
                 ) { Text("Warehouse Backoffice (Web)") }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        logger.event("CreateOrderAdminTapped")
+                        onCreateOrder()
+                    },
+                    enabled = (session?.outletId?.isNotEmpty() == true)
+                ) { Text("Create New Order (Branch view)") }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        logger.event("SupervisorOrdersAdminTapped")
+                        onViewOrders()
+                    },
+                    enabled = session != null
+                ) { Text("Outlet Orders (Supervisor view)") }
             }
             hasSupervisorRole -> {
                 // Supervisor home: go to Outlet Orders (multi-outlet)

@@ -39,14 +39,14 @@ fun TransfersScreen(
 ) {
     val session by root.session.collectAsState()
     val logger = rememberScreenLogger("Transfers")
-    val canAccessTransfers = session.hasRole(RoleGuards.Transfers) || session.hasRole(RoleGuards.WarehouseAdmin)
+    val canAccessTransfers = session.hasRole(RoleGuards.Supervisor) || session.hasRole(RoleGuards.Administrator)
 
     LaunchedEffect(Unit) { logger.enter(mapOf("hasSession" to (session != null))) }
 
     if (!canAccessTransfers) {
         AccessDeniedCard(
-            title = "Transfers access required",
-            message = "Only users with the Transfers role can manage warehouse transfer requests.",
+            title = "Supervisor access required",
+            message = "Only supervisors or administrators can manage warehouse transfer requests.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",
