@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase-server';
 
-const PROJECT_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+// Bracket access to avoid compile-time inlining of stale envs.
+const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
+const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = 'f71a25d0-9ec2-454d-a606-93cfaa3c606b';
 const DESTINATION_CHOICES = [
   { id: 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15', label: 'Primary Destination' },

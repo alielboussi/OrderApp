@@ -3,7 +3,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 let client: SupabaseClient | null = null;
 
 function getSupabaseUrl(): string {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // Use bracket access to avoid Next/Turbopack compile-time inlining so runtime env changes take effect.
+  const url = process.env.SUPABASE_URL ?? process.env['NEXT_PUBLIC_SUPABASE_URL'];
   if (!url) {
     throw new Error('SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) is required on the server.');
   }
@@ -23,7 +24,7 @@ function getServiceKey(): string {
     return serviceKey;
   }
 
-  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'];
   if (!anonKey) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY (or anon key fallback) is required for server-side requests.');
   }
