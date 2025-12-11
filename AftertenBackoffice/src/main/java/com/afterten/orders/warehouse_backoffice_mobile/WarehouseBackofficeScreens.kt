@@ -1,6 +1,7 @@
 package com.afterten.orders.warehouse_backoffice_mobile
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.BuildConfig
@@ -79,61 +82,100 @@ fun WarehouseBackofficeHomeScreen(
         return
     }
 
-    Column(
+    // Web-like palette (deep navy background, neon accents)
+    val navyDark = Color(0xFF060F1F)
+    val navy = Color(0xFF0B1B33)
+    val panel = Color(0xFF0D223D)
+    val accentPrimary = Color(0xFFE63946)   // red
+    val accentSecondary = Color(0xFFF97316) // amber/orange
+    val accentTertiary = Color(0xFF22C55E)  // green
+    val backgroundBrush = Brush.radialGradient(
+        colors = listOf(navy, navyDark),
+        center = androidx.compose.ui.geometry.Offset(400f, 300f),
+        radius = 1200f
+    )
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Top,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(backgroundBrush)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ElevatedButton(onClick = onLogout, shape = RoundedCornerShape(50)) {
-                Text("Log out")
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Warehouse Backoffice", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Dedicated mobile launcher for warehouse teams. Choose an area to manage.",
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(Modifier.height(24.dp))
-        val actions = listOf(
-            HomeAction("Transfers", onOpenTransfers, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-            HomeAction("Purchases", onOpenPurchases, MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
-            HomeAction("Damages", onOpenDamages, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f))
-        )
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize()
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            items(actions) { action ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = action.tint)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                ElevatedButton(
+                    onClick = onLogout,
+                    shape = RoundedCornerShape(32.dp),
+                    colors = CardDefaults.elevatedButtonColors(containerColor = panel)
                 ) {
-                    Box(
+                    Text("Log out", color = Color.White)
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = panel.copy(alpha = 0.9f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    Text(
+                        "Warehouse Backoffice",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, color = Color.White)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Choose where to work today. Transfers are live now; more control rooms will plug in soon.",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFFB6C2D0))
+                    )
+                }
+            }
+
+            val actions = listOf(
+                HomeAction("Transfers", onOpenTransfers, accentPrimary),
+                HomeAction("Damages", onOpenDamages, accentSecondary),
+                HomeAction("Purchases", onOpenPurchases, accentTertiary)
+            )
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(actions) { action ->
+                    Card(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .border(1.2.dp, action.tint.copy(alpha = 0.7f), RoundedCornerShape(18.dp)),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = panel.copy(alpha = 0.65f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                     ) {
-                        Text(action.label, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.BottomEnd
-                    ) {
-                        Button(onClick = action.onClick, shape = RoundedCornerShape(12.dp)) {
-                            Text("Open")
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                action.label,
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = action.tint
+                                )
+                            )
+                            Button(
+                                onClick = action.onClick,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.buttonColors(containerColor = action.tint, contentColor = Color.White)
+                            ) {
+                                Text("Open")
+                            }
                         }
                     }
                 }

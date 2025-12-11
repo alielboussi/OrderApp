@@ -913,8 +913,9 @@ BEGIN
     RETURN;
   END IF;
 
-  SELECT email INTO v_email FROM auth.users WHERE id = v_uid;
-  v_is_admin := EXISTS (SELECT 1 FROM public.platform_admins WHERE user_id = v_uid);
+  -- Qualify column to avoid ambiguity with output parameter "email"
+  SELECT u.email INTO v_email FROM auth.users u WHERE u.id = v_uid;
+  v_is_admin := EXISTS (SELECT 1 FROM public.platform_admins pa WHERE pa.user_id = v_uid);
 
   SELECT COALESCE(jsonb_agg(to_jsonb(r) - 'description' - 'active' - 'created_at'), '[]'::jsonb)
     INTO v_role_catalog
