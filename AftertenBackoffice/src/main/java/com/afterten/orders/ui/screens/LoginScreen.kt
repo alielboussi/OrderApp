@@ -172,7 +172,7 @@ fun LoginScreen(
 @Composable
 private fun Logo(modifier: Modifier = Modifier) {
     Image(
-        painter = painterResource(id = R.drawable.afterten_logo),
+        painter = painterResource(id = R.drawable.warehouse_backoffice_mobile_icon),
         contentDescription = null,
         modifier = modifier,
         contentScale = ContentScale.Fit

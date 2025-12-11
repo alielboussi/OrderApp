@@ -99,19 +99,18 @@ fun WarehouseBackofficeHomeScreen(
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(24.dp))
+        val actions = listOf(
+            HomeAction("Transfers", onOpenTransfers, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+            HomeAction("Purchases", onOpenPurchases, MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
+            HomeAction("Damages", onOpenDamages, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f))
+        )
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(
-                listOf(
-                    HomeAction("Transfers", onOpenTransfers, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-                    HomeAction("Purchases", onOpenPurchases, MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
-                    HomeAction("Damages", onOpenDamages, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f))
-                )
-            ) { action ->
+            items(actions) { action ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -256,7 +255,7 @@ fun WarehouseDocumentListScreen(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = refresh, enabled = !isLoading) { Text(if (isLoading) "Refreshing..." else "Refresh") }
+                Button(onClick = { refresh() }, enabled = !isLoading) { Text(if (isLoading) "Refreshing..." else "Refresh") }
                 ElevatedButton(onClick = onBack) { Text("Back") }
                 ElevatedButton(onClick = onLogout, shape = RoundedCornerShape(50)) { Text("Log out") }
             }
