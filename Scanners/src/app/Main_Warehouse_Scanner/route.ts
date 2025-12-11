@@ -7,7 +7,8 @@ const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const DESTINATION_CHOICES = [
   { id: 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15', label: 'Primary Destination' },
-  { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' }
+  { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' },
+  { id: '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', label: 'Main Preparation Kitchen' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'ff7a13ec-c79b-4162-b271-9aa29fcb4c15';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
