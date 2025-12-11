@@ -3290,28 +3290,77 @@ function createHtml(config: {
       }
 
       async function fetchWarehousesMetadata() {
-        const params = new URLSearchParams();
-        const metadataIds = new Set();
-        if (lockedSourceId) metadataIds.add(lockedSourceId);
-        (DESTINATION_CHOICES || []).forEach((choice) => {
-          if (choice?.id) metadataIds.add(choice.id);
-        });
-        if (lockedDestId) metadataIds.add(lockedDestId);
-        metadataIds.forEach((id) => {
-          if (id) params.append('locked_id', id);
-        });
-        const response = await fetch('/api/warehouses?' + params.toString(), {
-          credentials: 'same-origin',
-          headers: { Accept: 'application/json' },
-          cache: 'no-store'
-        });
-        if (!response.ok) {
-          const detail = await response.text().catch(() => '');
-          throw new Error(detail || 'Failed to load warehouse metadata.');
+        const destinationIds = Array.isArray(DESTINATION_CHOICES)
+          ? DESTINATION_CHOICES.map((choice) => (choice && typeof choice.id === 'string' ? choice.id : null)).filter(Boolean)
+          : [];
+        const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
+
+        const loadViaRpc = async () => {
+          const { data, error } = await supabase.rpc('console_locked_warehouses', {
+            p_include_inactive: false,
+            p_locked_ids: lockedIds.length ? lockedIds : null
+          });
+          if (error) throw error;
+          return Array.isArray(data) ? data : [];
+        };
+
+        const loadViaServiceApi = async () => {
+          const params = new URLSearchParams();
+          if (lockedIds.length) {
+            lockedIds.forEach((id) => params.append('locked_id', id));
+          }
+          params.set('include_inactive', '0');
+          const query = params.toString();
+          const querySuffix = query ? '?' + query : '';
+          const response = await fetch('/api/warehouses' + querySuffix, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+            cache: 'no-store'
+          });
+          if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            const message = detail || 'warehouses api failed with status ' + response.status;
+            throw new Error(message);
+          }
+          const payload = await response.json().catch(() => ({}));
+          const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
+          return list.map((record) => ({
+            id: record?.id,
+            name: record?.name,
+            parent_warehouse_id: record?.parent_warehouse_id,
+            kind: record?.kind,
+            active: record?.active
+          }));
+        };
+
+        const loadViaTable = async () => {
+          const selectColumns = 'id,name,parent_warehouse_id,kind,active';
+          const { data, error } = await supabase.from('warehouses').select(selectColumns).order('name');
+          if (error) throw error;
+          const rows = (Array.isArray(data) ? data : []).map((row) => ({ ...row, active: row?.active ?? true }));
+          if (!lockedIds.length) return rows;
+          const missingIds = lockedIds.filter((id) => id && !rows.some((row) => row?.id === id));
+          if (!missingIds.length) return rows;
+          const { data: lockedRows, error: lockedErr } = await supabase.from('warehouses').select(selectColumns).in('id', missingIds);
+          if (lockedErr) throw lockedErr;
+          const hydratedLockedRows = (Array.isArray(lockedRows) ? lockedRows : []).map((row) => ({
+            ...row,
+            active: row?.active ?? true
+          }));
+          return rows.concat(hydratedLockedRows);
+        };
+
+        try {
+          return await loadViaRpc();
+        } catch (error) {
+          console.warn('console_locked_warehouses rpc failed, attempting service API fallback', error);
+          try {
+            return await loadViaServiceApi();
+          } catch (apiError) {
+            console.warn('warehouses API fallback failed, falling back to direct table', apiError);
+            return await loadViaTable();
+          }
         }
-        const payload = await response.json().catch(() => ({}));
-        const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
-        return list;
       }
 
       async function fetchOperators() {
