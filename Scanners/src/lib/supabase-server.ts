@@ -13,8 +13,12 @@ function getSupabaseUrl(): string {
 function getServiceKey(): string {
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_ROLE ??
+    process.env.SUPABASE_SERVICE_API_KEY ??
     process.env.SUPABASE_SERVICE_KEY ??
-    process.env.SUPABASE_SECRET;
+    process.env.SUPABASE_SECRET ??
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE;
   if (serviceKey) {
     return serviceKey;
   }

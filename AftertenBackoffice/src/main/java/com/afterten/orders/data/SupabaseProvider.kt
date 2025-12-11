@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package com.afterten.orders.data
 
 import android.content.Context
