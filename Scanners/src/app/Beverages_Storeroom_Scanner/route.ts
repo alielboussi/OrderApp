@@ -3358,7 +3358,25 @@ function createHtml(config: {
             return await loadViaServiceApi();
           } catch (apiError) {
             console.warn('warehouses API fallback failed, falling back to direct table', apiError);
-            return await loadViaTable();
+            try {
+              return await loadViaTable();
+            } catch (tableError) {
+              console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
+              if (Array.isArray(state.warehouses) && state.warehouses.length) {
+                return state.warehouses;
+              }
+              const fallbackList = lockedIds.map((id) => {
+                const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
+                return {
+                  id,
+                  name: choice?.label || 'Warehouse',
+                  parent_warehouse_id: null,
+                  kind: null,
+                  active: true
+                };
+              });
+              return fallbackList;
+            }
           }
         }
       }
