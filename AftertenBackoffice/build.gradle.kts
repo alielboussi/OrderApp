@@ -1,14 +1,26 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.serialization")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
+    id("com.android.application") version "8.13.1"
+    id("org.jetbrains.kotlin.android") version "2.0.0"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
+    id("com.google.devtools.ksp") version "2.0.0-1.0.24"
+}
+
+// Align toolchains with AGP/KSP expectations
+kotlin {
+    jvmToolchain(17)
 }
 
 android {
     namespace = "com.afterten.orders"
     compileSdk = 36
+
+    // Inject env fields shared with the main app (defaults to empty)
+    val supabaseUrl = (project.findProperty("SUPABASE_URL") as String?) ?: ""
+    val supabaseAnonKey = (project.findProperty("SUPABASE_ANON_KEY") as String?) ?: ""
+    val adminEmail = (project.findProperty("ADMIN_EMAIL") as String?) ?: ""
+    val adminUuid = (project.findProperty("ADMIN_UUID") as String?) ?: ""
+    val warehouseBackofficeUrl = (project.findProperty("WAREHOUSE_BACKOFFICE_URL") as String?) ?: ""
 
     defaultConfig {
         applicationId = "com.afterten.orders.warehouse_backoffice_mobile"
@@ -19,6 +31,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "ADMIN_EMAIL", "\"$adminEmail\"")
+        buildConfigField("String", "ADMIN_UUID", "\"$adminUuid\"")
+        buildConfigField("String", "WAREHOUSE_BACKOFFICE_URL", "\"$warehouseBackofficeUrl\"")
     }
 
     buildTypes {
@@ -45,27 +63,13 @@ android {
         buildConfig = true
     }
 
-    // Inject env fields shared with the main app (defaults to empty)
-    val supabaseUrl = (project.findProperty("SUPABASE_URL") as String?) ?: ""
-    val supabaseAnonKey = (project.findProperty("SUPABASE_ANON_KEY") as String?) ?: ""
-    val adminEmail = (project.findProperty("ADMIN_EMAIL") as String?) ?: ""
-    val adminUuid = (project.findProperty("ADMIN_UUID") as String?) ?: ""
-    val warehouseBackofficeUrl = (project.findProperty("WAREHOUSE_BACKOFFICE_URL") as String?) ?: ""
-
-    defaultConfig {
-        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
-        buildConfigField("String", "ADMIN_EMAIL", "\"$adminEmail\"")
-        buildConfigField("String", "ADMIN_UUID", "\"$adminUuid\"")
-        buildConfigField("String", "WAREHOUSE_BACKOFFICE_URL", "\"$warehouseBackofficeUrl\"")
-    }
-
     kotlinOptions {
         jvmTarget = "17"
         freeCompilerArgs += listOf("-Xjvm-default=all")
     }
 
     packaging {
+        jniLibs { keepDebugSymbols += listOf("**/*.so") }
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
 

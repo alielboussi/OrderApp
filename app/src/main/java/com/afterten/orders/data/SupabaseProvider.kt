@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package com.afterten.orders.data
 
 import android.content.Context
@@ -22,6 +24,7 @@ import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.builtins.ListSerializer
 import io.ktor.client.statement.HttpResponse
 import io.github.jan.supabase.createSupabaseClient

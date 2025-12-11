@@ -1,0 +1,66 @@
+com.afterten.orders-resValues-0 C:\Projects\Afterten Orders App\AftertenBackoffice\build\generated\res\resValues\debug
+com.afterten.orders-updated_navigation_xml-1 C:\Projects\Afterten Orders App\AftertenBackoffice\build\generated\updated_navigation_xml\debug
+com.afterten.orders-packageDebugResources-2 C:\Projects\Afterten Orders App\AftertenBackoffice\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.afterten.orders-packageDebugResources-3 C:\Projects\Afterten Orders App\AftertenBackoffice\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.afterten.orders-debug-4 C:\Projects\Afterten Orders App\AftertenBackoffice\build\intermediates\merged_res\debug\mergeDebugResources
+com.afterten.orders-debug-5 C:\Projects\Afterten Orders App\AftertenBackoffice\src\debug\res
+com.afterten.orders-main-6 C:\Projects\Afterten Orders App\AftertenBackoffice\src\main\res
+com.afterten.orders-material-release-7 C:\Users\aliel\.gradle\caches\8.13\transforms\036c254fbc97a2dc104a45c5d8877c27\transformed\material-release\res
+com.afterten.orders-animation-core-release-8 C:\Users\aliel\.gradle\caches\8.13\transforms\1201fc82dae2642cf7c34f7301c7878f\transformed\animation-core-release\res
+com.afterten.orders-ui-unit-release-9 C:\Users\aliel\.gradle\caches\8.13\transforms\145584e31c2291f70572d2a6ca6ca84f\transformed\ui-unit-release\res
+com.afterten.orders-material-icons-core-release-10 C:\Users\aliel\.gradle\caches\8.13\transforms\163dcf815b13993172256f08108f8329\transformed\material-icons-core-release\res
+com.afterten.orders-lifecycle-process-2.8.4-11 C:\Users\aliel\.gradle\caches\8.13\transforms\28368ec5c9e1bce94519bad6f0b55141\transformed\lifecycle-process-2.8.4\res
+com.afterten.orders-material-ripple-release-12 C:\Users\aliel\.gradle\caches\8.13\transforms\2e9654dc0b5ea207164621774ebb9bf2\transformed\material-ripple-release\res
+com.afterten.orders-lifecycle-runtime-compose-release-13 C:\Users\aliel\.gradle\caches\8.13\transforms\308d1da82a12e7146cd0d6079e23dc9e\transformed\lifecycle-runtime-compose-release\res
+com.afterten.orders-annotation-experimental-1.4.1-14 C:\Users\aliel\.gradle\caches\8.13\transforms\317a250efb0eafbb438840298e4f4a9b\transformed\annotation-experimental-1.4.1\res
+com.afterten.orders-navigation-common-ktx-2.8.0-15 C:\Users\aliel\.gradle\caches\8.13\transforms\336bed8d4360bc1da282e4daccbb12d6\transformed\navigation-common-ktx-2.8.0\res
+com.afterten.orders-lifecycle-runtime-ktx-release-16 C:\Users\aliel\.gradle\caches\8.13\transforms\33da7b65e35cf93a93113f56ec5c3a4a\transformed\lifecycle-runtime-ktx-release\res
+com.afterten.orders-ui-graphics-release-17 C:\Users\aliel\.gradle\caches\8.13\transforms\38dbc834916ec6e85ab2d77a258800e3\transformed\ui-graphics-release\res
+com.afterten.orders-browser-1.8.0-18 C:\Users\aliel\.gradle\caches\8.13\transforms\39c46ed897f883a52f5e8d30e1aec98a\transformed\browser-1.8.0\res
+com.afterten.orders-coil-base-2.7.0-19 C:\Users\aliel\.gradle\caches\8.13\transforms\3b629ec520d23e612ede272cf1142a20\transformed\coil-base-2.7.0\res
+com.afterten.orders-ui-release-20 C:\Users\aliel\.gradle\caches\8.13\transforms\44418b9ce45528051ab225145f215b80\transformed\ui-release\res
+com.afterten.orders-ui-util-release-21 C:\Users\aliel\.gradle\caches\8.13\transforms\46bda84253c5d7c109d98b80204542e4\transformed\ui-util-release\res
+com.afterten.orders-ui-tooling-release-22 C:\Users\aliel\.gradle\caches\8.13\transforms\487011fdbd4a8a36b378589c38f21866\transformed\ui-tooling-release\res
+com.afterten.orders-navigation-runtime-2.8.0-23 C:\Users\aliel\.gradle\caches\8.13\transforms\4d59a0eb2c45b1b4e4b810bb6573f6f8\transformed\navigation-runtime-2.8.0\res
+com.afterten.orders-navigation-compose-2.8.0-24 C:\Users\aliel\.gradle\caches\8.13\transforms\4fd58569bd2ebc346da785e63434260f\transformed\navigation-compose-2.8.0\res
+com.afterten.orders-runtime-saveable-release-25 C:\Users\aliel\.gradle\caches\8.13\transforms\551b79983dd357fadf5327facd2fede7\transformed\runtime-saveable-release\res
+com.afterten.orders-startup-runtime-1.1.1-26 C:\Users\aliel\.gradle\caches\8.13\transforms\59fa1253c5541bc5663c9bf6d43c73e0\transformed\startup-runtime-1.1.1\res
+com.afterten.orders-sqlite-2.4.0-27 C:\Users\aliel\.gradle\caches\8.13\transforms\64f4c39242f35406b02b1a55b486a35e\transformed\sqlite-2.4.0\res
+com.afterten.orders-work-runtime-ktx-2.9.1-28 C:\Users\aliel\.gradle\caches\8.13\transforms\6d6a0c3a8823f0ba7b0b85844c1e8ee3\transformed\work-runtime-ktx-2.9.1\res
+com.afterten.orders-foundation-layout-release-29 C:\Users\aliel\.gradle\caches\8.13\transforms\6d790b13fe015658e790c1114de3a772\transformed\foundation-layout-release\res
+com.afterten.orders-graphics-path-1.0.1-30 C:\Users\aliel\.gradle\caches\8.13\transforms\73e9b385f0f7ec26188a13d94ad3ff67\transformed\graphics-path-1.0.1\res
+com.afterten.orders-sqlite-framework-2.4.0-31 C:\Users\aliel\.gradle\caches\8.13\transforms\7420f4ff24cdb8b60df42669dc152a7c\transformed\sqlite-framework-2.4.0\res
+com.afterten.orders-material3-release-32 C:\Users\aliel\.gradle\caches\8.13\transforms\7855efe2519e828db2aa7582969fe23c\transformed\material3-release\res
+com.afterten.orders-activity-compose-1.9.2-33 C:\Users\aliel\.gradle\caches\8.13\transforms\835010b010a9caf97c13105a134760f6\transformed\activity-compose-1.9.2\res
+com.afterten.orders-core-1.13.1-34 C:\Users\aliel\.gradle\caches\8.13\transforms\8440acaabf444de137b5d6bd1a1e541c\transformed\core-1.13.1\res
+com.afterten.orders-lifecycle-viewmodel-ktx-2.8.4-35 C:\Users\aliel\.gradle\caches\8.13\transforms\84878f572fc7c1ece67073ff94af73fb\transformed\lifecycle-viewmodel-ktx-2.8.4\res
+com.afterten.orders-ui-tooling-data-release-36 C:\Users\aliel\.gradle\caches\8.13\transforms\85c46d2e56c16a5d87a628e5b9e460bd\transformed\ui-tooling-data-release\res
+com.afterten.orders-activity-ktx-1.9.2-37 C:\Users\aliel\.gradle\caches\8.13\transforms\88da7959c8f988c144c6057c1bf4f86d\transformed\activity-ktx-1.9.2\res
+com.afterten.orders-lifecycle-viewmodel-savedstate-2.8.4-38 C:\Users\aliel\.gradle\caches\8.13\transforms\8e1b3762e3faa4e50f9c23493742c04b\transformed\lifecycle-viewmodel-savedstate-2.8.4\res
+com.afterten.orders-profileinstaller-1.3.1-39 C:\Users\aliel\.gradle\caches\8.13\transforms\9524938a44949a1e2906ab20867ee74e\transformed\profileinstaller-1.3.1\res
+com.afterten.orders-ui-tooling-preview-release-40 C:\Users\aliel\.gradle\caches\8.13\transforms\95c2bf8203fae7ff3b2a131f45911dfc\transformed\ui-tooling-preview-release\res
+com.afterten.orders-lifecycle-runtime-release-41 C:\Users\aliel\.gradle\caches\8.13\transforms\9640e12ca7205d519329bca43de22f75\transformed\lifecycle-runtime-release\res
+com.afterten.orders-emoji2-1.3.0-42 C:\Users\aliel\.gradle\caches\8.13\transforms\96f08d53390aa7fc1ef059b26183ce35\transformed\emoji2-1.3.0\res
+com.afterten.orders-navigation-common-2.8.0-43 C:\Users\aliel\.gradle\caches\8.13\transforms\98758b6efaf62294a30ffa32aab610f8\transformed\navigation-common-2.8.0\res
+com.afterten.orders-appcompat-resources-1.6.1-44 C:\Users\aliel\.gradle\caches\8.13\transforms\9988fd9403dcbf7abe3e8e2ad9b35680\transformed\appcompat-resources-1.6.1\res
+com.afterten.orders-core-ktx-1.13.1-45 C:\Users\aliel\.gradle\caches\8.13\transforms\9b0bf29a4c2dcad13d43d6306fc93283\transformed\core-ktx-1.13.1\res
+com.afterten.orders-core-runtime-2.2.0-46 C:\Users\aliel\.gradle\caches\8.13\transforms\a387535ffec3116f240fa206c50fa681\transformed\core-runtime-2.2.0\res
+com.afterten.orders-lifecycle-service-2.8.4-47 C:\Users\aliel\.gradle\caches\8.13\transforms\a3ca071c8e967f2bbb27d29f37eeae1a\transformed\lifecycle-service-2.8.4\res
+com.afterten.orders-savedstate-1.2.1-48 C:\Users\aliel\.gradle\caches\8.13\transforms\a72d5a5b3c937117908b6a9584f7cd9c\transformed\savedstate-1.2.1\res
+com.afterten.orders-lifecycle-livedata-core-2.8.4-49 C:\Users\aliel\.gradle\caches\8.13\transforms\aa4e1ea7dfde4e3a6868eaaac9606b78\transformed\lifecycle-livedata-core-2.8.4\res
+com.afterten.orders-work-runtime-2.9.1-50 C:\Users\aliel\.gradle\caches\8.13\transforms\b3c853de97ebc077e97b0fa79db5163e\transformed\work-runtime-2.9.1\res
+com.afterten.orders-foundation-release-51 C:\Users\aliel\.gradle\caches\8.13\transforms\b3e9e5531f23170e8a3e7bdee34180bf\transformed\foundation-release\res
+com.afterten.orders-room-ktx-2.6.1-52 C:\Users\aliel\.gradle\caches\8.13\transforms\b42ed7f7199c8ec808552414cf1da16d\transformed\room-ktx-2.6.1\res
+com.afterten.orders-lifecycle-viewmodel-compose-release-53 C:\Users\aliel\.gradle\caches\8.13\transforms\b7af0c34b6b575d7db1ea1a167046d82\transformed\lifecycle-viewmodel-compose-release\res
+com.afterten.orders-runtime-release-54 C:\Users\aliel\.gradle\caches\8.13\transforms\d6ea02b09adc7c90b401b2566e691404\transformed\runtime-release\res
+com.afterten.orders-ui-text-release-55 C:\Users\aliel\.gradle\caches\8.13\transforms\d8ee356c9503a12cb79da6d6ce132dc1\transformed\ui-text-release\res
+com.afterten.orders-animation-release-56 C:\Users\aliel\.gradle\caches\8.13\transforms\dc1130f413bd7da2a523db203451412e\transformed\animation-release\res
+com.afterten.orders-room-runtime-2.6.1-57 C:\Users\aliel\.gradle\caches\8.13\transforms\dc2adc5bef45496804de6bcb1d3585bd\transformed\room-runtime-2.6.1\res
+com.afterten.orders-customview-poolingcontainer-1.0.0-58 C:\Users\aliel\.gradle\caches\8.13\transforms\e90889ec5e8113f4f05ca12573f395b3\transformed\customview-poolingcontainer-1.0.0\res
+com.afterten.orders-lifecycle-livedata-core-ktx-2.8.4-59 C:\Users\aliel\.gradle\caches\8.13\transforms\e9f7eba0a7b8fadf7b80992fbca8433d\transformed\lifecycle-livedata-core-ktx-2.8.4\res
+com.afterten.orders-lifecycle-livedata-2.8.4-60 C:\Users\aliel\.gradle\caches\8.13\transforms\eb4962bf03b963f076f1aa9d4533cb22\transformed\lifecycle-livedata-2.8.4\res
+com.afterten.orders-activity-1.9.2-61 C:\Users\aliel\.gradle\caches\8.13\transforms\f010993c90a2712b99ca8db9931cd7be\transformed\activity-1.9.2\res
+com.afterten.orders-navigation-runtime-ktx-2.8.0-62 C:\Users\aliel\.gradle\caches\8.13\transforms\f8d82287f404d435d77aba90ef6ebfc0\transformed\navigation-runtime-ktx-2.8.0\res
+com.afterten.orders-lifecycle-viewmodel-release-63 C:\Users\aliel\.gradle\caches\8.13\transforms\fa5167e006bda9e596b951ee9d5f2bc6\transformed\lifecycle-viewmodel-release\res
+com.afterten.orders-ui-geometry-release-64 C:\Users\aliel\.gradle\caches\8.13\transforms\feed88cdfa94405dcaed38de00468cbf\transformed\ui-geometry-release\res
+com.afterten.orders-savedstate-ktx-1.2.1-65 C:\Users\aliel\.gradle\caches\8.13\transforms\ff39ad84f23bbc3a6892bc1cb47bdf07\transformed\savedstate-ktx-1.2.1\res
