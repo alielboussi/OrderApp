@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { useWarehouseAuth } from "../useWarehouseAuth";
 import type { Warehouse } from "@/types/warehouse";
 import type { WarehousePurchase } from "@/types/purchases";
 
@@ -100,6 +101,7 @@ function normalizeErrorMessage(err: unknown): string {
 
 export default function WarehousePurchasesWeb() {
   const router = useRouter();
+  const { status } = useWarehouseAuth();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [purchases, setPurchases] = useState<WarehousePurchase[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
@@ -269,6 +271,10 @@ export default function WarehousePurchasesWeb() {
   const toggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
+
+  if (status !== "ok") {
+    return null;
+  }
 
   return (
     <div style={styles.page}>

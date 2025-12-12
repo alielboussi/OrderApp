@@ -100,7 +100,12 @@ fun LoginScreen(
                 )
                 onLoggedIn()
             } catch (t: Throwable) {
-                error = t.message ?: "Login failed"
+                val msg = t.message ?: "Login failed"
+                error = if (msg.contains("timeout", ignoreCase = true)) {
+                    "Connection timed out. Please check network and try again."
+                } else {
+                    msg
+                }
                 logger.error("LoginFailed", t, mapOf("emailDomain" to emailDomain))
             } finally {
                 loading = false

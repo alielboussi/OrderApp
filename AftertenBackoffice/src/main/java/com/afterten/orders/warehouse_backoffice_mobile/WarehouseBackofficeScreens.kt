@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.BuildConfig
 import com.afterten.orders.data.OutletSession
@@ -368,35 +369,43 @@ fun WarehouseDocumentListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = 20.dp, vertical = 36.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(title, style = MaterialTheme.typography.headlineSmall)
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp, vertical = 28.dp),
-                    "Updated $formatted"
-                }
-                if (!lastUpdated.isNullOrEmpty()) {
-                    Text(
-                        lastUpdated,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                }
+        val lastUpdated = lastUpdatedMillis?.let { millis ->
+            val formatted = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+            "Updated $formatted"
+        }
+
+        Column(Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            if (!lastUpdated.isNullOrEmpty()) {
+                Text(
+                    lastUpdated,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { refresh() }, enabled = !isLoading) { Text(if (isLoading) "Refreshing..." else "Refresh") }
-                ElevatedButton(onClick = onBack) { Text("Back") }
-                ElevatedButton(onClick = onLogout, shape = RoundedCornerShape(50)) { Text("Log out") }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = { refresh() },
+                    enabled = !isLoading,
+                    modifier = Modifier.height(48.dp)
+                ) { Text(if (isLoading) "Refreshing..." else "Refresh") }
+                ElevatedButton(onClick = onBack, modifier = Modifier.height(48.dp)) { Text("Back") }
+                ElevatedButton(
+                    onClick = onLogout,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier.height(48.dp)
+                ) { Text("Log out") }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(28.dp))
 
         FilterPanel(
             isTransfers = isTransfers,
@@ -468,6 +477,7 @@ private fun FilterPanel(
     onApply: () -> Unit,
     onReset: () -> Unit,
 ) {
+    val controlHeight = 56.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -482,14 +492,18 @@ private fun FilterPanel(
                     options = warehouses,
                     selectedId = fromWarehouse,
                     onSelect = onFromWarehouseChange,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(controlHeight)
                 )
                 WarehouseDropdown(
                     label = "To warehouse",
                     options = warehouses,
                     selectedId = toWarehouse,
                     onSelect = onToWarehouseChange,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(controlHeight)
                 )
             }
         } else {
@@ -498,7 +512,9 @@ private fun FilterPanel(
                 options = warehouses,
                 selectedId = fromWarehouse,
                 onSelect = onFromWarehouseChange,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(controlHeight)
             )
         }
 
@@ -509,7 +525,8 @@ private fun FilterPanel(
                 label = { Text("From date (yyyy-MM-dd)") },
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 56.dp)
+                    .height(controlHeight),
+                singleLine = true
             )
             OutlinedTextField(
                 value = toDate,
@@ -517,7 +534,8 @@ private fun FilterPanel(
                 label = { Text("To date (yyyy-MM-dd)") },
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 56.dp)
+                    .height(controlHeight),
+                singleLine = true
             )
         }
 
@@ -525,12 +543,19 @@ private fun FilterPanel(
             value = search,
             onValueChange = onSearchChange,
             label = { Text("Search everything") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(controlHeight),
+            singleLine = true
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onApply, shape = RoundedCornerShape(12.dp)) { Text("Apply filters") }
-            TextButton(onClick = onReset) { Text("Reset all filters") }
+            Button(
+                onClick = onApply,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.height(controlHeight)
+            ) { Text("Apply filters") }
+            TextButton(onClick = onReset, modifier = Modifier.height(controlHeight)) { Text("Reset all filters") }
         }
     }
 }
@@ -548,15 +573,29 @@ private fun WarehouseDropdown(
     val selectedName = options.find { it.id == selectedId }?.name ?: options.firstOrNull()?.name ?: "Any"
 
     Column(modifier) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(6.dp))
         Button(
             onClick = { expanded = true },
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .border(1.dp, Color(0xFFE63946), RoundedCornerShape(12.dp))
         ) {
-            Text(selectedName, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                selectedName,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
         }
         androidx.compose.material3.DropdownMenu(
             expanded = expanded,

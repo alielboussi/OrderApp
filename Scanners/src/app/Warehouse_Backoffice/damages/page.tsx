@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { useWarehouseAuth } from "../useWarehouseAuth";
 import type { Warehouse } from "@/types/warehouse";
 import type { WarehouseDamage } from "@/types/damages";
 
@@ -96,6 +97,7 @@ function normalizeErrorMessage(err: unknown): string {
 
 export default function WarehouseDamagesWeb() {
   const router = useRouter();
+  const { status } = useWarehouseAuth();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [damages, setDamages] = useState<WarehouseDamage[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
@@ -263,6 +265,10 @@ export default function WarehouseDamagesWeb() {
   const toggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
+
+  if (status !== "ok") {
+    return null;
+  }
 
   return (
     <div style={styles.page}>

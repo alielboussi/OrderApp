@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { useWarehouseAuth } from "./useWarehouseAuth";
 
 const actionCards = [
   {
@@ -32,11 +33,16 @@ const actionCards = [
 
 export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
+  const { status } = useWarehouseAuth();
 
   const handleNavigate = (path: string, disabled: boolean) => {
     if (disabled) return;
     router.push(path);
   };
+
+  if (status !== "ok") {
+    return null;
+  }
 
   return (
     <div style={styles.page}>

@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import com.afterten.orders.data.RoleGuards
 import kotlin.text.Charsets
+import java.util.concurrent.TimeUnit
 
 class SupabaseProvider(context: Context) {
     val supabaseUrl: String = BuildConfig.SUPABASE_URL
@@ -52,6 +53,13 @@ class SupabaseProvider(context: Context) {
 
     // Ktor client for custom RPC calls (e.g., outlet_login)
     val http = HttpClient(OkHttp) {
+        engine {
+            config {
+                connectTimeout(30, TimeUnit.SECONDS)
+                readTimeout(60, TimeUnit.SECONDS)
+                writeTimeout(60, TimeUnit.SECONDS)
+            }
+        }
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true

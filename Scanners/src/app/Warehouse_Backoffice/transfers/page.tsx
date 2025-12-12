@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { useWarehouseAuth } from "../useWarehouseAuth";
 
 // Types approximated from the Android WarehousesAdminScreen
 interface Warehouse {
@@ -119,6 +120,7 @@ function normalizeErrorMessage(err: unknown): string {
 
 export default function WarehouseTransfersWeb() {
   const router = useRouter();
+  const { status } = useWarehouseAuth();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [sourceId, setSourceId] = useState("");
@@ -299,6 +301,10 @@ export default function WarehouseTransfersWeb() {
   const toggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
   };
+
+  if (status !== "ok") {
+    return null;
+  }
 
   return (
     <div style={styles.page}>
