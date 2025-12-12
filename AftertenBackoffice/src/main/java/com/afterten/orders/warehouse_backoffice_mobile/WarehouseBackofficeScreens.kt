@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -340,7 +341,9 @@ fun WarehouseDocumentListScreen(
                 array ?: throw IllegalStateException("Unexpected response shape for $title")
 
                 val decoded = json.decodeFromJsonElement(ListSerializer(WarehouseDocument.serializer()), array)
-                decoded.filter { matchesSearch(it, search.text) }
+                val hasActiveFilters = search.text.isNotBlank() || fromDate.isNotBlank() || toDate.isNotBlank() || fromWarehouse != null || toWarehouse != null
+                val filtered = decoded.filter { matchesSearch(it, search.text) }
+                if (hasActiveFilters) filtered else filtered.take(3)
             }.onSuccess { list ->
                 documents = list
                 lastUpdatedMillis = System.currentTimeMillis()
@@ -375,8 +378,8 @@ fun WarehouseDocumentListScreen(
         ) {
             Column {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
-                val lastUpdated = lastUpdatedMillis?.let { millis ->
-                    val formatted = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 28.dp),
                     "Updated $formatted"
                 }
                 if (!lastUpdated.isNullOrEmpty()) {
@@ -504,13 +507,17 @@ private fun FilterPanel(
                 value = fromDate,
                 onValueChange = onFromDateChange,
                 label = { Text("From date (yyyy-MM-dd)") },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp)
             )
             OutlinedTextField(
                 value = toDate,
                 onValueChange = onToDateChange,
                 label = { Text("To date (yyyy-MM-dd)") },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp)
             )
         }
 

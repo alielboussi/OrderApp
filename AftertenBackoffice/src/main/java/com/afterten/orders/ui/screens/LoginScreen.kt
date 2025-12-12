@@ -122,7 +122,7 @@ fun LoginScreen(
             .fillMaxWidth()
             .padding(bottom = 16.dp)
         )
-        Text(text = "Outlet Login", style = MaterialTheme.typography.headlineSmall)
+        Text(text = "Warehouse Backoffice Login", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
         AppOutlinedTextField(
             value = email,
