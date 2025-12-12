@@ -157,7 +157,7 @@ export default function WarehouseTransfersWeb() {
 
   const handleBack = () => {
     allowNavRef.current = true;
-    router.push("/Warehouse_Backoffice");
+    router.push("/Warehouse_Backoffice/inventory");
   };
 
   useEffect(() => {
@@ -524,7 +524,7 @@ function LabeledDate(props: { label: string; value: string; onChange: (v: string
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={styles.select}
+        style={styles.dateInput}
       />
     </label>
   );
@@ -624,6 +624,17 @@ const styles: Record<string, CSSProperties> = {
     background: "#0c152b",
     color: "#fff",
     fontSize: 14,
+  },
+  dateInput: {
+    width: "100%",
+    borderRadius: 18,
+    border: "1.5px solid #ff1b2d",
+    padding: "12px 14px",
+    background: "#0c152b",
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: 700,
+    colorScheme: "dark",
   },
   searchBox: {
     border: "1.5px solid #ff1b2d",

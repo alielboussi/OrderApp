@@ -32,6 +32,7 @@ class WarehouseBackofficeMobileActivity : ComponentActivity() {
 
 private sealed class WarehouseRoutes(val route: String) {
     data object Login : WarehouseRoutes("wb_login")
+    data object Inventory : WarehouseRoutes("wb_inventory")
     data object Hub : WarehouseRoutes("wb_hub")
     data object Transfers : WarehouseRoutes("wb_transfers")
     data object Purchases : WarehouseRoutes("wb_purchases")
@@ -46,11 +47,23 @@ private fun WarehouseBackofficeNavHost(navController: NavHostController = rememb
         composable(WarehouseRoutes.Login.route) {
             LoginScreen(
                 onLoggedIn = {
-                    navController.navigate(WarehouseRoutes.Hub.route) {
+                    navController.navigate(WarehouseRoutes.Inventory.route) {
                         popUpTo(WarehouseRoutes.Login.route) { inclusive = true }
                     }
                 },
                 viewModel = root
+            )
+        }
+        composable(WarehouseRoutes.Inventory.route) {
+            InventoryLandingScreen(
+                sessionFlow = root.session,
+                onOpenInventory = { navController.navigate(WarehouseRoutes.Hub.route) },
+                onLogout = {
+                    root.setSession(null)
+                    navController.navigate(WarehouseRoutes.Login.route) {
+                        popUpTo(WarehouseRoutes.Inventory.route) { inclusive = true }
+                    }
+                }
             )
         }
         composable(WarehouseRoutes.Hub.route) {
@@ -59,10 +72,11 @@ private fun WarehouseBackofficeNavHost(navController: NavHostController = rememb
                 onOpenTransfers = { navController.navigate(WarehouseRoutes.Transfers.route) },
                 onOpenPurchases = { navController.navigate(WarehouseRoutes.Purchases.route) },
                 onOpenDamages = { navController.navigate(WarehouseRoutes.Damages.route) },
+                onBack = { navController.popBackStack(WarehouseRoutes.Inventory.route, inclusive = false) },
                 onLogout = {
                     root.setSession(null)
                     navController.navigate(WarehouseRoutes.Login.route) {
-                        popUpTo(WarehouseRoutes.Hub.route) { inclusive = true }
+                        popUpTo(WarehouseRoutes.Inventory.route) { inclusive = true }
                     }
                 }
             )

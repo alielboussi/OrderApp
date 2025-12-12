@@ -4,41 +4,11 @@ import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 
-const actionCards = [
-  {
-    title: "Warehouse Transfers",
-    body: "View all internal transfers.",
-    cta: "Enter Transfers",
-    accent: "#ff1b2d",
-    path: "/Warehouse_Backoffice/transfers",
-    status: "live" as const,
-  },
-  {
-    title: "Warehouse Damages",
-    body: "Audit all damage deductions.",
-    cta: "View Damages",
-    accent: "#f97316",
-    path: "/Warehouse_Backoffice/damages",
-    status: "live" as const,
-  },
-  {
-    title: "Warehouse Purchases",
-    body: "Review received purchase receipts.",
-    cta: "View Purchases",
-    accent: "#22c55e",
-    path: "/Warehouse_Backoffice/purchases",
-    status: "live" as const,
-  },
-];
-
 export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
 
-  const handleNavigate = (path: string, disabled: boolean) => {
-    if (disabled) return;
-    router.push(path);
-  };
+  const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
 
   if (status !== "ok") {
     return null;
@@ -60,23 +30,20 @@ export default function WarehouseBackofficeDashboard() {
         </header>
 
         <section style={styles.actionsGrid}>
-          {actionCards.map((card) => (
-            <button
-              key={card.title}
-              onClick={() => handleNavigate(card.path, card.status !== "live")}
-              style={{
-                ...styles.actionCard,
-                borderColor: `${card.accent}66`,
-                boxShadow: card.status === "live" ? `0 20px 40px ${card.accent}33` : "none",
-                opacity: card.status === "live" ? 1 : 0.65,
-                cursor: card.status === "live" ? "pointer" : "not-allowed",
-              }}
-            >
-              <p style={{ ...styles.cardTitle, color: card.accent }}>{card.title}</p>
-              <p style={styles.cardBody}>{card.body}</p>
-              <span style={styles.cardCta}>{card.cta}</span>
-            </button>
-          ))}
+          <button
+            onClick={goToInventory}
+            style={{
+              ...styles.actionCard,
+              borderColor: "#7dd3fc88",
+              boxShadow: "0 20px 40px #7dd3fc33",
+              width: "6.5cm",
+              minHeight: "6.5cm",
+            }}
+          >
+            <p style={{ ...styles.cardTitle, color: "#7dd3fc" }}>Inventory</p>
+            <p style={styles.cardBody}>Enter transfers, damages, and purchases.</p>
+            <span style={styles.cardCta}>Open</span>
+          </button>
         </section>
 
       </main>

@@ -131,7 +131,7 @@ export default function WarehouseDamagesWeb() {
 
   const handleBack = () => {
     allowNavRef.current = true;
-    router.push("/Warehouse_Backoffice");
+    router.push("/Warehouse_Backoffice/inventory");
   };
 
   useEffect(() => {
@@ -459,7 +459,7 @@ function LabeledDate({ label, value, onChange }: { label: string; value: string;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <label style={styles.label}>{label}</label>
-      <input style={styles.select} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input style={styles.dateInput} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -545,6 +545,17 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 12,
     padding: "12px 12px",
     minHeight: 44,
+  },
+  dateInput: {
+    background: "#0f172a",
+    border: "1px solid #1f2a44",
+    color: "#e5edff",
+    borderRadius: 12,
+    padding: "12px 12px",
+    minHeight: 44,
+    fontSize: 16,
+    fontWeight: 700,
+    colorScheme: "dark",
   },
   searchBox: {
     background: "#0f172a",

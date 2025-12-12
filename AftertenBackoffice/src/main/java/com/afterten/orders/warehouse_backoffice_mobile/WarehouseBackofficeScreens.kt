@@ -2,6 +2,7 @@ package com.afterten.orders.warehouse_backoffice_mobile
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -25,10 +25,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.afterten.orders.BuildConfig
 import com.afterten.orders.data.OutletSession
 import com.afterten.orders.data.RoleGuards
@@ -73,6 +79,8 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import io.ktor.client.request.parameter
 import java.text.DateFormat
 import java.util.Date
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -81,6 +89,7 @@ fun WarehouseBackofficeHomeScreen(
     onOpenTransfers: () -> Unit,
     onOpenPurchases: () -> Unit,
     onOpenDamages: () -> Unit,
+    onBack: () -> Unit,
     onLogout: () -> Unit
 ) {
     val session by sessionFlow.collectAsState()
@@ -113,13 +122,25 @@ fun WarehouseBackofficeHomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundBrush)
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ElevatedButton(
+                    onClick = onBack,
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.elevatedButtonColors(containerColor = panel)
+                ) {
+                    Text("Back", color = Color.White)
+                }
                 ElevatedButton(
                     onClick = onLogout,
                     shape = RoundedCornerShape(32.dp),
@@ -198,6 +219,118 @@ fun WarehouseBackofficeHomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun InventoryLandingScreen(
+    sessionFlow: StateFlow<OutletSession?>,
+    onOpenInventory: () -> Unit,
+    onLogout: () -> Unit
+) {
+    val session by sessionFlow.collectAsState()
+    val canAccess = session.hasRole(RoleGuards.Supervisor) || session.hasRole(RoleGuards.Administrator)
+
+    if (!canAccess) {
+        AccessDeniedCard(
+            title = "Warehouse access required",
+            message = "Only supervisors or administrators can manage warehouse operations.",
+            primaryLabel = "Log out",
+            onPrimary = onLogout
+        )
+        return
+    }
+
+    val navyDark = Color(0xFF060F1F)
+    val navy = Color(0xFF0B1B33)
+    val panel = Color(0xFF0D223D)
+    val accentPrimary = Color(0xFFE63946)
+    val backgroundBrush = Brush.radialGradient(
+        colors = listOf(navy, navyDark),
+        center = androidx.compose.ui.geometry.Offset(400f, 300f),
+        radius = 1200f
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundBrush)
+            .padding(horizontal = 20.dp, vertical = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                ElevatedButton(
+                    onClick = onLogout,
+                    shape = RoundedCornerShape(32.dp),
+                    colors = ButtonDefaults.elevatedButtonColors(containerColor = panel)
+                ) {
+                    Text("Log out", color = Color.White)
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = panel.copy(alpha = 0.9f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    Text(
+                        "Warehouse Backoffice",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, color = Color.White)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Tap Inventory to manage transfers, damages, and purchases.",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFFB6C2D0))
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .border(1.2.dp, accentPrimary.copy(alpha = 0.7f), RoundedCornerShape(18.dp)),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = panel.copy(alpha = 0.75f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Inventory",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = accentPrimary
+                        )
+                    )
+                    Button(
+                        onClick = onOpenInventory,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentPrimary, contentColor = Color.White),
+                        modifier = Modifier.height(48.dp)
+                    ) {
+                        Text("Open")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Serializable
 data class WarehouseDocument(
     val id: String? = null,
@@ -264,11 +397,14 @@ fun WarehouseDocumentListScreen(
     val isPurchases = path.contains("purchase", ignoreCase = true)
     val isDamages = path.contains("damage", ignoreCase = true)
 
-    fun buildDateParam(raw: String, endOfDay: Boolean): String? {
-        // Expect yyyy-MM-dd; return same string; caller API expects date-only.
+    val userDateFormatter = remember { SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).apply { isLenient = false } }
+    val apiDateFormatter = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { isLenient = false } }
+
+    fun buildDateParam(raw: String): String? {
         if (raw.isBlank()) return null
-        val parts = raw.split("-")
-        return if (parts.size == 3 && parts.all { it.toIntOrNull() != null }) raw else null
+        return runCatching { userDateFormatter.parse(raw) }
+            .getOrNull()
+            ?.let { apiDateFormatter.format(it) }
     }
 
     fun matchesSearch(doc: WarehouseDocument, query: String): Boolean {
@@ -316,8 +452,8 @@ fun WarehouseDocumentListScreen(
             runCatching {
                 val body: String = client.get(url) {
                     header("Authorization", "Bearer $token")
-                    buildDateParam(fromDate, false)?.let { parameter("startDate", it) }
-                    buildDateParam(toDate, true)?.let { parameter("endDate", it) }
+                    buildDateParam(fromDate)?.let { parameter("startDate", it) }
+                    buildDateParam(toDate)?.let { parameter("endDate", it) }
                     if (isTransfers) {
                         fromWarehouse?.let { parameter("sourceId", it) }
                         toWarehouse?.let { parameter("destId", it) }
@@ -342,9 +478,7 @@ fun WarehouseDocumentListScreen(
                 array ?: throw IllegalStateException("Unexpected response shape for $title")
 
                 val decoded = json.decodeFromJsonElement(ListSerializer(WarehouseDocument.serializer()), array)
-                val hasActiveFilters = search.text.isNotBlank() || fromDate.isNotBlank() || toDate.isNotBlank() || fromWarehouse != null || toWarehouse != null
-                val filtered = decoded.filter { matchesSearch(it, search.text) }
-                if (hasActiveFilters) filtered else filtered.take(3)
+                decoded.filter { matchesSearch(it, search.text) }
             }.onSuccess { list ->
                 documents = list
                 lastUpdatedMillis = System.currentTimeMillis()
@@ -369,7 +503,8 @@ fun WarehouseDocumentListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 36.dp),
+            .background(Color(0xFF0A1626))
+            .padding(horizontal = 20.dp, vertical = 44.dp),
         verticalArrangement = Arrangement.Top
     ) {
         val lastUpdated = lastUpdatedMillis?.let { millis ->
@@ -377,16 +512,21 @@ fun WarehouseDocumentListScreen(
             "Updated $formatted"
         }
 
-        Column(Modifier.fillMaxWidth()) {
-            Text(title, style = MaterialTheme.typography.headlineSmall)
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
             if (!lastUpdated.isNullOrEmpty()) {
                 Text(
                     lastUpdated,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                 )
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -396,16 +536,16 @@ fun WarehouseDocumentListScreen(
                     onClick = { refresh() },
                     enabled = !isLoading,
                     modifier = Modifier.height(48.dp)
-                ) { Text(if (isLoading) "Refreshing..." else "Refresh") }
-                ElevatedButton(onClick = onBack, modifier = Modifier.height(48.dp)) { Text("Back") }
+                ) { Text(if (isLoading) "Refreshing..." else "Refresh", style = MaterialTheme.typography.bodyMedium) }
+                ElevatedButton(onClick = onBack, modifier = Modifier.height(48.dp)) { Text("Back", style = MaterialTheme.typography.bodyMedium) }
                 ElevatedButton(
                     onClick = onLogout,
                     shape = RoundedCornerShape(50),
                     modifier = Modifier.height(48.dp)
-                ) { Text("Log out") }
+                ) { Text("Log out", style = MaterialTheme.typography.bodyMedium) }
             }
         }
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(32.dp))
 
         FilterPanel(
             isTransfers = isTransfers,
@@ -433,7 +573,7 @@ fun WarehouseDocumentListScreen(
                 refresh()
             }
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         if (error != null) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Text(
@@ -445,15 +585,26 @@ fun WarehouseDocumentListScreen(
             Spacer(Modifier.height(12.dp))
         }
         if (documents.isEmpty() && !isLoading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true),
+                contentAlignment = Alignment.Center
+            ) {
                 Text("No records yet.", style = MaterialTheme.typography.bodyMedium)
             }
             return
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(documents.size) { idx ->
-                val doc = documents[idx]
-                WarehouseDocumentCard(document = doc)
+        Box(Modifier.weight(1f, fill = true)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)
+            ) {
+                items(documents.size) { idx ->
+                    val doc = documents[idx]
+                    WarehouseDocumentCard(document = doc)
+                }
             }
         }
     }
@@ -478,15 +629,72 @@ private fun FilterPanel(
     onReset: () -> Unit,
 ) {
     val controlHeight = 56.dp
+    val accentGreen = Color(0xFF22C55E)
+    val dateFormatter = remember {
+        SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).apply { isLenient = false }
+    }
+    var showFromDatePicker by remember { mutableStateOf(false) }
+    var showToDatePicker by remember { mutableStateOf(false) }
+    val fromPickerState = rememberDatePickerState(
+        initialSelectedDateMillis = runCatching { dateFormatter.parse(fromDate)?.time }.getOrNull()
+    )
+    val toPickerState = rememberDatePickerState(
+        initialSelectedDateMillis = runCatching { dateFormatter.parse(toDate)?.time }.getOrNull()
+    )
+
+    val datePickerScheme = MaterialTheme.colorScheme.copy(
+        onSurface = Color.White,
+        onSurfaceVariant = Color.White,
+        primary = accentGreen,
+        onPrimary = Color(0xFF0A1626)
+    )
+    val datePickerTypography = MaterialTheme.typography.run {
+        copy(
+            headlineLarge = headlineLarge.copy(fontSize = headlineLarge.fontSize * 1.08f),
+            headlineMedium = headlineMedium.copy(fontSize = headlineMedium.fontSize * 1.08f),
+            headlineSmall = headlineSmall.copy(fontSize = headlineSmall.fontSize * 1.08f),
+            titleLarge = titleLarge.copy(fontSize = titleLarge.fontSize * 1.05f)
+        )
+    }
+    val datePickerColors = DatePickerDefaults.colors(
+        containerColor = Color(0xFF1A1F2A),
+        titleContentColor = Color.White,
+        headlineContentColor = Color.White,
+        weekdayContentColor = Color.White,
+        subheadContentColor = Color.White,
+        navigationContentColor = Color.White,
+        yearContentColor = Color.White,
+        disabledYearContentColor = Color(0x80FFFFFF),
+        selectedYearContentColor = Color.White,
+        disabledSelectedYearContentColor = Color(0x80FFFFFF),
+        currentYearContentColor = accentGreen,
+        dayContentColor = Color.White,
+        disabledDayContentColor = Color(0x66FFFFFF),
+        selectedDayContentColor = Color(0xFF0A1626),
+        disabledSelectedDayContentColor = Color(0x660A1626),
+        selectedDayContainerColor = accentGreen,
+        disabledSelectedDayContainerColor = accentGreen.copy(alpha = 0.35f),
+        todayContentColor = accentGreen,
+        todayDateBorderColor = accentGreen
+    )
+
+    LaunchedEffect(fromDate) {
+        fromPickerState.selectedDateMillis = runCatching { dateFormatter.parse(fromDate)?.time }.getOrNull()
+    }
+
+    LaunchedEffect(toDate) {
+        toPickerState.selectedDateMillis = runCatching { dateFormatter.parse(toDate)?.time }.getOrNull()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color(0xFF22395F), RoundedCornerShape(16.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .border(1.dp, accentGreen.copy(alpha = 0.65f), RoundedCornerShape(18.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         if (isTransfers) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 WarehouseDropdown(
                     label = "From warehouse",
                     options = warehouses,
@@ -518,44 +726,141 @@ private fun FilterPanel(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = fromDate,
-                onValueChange = onFromDateChange,
-                label = { Text("From date (yyyy-MM-dd)") },
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(controlHeight),
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = toDate,
-                onValueChange = onToDateChange,
-                label = { Text("To date (yyyy-MM-dd)") },
+                    .height(controlHeight)
+                    .clickable { showFromDatePicker = true }
+            ) {
+                OutlinedTextField(
+                    value = fromDate,
+                    onValueChange = onFromDateChange,
+                    label = { Text("From date (dd-MM-yyyy)", fontSize = 11.sp) },
+                    enabled = false,
+                    readOnly = true,
+                    modifier = Modifier.fillMaxSize(),
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        disabledIndicatorColor = accentGreen,
+                        disabledLabelColor = accentGreen,
+                        disabledTextColor = Color.White,
+                        disabledContainerColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = accentGreen,
+                        unfocusedIndicatorColor = accentGreen.copy(alpha = 0.8f),
+                        focusedLabelColor = accentGreen,
+                        unfocusedLabelColor = accentGreen.copy(alpha = 0.85f),
+                        cursorColor = accentGreen
+                    )
+                )
+            }
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(controlHeight),
-                singleLine = true
-            )
+                    .height(controlHeight)
+                    .clickable { showToDatePicker = true }
+            ) {
+                OutlinedTextField(
+                    value = toDate,
+                    onValueChange = onToDateChange,
+                    label = { Text("To date (dd-MM-yyyy)", fontSize = 11.sp) },
+                    enabled = false,
+                    readOnly = true,
+                    modifier = Modifier.fillMaxSize(),
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        disabledIndicatorColor = accentGreen,
+                        disabledLabelColor = accentGreen,
+                        disabledTextColor = Color.White,
+                        disabledContainerColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = accentGreen,
+                        unfocusedIndicatorColor = accentGreen.copy(alpha = 0.8f),
+                        focusedLabelColor = accentGreen,
+                        unfocusedLabelColor = accentGreen.copy(alpha = 0.85f),
+                        cursorColor = accentGreen
+                    )
+                )
+            }
         }
 
         OutlinedTextField(
             value = search,
             onValueChange = onSearchChange,
-            label = { Text("Search everything") },
+            label = { Text("Search everything", fontSize = 11.sp) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(controlHeight),
-            singleLine = true
+            singleLine = true,
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = accentGreen,
+                unfocusedIndicatorColor = accentGreen.copy(alpha = 0.8f),
+                focusedLabelColor = accentGreen,
+                unfocusedLabelColor = accentGreen.copy(alpha = 0.85f),
+                cursorColor = accentGreen,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent
+            )
         )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = onApply,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.height(controlHeight)
-            ) { Text("Apply filters") }
-            TextButton(onClick = onReset, modifier = Modifier.height(controlHeight)) { Text("Reset all filters") }
+            ) { Text("Apply filters", style = MaterialTheme.typography.bodyMedium) }
+            TextButton(onClick = onReset, modifier = Modifier.height(controlHeight)) {
+                Text("Reset all filters", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+
+    if (showFromDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showFromDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        fromPickerState.selectedDateMillis?.let { millis ->
+                            onFromDateChange(dateFormatter.format(Date(millis)))
+                        }
+                        showFromDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFromDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            MaterialTheme(colorScheme = datePickerScheme, typography = datePickerTypography) {
+                DatePicker(state = fromPickerState, colors = datePickerColors)
+            }
+        }
+    }
+
+    if (showToDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showToDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        toPickerState.selectedDateMillis?.let { millis ->
+                            onToDateChange(dateFormatter.format(Date(millis)))
+                        }
+                        showToDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showToDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            MaterialTheme(colorScheme = datePickerScheme, typography = datePickerTypography) {
+                DatePicker(state = toPickerState, colors = datePickerColors)
+            }
         }
     }
 }
@@ -569,14 +874,15 @@ private fun WarehouseDropdown(
     onSelect: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val accentGreen = Color(0xFF22C55E)
     var expanded by remember { mutableStateOf(false) }
     val selectedName = options.find { it.id == selectedId }?.name ?: options.firstOrNull()?.name ?: "Any"
 
     Column(modifier) {
         Text(
             label,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+            color = accentGreen,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
@@ -584,15 +890,15 @@ private fun WarehouseDropdown(
         Button(
             onClick = { expanded = true },
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF112338)),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .border(1.dp, Color(0xFFE63946), RoundedCornerShape(12.dp))
+                .border(1.dp, accentGreen, RoundedCornerShape(12.dp))
         ) {
             Text(
                 selectedName,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = Color.White,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
@@ -603,11 +909,12 @@ private fun WarehouseDropdown(
         ) {
             options.forEach { option ->
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(option.name) },
+                    text = { Text(option.name, color = Color.White) },
                     onClick = {
                         onSelect(option.id)
                         expanded = false
-                    }
+                    },
+                    colors = MenuDefaults.itemColors(textColor = Color.White)
                 )
             }
         }
@@ -631,7 +938,7 @@ private fun WarehouseDocumentCard(document: WarehouseDocument) {
             Text("Lines: ${document.totalLines ?: 0}", style = MaterialTheme.typography.bodySmall)
             if (!document.notes.isNullOrBlank()) {
                 Text(
-                    document.notes!!,
+                    document.notes,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
