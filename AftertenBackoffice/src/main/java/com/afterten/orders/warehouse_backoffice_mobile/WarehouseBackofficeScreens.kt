@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -22,7 +23,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.BuildConfig
 import com.afterten.orders.data.OutletSession
@@ -57,7 +63,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import io.ktor.client.request.parameter
 import java.text.DateFormat
 import java.util.Date
 
@@ -198,6 +209,8 @@ data class WarehouseDocument(
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
+private data class WarehouseOption(val id: String?, val name: String)
+
 @Composable
 fun WarehouseDocumentListScreen(
     title: String,
@@ -232,11 +245,61 @@ fun WarehouseDocumentListScreen(
         }
     }
 
+    var warehouses by remember { mutableStateOf<List<WarehouseOption>>(emptyList()) }
     var documents by remember { mutableStateOf<List<WarehouseDocument>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var lastUpdatedMillis by remember { mutableStateOf<Long?>(null) }
+    var search by remember { mutableStateOf(TextFieldValue("")) }
+    var fromDate by remember { mutableStateOf("") }
+    var toDate by remember { mutableStateOf("") }
+    var fromWarehouse by remember { mutableStateOf<String?>(null) }
+    var toWarehouse by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
     val baseUrl = remember { BuildConfig.WAREHOUSE_BACKOFFICE_URL.trimEnd('/') }
+
+    val isTransfers = path.contains("transfer", ignoreCase = true)
+    val isPurchases = path.contains("purchase", ignoreCase = true)
+    val isDamages = path.contains("damage", ignoreCase = true)
+
+    fun buildDateParam(raw: String, endOfDay: Boolean): String? {
+        // Expect yyyy-MM-dd; return same string; caller API expects date-only.
+        if (raw.isBlank()) return null
+        val parts = raw.split("-")
+        return if (parts.size == 3 && parts.all { it.toIntOrNull() != null }) raw else null
+    }
+
+    fun matchesSearch(doc: WarehouseDocument, query: String): Boolean {
+        if (query.isBlank()) return true
+        val q = query.lowercase()
+        return listOf(
+            doc.reference,
+            doc.id,
+            doc.status,
+            doc.fromLocation,
+            doc.toLocation,
+            doc.notes
+        ).any { it?.lowercase()?.contains(q) == true }
+    }
+
+    suspend fun loadWarehouses() {
+        if (baseUrl.isEmpty()) return
+        runCatching {
+            val body = client.get("$baseUrl/api/warehouses") {
+                header("Authorization", "Bearer ${sessionFlow.value?.token ?: ""}")
+            }.bodyAsText()
+            val element = json.parseToJsonElement(body)
+            val array = (element as? JsonObject)?.get("warehouses") as? JsonArray
+            val decoded = array?.let { json.decodeFromJsonElement(ListSerializer(JsonObject.serializer()), it) } ?: emptyList()
+            warehouses = listOf(WarehouseOption(null, "Any warehouse")) + decoded.mapNotNull { obj ->
+                val id = obj["id"]?.toString()?.trim('"')
+                val name = obj["name"]?.toString()?.trim('"') ?: "Warehouse"
+                if (id != null) WarehouseOption(id, name) else null
+            }
+        }.onFailure {
+            // keep existing list; show inline error later if needed
+        }
+    }
 
     fun refresh() {
         val token = session?.token ?: return
@@ -249,9 +312,35 @@ fun WarehouseDocumentListScreen(
             isLoading = true
             error = null
             runCatching {
-                client.get(url) {
+                val body = client.get(url) {
                     header("Authorization", "Bearer $token")
-                }.body<List<WarehouseDocument>>()
+                    buildDateParam(fromDate, false)?.let { parameter("startDate", it) }
+                    buildDateParam(toDate, true)?.let { parameter("endDate", it) }
+                    if (isTransfers) {
+                        fromWarehouse?.let { parameter("sourceId", it) }
+                        toWarehouse?.let { parameter("destId", it) }
+                    } else if (isPurchases || isDamages) {
+                        fromWarehouse?.let { parameter("warehouseId", it) }
+                    }
+                }.bodyAsText()
+
+                val element = json.parseToJsonElement(body)
+                val array: JsonArray? = when (element) {
+                    is JsonArray -> element
+                    is JsonObject -> {
+                        element["purchases"] as? JsonArray
+                            ?: element["transfers"] as? JsonArray
+                            ?: element["damages"] as? JsonArray
+                            ?: element["data"] as? JsonArray
+                            ?: element.values.firstOrNull { it is JsonArray } as? JsonArray
+                    }
+                    else -> null
+                }
+
+                array ?: throw IllegalStateException("Unexpected response shape for $title")
+
+                val decoded = json.decodeFromJsonElement(ListSerializer(WarehouseDocument.serializer()), array)
+                decoded.filter { matchesSearch(it, search.text) }
             }.onSuccess { list ->
                 documents = list
                 lastUpdatedMillis = System.currentTimeMillis()
@@ -264,6 +353,7 @@ fun WarehouseDocumentListScreen(
 
     LaunchedEffect(session?.token, path) {
         if (session?.token != null && baseUrl.isNotEmpty()) {
+            loadWarehouses()
             refresh()
             while (true) {
                 delay(120_000L)
@@ -304,6 +394,34 @@ fun WarehouseDocumentListScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+
+        FilterPanel(
+            isTransfers = isTransfers,
+            warehouses = warehouses,
+            fromWarehouse = fromWarehouse,
+            toWarehouse = toWarehouse,
+            onFromWarehouseChange = { fromWarehouse = it; refresh() },
+            onToWarehouseChange = { toWarehouse = it; refresh() },
+            fromDate = fromDate,
+            toDate = toDate,
+            onFromDateChange = { fromDate = it },
+            onToDateChange = { toDate = it },
+            search = search,
+            onSearchChange = { search = it },
+            onApply = {
+                focusManager.clearFocus()
+                refresh()
+            },
+            onReset = {
+                fromWarehouse = null
+                toWarehouse = null
+                fromDate = ""
+                toDate = ""
+                search = TextFieldValue("")
+                refresh()
+            }
+        )
+        Spacer(Modifier.height(12.dp))
         if (error != null) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Text(
@@ -324,6 +442,127 @@ fun WarehouseDocumentListScreen(
             items(documents.size) { idx ->
                 val doc = documents[idx]
                 WarehouseDocumentCard(document = doc)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterPanel(
+    isTransfers: Boolean,
+    warehouses: List<WarehouseOption>,
+    fromWarehouse: String?,
+    toWarehouse: String?,
+    onFromWarehouseChange: (String?) -> Unit,
+    onToWarehouseChange: (String?) -> Unit,
+    fromDate: String,
+    toDate: String,
+    onFromDateChange: (String) -> Unit,
+    onToDateChange: (String) -> Unit,
+    search: TextFieldValue,
+    onSearchChange: (TextFieldValue) -> Unit,
+    onApply: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF22395F), RoundedCornerShape(16.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (isTransfers) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                WarehouseDropdown(
+                    label = "From warehouse",
+                    options = warehouses,
+                    selectedId = fromWarehouse,
+                    onSelect = onFromWarehouseChange,
+                    modifier = Modifier.weight(1f)
+                )
+                WarehouseDropdown(
+                    label = "To warehouse",
+                    options = warehouses,
+                    selectedId = toWarehouse,
+                    onSelect = onToWarehouseChange,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        } else {
+            WarehouseDropdown(
+                label = "Warehouse",
+                options = warehouses,
+                selectedId = fromWarehouse,
+                onSelect = onFromWarehouseChange,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = fromDate,
+                onValueChange = onFromDateChange,
+                label = { Text("From date (yyyy-MM-dd)") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = toDate,
+                onValueChange = onToDateChange,
+                label = { Text("To date (yyyy-MM-dd)") },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = onSearchChange,
+            label = { Text("Search everything") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onApply, shape = RoundedCornerShape(12.dp)) { Text("Apply filters") }
+            TextButton(onClick = onReset) { Text("Reset all filters") }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WarehouseDropdown(
+    label: String,
+    options: List<WarehouseOption>,
+    selectedId: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedName = options.find { it.id == selectedId }?.name ?: options.firstOrNull()?.name ?: "Any"
+
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+        Spacer(Modifier.height(4.dp))
+        Button(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(selectedName, color = MaterialTheme.colorScheme.onSurface)
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(option.name) },
+                    onClick = {
+                        onSelect(option.id)
+                        expanded = false
+                    }
+                )
             }
         }
     }
