@@ -285,9 +285,9 @@ fun WarehouseDocumentListScreen(
     suspend fun loadWarehouses() {
         if (baseUrl.isEmpty()) return
         runCatching {
-            val body = client.get("$baseUrl/api/warehouses") {
-                header("Authorization", "Bearer ${sessionFlow.value?.token ?: ""}")
-            }.bodyAsText()
+                val body: String = client.get("$baseUrl/api/warehouses") {
+                    header("Authorization", "Bearer ${sessionFlow.value?.token ?: ""}")
+                }.body()
             val element = json.parseToJsonElement(body)
             val array = (element as? JsonObject)?.get("warehouses") as? JsonArray
             val decoded = array?.let { json.decodeFromJsonElement(ListSerializer(JsonObject.serializer()), it) } ?: emptyList()
@@ -312,7 +312,7 @@ fun WarehouseDocumentListScreen(
             isLoading = true
             error = null
             runCatching {
-                val body = client.get(url) {
+                val body: String = client.get(url) {
                     header("Authorization", "Bearer $token")
                     buildDateParam(fromDate, false)?.let { parameter("startDate", it) }
                     buildDateParam(toDate, true)?.let { parameter("endDate", it) }
@@ -322,7 +322,7 @@ fun WarehouseDocumentListScreen(
                     } else if (isPurchases || isDamages) {
                         fromWarehouse?.let { parameter("warehouseId", it) }
                     }
-                }.bodyAsText()
+                }.body()
 
                 val element = json.parseToJsonElement(body)
                 val array: JsonArray? = when (element) {
