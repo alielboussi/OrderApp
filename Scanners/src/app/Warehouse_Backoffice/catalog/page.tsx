@@ -4,45 +4,14 @@ import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 
-const actionCards = [
-  {
-    title: "Warehouse Transfers",
-    body: "View all internal transfers.",
-    cta: "Enter Transfers",
-    accent: "#ff1b2d",
-    path: "/Warehouse_Backoffice/transfers",
-  },
-  {
-    title: "Warehouse Damages",
-    body: "Audit all damage deductions.",
-    cta: "View Damages",
-    accent: "#f97316",
-    path: "/Warehouse_Backoffice/damages",
-  },
-  {
-    title: "Warehouse Purchases",
-    body: "Review received purchase receipts.",
-    cta: "View Purchases",
-    accent: "#22c55e",
-    path: "/Warehouse_Backoffice/purchases",
-  },
-  {
-    title: "Catalog (Products & Variants)",
-    body: "Create products and attach variants into catalog tables.",
-    cta: "Build Catalog",
-    accent: "#7dd3fc",
-    path: "/Warehouse_Backoffice/catalog",
-  },
-];
-
-export default function InventoryMenu() {
+export default function CatalogMenu() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
 
-  const handleNavigate = (path: string) => router.push(path);
-  const handleBack = () => router.push("/Warehouse_Backoffice");
-
   if (status !== "ok") return null;
+
+  const go = (path: string) => router.push(path);
+  const back = () => router.push("/Warehouse_Backoffice/inventory");
 
   return (
     <div style={styles.page}>
@@ -51,31 +20,31 @@ export default function InventoryMenu() {
         <header style={styles.hero}>
           <div style={{ flex: 1 }}>
             <p style={styles.kicker}>AfterTen Logistics</p>
-            <h1 style={styles.title}>Inventory</h1>
-            <p style={styles.subtitle}>Choose a workspace to continue.</p>
+            <h1 style={styles.title}>Catalog Builder</h1>
+            <p style={styles.subtitle}>Create products and their variants. Use the buttons below to open the forms.</p>
           </div>
-          <button onClick={handleBack} style={styles.backButton}>
+          <button onClick={back} style={styles.backButton}>
             Back
           </button>
         </header>
 
         <section style={styles.actionsGrid}>
-          <button onClick={handleBack} style={styles.backGhost}>Back to Dashboard</button>
-          {actionCards.map((card) => (
-            <button
-              key={card.title}
-              onClick={() => handleNavigate(card.path)}
-              style={{
-                ...styles.actionCard,
-                borderColor: `${card.accent}66`,
-                boxShadow: `0 20px 40px ${card.accent}33`,
-              }}
-            >
-              <p style={{ ...styles.cardTitle, color: card.accent }}>{card.title}</p>
-              <p style={styles.cardBody}>{card.body}</p>
-              <span style={styles.cardCta}>{card.cta}</span>
-            </button>
-          ))}
+          <button
+            onClick={() => go("/Warehouse_Backoffice/catalog/product")}
+            style={{ ...styles.actionCard, borderColor: "#22c55eaa", boxShadow: "0 18px 44px #22c55e33" }}
+          >
+            <p style={{ ...styles.cardTitle, color: "#22c55e" }}>New Product</p>
+            <p style={styles.cardBody}>Add a base product to catalog_items with clear units and defaults.</p>
+            <span style={styles.cardCta}>Open form</span>
+          </button>
+          <button
+            onClick={() => go("/Warehouse_Backoffice/catalog/variant")}
+            style={{ ...styles.actionCard, borderColor: "#7dd3fcaa", boxShadow: "0 18px 44px #7dd3fc33" }}
+          >
+            <p style={{ ...styles.cardTitle, color: "#7dd3fc" }}>New Variant</p>
+            <p style={styles.cardBody}>Attach a variant to an existing product in catalog_variants.</p>
+            <span style={styles.cardCta}>Open form</span>
+          </button>
         </section>
       </main>
     </div>
@@ -92,19 +61,6 @@ const styles: Record<string, CSSProperties> = {
     color: "#f4f6ff",
     fontFamily: '"Space Grotesk", "Segoe UI", system-ui, sans-serif',
   },
-  backGhost: {
-    gridColumn: "1 / -1",
-    justifySelf: "start",
-    background: "transparent",
-    color: "#f8fafc",
-    border: "1px solid rgba(255,255,255,0.3)",
-    borderRadius: 999,
-    padding: "10px 16px",
-    fontWeight: 600,
-    letterSpacing: 1,
-    cursor: "pointer",
-    marginBottom: 4,
-  },
   shell: {
     width: "100%",
     maxWidth: 1280,
@@ -120,7 +76,7 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 32,
     border: "1px solid rgba(255,255,255,0.1)",
     padding: 24,
-    background: "rgba(6,11,22,0.75)",
+    background: "rgba(6,11,22,0.8)",
     backdropFilter: "blur(16px)",
     boxShadow: "0 30px 60px rgba(0,0,0,0.45)",
   },
@@ -140,7 +96,7 @@ const styles: Record<string, CSSProperties> = {
   subtitle: {
     margin: 0,
     color: "#c6d2ff",
-    maxWidth: 420,
+    maxWidth: 540,
     lineHeight: 1.5,
   },
   backButton: {
@@ -163,7 +119,7 @@ const styles: Record<string, CSSProperties> = {
     textAlign: "left",
     borderRadius: 32,
     padding: 24,
-    background: "rgba(12,17,33,0.85)",
+    background: "rgba(12,17,33,0.9)",
     border: "1px solid rgba(255,255,255,0.12)",
     color: "inherit",
     transition: "transform 180ms ease, box-shadow 180ms ease",
@@ -186,7 +142,7 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.45,
   },
   cardCta: {
-    fontWeight: 600,
+    fontWeight: 700,
     fontSize: 14,
     letterSpacing: 2,
     textTransform: "uppercase",
@@ -197,12 +153,6 @@ const styles: Record<string, CSSProperties> = {
 const globalStyles = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
-button {
-  background: none;
-  border: none;
-}
-
-button:hover {
-  transform: translateY(-2px);
-}
+button { background: none; border: none; }
+button:hover { transform: translateY(-2px); }
 `;
