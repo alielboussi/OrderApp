@@ -83,17 +83,33 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id")?.trim() || null;
+    const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("catalog_items")
-      .select("id,name,sku,item_kind,has_variations,active")
-      .order("name");
+    let query = supabase.from("catalog_items").select("id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active");
+
+    if (id) {
+      query = query.eq("id", id).maybeSingle();
+    } else {
+      query = query.order("name");
+      if (search) {
+        query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
+      }
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    return NextResponse.json({ items: data ?? [] });
+    if (id) {
+      if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ item: data });
+    }
+
+    return NextResponse.json({ items: Array.isArray(data) ? data : [] });
   } catch (error) {
     console.error("[catalog/items] GET failed", error);
     return NextResponse.json({ error: "Unable to load items" }, { status: 500 });
@@ -164,5 +180,76 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[catalog/items] POST failed", error);
     return NextResponse.json({ error: "Unable to create item" }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const id = cleanText(body.id);
+    if (!id || !isUuid(id)) return NextResponse.json({ error: "id is required for update" }, { status: 400 });
+
+    const name = cleanText(body.name);
+    if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+
+    const itemKind = pickItemKind(body.item_kind);
+    if (!itemKind.ok) return NextResponse.json({ error: itemKind.error }, { status: 400 });
+
+    const baseUnit = pickQtyUnit(body.base_unit, "each");
+    const consumptionUom = cleanText(body.consumption_uom) ?? "each";
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? "each";
+    const transferUnit = cleanText(body.transfer_unit) ?? "each";
+
+    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
+    if (!unitsPerPack.ok) return NextResponse.json({ error: unitsPerPack.error }, { status: 400 });
+
+    const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
+    if (!transferQuantity.ok) return NextResponse.json({ error: transferQuantity.error }, { status: 400 });
+
+    const cost = toNumber(body.cost ?? 0, 0, -1);
+    if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
+
+    let purchaseUnitMass: number | null = null;
+    if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
+      const mass = toNumber(body.purchase_unit_mass, 0, 0);
+      if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+      purchaseUnitMass = mass.value;
+    }
+
+    const payload: ItemPayload = {
+      name,
+      sku: cleanText(body.sku) ?? null,
+      item_kind: itemKind.value,
+      base_unit: baseUnit,
+      consumption_uom: consumptionUom,
+      purchase_pack_unit: purchasePackUnit,
+      units_per_purchase_pack: unitsPerPack.value,
+      purchase_unit_mass: purchaseUnitMass,
+      purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
+      transfer_unit: transferUnit,
+      transfer_quantity: transferQuantity.value,
+      cost: cost.value,
+      has_variations: cleanBoolean(body.has_variations, false),
+      locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
+      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
+      image_url: cleanText(body.image_url) ?? null,
+      default_warehouse_id: cleanUuid(body.default_warehouse_id),
+      active: cleanBoolean(body.active, true),
+    };
+
+    const supabase = getServiceClient();
+    const { data, error } = await supabase
+      .from("catalog_items")
+      .update(payload)
+      .eq("id", id)
+      .select("id,name,sku,item_kind")
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ item: data });
+  } catch (error) {
+    console.error("[catalog/items] PUT failed", error);
+    return NextResponse.json({ error: "Unable to update item" }, { status: 500 });
   }
 }
