@@ -9,6 +9,7 @@ export default function WarehouseBackofficeDashboard() {
   const { status } = useWarehouseAuth();
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
+  const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
 
   if (status !== "ok") {
     return null;
@@ -42,6 +43,21 @@ export default function WarehouseBackofficeDashboard() {
           >
             <p style={{ ...styles.cardTitle, color: "#7dd3fc" }}>Inventory</p>
             <p style={styles.cardBody}>Enter transfers, damages, and purchases.</p>
+            <span style={styles.cardCta}>Open</span>
+          </button>
+
+          <button
+            onClick={goToCatalog}
+            style={{
+              ...styles.actionCard,
+              borderColor: "#22c55e88",
+              boxShadow: "0 20px 40px #22c55e33",
+              width: "6.5cm",
+              minHeight: "6.5cm",
+            }}
+          >
+            <p style={{ ...styles.cardTitle, color: "#22c55e" }}>Catalog</p>
+            <p style={styles.cardBody}>Create products and variants for the warehouse catalog.</p>
             <span style={styles.cardCta}>Open</span>
           </button>
         </section>
