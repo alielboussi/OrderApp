@@ -89,26 +89,22 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim() || null;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-    let query = supabase.from("catalog_items").select("id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active");
+    const baseSelect = supabase
+      .from("catalog_items")
+      .select("id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active");
 
     if (id) {
-      query = query.eq("id", id).maybeSingle();
-    } else {
-      query = query.order("name");
-      if (search) {
-        query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
-      }
-    }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    if (id) {
+      const { data, error } = await baseSelect.eq("id", id).maybeSingle();
+      if (error) throw error;
       if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ item: data });
     }
 
+    let listQuery = baseSelect.order("name");
+    if (search) listQuery = listQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
+
+    const { data, error } = await listQuery;
+    if (error) throw error;
     return NextResponse.json({ items: Array.isArray(data) ? data : [] });
   } catch (error) {
     console.error("[catalog/items] GET failed", error);
