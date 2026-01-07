@@ -106,12 +106,12 @@ fun WarehouseBackofficeHomeScreen(
     onLogout: () -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage warehouse operations.",
+            message = "Only administrators can manage warehouse operations.",
             primaryLabel = "Log out",
             onPrimary = onLogout
         )
@@ -242,12 +242,12 @@ fun InventoryLandingScreen(
     onLogout: () -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage warehouse operations.",
+            message = "Only administrators can manage warehouse operations.",
             primaryLabel = "Log out",
             onPrimary = onLogout
         )
@@ -393,12 +393,12 @@ fun CatalogLandingScreen(
     onLogout: () -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage warehouse catalog.",
+            message = "Only administrators can manage warehouse catalog.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",
@@ -583,12 +583,12 @@ fun CatalogProductListScreen(
     onOpenVariants: (String, String?) -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage catalog products.",
+            message = "Only administrators can manage catalog products.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",
@@ -736,12 +736,12 @@ fun CatalogProductFormScreen(
     onOpenVariants: (String, String?) -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage catalog products.",
+            message = "Only administrators can manage catalog products.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",
@@ -1119,12 +1119,12 @@ fun CatalogVariantListScreen(
     onOpenVariantForm: (String?) -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage variants.",
+            message = "Only administrators can manage variants.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",
@@ -1260,12 +1260,12 @@ fun CatalogVariantFormScreen(
     onLogout: () -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage variants.",
+            message = "Only administrators can manage variants.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",
@@ -1619,12 +1619,12 @@ fun WarehouseDocumentListScreen(
     onLogout: () -> Unit
 ) {
     val session by sessionFlow.collectAsState()
-    val canAccess = session.hasRole(RoleGuards.Supervisor)
+    val canAccess = session.hasRole(RoleGuards.Administrator)
 
     if (!canAccess) {
         AccessDeniedCard(
             title = "Warehouse access required",
-            message = "Only supervisors can manage warehouse operations.",
+            message = "Only administrators can manage warehouse operations.",
             primaryLabel = "Back",
             onPrimary = onBack,
             secondaryLabel = "Log out",

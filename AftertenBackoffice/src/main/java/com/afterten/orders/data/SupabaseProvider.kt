@@ -290,7 +290,7 @@ class SupabaseProvider(context: Context) {
         // Effective admin: BuildConfig gate OR DB role
         val hasWarehouseAdminRole = roleDescriptors.any { RoleGuards.WarehouseAdmin.matches(it) } || isAdmin || (whoRoles?.isAdmin == true)
         val hasTransferRole = roleDescriptors.any { RoleGuards.Transfers.matches(it) } || hasWarehouseAdminRole
-        val hasSupervisorRole = roleDescriptors.any { RoleGuards.Supervisor.matches(it) } || hasWarehouseAdminRole
+        val hasSupervisorRole = hasWarehouseAdminRole
         val canTransfer = hasTransferRole
         val isTransferManager = roleDescriptors.any { RoleGuards.Transfers.matches(it) } || hasWarehouseAdminRole
         val isAdminEff = hasWarehouseAdminRole

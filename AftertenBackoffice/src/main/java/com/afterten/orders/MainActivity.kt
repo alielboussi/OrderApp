@@ -62,7 +62,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onViewOrders = {
                     val s = appViewModel.session.value
-                    if (s.hasRole(RoleGuards.Supervisor)) navController.navigate(Routes.SupervisorOrders.route)
+                    if (s.hasRole(RoleGuards.Administrator)) navController.navigate(Routes.SupervisorOrders.route)
                     else navController.navigate(Routes.Orders.route)
                 },
                 onLogout = {
