@@ -37,11 +37,11 @@ fun SupervisorOrdersScreen(
     val scope = rememberCoroutineScope()
     val logger = rememberScreenLogger("SupervisorOrders")
 
-    val hasAccess = session.hasRole(RoleGuards.Supervisor) || session.hasRole(RoleGuards.Administrator)
+    val hasAccess = session.hasRole(RoleGuards.Supervisor)
     if (!hasAccess) {
         AccessDeniedCard(
             title = "Supervisor access required",
-            message = "Only supervisors or administrators can review and approve outlet orders.",
+            message = "Only supervisors can review and approve outlet orders.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )

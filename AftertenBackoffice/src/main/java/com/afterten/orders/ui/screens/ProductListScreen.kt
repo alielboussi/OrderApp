@@ -67,11 +67,11 @@ fun ProductListScreen(
     val scope = rememberCoroutineScope()
     val session by root.session.collectAsState()
 
-        val hasAccess = session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Administrator)
+        val hasAccess = session.hasRole(RoleGuards.Administrator)
         if (!hasAccess) {
         AccessDeniedCard(
-                title = "Branch access required",
-                message = "Only branch (outlet) operators or administrators can place orders.",
+            title = "Administrator access required",
+            message = "Backoffice ordering is restricted to Administrators.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )

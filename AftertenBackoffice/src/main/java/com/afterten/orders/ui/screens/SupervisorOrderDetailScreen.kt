@@ -73,11 +73,11 @@ fun SupervisorOrderDetailScreen(
     val variationsByProduct = remember { mutableStateMapOf<String, List<SupabaseProvider.SimpleVariation>>() }
     val logger = rememberScreenLogger("SupervisorOrderDetail")
 
-    val hasAccess = session.hasRole(RoleGuards.Supervisor) || session.hasRole(RoleGuards.Administrator)
+    val hasAccess = session.hasRole(RoleGuards.Administrator)
     if (!hasAccess) {
         AccessDeniedCard(
-            title = "Supervisor access required",
-            message = "Only supervisors or administrators can edit orders, approve variances, or capture driver signatures.",
+            title = "Administrator access required",
+            message = "Backoffice approvals are restricted to Administrators.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )
@@ -206,6 +206,13 @@ fun SupervisorOrderDetailScreen(
                 supervisorName = name,
                 signaturePath = signaturePath,
                 pdfPath = pdfPath
+            )
+
+            // Once approved, immediately allocate and lock the order in the warehouse layer
+            root.supabaseProvider.approveLockAndAllocateOrder(
+                jwt = s.token,
+                orderId = orderId,
+                strict = true
             )
         }
         logger.state("SupervisorApprovalSuccess", mapOf("orderId" to orderId))

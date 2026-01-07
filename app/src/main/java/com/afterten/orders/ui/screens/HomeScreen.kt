@@ -35,7 +35,6 @@ fun HomeScreen(
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
-    val hasAdministrator = session.hasRole(RoleGuards.Administrator)
     val hasSupervisorRole = session.hasRole(RoleGuards.Supervisor)
     val hasBranchRole = session.hasRole(RoleGuards.Branch)
     val logger = rememberScreenLogger("Home")
@@ -43,22 +42,21 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))
     }
-    LaunchedEffect(session?.outletId, hasAdministrator, hasSupervisorRole, hasBranchRole) {
+    LaunchedEffect(session?.outletId, hasSupervisorRole, hasBranchRole) {
         logger.state(
             state = "SessionChanged",
             props = mapOf(
                 "outletId" to (session?.outletId ?: ""),
-                "hasAdministrator" to hasAdministrator,
                 "hasSupervisorRole" to hasSupervisorRole,
                 "hasBranchRole" to hasBranchRole
             )
         )
     }
 
-    if (session != null && !hasAdministrator && !hasSupervisorRole && !hasBranchRole) {
+    if (session != null && !hasSupervisorRole && !hasBranchRole) {
         AccessDeniedCard(
             title = "No roles assigned",
-            message = "Your account does not have access to any dashboards. Ask an administrator to assign a role.",
+            message = "Your account does not have access to any dashboards. Ask support to assign a role.",
             primaryLabel = "Log out",
             onPrimary = {
                 logger.event("LogoutNoRole")
@@ -92,25 +90,6 @@ fun HomeScreen(
         Text(text = session?.outletName ?: "", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
         when {
-            hasAdministrator -> {
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("CreateOrderAdminTapped")
-                        onCreateOrder()
-                    },
-                    enabled = (session?.outletId?.isNotEmpty() == true)
-                ) { Text("Create New Order (Branch view)") }
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("SupervisorOrdersAdminTapped")
-                        onViewOrders()
-                    },
-                    enabled = session != null
-                ) { Text("Outlet Orders (Supervisor view)") }
-            }
             hasSupervisorRole -> {
                 // Supervisor home: go to Outlet Orders (multi-outlet)
                 Button(
@@ -145,7 +124,7 @@ fun HomeScreen(
             else -> {
                 AccessDeniedCard(
                     title = "No roles assigned",
-                    message = "Your account does not have access to any dashboards. Ask an administrator to assign a role.",
+                    message = "Your account does not have access to any dashboards. Ask support to assign a role.",
                     primaryLabel = "Log out",
                     onPrimary = {
                         logger.event("LogoutNoRole")

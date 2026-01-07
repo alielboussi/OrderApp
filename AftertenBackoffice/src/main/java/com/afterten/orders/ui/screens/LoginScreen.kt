@@ -41,6 +41,8 @@ import com.afterten.orders.ui.components.AppOutlinedTextField
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.repo.OutletRepository
 import com.afterten.orders.util.rememberScreenLogger
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -89,16 +91,22 @@ fun LoginScreen(
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 val session = repo.login(email, password)
-                viewModel.setSession(session)
-                logger.event(
-                    "LoginSuccess",
-                    mapOf(
-                        "outletId" to session.outletId,
-                        "isAdmin" to session.isAdmin,
-                        "canTransfer" to session.canTransfer
+                if (!session.hasRole(RoleGuards.Administrator)) {
+                    error = "Backoffice is restricted to Administrators."
+                    viewModel.setSession(null)
+                    logger.warn("LoginRejectedNonAdmin", mapOf("emailDomain" to emailDomain))
+                } else {
+                    viewModel.setSession(session)
+                    logger.event(
+                        "LoginSuccess",
+                        mapOf(
+                            "outletId" to session.outletId,
+                            "isAdmin" to session.isAdmin,
+                            "canTransfer" to session.canTransfer
+                        )
                     )
-                )
-                onLoggedIn()
+                    onLoggedIn()
+                }
             } catch (t: Throwable) {
                 val msg = t.message ?: "Login failed"
                 error = if (msg.contains("timeout", ignoreCase = true)) {

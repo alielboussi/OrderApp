@@ -73,11 +73,11 @@ fun SupervisorOrderDetailScreen(
     val variationsByProduct = remember { mutableStateMapOf<String, List<SupabaseProvider.SimpleVariation>>() }
     val logger = rememberScreenLogger("SupervisorOrderDetail")
 
-    val hasAccess = session.hasRole(RoleGuards.Supervisor) || session.hasRole(RoleGuards.Administrator)
+    val hasAccess = session.hasRole(RoleGuards.Supervisor)
     if (!hasAccess) {
         AccessDeniedCard(
             title = "Supervisor access required",
-            message = "Only supervisors or administrators can edit orders, approve variances, or capture driver signatures.",
+            message = "Only supervisors can edit orders, approve variances, or capture driver signatures.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )

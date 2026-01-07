@@ -90,11 +90,11 @@ fun OrderSummaryScreen(
     var lastName by remember { mutableStateOf("") }
     val logger = rememberScreenLogger("OrderSummary")
 
-    val hasAccess = session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Administrator)
+    val hasAccess = session.hasRole(RoleGuards.Administrator)
     if (!hasAccess) {
         AccessDeniedCard(
-            title = "Branch access required",
-            message = "Only branch (outlet) operators or administrators can capture employee, driver, and offloader signatures.",
+            title = "Administrator access required",
+            message = "Backoffice order completion is restricted to Administrators.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )
@@ -427,14 +427,6 @@ fun OrderSummaryScreen(
                                         )
                                         placedRemotely = true
                                         logger.state("OrderRpcSuccess", mapOf("orderId" to rpcRes.orderId))
-                                        // Immediately approve, lock and allocate from warehouses (coldrooms)
-                                        runCatching {
-                                            root.supabaseProvider.approveLockAndAllocateOrder(
-                                                jwt = ses.token,
-                                                orderId = rpcRes.orderId,
-                                                strict = true
-                                            )
-                                        }
                                     } catch (placeErr: Throwable) {
                                         // Fallback: insert directly via PostgREST
                                         runCatching {
@@ -449,12 +441,6 @@ fun OrderSummaryScreen(
                                                 jwt = ses.token,
                                                 orderId = order.id,
                                                 items = itemsReq
-                                            )
-                                            // Approve, lock and allocate for fallback-created order as well
-                                            root.supabaseProvider.approveLockAndAllocateOrder(
-                                                jwt = ses.token,
-                                                orderId = order.id,
-                                                strict = true
                                             )
                                         }.onSuccess {
                                             placedRemotely = true

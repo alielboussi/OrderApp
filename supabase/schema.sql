@@ -1028,6 +1028,323 @@ BEGIN
 END;
 $$;
 
+-- Create and lock an order with employee signature + PDF
+CREATE OR REPLACE FUNCTION public.place_order(
+  p_outlet_id uuid,
+  p_items jsonb,
+  p_employee_name text,
+  p_signature_path text DEFAULT NULL,
+  p_pdf_path text DEFAULT NULL
+) RETURNS TABLE(order_id uuid, order_number text, created_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := (SELECT auth.uid());
+  v_now timestamptz := now();
+  v_order public.orders%ROWTYPE;
+  v_item jsonb;
+  v_qty numeric;
+  v_qty_cases numeric;
+  v_receiving_contains numeric;
+BEGIN
+  IF p_outlet_id IS NULL THEN
+    RAISE EXCEPTION 'outlet id required';
+  END IF;
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR p_outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))
+  ) THEN
+    RAISE EXCEPTION 'not authorized for outlet %', p_outlet_id;
+  END IF;
+
+  INSERT INTO public.orders(
+    outlet_id,
+    order_number,
+    status,
+    locked,
+    created_by,
+    tz,
+    pdf_path,
+    employee_signed_name,
+    employee_signature_path,
+    employee_signed_at,
+    updated_at,
+    created_at
+  ) VALUES (
+    p_outlet_id,
+    public.next_order_number(p_outlet_id),
+    'placed',
+    false,
+    v_uid,
+    COALESCE(current_setting('TIMEZONE', true), 'UTC'),
+    p_pdf_path,
+    COALESCE(NULLIF(p_employee_name, ''), p_employee_name),
+    NULLIF(p_signature_path, ''),
+    v_now,
+    v_now,
+    v_now
+  ) RETURNING * INTO v_order;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(p_items, '[]'::jsonb)) LOOP
+    IF (v_item ->> 'product_id') IS NULL THEN
+      RAISE EXCEPTION 'product_id is required for each line item';
+    END IF;
+
+    v_receiving_contains := NULLIF(v_item ->> 'receiving_contains', '')::numeric;
+    v_qty := COALESCE((v_item ->> 'qty')::numeric, 0);
+    v_qty_cases := COALESCE((v_item ->> 'qty_cases')::numeric, NULL);
+    IF v_qty_cases IS NULL AND v_receiving_contains IS NOT NULL AND v_receiving_contains > 0 THEN
+      v_qty_cases := v_qty / v_receiving_contains;
+    END IF;
+
+    INSERT INTO public.order_items(
+      order_id,
+      product_id,
+      variation_id,
+      warehouse_id,
+      name,
+      receiving_uom,
+      consumption_uom,
+      cost,
+      qty,
+      qty_cases,
+      receiving_contains,
+      amount
+    ) VALUES (
+      v_order.id,
+      (v_item ->> 'product_id')::uuid,
+      NULLIF(v_item ->> 'variation_id', '')::uuid,
+      NULLIF(v_item ->> 'warehouse_id', '')::uuid,
+      COALESCE(NULLIF(v_item ->> 'name', ''), 'Item'),
+      COALESCE(NULLIF(v_item ->> 'receiving_uom', ''), 'each'),
+      COALESCE(NULLIF(v_item ->> 'consumption_uom', ''), 'each'),
+      COALESCE((v_item ->> 'cost')::numeric, 0),
+      v_qty,
+      v_qty_cases,
+      v_receiving_contains,
+      COALESCE((v_item ->> 'cost')::numeric, 0) * v_qty
+    );
+  END LOOP;
+
+  order_id := v_order.id;
+  order_number := v_order.order_number;
+  created_at := v_order.created_at;
+  RETURN NEXT;
+END;
+$$;
+
+-- Supervisor approval: lock order, stamp signature/PDF, and allocate stock
+CREATE OR REPLACE FUNCTION public.supervisor_approve_order(
+  p_order_id uuid,
+  p_supervisor_name text DEFAULT NULL,
+  p_signature_path text DEFAULT NULL,
+  p_pdf_path text DEFAULT NULL
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := (SELECT auth.uid());
+  v_order public.orders%ROWTYPE;
+  v_was_locked boolean;
+BEGIN
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order % not found', p_order_id;
+  END IF;
+
+  v_was_locked := COALESCE(v_order.locked, false);
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))
+  ) THEN
+    RAISE EXCEPTION 'not authorized to approve order %', p_order_id;
+  END IF;
+
+  UPDATE public.orders
+  SET status = 'approved',
+      locked = true,
+      approved_at = COALESCE(approved_at, now()),
+      approved_by = COALESCE(approved_by, v_uid),
+      supervisor_signed_name = COALESCE(NULLIF(p_supervisor_name, ''), supervisor_signed_name),
+      supervisor_signature_path = COALESCE(NULLIF(p_signature_path, ''), supervisor_signature_path),
+      supervisor_signed_at = now(),
+      approved_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), approved_pdf_path),
+      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),
+      modified_by_supervisor = true,
+      modified_by_supervisor_name = COALESCE(NULLIF(p_supervisor_name, ''), modified_by_supervisor_name),
+      updated_at = now()
+  WHERE id = p_order_id;
+
+  IF NOT v_was_locked THEN
+    PERFORM public.record_order_fulfillment(p_order_id);
+  END IF;
+END;
+$$;
+
+-- Driver loading signature + PDF
+CREATE OR REPLACE FUNCTION public.mark_order_loaded(
+  p_order_id uuid,
+  p_driver_name text,
+  p_signature_path text DEFAULT NULL,
+  p_pdf_path text DEFAULT NULL
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := (SELECT auth.uid());
+  v_order public.orders%ROWTYPE;
+BEGIN
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order % not found', p_order_id;
+  END IF;
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))
+  ) THEN
+    RAISE EXCEPTION 'not authorized to mark order % as loaded', p_order_id;
+  END IF;
+
+  UPDATE public.orders
+  SET status = 'loaded',
+      locked = true,
+      driver_signed_name = COALESCE(NULLIF(p_driver_name, ''), driver_signed_name),
+      driver_signature_path = COALESCE(NULLIF(p_signature_path, ''), driver_signature_path),
+      driver_signed_at = now(),
+      loaded_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), loaded_pdf_path),
+      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),
+      updated_at = now()
+  WHERE id = p_order_id;
+END;
+$$;
+
+-- Offloader receipt signature + PDF; moves order to delivered
+CREATE OR REPLACE FUNCTION public.mark_order_offloaded(
+  p_order_id uuid,
+  p_offloader_name text,
+  p_signature_path text DEFAULT NULL,
+  p_pdf_path text DEFAULT NULL
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := (SELECT auth.uid());
+  v_order public.orders%ROWTYPE;
+  v_was_locked boolean;
+BEGIN
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order % not found', p_order_id;
+  END IF;
+
+  v_was_locked := COALESCE(v_order.locked, false);
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))
+  ) THEN
+    RAISE EXCEPTION 'not authorized to complete order %', p_order_id;
+  END IF;
+
+  UPDATE public.orders
+  SET status = 'delivered',
+      locked = true,
+      offloader_signed_name = COALESCE(NULLIF(p_offloader_name, ''), offloader_signed_name),
+      offloader_signature_path = COALESCE(NULLIF(p_signature_path, ''), offloader_signature_path),
+      offloader_signed_at = now(),
+      offloaded_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), offloaded_pdf_path),
+      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),
+      updated_at = now()
+  WHERE id = p_order_id;
+
+  -- If stock was not allocated earlier, do it once here
+  IF NOT v_was_locked THEN
+    PERFORM public.record_order_fulfillment(p_order_id);
+  END IF;
+END;
+$$;
+
+-- Backward-compatible RPC for warehouse allocation + locking
+CREATE OR REPLACE FUNCTION public.approve_lock_and_allocate_order(
+  p_order_id uuid,
+  p_strict boolean DEFAULT true
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_uid uuid := (SELECT auth.uid());
+  v_order public.orders%ROWTYPE;
+  v_needs_allocation boolean := false;
+BEGIN
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order % not found', p_order_id;
+  END IF;
+
+  IF NOT (
+    public.is_admin(v_uid)
+    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))
+  ) THEN
+    RAISE EXCEPTION 'not authorized to allocate order %', p_order_id;
+  END IF;
+
+  v_needs_allocation := NOT COALESCE(v_order.locked, false);
+
+  IF v_needs_allocation THEN
+    UPDATE public.orders
+    SET status = COALESCE(NULLIF(v_order.status, ''), 'approved'),
+        locked = true,
+        approved_at = COALESCE(v_order.approved_at, now()),
+        approved_by = COALESCE(v_order.approved_by, v_uid),
+        updated_at = now()
+    WHERE id = p_order_id;
+
+    PERFORM public.record_order_fulfillment(p_order_id);
+  ELSIF NOT p_strict THEN
+    PERFORM public.record_order_fulfillment(p_order_id);
+  END IF;
+END;
+$$;
+
+-- Safety net: if an order status is advanced without being locked, allocate and lock it once
+CREATE OR REPLACE FUNCTION public.ensure_order_locked_and_allocated()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF NEW.status IN ('approved','loaded','delivered') AND NOT COALESCE(NEW.locked, false) THEN
+    PERFORM public.record_order_fulfillment(NEW.id);
+    UPDATE public.orders
+    SET locked = true,
+        updated_at = now()
+    WHERE id = NEW.id AND locked = false;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_orders_lock_allocate ON public.orders;
+CREATE TRIGGER trg_orders_lock_allocate
+AFTER UPDATE OF status ON public.orders
+FOR EACH ROW
+WHEN (NEW.status IN ('approved','loaded','delivered') AND NOT COALESCE(NEW.locked, false))
+EXECUTE FUNCTION public.ensure_order_locked_and_allocated();
+
 CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(
   p_item_id uuid,
   p_qty_units numeric,
@@ -1210,6 +1527,35 @@ BEGIN
   );
 END;
 $$;
+
+-- Prevent order item edits after an order has been locked or delivered
+CREATE OR REPLACE FUNCTION public.assert_order_item_editable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_order public.orders%ROWTYPE;
+BEGIN
+  SELECT * INTO v_order FROM public.orders WHERE id = COALESCE(NEW.order_id, OLD.order_id);
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order not found for item';
+  END IF;
+
+  IF COALESCE(v_order.locked, false)
+     OR lower(COALESCE(v_order.status, '')) IN ('approved', 'loaded', 'offloaded', 'delivered') THEN
+    RAISE EXCEPTION 'order % is locked; items cannot be modified', v_order.id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_order_items_lock ON public.order_items;
+CREATE TRIGGER trg_order_items_lock
+BEFORE INSERT OR UPDATE OR DELETE ON public.order_items
+FOR EACH ROW EXECUTE FUNCTION public.assert_order_item_editable();
 
 -- ------------------------------------------------------------
 -- Warehouse ledgered actions (transfer, damage, purchase receipts)

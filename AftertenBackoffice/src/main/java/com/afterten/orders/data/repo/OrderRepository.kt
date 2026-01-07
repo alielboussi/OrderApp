@@ -17,7 +17,11 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         @SerialName("outlet_id") val outletId: String? = null,
         @SerialName("outlets") val outlet: OutletRef? = null,
         @SerialName("modified_by_supervisor") val modifiedBySupervisor: Boolean? = null,
-        @SerialName("modified_by_supervisor_name") val modifiedBySupervisorName: String? = null
+        @SerialName("modified_by_supervisor_name") val modifiedBySupervisorName: String? = null,
+        @SerialName("pdf_path") val pdfPath: String? = null,
+        @SerialName("approved_pdf_path") val approvedPdfPath: String? = null,
+        @SerialName("loaded_pdf_path") val loadedPdfPath: String? = null,
+        @SerialName("offloaded_pdf_path") val offloadedPdfPath: String? = null
     )
 
     @Serializable
@@ -63,7 +67,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
 
     suspend fun listOrdersForOutlet(jwt: String, outletId: String, limit: Int = 100): List<OrderRow> {
         val path = "/rest/v1/orders" +
-            "?select=id,order_number,created_at,status,locked,modified_by_supervisor,modified_by_supervisor_name" +
+            "?select=id,order_number,created_at,status,locked,modified_by_supervisor,modified_by_supervisor_name,pdf_path,approved_pdf_path,loaded_pdf_path,offloaded_pdf_path" +
             "&outlet_id=eq." + outletId +
             "&order=created_at.desc" +
             "&limit=" + limit
@@ -73,7 +77,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     }
 
     suspend fun listOrdersForSupervisor(jwt: String, limit: Int = 200): List<OrderRow> {
-        val select = "id,order_number,created_at,status,locked,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name"
+        val select = "id,order_number,created_at,status,locked,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name,pdf_path,approved_pdf_path,loaded_pdf_path,offloaded_pdf_path"
         val path = "/rest/v1/orders?select=" + encode(select) + "&order=created_at.desc&limit=" + limit
         val text = supabase.getWithJwt(path, jwt)
         return Json { ignoreUnknownKeys = true }

@@ -59,11 +59,11 @@ fun OrdersScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val logger = rememberScreenLogger("Orders")
 
-    val hasAccess = session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Administrator)
+    val hasAccess = session.hasRole(RoleGuards.Branch)
     if (!hasAccess) {
         AccessDeniedCard(
             title = "Branch access required",
-            message = "Only branch (outlet) operators or administrators can review placed orders or submit offloader signatures.",
+            message = "Only branch (outlet) operators can review placed orders or submit offloader signatures.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )

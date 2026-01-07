@@ -23,7 +23,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import kotlinx.serialization.builtins.ListSerializer
 import io.ktor.client.statement.HttpResponse
 import io.github.jan.supabase.createSupabaseClient
@@ -399,7 +398,7 @@ class SupabaseProvider(context: Context) {
         val qty: Double,
         @SerialName("qty_cases") val qtyCases: Double? = null,
         @SerialName("warehouse_id") val warehouseId: String? = null,
-        @Transient val packageContains: Double = 1.0
+        @SerialName("receiving_contains") val packageContains: Double = 1.0
     )
 
     @Serializable

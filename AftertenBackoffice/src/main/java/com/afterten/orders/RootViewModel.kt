@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.afterten.orders.data.OutletSession
+import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.data.hasRole
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,20 +28,21 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
     private var refreshJob: Job? = null
 
     fun setSession(session: OutletSession?) {
-        _session.value = session
-        SessionStore.save(getApplication(), session)
+        val allowedSession = session?.takeIf { it.hasRole(RoleGuards.Administrator) }
+        _session.value = allowedSession
+        SessionStore.save(getApplication(), allowedSession)
         refreshJob?.cancel()
-        if (session != null) {
+        if (allowedSession != null) {
             // Immediately propagate auth to realtime
-            supabaseProvider.updateRealtimeAuth(session.token)
+            supabaseProvider.updateRealtimeAuth(allowedSession.token)
             // Start background refresh loop
             refreshJob = viewModelScope.launch {
                 while (true) {
-                    val waitMs = (session.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                    val waitMs = (allowedSession.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(5_000L)
                     delay(waitMs)
                     runCatching {
-                        val (newJwt, newExp) = supabaseProvider.refreshAccessToken(session.refreshToken)
-                        val updated = session.copy(token = newJwt, expiresAtMillis = newExp)
+                        val (newJwt, newExp) = supabaseProvider.refreshAccessToken(allowedSession.refreshToken)
+                        val updated = allowedSession.copy(token = newJwt, expiresAtMillis = newExp)
                         _session.value = updated
                         SessionStore.save(getApplication(), updated)
                         supabaseProvider.updateRealtimeAuth(newJwt)

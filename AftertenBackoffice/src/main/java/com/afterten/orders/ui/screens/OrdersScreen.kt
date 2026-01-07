@@ -59,11 +59,11 @@ fun OrdersScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val logger = rememberScreenLogger("Orders")
 
-    val hasAccess = session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Administrator)
+    val hasAccess = session.hasRole(RoleGuards.Administrator)
     if (!hasAccess) {
         AccessDeniedCard(
-            title = "Branch access required",
-            message = "Only branch (outlet) operators or administrators can review placed orders or submit offloader signatures.",
+            title = "Administrator access required",
+            message = "Backoffice orders are restricted to Administrators.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )
@@ -321,27 +321,31 @@ fun OrdersScreen(
                                 logger.event("DownloadTapped", mapOf("orderId" to row.id))
                                 val ses = session ?: return@OrderRowCard
                                 scope.launch {
-                                    val dateStr = try { java.time.OffsetDateTime.parse(row.createdAt).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) } catch (_: Throwable) { row.createdAt.take(10) }
-                                    val safeOutlet = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
-                                    val fileName = "${safeOutlet}_${row.orderNumber}_${dateStr}.pdf"
-                                    val storagePath = "${ses.outletId}/$fileName"
+                                    val storagePath = row.latestPdfPath()
+                                        ?: run {
+                                            val dateStr = try { java.time.OffsetDateTime.parse(row.createdAt).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) } catch (_: Throwable) { row.createdAt.take(10) }
+                                            val safeOutlet = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
+                                            val fileName = "${safeOutlet}_${row.orderNumber}_${dateStr}.pdf"
+                                            "${ses.outletId}/$fileName"
+                                        }
+                                    val downloadName = storagePath.substringAfterLast('/').ifBlank { "order-${row.orderNumber}.pdf" }
                                     val url = runCatching {
                                         root.supabaseProvider.createSignedUrl(
                                             jwt = ses.token,
                                             bucket = "orders",
                                             path = storagePath,
                                             expiresInSeconds = 3600,
-                                            downloadName = fileName
+                                            downloadName = downloadName
                                         )
                                     }.getOrElse {
-                                        root.supabaseProvider.publicStorageUrl("orders", storagePath, fileName)
+                                        root.supabaseProvider.publicStorageUrl("orders", storagePath, downloadName)
                                     }
                                     val dm = ctx.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as DownloadManager
                                     val req = DownloadManager.Request(url.toUri())
-                                        .setTitle(fileName)
+                                        .setTitle(downloadName)
                                         .setMimeType("application/pdf")
                                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, downloadName)
                                     runCatching { dm.enqueue(req) }
                                 }
                             },
@@ -593,6 +597,13 @@ private fun StatusBadge(status: String) {
         )
     }
 }
+
+private fun OrderRepository.OrderRow.latestPdfPath(): String? = listOf(
+    offloadedPdfPath,
+    loadedPdfPath,
+    approvedPdfPath,
+    pdfPath
+).firstOrNull { !it.isNullOrBlank() }
 
 @Composable
 private fun LiveIndicator() {
