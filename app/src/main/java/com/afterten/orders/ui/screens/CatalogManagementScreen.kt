@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -96,7 +97,7 @@ fun CatalogManagementScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ModeToggle(mode = mode, onSelect = { mode = it })
+            HeaderButtons(mode = mode, onSelect = { mode = it })
             when (mode) {
                 CatalogMode.Product -> ProductPane(jwt = session!!.token, repo = repo, loggerTag = "Product", logger = logger)
                 CatalogMode.Variance -> VariancePane(jwt = session!!.token, repo = repo, loggerTag = "Variance", logger = logger)
@@ -106,24 +107,28 @@ fun CatalogManagementScreen(
 }
 
 @Composable
-private fun ModeToggle(mode: CatalogMode, onSelect: (CatalogMode) -> Unit) {
+private fun HeaderButtons(mode: CatalogMode, onSelect: (CatalogMode) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        ToggleButton(label = "Products", selected = mode == CatalogMode.Product) { onSelect(CatalogMode.Product) }
-        ToggleButton(label = "Variances", selected = mode == CatalogMode.Variance) { onSelect(CatalogMode.Variance) }
-    }
-}
+        Button(
+            onClick = { onSelect(CatalogMode.Product) },
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (mode == CatalogMode.Product) GlowRed else CardBlack,
+                contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(20.dp)
+        ) { Text("Products") }
 
-@Composable
-private fun RowScope.ToggleButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.weight(1f),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) GlowRed else CardBlack,
-            contentColor = Color.White
-        ),
-        shape = RoundedCornerShape(50)
-    ) { Text(label) }
+        Button(
+            onClick = { onSelect(CatalogMode.Variance) },
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (mode == CatalogMode.Variance) GlowRed else CardBlack,
+                contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(20.dp)
+        ) { Text("Variances") }
+    }
 }
 
 @Composable
@@ -176,7 +181,12 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Text(if (editingId == null) "Add Product" else "Update Product", color = GlowRed, style = MaterialTheme.typography.titleMedium)
 
             SearchBar(
@@ -322,7 +332,12 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Text(if (editingId == null) "Add Variance" else "Update Variance", color = GlowRed, style = MaterialTheme.typography.titleMedium)
 
             SearchBar(
@@ -472,22 +487,29 @@ private fun GlowingField(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            label = { Text(label, color = GlowRed) },
+            label = { Text(label, color = Color.White) },
+            placeholder = { Text(helper, color = Color.White.copy(alpha = 0.7f)) },
             modifier = Modifier
                 .fillMaxWidth()
                 .background(JetBlack)
-                .border(width = 2.dp, color = GlowRed, shape = RoundedCornerShape(10.dp)),
+                .border(width = 2.dp, color = GlowRed, shape = RoundedCornerShape(14.dp))
+                .shadow(elevation = 8.dp, spotColor = GlowRed, shape = RoundedCornerShape(14.dp)),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = JetBlack,
                 unfocusedContainerColor = JetBlack,
                 disabledContainerColor = JetBlack,
-                focusedBorderColor = GlowRed,
-                unfocusedBorderColor = GlowRed,
-                cursorColor = GlowRed,
-                focusedLabelColor = GlowRed,
-                unfocusedLabelColor = GlowRed
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                cursorColor = Color.White,
+                focusedLabelColor = Color.White,
+                unfocusedLabelColor = Color.White,
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                disabledTextColor = Color.White.copy(alpha = 0.5f),
+                focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
+                unfocusedPlaceholderColor = Color.White.copy(alpha = 0.7f)
             )
         )
         Text(helper, style = MaterialTheme.typography.bodySmall, color = GlowRed)
