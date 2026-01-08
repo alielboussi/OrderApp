@@ -73,11 +73,6 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
     }
 
-    LaunchedEffect(session) {
-        val s = session ?: return@LaunchedEffect
-        navigateToRoleHome(s)
-    }
-
     NavHost(navController = navController, startDestination = Routes.Login.route) {
         composable(Routes.Login.route) {
             LoginScreen(

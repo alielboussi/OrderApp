@@ -18,6 +18,7 @@ import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.util.LogAnalytics
 import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
 import com.afterten.orders.ui.components.AccessDeniedCard
@@ -54,18 +55,20 @@ fun SupervisorOrdersScreen(
         if (showSpinner) loading = true
         error = null
         logger.state("RefreshStart", mapOf("event" to analyticsEvent))
-        runCatching { repo.listOrdersForSupervisor(jwt = jwt, limit = 200) }
-            .onSuccess {
-                items = it
-                LogAnalytics.event(analyticsEvent, mapOf("count" to it.size))
-                logger.state("RefreshSuccess", mapOf("count" to it.size, "event" to analyticsEvent))
-            }
-            .onFailure { t ->
-                val msg = t.message ?: t.toString()
-                error = msg
-                LogAnalytics.error("supervisor_orders_load_failed", msg, t)
-                logger.error("RefreshFailed", t, mapOf("event" to analyticsEvent))
-            }
+        try {
+            val rows = repo.listOrdersForSupervisor(jwt = jwt, limit = 200)
+            items = rows
+            LogAnalytics.event(analyticsEvent, mapOf("count" to rows.size))
+            logger.state("RefreshSuccess", mapOf("count" to rows.size, "event" to analyticsEvent))
+        } catch (c: CancellationException) {
+            // Ignore cancellations when the screen leaves composition
+            throw c
+        } catch (t: Throwable) {
+            val msg = t.message ?: t.toString()
+            error = msg
+            LogAnalytics.error("supervisor_orders_load_failed", msg, t)
+            logger.error("RefreshFailed", t, mapOf("event" to analyticsEvent))
+        }
         if (showSpinner) loading = false
     }
 
