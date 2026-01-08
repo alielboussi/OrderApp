@@ -39,6 +39,7 @@ import androidx.compose.ui.res.painterResource
 import com.afterten.orders.R
 import com.afterten.orders.ui.components.AppOutlinedTextField
 import com.afterten.orders.RootViewModel
+import com.afterten.orders.data.OutletSession
 import com.afterten.orders.data.repo.OutletRepository
 import com.afterten.orders.util.rememberScreenLogger
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +49,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
-    onLoggedIn: () -> Unit,
+    onLoggedIn: (OutletSession) -> Unit,
     viewModel: RootViewModel
 ) {
     val repo = remember { OutletRepository(viewModel.supabaseProvider) }
@@ -98,7 +99,7 @@ fun LoginScreen(
                         "canTransfer" to session.canTransfer
                     )
                 )
-                onLoggedIn()
+                onLoggedIn(session)
             } catch (t: Throwable) {
                 error = t.message ?: "Login failed"
                 logger.error("LoginFailed", t, mapOf("emailDomain" to emailDomain))

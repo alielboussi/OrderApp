@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,42 +19,40 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
-import com.afterten.orders.util.rememberScreenLogger
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
 import com.afterten.orders.ui.components.AccessDeniedCard
+import com.afterten.orders.util.rememberScreenLogger
 
 @Composable
-fun HomeScreen(
-    onCreateOrder: () -> Unit,
-    onViewOrders: () -> Unit,
+fun BackofficeHomeScreen(
+    onOpenCatalog: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
-    val hasAdministrator = session.hasRole(RoleGuards.Administrator)
-    val logger = rememberScreenLogger("Home")
+    val hasBackofficeRole = session.hasRole(RoleGuards.Backoffice)
+    val logger = rememberScreenLogger("BackofficeHome")
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))
     }
-    LaunchedEffect(session?.outletId, hasAdministrator) {
+    LaunchedEffect(session?.outletId, hasBackofficeRole) {
         logger.state(
             state = "SessionChanged",
             props = mapOf(
                 "outletId" to (session?.outletId ?: ""),
-                "hasAdministrator" to hasAdministrator
+                "hasBackofficeRole" to hasBackofficeRole
             )
         )
     }
 
-    if (session != null && !hasAdministrator) {
+    if (session != null && !hasBackofficeRole) {
         AccessDeniedCard(
-            title = "Admin access required",
-            message = "Backoffice is restricted to Administrators.",
+            title = "Backoffice access required",
+            message = "This dashboard is restricted to Backoffice admins.",
             primaryLabel = "Log out",
             onPrimary = {
                 logger.event("LogoutNoRole")
@@ -71,7 +69,6 @@ fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Top-right logout pill
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Button(
                 onClick = {
@@ -87,24 +84,17 @@ fun HomeScreen(
         Spacer(Modifier.height(8.dp))
         Text(text = session?.outletName ?: "", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-        if (hasAdministrator) {
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    logger.event("CreateOrderAdminTapped")
-                    onCreateOrder()
-                },
-                enabled = (session?.outletId?.isNotEmpty() == true)
-            ) { Text("Create New Order") }
-            Spacer(Modifier.height(12.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    logger.event("OrdersAdminTapped")
-                    onViewOrders()
-                },
-                enabled = session != null
-            ) { Text("Outlet Orders") }
-        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                logger.event("CatalogTapped")
+                onOpenCatalog()
+            }
+        ) { Text("Products & Variances") }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Use this to add products or their variances directly into the catalog tables.",
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }

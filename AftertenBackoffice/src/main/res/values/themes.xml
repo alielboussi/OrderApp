@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.WarehouseBackoffice" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Let Compose draw system bars -->
-        <item name="android:statusBarColor">@android:color/transparent</item>
-    </style>
-</resources>

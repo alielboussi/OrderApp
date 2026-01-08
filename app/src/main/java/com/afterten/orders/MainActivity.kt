@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -15,9 +18,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.afterten.orders.ui.screens.HomeScreen
 import com.afterten.orders.ui.screens.LoginScreen
+import com.afterten.orders.ui.screens.BackofficeHomeScreen
 import com.afterten.orders.ui.theme.AppTheme
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
+import com.afterten.orders.data.OutletSession
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +44,8 @@ sealed class Routes(val route: String) {
     data object CartReview : Routes("cart_review")
     data object Summary : Routes("summary")
     data object Orders : Routes("orders")
-    data object AdminWarehouses : Routes("admin_warehouses")
+    data object BackofficeHome : Routes("backoffice_home")
+    data object CatalogManager : Routes("catalog_manager")
     data object SupervisorOrders : Routes("supervisor_orders")
     data object SupervisorOrderDetail : Routes("supervisor_order_detail/{orderId}") {
         fun route(orderId: String) = "supervisor_order_detail/$orderId"
@@ -49,22 +55,40 @@ sealed class Routes(val route: String) {
 @Composable
 fun AppNavHost(navController: NavHostController = rememberNavController()) {
     val appViewModel: RootViewModel = viewModel()
+    val session by appViewModel.session.collectAsState()
+
+    fun routeFor(session: OutletSession): String = when {
+        session.hasRole(RoleGuards.Backoffice) -> Routes.BackofficeHome.route
+        session.hasRole(RoleGuards.Supervisor) -> Routes.SupervisorOrders.route
+        session.hasRole(RoleGuards.Branch) -> Routes.Home.route
+        else -> Routes.Login.route
+    }
+
+    fun navigateToRoleHome(session: OutletSession) {
+        val target = routeFor(session)
+        val current = navController.currentBackStackEntry?.destination?.route
+        if (current == target) return
+        navController.navigate(target) {
+            popUpTo(Routes.Login.route) { inclusive = true }
+        }
+    }
+
+    LaunchedEffect(session) {
+        val s = session ?: return@LaunchedEffect
+        navigateToRoleHome(s)
+    }
 
     NavHost(navController = navController, startDestination = Routes.Login.route) {
         composable(Routes.Login.route) {
             LoginScreen(
-                onLoggedIn = { navController.navigate(Routes.Home.route) { popUpTo(Routes.Login.route) { inclusive = true } } },
+                onLoggedIn = { navigateToRoleHome(it) },
                 viewModel = appViewModel
             )
         }
         composable(Routes.Home.route) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
-                onViewOrders = {
-                    val s = appViewModel.session.value
-                    if (s.hasRole(RoleGuards.Supervisor)) navController.navigate(Routes.SupervisorOrders.route)
-                    else navController.navigate(Routes.Orders.route)
-                },
+                onViewOrders = { navController.navigate(Routes.Orders.route) },
                 onLogout = {
                     appViewModel.setSession(null)
                     navController.navigate(Routes.Login.route) {
@@ -97,6 +121,24 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.Orders.route) {
             com.afterten.orders.ui.screens.OrdersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.BackofficeHome.route) {
+            BackofficeHomeScreen(
+                onOpenCatalog = { navController.navigate(Routes.CatalogManager.route) },
+                onLogout = {
+                    appViewModel.setSession(null)
+                    navController.navigate(Routes.Login.route) {
+                        popUpTo(Routes.BackofficeHome.route) { inclusive = true }
+                    }
+                },
+                viewModel = appViewModel
+            )
+        }
+        composable(Routes.CatalogManager.route) {
+            com.afterten.orders.ui.screens.CatalogManagementScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() }
             )

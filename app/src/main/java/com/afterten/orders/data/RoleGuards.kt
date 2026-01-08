@@ -44,16 +44,16 @@ object RoleGuards {
     val Supervisor = RoleGuard(
         id = "eef421e0-ce06-4518-93c4-6bb6525f6742"
     )
-    val Administrator = RoleGuard(
-        id = "6b9e657a-6131-4a0b-8afa-0ce260f8ed0c",
-        slug = "Administrator",
-        legacySlugs = setOf("administrator", "admin", "warehouse_admin")
+    val Backoffice = RoleGuard(
+        id = "de9f2075-9c97-4da1-a2a0-59ed162947e7",
+        blockedIds = setOf("6b9e657a-6131-4a0b-8afa-0ce260f8ed0c")
     )
+    val Administrator: RoleGuard = Backoffice
 
     // Aliases to keep older screens/routes working while enforcing the new role split
     val Outlet: RoleGuard = Branch
     val Transfers: RoleGuard = Supervisor
-    val WarehouseAdmin: RoleGuard = Administrator
+    val WarehouseAdmin: RoleGuard = Backoffice
 }
 
 fun OutletSession?.hasRole(guard: RoleGuard): Boolean {

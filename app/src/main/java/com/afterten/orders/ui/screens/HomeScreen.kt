@@ -35,28 +35,26 @@ fun HomeScreen(
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
-    val hasSupervisorRole = session.hasRole(RoleGuards.Supervisor)
     val hasBranchRole = session.hasRole(RoleGuards.Branch)
     val logger = rememberScreenLogger("Home")
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))
     }
-    LaunchedEffect(session?.outletId, hasSupervisorRole, hasBranchRole) {
+    LaunchedEffect(session?.outletId, hasBranchRole) {
         logger.state(
             state = "SessionChanged",
             props = mapOf(
                 "outletId" to (session?.outletId ?: ""),
-                "hasSupervisorRole" to hasSupervisorRole,
                 "hasBranchRole" to hasBranchRole
             )
         )
     }
 
-    if (session != null && !hasSupervisorRole && !hasBranchRole) {
+    if (session != null && !hasBranchRole) {
         AccessDeniedCard(
-            title = "No roles assigned",
-            message = "Your account does not have access to any dashboards. Ask support to assign a role.",
+            title = "Outlet access required",
+            message = "This dashboard is only available to outlet users.",
             primaryLabel = "Log out",
             onPrimary = {
                 logger.event("LogoutNoRole")
@@ -89,49 +87,22 @@ fun HomeScreen(
         Spacer(Modifier.height(8.dp))
         Text(text = session?.outletName ?: "", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-        when {
-            hasSupervisorRole -> {
-                // Supervisor home: go to Outlet Orders (multi-outlet)
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("SupervisorOrdersTapped")
-                        onViewOrders()
-                    },
-                    enabled = session != null
-                ) { Text("Outlet Orders") }
-            }
-            hasBranchRole -> {
-                // Regular outlet user: Create and Orders
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("CreateOrderTapped")
-                        onCreateOrder()
-                    },
-                    enabled = (session?.outletId?.isNotEmpty() == true)
-                ) { Text("Create New Order") }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        logger.event("OrdersTapped")
-                        onViewOrders()
-                    },
-                    enabled = (session?.outletId?.isNotEmpty() == true)
-                ) { Text("Orders") }
-            }
-            else -> {
-                AccessDeniedCard(
-                    title = "No roles assigned",
-                    message = "Your account does not have access to any dashboards. Ask support to assign a role.",
-                    primaryLabel = "Log out",
-                    onPrimary = {
-                        logger.event("LogoutNoRole")
-                        onLogout()
-                    }
-                )
-            }
-        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                logger.event("CreateOrderTapped")
+                onCreateOrder()
+            },
+            enabled = (session?.outletId?.isNotEmpty() == true)
+        ) { Text("Create New Order") }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                logger.event("OrdersTapped")
+                onViewOrders()
+            },
+            enabled = (session?.outletId?.isNotEmpty() == true)
+        ) { Text("Orders") }
     }
 }
