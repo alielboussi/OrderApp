@@ -11,9 +11,10 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.setBody
-import io.ktor.client.request.post
 import io.ktor.client.request.headers
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -354,6 +355,20 @@ class SupabaseProvider(context: Context) {
     suspend fun postWithJwt(pathAndQuery: String, jwt: String, bodyObj: Any, prefer: List<String> = emptyList()): Pair<Int, String?> {
         val url = if (pathAndQuery.startsWith("http")) pathAndQuery else "$supabaseUrl$pathAndQuery"
         val resp = http.post(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            if (prefer.isNotEmpty()) headers { prefer.forEach { append("Prefer", it) } }
+            contentType(ContentType.Application.Json)
+            setBody(bodyObj)
+        }
+        val code = resp.status.value
+        val text = runCatching { resp.bodyAsText() }.getOrNull()
+        return code to text
+    }
+
+    suspend fun patchWithJwt(pathAndQuery: String, jwt: String, bodyObj: Any, prefer: List<String> = emptyList()): Pair<Int, String?> {
+        val url = if (pathAndQuery.startsWith("http")) pathAndQuery else "$supabaseUrl$pathAndQuery"
+        val resp = http.patch(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
             if (prefer.isNotEmpty()) headers { prefer.forEach { append("Prefer", it) } }

@@ -91,10 +91,5 @@ fun BackofficeHomeScreen(
                 onOpenCatalog()
             }
         ) { Text("Products & Variances") }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "Use this to add products or their variances directly into the catalog tables.",
-            style = MaterialTheme.typography.bodyMedium
-        )
     }
 }
