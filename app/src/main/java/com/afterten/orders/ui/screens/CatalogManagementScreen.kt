@@ -144,8 +144,8 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
     val context = LocalContext.current
     val code128Scanner = remember(context) {
         val options = GmsBarcodeScannerOptions.Builder()
+            // Restrict strictly to Code 128
             .setBarcodeFormats(Barcode.FORMAT_CODE_128)
-            .enableAutoZoom()
             .build()
         GmsBarcodeScanning.getClient(context, options)
     }
@@ -240,7 +240,8 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
                 trailingIcon = {
                     IconButton(onClick = {
                         code128Scanner.startScan()
-                            .addOnSuccessListener { barcode -> barcode.rawValue?.let { sku = it.trim() } }
+                            .addOnSuccessListener { barcode -> barcode.rawValue?.let { scanned -> sku = scanned.trim(); logger.event("${loggerTag}.ScanSuccess") } }
+                            .addOnFailureListener { logger.event("${loggerTag}.ScanFailed", mapOf("message" to (it.message ?: "unknown"))) }
                     }) {
                         Icon(Icons.Filled.CameraAlt, contentDescription = "Scan Code 128", tint = GlowRed)
                     }
@@ -327,7 +328,6 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
     val code128Scanner = remember(context) {
         val options = GmsBarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.FORMAT_CODE_128)
-            .enableAutoZoom()
             .build()
         GmsBarcodeScanning.getClient(context, options)
     }
@@ -444,7 +444,8 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
                 trailingIcon = {
                     IconButton(onClick = {
                         code128Scanner.startScan()
-                            .addOnSuccessListener { barcode -> barcode.rawValue?.let { sku = it.trim() } }
+                            .addOnSuccessListener { barcode -> barcode.rawValue?.let { scanned -> sku = scanned.trim(); logger.event("${loggerTag}.ScanSuccess") } }
+                            .addOnFailureListener { logger.event("${loggerTag}.ScanFailed", mapOf("message" to (it.message ?: "unknown"))) }
                     }) {
                         Icon(Icons.Filled.CameraAlt, contentDescription = "Scan Code 128", tint = GlowRed)
                     }
