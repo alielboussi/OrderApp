@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -37,7 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.afterten.orders.RootViewModel
@@ -46,9 +44,6 @@ import com.afterten.orders.data.hasRole
 import com.afterten.orders.data.repo.CatalogRepository
 import com.afterten.orders.ui.components.AccessDeniedCard
 import com.afterten.orders.util.rememberScreenLogger
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.launch
 
 private val GlowRed = Color(0xFFE53935)
@@ -141,14 +136,6 @@ private fun HeaderButtons(mode: CatalogMode, onSelect: (CatalogMode) -> Unit) {
 @Composable
 private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String, logger: com.afterten.orders.util.ScreenLogger) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val code128Scanner = remember(context) {
-        val options = GmsBarcodeScannerOptions.Builder()
-            // Restrict strictly to Code 128
-            .setBarcodeFormats(Barcode.FORMAT_CODE_128)
-            .build()
-        GmsBarcodeScanning.getClient(context, options)
-    }
     var search by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<CatalogRepository.CatalogItemListRow>>(emptyList()) }
     var listError by remember { mutableStateOf<String?>(null) }
@@ -232,21 +219,7 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
             }
 
             GlowingField(name, { name = it }, "Name", "Product display name (e.g., Cola 500ml)")
-            GlowingField(
-                value = sku,
-                onValueChange = { sku = it },
-                label = "SKU",
-                helper = "Optional unique code (e.g., COLA-500)",
-                trailingIcon = {
-                    IconButton(onClick = {
-                        code128Scanner.startScan()
-                            .addOnSuccessListener { barcode -> barcode.rawValue?.let { scanned -> sku = scanned.trim(); logger.event("${loggerTag}.ScanSuccess") } }
-                            .addOnFailureListener { logger.event("${loggerTag}.ScanFailed", mapOf("message" to (it.message ?: "unknown"))) }
-                    }) {
-                        Icon(Icons.Filled.CameraAlt, contentDescription = "Scan Code 128", tint = GlowRed)
-                    }
-                }
-            )
+            GlowingField(sku, { sku = it }, "SKU", "Optional unique code (e.g., COLA-500)")
             GlowingField(itemKind, { itemKind = it }, "Item Kind", "Enum item_kind (e.g., inventory, service)")
             GlowingField(baseUnit, { baseUnit = it }, "Base Unit", "Unit for consumption (e.g., each)")
             GlowingField(unitsPerPack, { unitsPerPack = it }, "Units per Purchase Pack", "Must be > 0 (e.g., 12)", keyboardType = KeyboardType.Number)
@@ -324,13 +297,6 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
 @Composable
 private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String, logger: com.afterten.orders.util.ScreenLogger) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val code128Scanner = remember(context) {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_CODE_128)
-            .build()
-        GmsBarcodeScanning.getClient(context, options)
-    }
     var search by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<CatalogRepository.CatalogVariationListRow>>(emptyList()) }
     var listError by remember { mutableStateOf<String?>(null) }
@@ -436,21 +402,7 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
 
             GlowingField(productId, { productId = it }, "Product ID", "Required: select or paste catalog item id")
             GlowingField(name, { name = it }, "Variance Name", "Describe variant (e.g., 500ml bottle)")
-            GlowingField(
-                value = sku,
-                onValueChange = { sku = it },
-                label = "Variance SKU",
-                helper = "Optional SKU for this variance",
-                trailingIcon = {
-                    IconButton(onClick = {
-                        code128Scanner.startScan()
-                            .addOnSuccessListener { barcode -> barcode.rawValue?.let { scanned -> sku = scanned.trim(); logger.event("${loggerTag}.ScanSuccess") } }
-                            .addOnFailureListener { logger.event("${loggerTag}.ScanFailed", mapOf("message" to (it.message ?: "unknown"))) }
-                    }) {
-                        Icon(Icons.Filled.CameraAlt, contentDescription = "Scan Code 128", tint = GlowRed)
-                    }
-                }
-            )
+            GlowingField(sku, { sku = it }, "Variance SKU", "Optional SKU for this variance")
             GlowingField(unitsPerPack, { unitsPerPack = it }, "Units per Purchase Pack", "Must be > 0 (e.g., 6)", keyboardType = KeyboardType.Number)
             GlowingField(transferQty, { transferQty = it }, "Transfer Quantity", "Must be > 0 (e.g., 1)", keyboardType = KeyboardType.Number)
             GlowingField(consumptionUom, { consumptionUom = it }, "Consumption UOM", "Display UOM (e.g., each)")
