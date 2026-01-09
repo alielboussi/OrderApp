@@ -1,6 +1,7 @@
 package com.afterten.orders.data
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.serialization.json.Json
 
 object SessionStore {
@@ -11,9 +12,9 @@ object SessionStore {
     fun save(context: Context, session: OutletSession?) {
         val prefs = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
         if (session == null) {
-            prefs.edit().remove(KEY).apply()
+            prefs.edit { remove(KEY) }
         } else {
-            prefs.edit().putString(KEY, json.encodeToString(OutletSession.serializer(), session)).apply()
+            prefs.edit { putString(KEY, json.encodeToString(OutletSession.serializer(), session)) }
         }
     }
 

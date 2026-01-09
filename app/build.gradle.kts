@@ -139,6 +139,9 @@ dependencies {
     // Coil for image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // Barcode scanning (Google Code Scanner API)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
     // Supabase Kotlin SDK (v2.x compatible with Kotlin 2.0 toolchain)
     implementation("io.github.jan-tennert.supabase:postgrest-kt:2.4.0")
     implementation("io.github.jan-tennert.supabase:storage-kt:2.4.0")

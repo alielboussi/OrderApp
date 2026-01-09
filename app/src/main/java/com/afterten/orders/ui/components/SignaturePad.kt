@@ -30,7 +30,7 @@ class SignatureState {
     private var lastY: Float? = null
     private var _distance: Float = 0f
     // Tick to trigger Canvas redraws immediately on new points
-    var version by mutableStateOf(0L)
+    var version by mutableLongStateOf(0L)
     private val paint = Paint().apply {
         style = Paint.Style.STROKE
         // White looks good on dark UI backgrounds, but is invisible on a white PDF.

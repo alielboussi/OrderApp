@@ -5,6 +5,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import com.afterten.orders.data.repo.OrderRepository
+import androidx.core.graphics.createBitmap
 import java.io.File
 import java.io.FileOutputStream
 import java.time.ZonedDateTime
@@ -174,7 +175,7 @@ private fun Double.renderQty(): String {
 fun Bitmap.toBlackInk(): Bitmap {
     val w = width
     val h = height
-    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val out = createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val pixels = IntArray(w * h)
     getPixels(pixels, 0, w, 0, 0, w, h)
     for (i in pixels.indices) {

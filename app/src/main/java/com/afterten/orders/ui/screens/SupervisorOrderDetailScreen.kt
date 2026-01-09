@@ -664,7 +664,7 @@ private fun SupervisorItemCard(
     onChangeVariation: (SupabaseProvider.SimpleVariation) -> Unit,
     onChangeQty: (Double) -> Unit
 ) {
-    var localQty by remember(row.id) { mutableStateOf(row.qty) }
+    var localQty by remember(row.id) { mutableDoubleStateOf(row.qty) }
     var qtyText by remember(row.id) { mutableStateOf(formatSupervisorQty(row.qty)) }
 
     LaunchedEffect(row.qty) {
