@@ -1,0 +1,272 @@
+using System.Data;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PosSyncService.Models;
+
+namespace PosSyncService;
+
+public sealed class PosRepository
+{
+    private readonly PosDbOptions _options;
+    private readonly OutletOptions _outlet;
+    private readonly ILogger<PosRepository> _logger;
+
+    public PosRepository(IOptions<PosDbOptions> options,
+                         IOptions<OutletOptions> outlet,
+                         ILogger<PosRepository> logger)
+    {
+        _options = options.Value;
+        _outlet = outlet.Value;
+        _logger = logger;
+    }
+
+    public async Task<IReadOnlyList<PosOrder>> ReadPendingOrdersAsync(int batchSize, CancellationToken cancellationToken)
+    {
+        // Uses actual POS schema: BillType (header/payment), Sale (date/time), Saledetails (lines), MenuItem (names).
+        const string headerSql = @"
+SELECT TOP (@Batch)
+    bt.id         AS BillId,
+    bt.saleid     AS SaleId,
+    bt.type       AS PaymentType,
+    bt.Amount     AS PaymentAmount,
+    s.Date        AS SaleDate,
+    s.time        AS SaleTime,
+    s.OrderType   AS OrderType,
+    s.BillType    AS BillType,
+    s.Discount    AS SaleDiscount,
+    s.DiscountAmount AS SaleDiscountAmount,
+    s.GST         AS SaleGst,
+    s.servicecharges AS ServiceCharges,
+    s.DeliveryCharges AS DeliveryCharges,
+    s.Tip         AS Tip,
+    s.POSFee      AS PosFee,
+    s.PriceType   AS PriceType,
+    s.Customer    AS CustomerName,
+    s.phone       AS CustomerPhone
+FROM dbo.BillType bt WITH (NOLOCK)
+JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
+WHERE bt.uploadStatus IS NULL OR bt.uploadStatus = 'Pending'
+ORDER BY bt.id ASC;";
+
+        var orders = new List<PosOrder>();
+
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqlCommand(headerSql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+        cmd.Parameters.AddWithValue("@Batch", batchSize);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var billId = reader["BillId"].ToString() ?? string.Empty;
+            var saleId = reader["SaleId"].ToString() ?? string.Empty;
+
+            var saleDate = reader.IsDBNull(reader.GetOrdinal("SaleDate"))
+                ? DateTime.UtcNow
+                : reader.GetDateTime(reader.GetOrdinal("SaleDate"));
+
+            DateTime occurredAt;
+            if (!reader.IsDBNull(reader.GetOrdinal("SaleTime")))
+            {
+                var saleTime = reader.GetDateTime(reader.GetOrdinal("SaleTime"));
+                occurredAt = saleDate.Date + saleTime.TimeOfDay;
+            }
+            else
+            {
+                occurredAt = saleDate;
+            }
+
+            var items = await LoadLineItemsAsync(conn, saleId, cancellationToken);
+            var inventory = await LoadInventoryConsumedAsync(conn, saleId, cancellationToken);
+
+            var payments = new List<PosPayment>();
+            if (!reader.IsDBNull(reader.GetOrdinal("PaymentAmount")))
+            {
+                var paymentAmount = Convert.ToDecimal(reader["PaymentAmount"]);
+                payments.Add(new PosPayment(Method: reader["PaymentType"]?.ToString() ?? "Unknown", Amount: paymentAmount));
+            }
+
+            var order = new PosOrder(
+                PosOrderId: billId,
+                PosSaleId: saleId,
+                OccurredAt: occurredAt,
+                OutletId: _outlet.Id,
+                SourceEventId: $"{_outlet.Id}-{billId}",
+                OrderType: reader["OrderType"]?.ToString(),
+                BillType: reader["BillType"]?.ToString(),
+                TotalDiscount: reader.IsDBNull(reader.GetOrdinal("SaleDiscount")) ? null : Convert.ToDecimal(reader["SaleDiscount"]),
+                TotalDiscountAmount: reader.IsDBNull(reader.GetOrdinal("SaleDiscountAmount")) ? null : Convert.ToDecimal(reader["SaleDiscountAmount"]),
+                TotalGst: reader.IsDBNull(reader.GetOrdinal("SaleGst")) ? null : Convert.ToDecimal(reader["SaleGst"]),
+                ServiceCharges: reader.IsDBNull(reader.GetOrdinal("ServiceCharges")) ? null : Convert.ToDecimal(reader["ServiceCharges"]),
+                DeliveryCharges: reader.IsDBNull(reader.GetOrdinal("DeliveryCharges")) ? null : Convert.ToDecimal(reader["DeliveryCharges"]),
+                Tip: reader.IsDBNull(reader.GetOrdinal("Tip")) ? null : Convert.ToDecimal(reader["Tip"]),
+                PosFee: reader.IsDBNull(reader.GetOrdinal("PosFee")) ? null : Convert.ToDecimal(reader["PosFee"]),
+                PriceType: reader["PriceType"]?.ToString(),
+                Items: items,
+                Payments: payments,
+                Customer: BuildCustomer(reader),
+                Inventory: inventory
+            );
+
+            orders.Add(order);
+        }
+
+        return orders;
+    }
+
+    public async Task MarkOrderProcessedAsync(string posOrderId, CancellationToken cancellationToken)
+    {
+        const string sql = @"UPDATE dbo.BillType SET uploadStatus = 'Processed' WHERE id = @Id";
+
+        await using var conn = new SqlConnection(_options.ConnectionString);
+
+    public async Task MarkInventoryProcessedAsync(IEnumerable<string> inventoryIds, CancellationToken cancellationToken)
+    {
+        var idList = inventoryIds
+            .Select(id => int.TryParse(id, out var parsed) ? parsed : (int?)null)
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .ToList();
+
+        if (idList.Count == 0)
+        {
+            return;
+        }
+
+        var paramNames = idList.Select((_, idx) => "@p" + idx).ToArray();
+        var sql = $"UPDATE dbo.InventoryConsumed SET uploadstatus = 'Processed' WHERE Id IN ({string.Join(",", paramNames)})";
+
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqlCommand(sql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+
+        for (var i = 0; i < idList.Count; i++)
+        {
+            cmd.Parameters.AddWithValue(paramNames[i], idList[i]);
+        }
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqlCommand(sql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+        cmd.Parameters.AddWithValue("@Id", posOrderId);
+
+        var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
+        if (rows == 0)
+        {
+            _logger.LogWarning("No rows updated when marking bill {BillId} processed", posOrderId);
+        }
+    }
+
+    private async Task<IReadOnlyList<PosLineItem>> LoadLineItemsAsync(SqlConnection openConnection, string saleId, CancellationToken cancellationToken)
+    {
+        const string lineSql = @"
+SELECT sd.saleid AS SaleId,
+       sd.MenuItemId AS ItemId,
+       mi.Name AS ItemName,
+       sd.Quantity AS Qty,
+       sd.Price AS UnitPrice,
+       sd.Itemdiscount AS Discount,
+       sd.ItemGst AS Tax
+FROM dbo.Saledetails sd WITH (NOLOCK)
+LEFT JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = sd.MenuItemId
+WHERE sd.saleid = @SaleId;";
+
+        var items = new List<PosLineItem>();
+
+        await using var cmd = new SqlCommand(lineSql, openConnection)
+        {
+            CommandType = CommandType.Text
+        };
+        cmd.Parameters.AddWithValue("@SaleId", saleId);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PosLineItem(
+                PosItemId: reader["ItemId"].ToString() ?? string.Empty,
+                Name: reader["ItemName"].ToString() ?? string.Empty,
+                Quantity: Convert.ToDecimal(reader["Qty"]),
+                UnitPrice: Convert.ToDecimal(reader["UnitPrice"]),
+                Discount: reader.IsDBNull(reader.GetOrdinal("Discount")) ? 0 : Convert.ToDecimal(reader["Discount"]),
+                Tax: reader.IsDBNull(reader.GetOrdinal("Tax")) ? 0 : Convert.ToDecimal(reader["Tax"]),
+                VariantId: null
+            ));
+        }
+
+        return items;
+    }
+
+    private async Task<IReadOnlyList<PosInventoryConsumed>> LoadInventoryConsumedAsync(SqlConnection openConnection, string saleId, CancellationToken cancellationToken)
+    {
+        // No explicit saleid in InventoryConsumed; we approximate by picking rows with matching date and pending uploadstatus.
+        const string sql = @"
+SELECT Id,
+       RawItemId,
+       QuantityConsumed,
+       RemainingQuantity,
+       Date,
+            public async Task MarkOrderProcessedAsync(string billId, string saleId, CancellationToken cancellationToken)
+            {
+            const string sql = @"
+    UPDATE dbo.BillType SET uploadStatus = 'Processed' WHERE id = @BillId;
+    UPDATE dbo.Sale SET uploadstatus = 'Processed' WHERE Id = @SaleId;
+    UPDATE dbo.Saledetails SET uploadstatus = 'Processed' WHERE saleid = @SaleId;";
+
+       typec,
+       uploadstatus
+FROM dbo.InventoryConsumed WITH (NOLOCK)
+WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
+  AND Date = (SELECT TOP 1 Date FROM dbo.Sale WITH (NOLOCK) WHERE Id = @SaleId)
+";
+
+            cmd.Parameters.AddWithValue("@BillId", billId);
+            cmd.Parameters.AddWithValue("@SaleId", saleId);
+
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new PosInventoryConsumed(
+                PosId: reader["Id"].ToString() ?? string.Empty,
+                RawItemId: reader["RawItemId"].ToString() ?? string.Empty,
+                QuantityConsumed: Convert.ToDecimal(reader["QuantityConsumed"]),
+                RemainingQuantity: reader.IsDBNull(reader.GetOrdinal("RemainingQuantity")) ? null : Convert.ToDecimal(reader["RemainingQuantity"]),
+                PosDate: reader.IsDBNull(reader.GetOrdinal("Date")) ? null : reader.GetDateTime(reader.GetOrdinal("Date")),
+                KdsId: reader["kdsid"]?.ToString(),
+                Typec: reader["typec"]?.ToString()
+            ));
+        }
+
+        return rows;
+    }
+
+    private PosCustomer? BuildCustomer(SqlDataReader reader)
+    {
+        var name = reader["CustomerName"]?.ToString();
+        var phone = reader["CustomerPhone"]?.ToString();
+
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(phone))
+        {
+            return null;
+        }
+
+        return new PosCustomer(Name: string.IsNullOrWhiteSpace(name) ? null : name,
+                                Phone: string.IsNullOrWhiteSpace(phone) ? null : phone,
+                                Email: null);
+    }
+}

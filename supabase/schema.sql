@@ -1,3 +1,41 @@
+
+-- POS sync staging additions for POS -> Supabase ingestion
+CREATE TABLE IF NOT EXISTS public.pos_order_meta (
+  order_id uuid PRIMARY KEY REFERENCES public.orders(id) ON DELETE CASCADE,
+  order_type text,
+  bill_type text,
+  total_discount numeric,
+  total_discount_amount numeric,
+  total_gst numeric,
+  service_charges numeric,
+  delivery_charges numeric,
+  tip numeric,
+  pos_fee numeric,
+  price_type text,
+  customer_name text,
+  customer_phone text,
+  raw_payload jsonb DEFAULT '{}'::jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.pos_inventory_consumed (
+  id bigserial PRIMARY KEY,
+  source_event_id text UNIQUE,
+  outlet_id uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  order_id uuid NULL REFERENCES public.orders(id) ON DELETE SET NULL,
+  raw_item_id text NOT NULL,
+  quantity_consumed numeric NOT NULL,
+  remaining_quantity numeric NULL,
+  occurred_at timestamptz DEFAULT now(),
+  pos_date date,
+  kdsid text,
+  typec text,
+  context jsonb DEFAULT '{}'::jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pos_inventory_consumed_source ON public.pos_inventory_consumed(source_event_id);
+CREATE INDEX IF NOT EXISTS idx_pos_inventory_consumed_outlet ON public.pos_inventory_consumed(outlet_id);
 -- Unified schema: catalog + warehouse layering + outlet tracking
 -- Replaces the legacy schema objects with the streamlined model described in the brief.
 

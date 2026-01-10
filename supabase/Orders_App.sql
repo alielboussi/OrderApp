@@ -3259,13 +3259,6 @@
             "timing": "AFTER",
             "condition": null,
             "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
-            "manipulation": "INSERT",
-            "trigger_name": "trg_catalog_variants_flag_sync"
-        },
-        {
-            "timing": "AFTER",
-            "condition": null,
-            "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
             "manipulation": "DELETE",
             "trigger_name": "trg_catalog_variants_flag_sync"
         },
@@ -3275,6 +3268,41 @@
             "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
             "manipulation": "UPDATE",
             "trigger_name": "trg_catalog_variants_flag_sync"
+        },
+        {
+            "timing": "AFTER",
+            "condition": null,
+            "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
+            "manipulation": "INSERT",
+            "trigger_name": "trg_catalog_variants_flag_sync"
+        },
+        {
+            "timing": "BEFORE",
+            "condition": null,
+            "statement": "EXECUTE FUNCTION assert_order_item_editable()",
+            "manipulation": "UPDATE",
+            "trigger_name": "trg_order_items_lock"
+        },
+        {
+            "timing": "BEFORE",
+            "condition": null,
+            "statement": "EXECUTE FUNCTION assert_order_item_editable()",
+            "manipulation": "INSERT",
+            "trigger_name": "trg_order_items_lock"
+        },
+        {
+            "timing": "BEFORE",
+            "condition": null,
+            "statement": "EXECUTE FUNCTION assert_order_item_editable()",
+            "manipulation": "DELETE",
+            "trigger_name": "trg_order_items_lock"
+        },
+        {
+            "timing": "AFTER",
+            "condition": "((new.status = ANY (ARRAY['approved'::text, 'loaded'::text, 'delivered'::text])) AND (NOT COALESCE(new.locked, false)))",
+            "statement": "EXECUTE FUNCTION ensure_order_locked_and_allocated()",
+            "manipulation": "UPDATE",
+            "trigger_name": "trg_orders_lock_allocate"
         }
     ],
     "functions": [
@@ -3283,6 +3311,18 @@
             "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_id uuid DEFAULT NULL::uuid, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  rec record;\r\nBEGIN\r\n  IF p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN\r\n    RAISE EXCEPTION 'item + qty required for recipe deductions';\r\n  END IF;\r\n\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse required for recipe deductions';\r\n  END IF;\r\n\r\n  FOR rec IN\r\n    SELECT ingredient_item_id, qty_per_unit\r\n    FROM public.item_ingredient_recipes\r\n    WHERE finished_item_id = p_item_id\r\n      AND (finished_variant_id IS NULL OR finished_variant_id = p_variant_id)\r\n      AND active\r\n  LOOP\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      warehouse_id,\r\n      item_id,\r\n      variant_id,\r\n      delta_units,\r\n      reason,\r\n      context\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.ingredient_item_id,\r\n      NULL,\r\n      -1 * (p_qty_units * rec.qty_per_unit),\r\n      'recipe_consumption',\r\n      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')\r\n    );\r\n  END LOOP;\r\nEND;\r\n$function$\n",
             "return_type": "void",
             "function_name": "apply_recipe_deductions"
+        },
+        {
+            "arguments": "p_order_id uuid, p_strict boolean DEFAULT true",
+            "definition": "CREATE OR REPLACE FUNCTION public.approve_lock_and_allocate_order(p_order_id uuid, p_strict boolean DEFAULT true)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_order public.orders%ROWTYPE;\r\n  v_needs_allocation boolean := false;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized to allocate order %', p_order_id;\r\n  END IF;\r\n\r\n  v_needs_allocation := NOT COALESCE(v_order.locked, false);\r\n\r\n  IF v_needs_allocation THEN\r\n    UPDATE public.orders\r\n    SET status = COALESCE(NULLIF(v_order.status, ''), 'approved'),\r\n        locked = true,\r\n        approved_at = COALESCE(v_order.approved_at, now()),\r\n        approved_by = COALESCE(v_order.approved_by, v_uid),\r\n        updated_at = now()\r\n    WHERE id = p_order_id;\r\n\r\n    PERFORM public.record_order_fulfillment(p_order_id);\r\n  ELSIF NOT p_strict THEN\r\n    PERFORM public.record_order_fulfillment(p_order_id);\r\n  END IF;\r\nEND;\r\n$function$\n",
+            "return_type": "void",
+            "function_name": "approve_lock_and_allocate_order"
+        },
+        {
+            "arguments": "",
+            "definition": "CREATE OR REPLACE FUNCTION public.assert_order_item_editable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_order public.orders%ROWTYPE;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = COALESCE(NEW.order_id, OLD.order_id);\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order not found for item';\r\n  END IF;\r\n\r\n  IF COALESCE(v_order.locked, false)\r\n     OR lower(COALESCE(v_order.status, '')) IN ('approved', 'loaded', 'offloaded', 'delivered') THEN\r\n    RAISE EXCEPTION 'order % is locked; items cannot be modified', v_order.id;\r\n  END IF;\r\n\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+            "return_type": "trigger",
+            "function_name": "assert_order_item_editable"
         },
         {
             "arguments": "",
@@ -3309,10 +3349,22 @@
             "function_name": "default_outlet_id"
         },
         {
+            "arguments": "",
+            "definition": "CREATE OR REPLACE FUNCTION public.ensure_order_locked_and_allocated()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF NEW.status IN ('approved','loaded','delivered') AND NOT COALESCE(NEW.locked, false) THEN\r\n    PERFORM public.record_order_fulfillment(NEW.id);\r\n    UPDATE public.orders\r\n    SET locked = true,\r\n        updated_at = now()\r\n    WHERE id = NEW.id AND locked = false;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+            "return_type": "trigger",
+            "function_name": "ensure_order_locked_and_allocated"
+        },
+        {
             "arguments": "p_user_id uuid",
             "definition": "CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_user_id IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n  RETURN EXISTS (SELECT 1 FROM public.platform_admins pa WHERE pa.user_id = p_user_id);\r\nEND;\r\n$function$\n",
             "return_type": "boolean",
             "function_name": "is_admin"
+        },
+        {
+            "arguments": "p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
+            "definition": "CREATE OR REPLACE FUNCTION public.mark_order_loaded(p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_order public.orders%ROWTYPE;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized to mark order % as loaded', p_order_id;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'loaded',\r\n      locked = true,\r\n      driver_signed_name = COALESCE(NULLIF(p_driver_name, ''), driver_signed_name),\r\n      driver_signature_path = COALESCE(NULLIF(p_signature_path, ''), driver_signature_path),\r\n      driver_signed_at = now(),\r\n      loaded_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), loaded_pdf_path),\r\n      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\nEND;\r\n$function$\n",
+            "return_type": "void",
+            "function_name": "mark_order_loaded"
         },
         {
             "arguments": "p_order_id uuid, p_supervisor_name text DEFAULT NULL::text",
@@ -3321,15 +3373,21 @@
             "function_name": "mark_order_modified"
         },
         {
-            "arguments": "p_user_id uuid",
-            "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
-            "return_type": "uuid[]",
-            "function_name": "member_outlet_ids"
+            "arguments": "p_order_id uuid, p_offloader_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
+            "definition": "CREATE OR REPLACE FUNCTION public.mark_order_offloaded(p_order_id uuid, p_offloader_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_order public.orders%ROWTYPE;\r\n  v_was_locked boolean;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  v_was_locked := COALESCE(v_order.locked, false);\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized to complete order %', p_order_id;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'delivered',\r\n      locked = true,\r\n      offloader_signed_name = COALESCE(NULLIF(p_offloader_name, ''), offloader_signed_name),\r\n      offloader_signature_path = COALESCE(NULLIF(p_signature_path, ''), offloader_signature_path),\r\n      offloader_signed_at = now(),\r\n      offloaded_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), offloaded_pdf_path),\r\n      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\n\r\n  -- If stock was not allocated earlier, do it once here\r\n  IF NOT v_was_locked THEN\r\n    PERFORM public.record_order_fulfillment(p_order_id);\r\n  END IF;\r\nEND;\r\n$function$\n",
+            "return_type": "void",
+            "function_name": "mark_order_offloaded"
         },
         {
             "arguments": "",
             "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
             "return_type": "SETOF uuid",
+            "function_name": "member_outlet_ids"
+        },
+        {
+            "arguments": "p_user_id uuid",
+            "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
+            "return_type": "uuid[]",
             "function_name": "member_outlet_ids"
         },
         {
@@ -3363,6 +3421,12 @@
             "function_name": "outlet_auth_user_matches"
         },
         {
+            "arguments": "p_outlet_id uuid, p_items jsonb, p_employee_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
+            "definition": "CREATE OR REPLACE FUNCTION public.place_order(p_outlet_id uuid, p_items jsonb, p_employee_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS TABLE(order_id uuid, order_number text, created_at timestamp with time zone)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_now timestamptz := now();\r\n  v_order public.orders%ROWTYPE;\r\n  v_item jsonb;\r\n  v_qty numeric;\r\n  v_qty_cases numeric;\r\n  v_receiving_contains numeric;\r\nBEGIN\r\n  IF p_outlet_id IS NULL THEN\r\n    RAISE EXCEPTION 'outlet id required';\r\n  END IF;\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR p_outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized for outlet %', p_outlet_id;\r\n  END IF;\r\n\r\n  INSERT INTO public.orders(\r\n    outlet_id,\r\n    order_number,\r\n    status,\r\n    locked,\r\n    created_by,\r\n    tz,\r\n    pdf_path,\r\n    employee_signed_name,\r\n    employee_signature_path,\r\n    employee_signed_at,\r\n    updated_at,\r\n    created_at\r\n  ) VALUES (\r\n    p_outlet_id,\r\n    public.next_order_number(p_outlet_id),\r\n    'placed',\r\n    false,\r\n    v_uid,\r\n    COALESCE(current_setting('TIMEZONE', true), 'UTC'),\r\n    p_pdf_path,\r\n    COALESCE(NULLIF(p_employee_name, ''), p_employee_name),\r\n    NULLIF(p_signature_path, ''),\r\n    v_now,\r\n    v_now,\r\n    v_now\r\n  ) RETURNING * INTO v_order;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(p_items, '[]'::jsonb)) LOOP\r\n    IF (v_item ->> 'product_id') IS NULL THEN\r\n      RAISE EXCEPTION 'product_id is required for each line item';\r\n    END IF;\r\n\r\n    v_receiving_contains := NULLIF(v_item ->> 'receiving_contains', '')::numeric;\r\n    v_qty := COALESCE((v_item ->> 'qty')::numeric, 0);\r\n    v_qty_cases := COALESCE((v_item ->> 'qty_cases')::numeric, NULL);\r\n    IF v_qty_cases IS NULL AND v_receiving_contains IS NOT NULL AND v_receiving_contains > 0 THEN\r\n      v_qty_cases := v_qty / v_receiving_contains;\r\n    END IF;\r\n\r\n    INSERT INTO public.order_items(\r\n      order_id,\r\n      product_id,\r\n      variation_id,\r\n      warehouse_id,\r\n      name,\r\n      receiving_uom,\r\n      consumption_uom,\r\n      cost,\r\n      qty,\r\n      qty_cases,\r\n      receiving_contains,\r\n      amount\r\n    ) VALUES (\r\n      v_order.id,\r\n      (v_item ->> 'product_id')::uuid,\r\n      NULLIF(v_item ->> 'variation_id', '')::uuid,\r\n      NULLIF(v_item ->> 'warehouse_id', '')::uuid,\r\n      COALESCE(NULLIF(v_item ->> 'name', ''), 'Item'),\r\n      COALESCE(NULLIF(v_item ->> 'receiving_uom', ''), 'each'),\r\n      COALESCE(NULLIF(v_item ->> 'consumption_uom', ''), 'each'),\r\n      COALESCE((v_item ->> 'cost')::numeric, 0),\r\n      v_qty,\r\n      v_qty_cases,\r\n      v_receiving_contains,\r\n      COALESCE((v_item ->> 'cost')::numeric, 0) * v_qty\r\n    );\r\n  END LOOP;\r\n\r\n  order_id := v_order.id;\r\n  order_number := v_order.order_number;\r\n  created_at := v_order.created_at;\r\n  RETURN NEXT;\r\nEND;\r\n$function$\n",
+            "return_type": "TABLE(order_id uuid, order_number text, created_at timestamp with time zone)",
+            "function_name": "place_order"
+        },
+        {
             "arguments": "p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text",
             "definition": "CREATE OR REPLACE FUNCTION public.record_damage(p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  rec record;\r\n  v_damage_id uuid;\r\nBEGIN\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse_id is required';\r\n  END IF;\r\n\r\n  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN\r\n    RAISE EXCEPTION 'at least one damage line is required';\r\n  END IF;\r\n\r\n  INSERT INTO public.warehouse_damages(warehouse_id, note, context, created_by)\r\n  VALUES (p_warehouse_id, p_note, coalesce(p_items, '[]'::jsonb), auth.uid())\r\n  RETURNING id INTO v_damage_id;\r\n\r\n  FOR rec IN\r\n    SELECT\r\n      (elem->>'product_id')::uuid AS item_id,\r\n      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,\r\n      (elem->>'qty')::numeric AS qty_units,\r\n      NULLIF(elem->>'note', '') AS line_note\r\n    FROM jsonb_array_elements(p_items) elem\r\n  LOOP\r\n    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN\r\n      RAISE EXCEPTION 'each damage line needs product_id and qty > 0';\r\n    END IF;\r\n\r\n    INSERT INTO public.warehouse_damage_items(damage_id, item_id, variant_id, qty_units, note)\r\n    VALUES (v_damage_id, rec.item_id, rec.variant_id, rec.qty_units, rec.line_note);\r\n\r\n    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)\r\n    VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      rec.variant_id,\r\n      -1 * rec.qty_units,\r\n      'damage',\r\n      jsonb_build_object('damage_id', v_damage_id, 'note', coalesce(rec.line_note, p_note))\r\n    );\r\n  END LOOP;\r\n\r\n  RETURN v_damage_id;\r\nEND;\r\n$function$\n",
             "return_type": "uuid",
@@ -3391,6 +3455,12 @@
             "definition": "CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_item_id IS NULL THEN\r\n    RETURN;\r\n  END IF;\r\n  UPDATE public.catalog_items ci\r\n  SET has_variations = EXISTS (\r\n        SELECT 1 FROM public.catalog_variants v\r\n      WHERE v.item_id = ci.id AND v.active AND v.outlet_order_visible\r\n      ),\r\n      updated_at = now()\r\n  WHERE ci.id = p_item_id;\r\nEND;\r\n$function$\n",
             "return_type": "void",
             "function_name": "refresh_catalog_has_variations"
+        },
+        {
+            "arguments": "p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
+            "definition": "CREATE OR REPLACE FUNCTION public.supervisor_approve_order(p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_order public.orders%ROWTYPE;\r\n  v_was_locked boolean;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  v_was_locked := COALESCE(v_order.locked, false);\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized to approve order %', p_order_id;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'approved',\r\n      locked = true,\r\n      approved_at = COALESCE(approved_at, now()),\r\n      approved_by = COALESCE(approved_by, v_uid),\r\n      supervisor_signed_name = COALESCE(NULLIF(p_supervisor_name, ''), supervisor_signed_name),\r\n      supervisor_signature_path = COALESCE(NULLIF(p_signature_path, ''), supervisor_signature_path),\r\n      supervisor_signed_at = now(),\r\n      approved_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), approved_pdf_path),\r\n      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),\r\n      modified_by_supervisor = true,\r\n      modified_by_supervisor_name = COALESCE(NULLIF(p_supervisor_name, ''), modified_by_supervisor_name),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\n\r\n  IF NOT v_was_locked THEN\r\n    PERFORM public.record_order_fulfillment(p_order_id);\r\n  END IF;\r\nEND;\r\n$function$\n",
+            "return_type": "void",
+            "function_name": "supervisor_approve_order"
         },
         {
             "arguments": "p_warehouse_id uuid",
@@ -3450,6 +3520,15 @@
                 }
             ],
             "publication_name": "supabase_realtime"
+        },
+        {
+            "tables": [
+                {
+                    "table": "messages",
+                    "schema": "realtime"
+                }
+            ],
+            "publication_name": "supabase_realtime_messages_publication"
         }
     ]
 }
