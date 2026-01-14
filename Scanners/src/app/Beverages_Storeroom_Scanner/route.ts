@@ -3715,7 +3715,7 @@ function createHtml(config: {
             p_destination: destId,
             p_items: cartSnapshot.map((item) => ({
               product_id: item.productId,
-              variation_id: item.variationId,
+              variant_key: item.variationId ?? item.variantKey ?? null,
               qty: item.qty
             })),
             p_note: null
@@ -3790,7 +3790,7 @@ function createHtml(config: {
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
-          variation_id: item.variationId,
+          variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           note: noteValue || null
         }));
@@ -3861,7 +3861,7 @@ function createHtml(config: {
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
-          variation_id: item.variationId,
+          variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           qty_input_mode: 'units',
           unit_cost: item.unitCost ?? null

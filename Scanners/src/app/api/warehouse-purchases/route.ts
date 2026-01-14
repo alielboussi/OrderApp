@@ -56,7 +56,6 @@ export async function GET(req: NextRequest) {
           id,
           receipt_id,
           item_id,
-          variant_id,
           variant_key,
           qty_units,
           qty_input_mode,
@@ -128,14 +127,12 @@ export async function GET(req: NextRequest) {
         items: Array.isArray((purchase as any).items)
           ? ((purchase as any).items as Array<PurchaseItem & { qty_units?: number | string | null; unit_cost?: number | string | null; variant_key?: string | null }>).map((item) => {
               const variantKey = (item as any).variant_key ?? (item as any).variation_key ?? null;
-              const variantId = (item as any).variant_id ?? null;
 
               return {
                 id: item.id,
                 receipt_id: (item as any).receipt_id ?? null,
                 item_id: item.item_id ?? (item as any).item_id ?? null,
                 variant_key: variantKey,
-                variant_id: variantId ?? variantKey ?? null,
                 qty: Number((item as any).qty_units ?? 0) || 0,
                 qty_input_mode: (item as any).qty_input_mode ?? null,
                 unit_cost: item.unit_cost != null ? Number(item.unit_cost) : (item as any).unit_cost != null ? Number((item as any).unit_cost) : null,

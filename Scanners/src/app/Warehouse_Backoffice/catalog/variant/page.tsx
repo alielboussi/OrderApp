@@ -113,7 +113,7 @@ export default function VariantCreatePage() {
         throw new Error(json.error || "Could not create variant");
       }
 
-      setResult({ ok: true, message: "Variant saved to catalog_variants" });
+      setResult({ ok: true, message: "Variant saved" });
       setForm(defaultForm);
     } catch (error) {
       console.error(error);
@@ -134,7 +134,7 @@ export default function VariantCreatePage() {
             <p style={styles.kicker}>Catalog</p>
             <h1 style={styles.title}>Create Variant</h1>
             <p style={styles.subtitle}>
-              Attach a variant to an existing product in catalog_variants. Use clear names so teams know what quantity to type.
+              Attach a variant to an existing product. Use clear names so teams know what quantity to type.
             </p>
           </div>
           <button onClick={back} style={styles.backButton}>

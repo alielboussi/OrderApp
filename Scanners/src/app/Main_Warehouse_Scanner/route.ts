@@ -2059,37 +2059,31 @@ function createHtml(config: {
           return [];
         }
 
-        const [stockResult, lockedItemsResult, lockedVariantsResult] = await Promise.all([
+        const [stockResult, lockedItemsResult] = await Promise.all([
           supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
           supabase
             .from('catalog_items')
-            .select('id')
-            .eq('locked_from_warehouse_id', lockedSourceId)
-            .eq('active', true),
-          supabase
-            .from('catalog_variants')
-            .select('product_id:item_id')
+            .select('id,variants')
             .eq('locked_from_warehouse_id', lockedSourceId)
             .eq('active', true)
         ]);
 
         if (stockResult.error) throw stockResult.error;
         if (lockedItemsResult.error) throw lockedItemsResult.error;
-        if (lockedVariantsResult.error) throw lockedVariantsResult.error;
 
         const lockedProductIds = new Set();
+        const productsWithWarehouseVariations = new Set();
         (lockedItemsResult.data ?? []).forEach((row) => {
           if (row?.id) lockedProductIds.add(row.id);
+          const variants = Array.isArray(row?.variants) ? row.variants : [];
+          variants.forEach((variant) => {
+            if (variant?.locked_from_warehouse_id === lockedSourceId && variant?.active !== false) {
+              if (row?.id) productsWithWarehouseVariations.add(row.id);
+            }
+          });
         });
 
         const productIds = new Set(lockedProductIds);
-        const productsWithWarehouseVariations = new Set();
-        (lockedVariantsResult.data ?? []).forEach((row) => {
-          if (!row?.product_id) return;
-          lockedProductIds.add(row.product_id);
-          productIds.add(row.product_id);
-          productsWithWarehouseVariations.add(row.product_id);
-        });
         (stockResult.data ?? []).forEach((row) => {
           if (row?.product_id && lockedProductIds.has(row.product_id)) {
             productIds.add(row.product_id);
@@ -2102,7 +2096,7 @@ function createHtml(config: {
 
         const { data: products, error: prodErr } = await supabase
           .from('catalog_items')
-          .select('id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
+          .select('id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants')
           .in('id', Array.from(productIds))
           .eq('locked_from_warehouse_id', lockedSourceId)
           .eq('active', true)
@@ -2113,7 +2107,10 @@ function createHtml(config: {
           if (productsWithWarehouseVariations.has(product.id)) {
             return { ...product, has_variations: true };
           }
-          return product;
+          const hasActiveVariants = (Array.isArray(product.variants) ? product.variants : []).some(
+            (variant) => variant?.active !== false && variant?.locked_from_warehouse_id === lockedSourceId
+          );
+          return hasActiveVariants ? { ...product, has_variations: true } : product;
         });
       }
 
@@ -2135,24 +2132,40 @@ function createHtml(config: {
           return;
         }
         const { data, error } = await supabase
-          .from('catalog_variants')
-          .select('id,product_id:item_id,name,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity')
-          .in('item_id', productIds)
+          .from('catalog_items')
+          .select('id,variants')
+          .in('id', productIds)
           .eq('locked_from_warehouse_id', lockedSourceId)
-          .eq('active', true)
-          .order('name');
+          .eq('active', true);
         if (error) throw error;
-        (data ?? []).forEach((variation) => {
-          if (!variation?.product_id) return;
-          const list = state.variations.get(variation.product_id) ?? [];
-          list.push(variation);
-          state.variations.set(variation.product_id, list);
-          if (variation.id) {
+        (data ?? []).forEach((item) => {
+          if (!item?.id) return;
+          const variants = Array.isArray(item.variants) ? item.variants : [];
+          variants.forEach((variant) => {
+            if (variant?.locked_from_warehouse_id !== lockedSourceId) return;
+            if (variant?.active === false) return;
+            const key = (variant?.key ?? variant?.id ?? '').toString().trim();
+            if (!key) return;
+            const variation = {
+              id: key,
+              product_id: item.id,
+              name: (variant?.name ?? '').toString() || 'Variant',
+              uom: (variant?.purchase_pack_unit ?? variant?.transfer_unit ?? 'each').toString(),
+              consumption_uom: (variant?.consumption_uom ?? variant?.purchase_pack_unit ?? 'each').toString(),
+              sku: typeof variant?.sku === 'string' ? variant.sku : null,
+              package_contains: typeof variant?.units_per_purchase_pack === 'number' ? variant.units_per_purchase_pack : null,
+              transfer_unit: (variant?.transfer_unit ?? variant?.purchase_pack_unit ?? 'each').toString(),
+              transfer_quantity:
+                typeof variant?.transfer_quantity === 'number' ? variant.transfer_quantity : Number(variant?.transfer_quantity) || 1
+            };
+            const list = state.variations.get(item.id) ?? [];
+            list.push(variation);
+            state.variations.set(item.id, list);
             indexVariationKey(variation.id, variation);
-          }
-          if (typeof variation.sku === 'string' && variation.sku.trim()) {
-            indexVariationKey(variation.sku, variation);
-          }
+            if (typeof variation.sku === 'string' && variation.sku.trim()) {
+              indexVariationKey(variation.sku, variation);
+            }
+          });
         });
       }
 
@@ -3702,7 +3715,7 @@ function createHtml(config: {
             p_destination: destId,
             p_items: cartSnapshot.map((item) => ({
               product_id: item.productId,
-              variation_id: item.variationId,
+              variant_key: item.variationId ?? item.variantKey ?? null,
               qty: item.qty
             })),
             p_note: null
@@ -3777,7 +3790,7 @@ function createHtml(config: {
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
-          variation_id: item.variationId,
+          variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           note: noteValue || null
         }));
@@ -3848,7 +3861,7 @@ function createHtml(config: {
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
-          variation_id: item.variationId,
+          variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           qty_input_mode: 'units',
           unit_cost: item.unitCost ?? null

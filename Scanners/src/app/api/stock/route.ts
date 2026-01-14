@@ -16,7 +16,6 @@ type WarehouseRecord = {
 type StockRecord = {
   warehouse_id: string;
   product_id: string;
-  variation_id: string | null;
   variant_key?: string | null;
   qty: number | string | null;
 };
@@ -63,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     const { data: stockRows, error: stockError } = await supabase
       .from(STOCK_VIEW_NAME)
-      .select('warehouse_id,product_id,variation_id,variant_key,qty')
+      .select('warehouse_id,product_id,variant_key,qty')
       .in('warehouse_id', targetIds);
 
     if (stockError) {
@@ -93,9 +92,8 @@ export async function POST(req: NextRequest) {
       warehouse_name: warehouses.find((wh) => wh.id === row.warehouse_id)?.name ?? 'Warehouse',
       product_id: row.product_id,
       product_name: productLookup.get(row.product_id) ?? 'Product',
-      variant_key: row.variant_key ?? row.variation_id ?? null,
-      variation_id: row.variation_id ?? row.variant_key ?? null,
-      variation_name: row.variant_key ?? row.variation_id,
+      variant_key: row.variant_key ?? null,
+      variant_name: row.variant_key ?? null,
       qty: Number(row.qty) || 0,
     }));
 

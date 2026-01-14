@@ -42,7 +42,7 @@ export default function CatalogMenu() {
             style={{ ...styles.actionCard, borderColor: "#7dd3fcaa", boxShadow: "0 18px 44px #7dd3fc33" }}
           >
             <p style={{ ...styles.cardTitle, color: "#7dd3fc" }}>New Variant</p>
-            <p style={styles.cardBody}>Attach a variant to an existing product in catalog_variants.</p>
+            <p style={styles.cardBody}>Attach a variant to an existing product.</p>
             <span style={styles.cardCta}>Open form</span>
           </button>
         </section>

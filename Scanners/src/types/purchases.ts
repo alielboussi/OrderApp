@@ -8,7 +8,6 @@ export type PurchaseItem = {
   receipt_id?: string | null;
   item_id?: string | null;
   variant_key?: string | null;
-  variant_id?: string | null;
   qty: number;
   qty_input_mode?: string | null;
   unit_cost?: number | null;

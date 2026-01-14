@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
@@ -71,6 +72,32 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
+type VariantRecord = VariantPayload & { key?: string; id?: string };
+
+function toVariantResponse(itemId: string, variant: VariantRecord) {
+  const key = (variant.key ?? variant.id ?? "").toString().trim();
+  if (!key) return null;
+  return {
+    id: key,
+    item_id: itemId,
+    name: variant.name ?? "Variant",
+    sku: variant.sku ?? null,
+    consumption_uom: variant.consumption_uom ?? "each",
+    purchase_pack_unit: variant.purchase_pack_unit ?? "each",
+    units_per_purchase_pack: variant.units_per_purchase_pack ?? 1,
+    purchase_unit_mass: variant.purchase_unit_mass ?? null,
+    purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? null,
+    transfer_unit: variant.transfer_unit ?? variant.purchase_pack_unit ?? "each",
+    transfer_quantity: variant.transfer_quantity ?? 1,
+    cost: variant.cost ?? 0,
+    locked_from_warehouse_id: variant.locked_from_warehouse_id ?? null,
+    outlet_order_visible: variant.outlet_order_visible ?? true,
+    image_url: variant.image_url ?? null,
+    default_warehouse_id: variant.default_warehouse_id ?? null,
+    active: variant.active ?? true,
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -78,31 +105,35 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim() || undefined;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-
-    if (id) {
-      const { data, error } = await supabase
-        .from("catalog_variants")
-        .select("id,name,sku,item_id,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,active")
-        .eq("id", id)
-        .maybeSingle();
-
-      if (error) throw error;
-      if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      return NextResponse.json({ variant: data });
-    }
-
-    let query = supabase
-      .from("catalog_variants")
-      .select("id,name,sku,item_id,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,active")
-      .order("name");
-
-    if (itemId) query = query.eq("item_id", itemId);
-    if (search) query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
+    let query = supabase.from("catalog_items").select("id,name,variants,active");
+    if (itemId) query = query.eq("id", itemId);
+    query = query.eq("active", true);
 
     const { data, error } = await query;
     if (error) throw error;
 
-    return NextResponse.json({ variants: Array.isArray(data) ? data : [] });
+    const variants = (data ?? []).flatMap((item) => {
+      const entries = Array.isArray((item as any).variants) ? ((item as any).variants as VariantRecord[]) : [];
+      return entries
+        .map((variant) => toVariantResponse((item as any).id as string, variant))
+        .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> => Boolean(v));
+    });
+
+    if (id) {
+      const found = variants.find((variant) => variant.id === id);
+      if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ variant: found });
+    }
+
+    const filtered = search
+      ? variants.filter((variant) => {
+          const name = variant.name?.toLowerCase?.() ?? "";
+          const sku = variant.sku?.toLowerCase?.() ?? "";
+          return name.includes(search) || sku.includes(search);
+        })
+      : variants;
+
+    return NextResponse.json({ variants: filtered });
   } catch (error) {
     console.error("[catalog/variants] GET failed", error);
     return NextResponse.json({ error: "Unable to load variants" }, { status: 500 });
@@ -158,17 +189,28 @@ export async function POST(request: Request) {
     };
 
     const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("catalog_variants")
-      .insert([payload])
-      .select("id,name,sku,item_id")
-      .single();
+    const { data: itemRow, error: itemError } = await supabase
+      .from("catalog_items")
+      .select("variants")
+      .eq("id", itemId)
+      .maybeSingle();
+    if (itemError) throw itemError;
+    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
-    if (error) throw error;
+    const existing = Array.isArray((itemRow as any).variants) ? ((itemRow as any).variants as VariantRecord[]) : [];
+    const newVariant: VariantRecord = { ...payload, key: randomUUID() };
+    const nextVariants = [...existing, newVariant];
 
-    await supabase.from("catalog_items").update({ has_variations: true }).eq("id", itemId);
+    const { error: updateError } = await supabase
+      .from("catalog_items")
+      .update({ variants: nextVariants, has_variations: true })
+      .eq("id", itemId);
+    if (updateError) throw updateError;
 
-    return NextResponse.json({ variant: data });
+    const responseVariant = toVariantResponse(itemId, newVariant);
+    if (!responseVariant) return NextResponse.json({ error: "Failed to save variant" }, { status: 500 });
+
+    return NextResponse.json({ variant: responseVariant });
   } catch (error) {
     console.error("[catalog/variants] POST failed", error);
     return NextResponse.json({ error: "Unable to create variant" }, { status: 500 });
@@ -227,18 +269,36 @@ export async function PUT(request: Request) {
     };
 
     const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("catalog_variants")
-      .update(payload)
-      .eq("id", id)
-      .select("id,name,sku,item_id")
-      .single();
+    const { data: itemRow, error: itemError } = await supabase
+      .from("catalog_items")
+      .select("variants")
+      .eq("id", itemId)
+      .maybeSingle();
+    if (itemError) throw itemError;
+    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
-    if (error) throw error;
+    const existing = Array.isArray((itemRow as any).variants) ? ((itemRow as any).variants as VariantRecord[]) : [];
+    const updated = existing.map((variant) => {
+      const key = (variant?.key ?? variant?.id ?? "").toString().trim();
+      if (key && key === id) {
+        return { ...variant, ...payload, key } as VariantRecord;
+      }
+      return variant;
+    });
 
-    await supabase.from("catalog_items").update({ has_variations: true }).eq("id", itemId);
+    const found = updated.find((variant) => (variant?.key ?? variant?.id ?? "").toString() === id) ?? null;
+    if (!found) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
 
-    return NextResponse.json({ variant: data });
+    const { error: updateError } = await supabase
+      .from("catalog_items")
+      .update({ variants: updated, has_variations: true })
+      .eq("id", itemId);
+    if (updateError) throw updateError;
+
+    const responseVariant = toVariantResponse(itemId, found);
+    if (!responseVariant) return NextResponse.json({ error: "Failed to update variant" }, { status: 500 });
+
+    return NextResponse.json({ variant: responseVariant });
   } catch (error) {
     console.error("[catalog/variants] PUT failed", error);
     return NextResponse.json({ error: "Unable to update variant" }, { status: 500 });

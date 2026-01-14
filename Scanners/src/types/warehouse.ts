@@ -12,16 +12,15 @@ export type WarehouseStockRow = {
   product_id: string;
   product_name: string;
   variant_key: string | null;
-  variation_id: string | null;
-  variation_name: string | null;
+  variant_name: string | null;
   qty: number;
 };
 
 export type AggregatedStockRow = {
   productId: string;
-  variationId: string | null;
+  variantKey: string | null;
   productName: string;
-  variationName: string | null;
+  variantName: string | null;
   totalQty: number;
   warehouses: Array<{
     warehouseId: string;

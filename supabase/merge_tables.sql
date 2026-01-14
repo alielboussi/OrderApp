@@ -12,58 +12,93 @@ create table if not exists public.counter_values (
 );
 
 -- Migrate existing counters into the unified table
-insert into public.counter_values(counter_key, scope_id, last_value, updated_at)
-select 'order_number', outlet_id, last_value, updated_at from public.outlet_order_counters
-on conflict (counter_key, scope_id)
-do update set last_value = greatest(public.counter_values.last_value, excluded.last_value),
-              updated_at = excluded.updated_at;
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'outlet_order_counters') then
+    insert into public.counter_values(counter_key, scope_id, last_value, updated_at)
+    select 'order_number', outlet_id, last_value, updated_at from public.outlet_order_counters
+    on conflict (counter_key, scope_id)
+    do update set last_value = greatest(public.counter_values.last_value, excluded.last_value),
+                  updated_at = excluded.updated_at;
+  end if;
 
-insert into public.counter_values(counter_key, scope_id, last_value, updated_at)
-select 'purchase_receipt', '00000000-0000-0000-0000-000000000000', last_value, updated_at
-from public.warehouse_purchase_receipt_counters
-on conflict (counter_key, scope_id)
-do update set last_value = greatest(public.counter_values.last_value, excluded.last_value),
-              updated_at = excluded.updated_at;
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'warehouse_purchase_receipt_counters') then
+    insert into public.counter_values(counter_key, scope_id, last_value, updated_at)
+    select 'purchase_receipt', '00000000-0000-0000-0000-000000000000', last_value, updated_at
+    from public.warehouse_purchase_receipt_counters
+    on conflict (counter_key, scope_id)
+    do update set last_value = greatest(public.counter_values.last_value, excluded.last_value),
+                  updated_at = excluded.updated_at;
+  end if;
 
-insert into public.counter_values(counter_key, scope_id, last_value, updated_at)
-select 'transfer', '00000000-0000-0000-0000-000000000000', last_value, updated_at
-from public.warehouse_transfer_counters
-on conflict (counter_key, scope_id)
-do update set last_value = greatest(public.counter_values.last_value, excluded.last_value),
-              updated_at = excluded.updated_at;
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'warehouse_transfer_counters') then
+    insert into public.counter_values(counter_key, scope_id, last_value, updated_at)
+    select 'transfer', '00000000-0000-0000-0000-000000000000', last_value, updated_at
+    from public.warehouse_transfer_counters
+    on conflict (counter_key, scope_id)
+    do update set last_value = greatest(public.counter_values.last_value, excluded.last_value),
+                  updated_at = excluded.updated_at;
+  end if;
+end;
+$$;
 
 -- 2) Unified outlet item routes table
 create table if not exists public.outlet_item_routes (
   outlet_id uuid not null references public.outlets(id) on delete cascade,
   item_id uuid not null references public.catalog_items(id) on delete cascade,
-  variant_id uuid references public.catalog_variants(id) on delete cascade,
-  normalized_variant_id uuid not null,
+  variant_key text not null default 'base',
+  normalized_variant_key text not null default 'base',
   warehouse_id uuid references public.warehouses(id) on delete cascade,
   target_outlet_id uuid references public.outlets(id) on delete cascade,
   deduct_enabled boolean,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key (outlet_id, item_id, normalized_variant_id)
+  primary key (outlet_id, item_id, normalized_variant_key)
 );
 
 -- Seed routes from existing mappings + deduction overrides
-insert into public.outlet_item_routes(
-  outlet_id, item_id, variant_id, normalized_variant_id,
-  warehouse_id, target_outlet_id, deduct_enabled, created_at, updated_at
-)
-select
-  m.outlet_id,
-  m.item_id,
-  m.variant_id,
-  coalesce(m.variant_id, '00000000-0000-0000-0000-000000000000'),
-  coalesce(d.target_warehouse_id, m.warehouse_id),
-  coalesce(m.target_outlet_id, d.target_outlet_id),
-  null,
-  greatest(m.created_at, coalesce(d.created_at, m.created_at)),
-  greatest(m.updated_at, coalesce(d.updated_at, m.updated_at))
-from public.outlet_item_warehouse_map m
-left join public.outlet_deduction_mappings d on d.outlet_id = m.outlet_id
-on conflict (outlet_id, item_id, normalized_variant_id) do nothing;
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema='public' and table_name='outlet_item_warehouse_map') then
+    if exists (select 1 from information_schema.tables where table_schema='public' and table_name='outlet_deduction_mappings') then
+      insert into public.outlet_item_routes(
+        outlet_id, item_id, variant_key, normalized_variant_key,
+        warehouse_id, target_outlet_id, deduct_enabled, created_at, updated_at
+      )
+      select
+        m.outlet_id,
+        m.item_id,
+        coalesce(m.variant_id::text, 'base'),
+        coalesce(m.variant_id::text, 'base'),
+        coalesce(d.target_warehouse_id, m.warehouse_id),
+        coalesce(m.target_outlet_id, d.target_outlet_id),
+        null,
+        greatest(m.created_at, coalesce(d.created_at, m.created_at)),
+        greatest(m.updated_at, coalesce(d.updated_at, m.updated_at))
+      from public.outlet_item_warehouse_map m
+      left join public.outlet_deduction_mappings d on d.outlet_id = m.outlet_id
+      on conflict (outlet_id, item_id, normalized_variant_key) do nothing;
+    else
+      insert into public.outlet_item_routes(
+        outlet_id, item_id, variant_key, normalized_variant_key,
+        warehouse_id, target_outlet_id, deduct_enabled, created_at, updated_at
+      )
+      select
+        m.outlet_id,
+        m.item_id,
+        coalesce(m.variant_id::text, 'base'),
+        coalesce(m.variant_id::text, 'base'),
+        m.warehouse_id,
+        m.target_outlet_id,
+        null,
+        m.created_at,
+        m.updated_at
+      from public.outlet_item_warehouse_map m
+      on conflict (outlet_id, item_id, normalized_variant_key) do nothing;
+    end if;
+  end if;
+end;
+$$;
 
 -- 3) Move POS meta columns onto orders
 alter table public.orders
@@ -83,26 +118,31 @@ alter table public.orders
   add column if not exists payments jsonb,
   add column if not exists pos_branch_id integer;
 
--- Backfill from the old meta table when present
-update public.orders o
-set
-  order_type = coalesce(o.order_type, m.order_type),
-  bill_type = coalesce(o.bill_type, m.bill_type),
-  total_discount = coalesce(o.total_discount, m.total_discount),
-  total_discount_amount = coalesce(o.total_discount_amount, m.total_discount_amount),
-  total_gst = coalesce(o.total_gst, m.total_gst),
-  service_charges = coalesce(o.service_charges, m.service_charges),
-  delivery_charges = coalesce(o.delivery_charges, m.delivery_charges),
-  tip = coalesce(o.tip, m.tip),
-  pos_fee = coalesce(o.pos_fee, m.pos_fee),
-  price_type = coalesce(o.price_type, m.price_type),
-  customer_name = coalesce(o.customer_name, m.customer_name),
-  customer_phone = coalesce(o.customer_phone, m.customer_phone),
-  payments = coalesce(o.payments, m.payments),
-  raw_payload = coalesce(nullif(o.raw_payload, '{}'::jsonb), m.raw_payload),
-  pos_branch_id = coalesce(o.pos_branch_id, m.branch_id)
-from public.pos_order_meta m
-where m.order_id = o.id;
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'pos_order_meta') then
+    update public.orders o
+    set
+      order_type = coalesce(o.order_type, m.order_type),
+      bill_type = coalesce(o.bill_type, m.bill_type),
+      total_discount = coalesce(o.total_discount, m.total_discount),
+      total_discount_amount = coalesce(o.total_discount_amount, m.total_discount_amount),
+      total_gst = coalesce(o.total_gst, m.total_gst),
+      service_charges = coalesce(o.service_charges, m.service_charges),
+      delivery_charges = coalesce(o.delivery_charges, m.delivery_charges),
+      tip = coalesce(o.tip, m.tip),
+      pos_fee = coalesce(o.pos_fee, m.pos_fee),
+      price_type = coalesce(o.price_type, m.price_type),
+      customer_name = coalesce(o.customer_name, m.customer_name),
+      customer_phone = coalesce(o.customer_phone, m.customer_phone),
+      payments = coalesce(o.payments, m.payments),
+      raw_payload = coalesce(nullif(o.raw_payload, '{}'::jsonb), m.raw_payload),
+      pos_branch_id = coalesce(o.pos_branch_id, m.branch_id)
+    from public.pos_order_meta m
+    where m.order_id = o.id;
+  end if;
+end;
+$$;
 
 -- 4) Simplify damage storage (keep context JSON, drop line table later)
 -- No schema change needed for warehouse_damages; keep context as the lines.
@@ -187,7 +227,7 @@ create or replace function public.record_outlet_sale(
   p_outlet_id uuid,
   p_item_id uuid,
   p_qty_units numeric,
-  p_variant_id uuid default null,
+  p_variant_key text default 'base',
   p_is_production boolean default false,
   p_warehouse_id uuid default null,
   p_sold_at timestamptz default now(),
@@ -204,6 +244,7 @@ declare
   v_deduct_outlet uuid;
   v_deduct_wh uuid;
   v_deduct_enabled boolean;
+  v_variant_key text := coalesce(nullif(p_variant_key, ''), 'base');
 begin
   if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then
     raise exception 'outlet, item, qty required';
@@ -218,16 +259,16 @@ begin
   from public.outlet_item_routes
   where outlet_id = p_outlet_id
     and item_id = p_item_id
-    and normalized_variant_id = coalesce(p_variant_id, '00000000-0000-0000-0000-000000000000')
+    and normalized_variant_key = v_variant_key
   limit 1;
 
   v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);
 
   if v_deduct_enabled = false then
     insert into public.outlet_sales(
-      outlet_id, item_id, variant_id, qty_units, is_production, warehouse_id, sold_at, created_by, context
+      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context
     ) values (
-      p_outlet_id, p_item_id, p_variant_id, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context
+      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context
     ) returning * into v_sale;
     return v_sale;
   end if;
@@ -235,30 +276,22 @@ begin
   v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);
   v_deduct_wh := coalesce(
     p_warehouse_id,
-    v_route.warehouse_id,
-    (
-      select wd.warehouse_id
-      from public.warehouse_defaults wd
-      where wd.item_id = p_item_id
-        and (wd.variant_id is null or wd.variant_id = p_variant_id)
-      order by wd.variant_id desc nulls last
-      limit 1
-    )
+    v_route.warehouse_id
   );
 
   if v_deduct_wh is null then
-    raise exception 'no warehouse mapping for outlet %, item %, variant %', p_outlet_id, p_item_id, p_variant_id;
+    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;
   end if;
 
   insert into public.outlet_sales(
-    outlet_id, item_id, variant_id, qty_units, is_production, warehouse_id, sold_at, created_by, context
+    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context
   ) values (
-    p_outlet_id, p_item_id, p_variant_id, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context
+    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context
   ) returning * into v_sale;
 
   insert into public.outlet_stock_balances(outlet_id, item_id, variant_id, sent_units, consumed_units)
-  values (p_outlet_id, p_item_id, p_variant_id, 0, p_qty_units)
-  on conflict (outlet_id, item_id, coalesce(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)
+  on conflict (outlet_id, item_id, coalesce(variant_id, 'base'))
   do update set
     consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,
     updated_at = now();
@@ -267,7 +300,7 @@ begin
     location_type,
     warehouse_id,
     item_id,
-    variant_id,
+    variant_key,
     delta_units,
     reason,
     context
@@ -275,7 +308,7 @@ begin
     'warehouse',
     v_deduct_wh,
     p_item_id,
-    p_variant_id,
+    v_variant_key,
     -1 * p_qty_units,
     'outlet_sale',
     jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id) || coalesce(p_context, '{}')
@@ -285,7 +318,7 @@ begin
     p_item_id,
     p_qty_units,
     v_deduct_wh,
-    p_variant_id,
+    v_variant_key,
     jsonb_build_object(
       'source','outlet_sale',
       'outlet_id',p_outlet_id,
@@ -314,6 +347,7 @@ as $$
 declare
   rec record;
   v_damage_id uuid;
+  v_variant_key text;
 begin
   if p_warehouse_id is null then
     raise exception 'warehouse_id is required';
@@ -330,7 +364,7 @@ begin
   for rec in
     select
       (elem->>'product_id')::uuid as item_id,
-      nullif(elem->>'variation_id', '')::uuid as variant_id,
+      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,
       (elem->>'qty')::numeric as qty_units,
       nullif(elem->>'note', '') as line_note
     from jsonb_array_elements(p_items) elem
@@ -344,7 +378,7 @@ begin
       'warehouse',
       p_warehouse_id,
       rec.item_id,
-      rec.variant_id,
+      rec.variant_key,
       -1 * rec.qty_units,
       'damage',
       jsonb_build_object('damage_id', v_damage_id, 'note', coalesce(rec.line_note, p_note))
@@ -427,7 +461,7 @@ begin
   ) returning id into v_order_id;
 
   for v_item in select * from jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) loop
-    select catalog_item_id, catalog_variant_id, warehouse_id
+    select catalog_item_id, catalog_variant_key, warehouse_id
       into v_map
     from public.pos_item_map
     where outlet_id = v_outlet
@@ -441,7 +475,7 @@ begin
       v_outlet,
       v_map.catalog_item_id,
       v_qty,
-      v_map.catalog_variant_id,
+      v_map.catalog_variant_key,
       false,
       v_map.warehouse_id,
       (payload->>'occurred_at')::timestamptz,

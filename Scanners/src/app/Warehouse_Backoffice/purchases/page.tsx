@@ -249,7 +249,7 @@ export default function WarehousePurchasesWeb() {
             p.reference_code,
             p.note,
             p.items
-              ?.map((i) => `${i.item?.name ?? ""} ${i.variant?.name ?? ""} ${i.item_id ?? ""} ${i.variant_id ?? ""}`)
+              ?.map((i) => `${i.item?.name ?? ""} ${i.variant?.name ?? ""} ${i.item_id ?? ""} ${i.variant_key ?? ""}`)
               .join(" ") ?? "",
           ]
             .join(" ")

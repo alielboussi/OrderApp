@@ -72,7 +72,6 @@ export async function GET(req: NextRequest) {
 
       lines.forEach((line) => {
         const itemId = (line?.product_id ?? line?.item_id ?? '').toString();
-        const variantId = (line?.variation_id ?? line?.variant_id ?? '').toString();
         if (itemId) itemIds.add(itemId);
       });
 
@@ -120,7 +119,6 @@ export async function GET(req: NextRequest) {
         ? damage.parsedLines.map((line, index) => {
             const itemId = (line?.product_id ?? line?.item_id ?? null) as string | null;
             const variantKey = (line?.variant_key ?? line?.variation_key ?? null) as string | null;
-            const variantId = (line?.variation_id ?? line?.variant_id ?? null) as string | null;
             const qty = Number((line?.qty ?? line?.qty_units ?? 0) as number) || 0;
             const note = (line?.note ?? null) as string | null;
 
@@ -129,11 +127,10 @@ export async function GET(req: NextRequest) {
               damage_id: damage.id,
               item_id: itemId,
               variant_key: variantKey,
-              variant_id: variantId ?? variantKey ?? null,
               qty,
               note,
               item: itemId ? { id: itemId, name: itemMap.get(itemId) ?? null } : null,
-              variant: variantKey ? { id: variantKey, name: variantKey } : variantId ? { id: variantId, name: variantId } : null,
+              variant: variantKey ? { id: variantKey, name: variantKey } : null,
             };
           })
         : [];

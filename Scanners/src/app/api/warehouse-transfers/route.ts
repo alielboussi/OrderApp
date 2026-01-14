@@ -54,7 +54,6 @@ export async function GET(req: NextRequest) {
           id,
           transfer_id,
           item_id,
-          variant_id,
           variant_key,
           qty_units,
           item:catalog_items ( id, name )
@@ -130,14 +129,12 @@ export async function GET(req: NextRequest) {
         items: Array.isArray((transfer as any).items)
           ? ((transfer as any).items as Array<TransferItem & { qty_units?: number | string | null; variant_key?: string | null }>).map((item) => {
               const variantKey = (item as any).variant_key ?? (item as any).variation_key ?? null;
-              const variantId = (item as any).variation_id ?? (item as any).variant_id ?? null;
 
               return {
                 id: item.id,
                 transfer_id: (item as any).transfer_id ?? null,
                 product_id: item.product_id ?? (item as any).item_id ?? null,
                 variant_key: variantKey,
-                variation_id: variantId ?? variantKey ?? null,
                 qty: Number((item as any).qty_units ?? item.qty ?? 0) || 0,
                 product: (item as any).item ?? item.product ?? null,
                 variation: variantKey ? { id: variantKey, name: variantKey } : (item as any).variant ?? item.variation ?? null,

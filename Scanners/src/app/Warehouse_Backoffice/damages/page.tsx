@@ -243,8 +243,7 @@ export default function WarehouseDamagesWeb() {
             d.warehouse?.name,
             d.note,
             d.items
-              ?.map((i) => `${i.item?.name ?? ""} ${i.variant?.name ?? ""} ${i.item_id ?? ""} ${i.variant_id ?? ""}`)
-              .join(" ") ?? "",
+              ?.map((i) => `${i.item?.name ?? ""} ${i.variant?.name ?? ""} ${i.item_id ?? ""} ${i.variant_key ?? ""}`)
           ]
             .join(" ")
             .toLowerCase();

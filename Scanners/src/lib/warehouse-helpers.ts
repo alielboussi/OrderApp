@@ -30,16 +30,16 @@ export function aggregateStockRows(rows: WarehouseStockRow[]): AggregatedStockRo
 
   for (const row of rows) {
     const qty = Number(row.qty) || 0;
-    const variantKey = row.variant_key ?? row.variation_id ?? 'NOVAR';
+    const variantKey = row.variant_key ?? 'NOVAR';
     const key = `${row.product_id}::${variantKey}`;
     const warehouseName = row.warehouse_name ?? 'Warehouse';
 
     if (!byKey.has(key)) {
       byKey.set(key, {
         productId: row.product_id,
-        variationId: row.variation_id ?? row.variant_key ?? null,
+        variantKey: row.variant_key ?? null,
         productName: row.product_name,
-        variationName: row.variation_name ?? row.variant_key ?? null,
+        variantName: row.variant_name ?? row.variant_key ?? null,
         totalQty: 0,
         warehouses: [],
       });
@@ -66,9 +66,8 @@ export function filterRowsBySearch(rows: WarehouseStockRow[], search?: string): 
   return rows.filter((row) => {
     return (
       row.product_name.toLowerCase().includes(lowered) ||
-      (row.variation_name ?? '').toLowerCase().includes(lowered) ||
+      (row.variant_name ?? '').toLowerCase().includes(lowered) ||
       row.product_id.toLowerCase().includes(lowered) ||
-      (row.variation_id ?? '').toLowerCase().includes(lowered) ||
       (row.variant_key ?? '').toLowerCase().includes(lowered)
     );
   });

@@ -14,7 +14,7 @@ interface Warehouse {
 interface TransferItem {
   id: string;
   product_id?: string | null;
-  variation_id?: string | null;
+  variant_key?: string | null;
   qty: number;
   product?: { id?: string; name?: string | null; uom?: string | null } | null;
   variation?: { id?: string; name?: string | null; uom?: string | null } | null;
@@ -279,7 +279,7 @@ export default function WarehouseTransfersWeb() {
             t.items
               ?.map(
                 (i) =>
-                  `${i.product?.name ?? ""} ${i.variation?.name ?? ""} ${i.product_id ?? ""} ${i.variation_id ?? ""}`
+                  `${i.product?.name ?? ""} ${i.variation?.name ?? ""} ${i.product_id ?? ""} ${i.variant_key ?? ""}`
               )
               .join(" ") ?? "",
           ]
@@ -461,7 +461,7 @@ export default function WarehouseTransfersWeb() {
                                       <span style={styles.itemSub}> - {item.variation.name}</span>
                                     ) : null}
                                   </p>
-                                  <p style={styles.itemSub}>{item.product_id ?? item.variation_id ?? "Item"}</p>
+                                    <p style={styles.itemSub}>{item.product_id ?? item.variant_key ?? "Item"}</p>
                                 </div>
                                 <div style={{ textAlign: "right" }}>
                                   <p style={styles.itemQty}>{item.qty}</p>
