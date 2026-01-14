@@ -38,6 +38,21 @@ Stop-Service -Name "PosSupabaseSync"
 sc delete PosSupabaseSync
 ```
 
+## Quick status UI
+- Double-click `PosSyncService.exe` (no arguments) to run a hidden-on-demand status UI: it performs one immediate sync pass and prints the last five processed sales, then exits.
+- To call it explicitly, run `PosSyncService.exe --status-ui`.
+- If your config lives outside the executable directory, add `--contentRoot "C:\\Users\\<you>\\AppData\\Local\\XtZ"` so the app picks up `appsettings.json` from that folder.
+
+## Deploy as a single folder
+1) Run `dotnet publish -c Release -r win-x64 --self-contained true -o publish` (already done) — this produces the `publish` folder with binaries **and** the `scripts` subfolder.
+2) Optionally rename the `publish` folder to `installation` (or similar) for transport to the outlet.
+3) Copy that single folder to the outlet machine.
+4) On the outlet, open PowerShell as Administrator, `cd` into the folder, then run:
+```
+pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\PosSyncService" -ConfigRoot "C:\\Users\\<you>\\AppData\\Local\\XtZ"
+```
+- The script will skip rebuilding if it does not find the `.csproj` (typical on the outlet). To force no-build locally, add `-SkipPublish`.
+
 ## What to adapt
 - Update the SQL queries in `PosRepository` to match your POS tables (e.g., `BillType`, `Saledetails`, payments, customers).
 - Ensure the Supabase RPC `sync_pos_order` exists and enforces idempotency on `source_event_id`.

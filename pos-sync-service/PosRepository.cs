@@ -128,6 +128,66 @@ ORDER BY bt.id ASC;";
         return orders;
     }
 
+    public async Task<IReadOnlyList<PosSentSummary>> ReadRecentProcessedAsync(int take, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT TOP (@Take)
+    bt.id     AS BillId,
+    bt.saleid AS SaleId,
+    bt.Amount AS PaymentAmount,
+    bt.type   AS PaymentType,
+    s.Date    AS SaleDate,
+    s.time    AS SaleTime
+FROM dbo.BillType bt WITH (NOLOCK)
+JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
+WHERE bt.uploadStatus = 'Processed'
+ORDER BY bt.id DESC;";
+
+        var recent = new List<PosSentSummary>();
+
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqlCommand(sql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+        cmd.Parameters.AddWithValue("@Take", take);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var saleDate = reader.IsDBNull(reader.GetOrdinal("SaleDate"))
+                ? DateTime.UtcNow
+                : reader.GetDateTime(reader.GetOrdinal("SaleDate"));
+
+            DateTimeOffset occurredAt;
+            if (!reader.IsDBNull(reader.GetOrdinal("SaleTime")))
+            {
+                var saleTime = reader.GetDateTime(reader.GetOrdinal("SaleTime"));
+                occurredAt = saleDate.Date + saleTime.TimeOfDay;
+            }
+            else
+            {
+                occurredAt = saleDate;
+            }
+
+            decimal? amount = reader.IsDBNull(reader.GetOrdinal("PaymentAmount"))
+                ? null
+                : Convert.ToDecimal(reader["PaymentAmount"]);
+
+            recent.Add(new PosSentSummary(
+                BillId: reader["BillId"].ToString() ?? string.Empty,
+                SaleId: reader["SaleId"].ToString() ?? string.Empty,
+                OccurredAt: occurredAt,
+                PaymentAmount: amount,
+                PaymentType: reader["PaymentType"]?.ToString()
+            ));
+        }
+
+        return recent;
+    }
+
     public async Task MarkOrderProcessedAsync(string billId, string saleId, CancellationToken cancellationToken)
     {
         const string sql = @"

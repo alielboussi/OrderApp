@@ -2,18 +2,15 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PosSyncService.Models;
-using System.Linq;
 
 namespace PosSyncService;
 
 public sealed class PosSyncWorker(IOptions<SyncOptions> syncOptions,
-                                  PosRepository repository,
-                                  SupabaseClient supabaseClient,
+                                  SyncRunner syncRunner,
                                   ILogger<PosSyncWorker> logger) : BackgroundService
 {
     private readonly SyncOptions _syncOptions = syncOptions.Value;
-    private readonly PosRepository _repository = repository;
-    private readonly SupabaseClient _supabaseClient = supabaseClient;
+    private readonly SyncRunner _syncRunner = syncRunner;
     private readonly ILogger<PosSyncWorker> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -24,28 +21,12 @@ public sealed class PosSyncWorker(IOptions<SyncOptions> syncOptions,
         {
             try
             {
-                var pending = await _repository.ReadPendingOrdersAsync(_syncOptions.BatchSize, stoppingToken);
-                if (pending.Count == 0)
+                var result = await _syncRunner.RunOnceAsync(stoppingToken);
+                if (result.Failures.Count > 0)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(_syncOptions.PollSeconds), stoppingToken);
-                    continue;
-                }
-
-                foreach (var order in pending)
-                {
-                    var result = await _supabaseClient.SendOrderAsync(order, stoppingToken);
-                    if (result.IsSuccess)
+                    foreach (var failure in result.Failures)
                     {
-                        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, stoppingToken);
-                        var inventoryIds = order.Inventory.Select(ic => ic.PosId).ToArray();
-                        if (inventoryIds.Length > 0)
-                        {
-                            await _repository.MarkInventoryProcessedAsync(inventoryIds, stoppingToken);
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Failed to sync order {OrderId}: {Error}", order.PosOrderId, result.ErrorMessage);
+                        _logger.LogWarning("Failed to sync order {OrderId}: {Error}", failure.PosOrderId, failure.Error ?? "Unknown error");
                     }
                 }
             }

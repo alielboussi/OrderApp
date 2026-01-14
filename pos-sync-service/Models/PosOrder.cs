@@ -57,3 +57,15 @@ public sealed record PosInventoryConsumed(
 );
 
 public sealed record SupabaseResult(bool IsSuccess, string? ErrorMessage = null);
+
+public sealed record PosSentSummary(
+    string BillId,
+    string SaleId,
+    DateTimeOffset OccurredAt,
+    decimal? PaymentAmount,
+    string? PaymentType
+);
+
+public sealed record SyncFailure(string PosOrderId, string? Error);
+
+public sealed record SyncRunResult(int ProcessedCount, IReadOnlyList<SyncFailure> Failures);

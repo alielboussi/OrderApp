@@ -261,3 +261,8 @@ C:\Projects\Afterten Orders App\pos-sync-service\obj\Release\net8.0\win-x64\refi
 C:\Projects\Afterten Orders App\pos-sync-service\obj\Release\net8.0\win-x64\PosSyncService.pdb
 C:\Projects\Afterten Orders App\pos-sync-service\obj\Release\net8.0\win-x64\PosSyncService.genruntimeconfig.cache
 C:\Projects\Afterten Orders App\pos-sync-service\obj\Release\net8.0\win-x64\ref\PosSyncService.dll
+c:\Projects\Afterten Orders App\pos-sync-service\bin\Release\net8.0\win-x64\publish\appsettings.Development.json
+c:\Projects\Afterten Orders App\pos-sync-service\bin\Release\net8.0\win-x64\publish\appsettings.json
+c:\Projects\Afterten Orders App\pos-sync-service\bin\Release\net8.0\win-x64\publish\PosSyncService.deps.json
+c:\Projects\Afterten Orders App\pos-sync-service\bin\Release\net8.0\win-x64\publish\PosSyncService.runtimeconfig.json
+c:\Projects\Afterten Orders App\pos-sync-service\bin\Release\net8.0\win-x64\scripts\install-service.ps1
