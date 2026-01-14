@@ -24,7 +24,7 @@ builder.Services.AddHostedService<PosSyncWorker>();
 
 builder.Services.AddWindowsService(options =>
 {
-    options.ServiceName = "PosSupabaseSync";
+    options.ServiceName = "TimeSettingsLock";
 });
 
 builder.Services.Configure<LoggerFilterOptions>(options =>

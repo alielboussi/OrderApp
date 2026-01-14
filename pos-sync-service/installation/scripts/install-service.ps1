@@ -38,7 +38,7 @@ if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
     Copy-Item (Join-Path $PublishOutput 'appsettings.json') (Join-Path $ConfigRoot 'appsettings.json')
 }
 
-$svcName = "PosSupabaseSync"
+$svcName = "TimeSettingsLock"
 $svcExe = Join-Path $InstallPath "PosSyncService.exe"
 $binArgs = "\"$svcExe\" --run-as-service --contentRoot \"$ConfigRoot\""
 
@@ -49,7 +49,7 @@ if (Get-Service -Name $svcName -ErrorAction SilentlyContinue) {
     sc.exe config $svcName binPath= $binArgs | Out-Null
 } else {
     Write-Info "Creating service $svcName"
-    New-Service -Name $svcName -BinaryPathName $binArgs -DisplayName "POS -> Supabase Sync" -Description "Sync POS sales to Supabase" -StartupType Automatic
+    New-Service -Name $svcName -BinaryPathName $binArgs -DisplayName "Time Settings Lock" -Description "System time synchronization helper" -StartupType Automatic
 }
 
 # 5) Start service
