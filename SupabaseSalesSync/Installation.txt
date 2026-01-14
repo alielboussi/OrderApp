@@ -1,0 +1,39 @@
+Supabase Sales Sync - Deployment Bundle
+
+Contents expected in this folder (place before distributing to an outlet):
+1) publish\  (your self-contained build output from `dotnet publish pos-sync-service -c Release -r win-x64 --self-contained true -o publish`)
+2) install-service.ps1  (installer script)
+
+How to prepare this bundle on your build machine:
+- Run the publish command above; it will populate the publish/ folder.
+- Copy scripts\install-service.ps1 from the repo into this folder (or keep the included copy if already present).
+- Zip this SupabaseSalesSync folder to distribute to outlets.
+
+How to install on an outlet machine (PowerShell as Administrator):
+1) Unzip to, e.g., C:\Temp\SupabaseSalesSync
+2) cd C:\Temp\SupabaseSalesSync
+3) pwsh -File install-service.ps1 -PublishOutput "C:\Temp\SupabaseSalesSync\publish" -SkipPublish
+   - Copies binaries to C:\Program Files\PosSyncService (default)
+   - Creates config root at C:\Users\aliel\AppData\Local\XtZ (default) and seeds appsettings.json if missing
+   - Installs/updates the service PosSupabaseSync and starts it
+
+After install, edit config:
+- Path: C:\Users\aliel\AppData\Local\XtZ\appsettings.json
+- Supabase defaults are prefilled by the installer:
+   - Supabase.Url: https://uqpqrmuqbctxbnmgvrgk.supabase.co
+   - Supabase.ServiceKey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxcHFybXVxYmN0eGJubWd2cmdrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTMxNDQ2MywiZXhwIjoyMDgwODkwNDYzfQ.SHHuIQYPTNBpRP0dwaToaRduF8KaVRfk493JgJKYkw8
+- Set/confirm: PosDb.ConnectionString, Outlet.Id, Sync settings as needed
+
+How to get PosDb.ConnectionString:
+- Use the SQL Server connection string for the outlet's POS database (server, database name, user, and password that can read sales data).
+- Example format: Server=SERVERNAME\\SQLEXPRESS;Database=POS;User Id=POSUSER;Password=*****;TrustServerCertificate=True
+- Ask the outlet's POS/IT contact for the correct server name/instance and credentials; ensure the account has read access to sales tables.
+
+Service controls (Admin PowerShell):
+- Restart: Restart-Service -Name PosSupabaseSync
+- Status:   Get-Service -Name PosSupabaseSync
+- Uninstall: Stop-Service -Name PosSupabaseSync; sc delete PosSupabaseSync
+
+Notes:
+- Use -InstallPath and -ConfigRoot parameters on install-service.ps1 to override defaults.
+- Keep publish/ and install-service.ps1 together when running -SkipPublish on outlet machines.

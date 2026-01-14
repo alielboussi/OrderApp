@@ -16,6 +16,7 @@ public sealed record PosOrder(
     decimal? Tip,
     decimal? PosFee,
     string? PriceType,
+    int? BranchId,
     IReadOnlyList<PosLineItem> Items,
     IReadOnlyList<PosPayment> Payments,
     PosCustomer? Customer,
@@ -50,7 +51,9 @@ public sealed record PosInventoryConsumed(
     decimal? RemainingQuantity,
     DateTime? PosDate,
     string? KdsId,
-    string? Typec
+    string? Typec,
+    int? BranchId,
+    string? BranchMissingNote
 );
 
 public sealed record SupabaseResult(bool IsSuccess, string? ErrorMessage = null);

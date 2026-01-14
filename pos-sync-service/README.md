@@ -17,12 +17,22 @@ Edit `publish/appsettings.json` per outlet:
 - `Sync.PollSeconds`, `Sync.BatchSize`, `Sync.SourceSystem`: polling and idempotency settings.
 
 ## Install as Windows Service (PowerShell as Administrator)
+Quick installer script (publishes, copies, installs service, seeds config):
 ```
-New-Service -Name "PosSupabaseSync" -BinaryPathName "\"C:\\Program Files\\PosSyncService\\PosSyncService.exe\" --run-as-service" -DisplayName "POS → Supabase Sync" -Description "Sync POS sales to Supabase" -StartupType Automatic
+pwsh -File scripts/install-service.ps1
+```
+Defaults:
+- Binary to `C:\Program Files\PosSupabaseSync` (configurable via `-InstallPath`)
+- Config at `C:\Users\aliel\AppData\Local\XtZ` (configurable via `-ConfigRoot`)
+- Publishes self-contained win-x64; use `-SkipPublish` to reuse existing `publish` folder.
+
+Manual install (if you prefer):
+```
+New-Service -Name "PosSupabaseSync" -BinaryPathName "\"C:\\Program Files\\PosSyncService\\PosSyncService.exe\" --run-as-service --contentRoot \"C:\\Users\\aliel\\AppData\\Local\\XtZ\"" -DisplayName "POS → Supabase Sync" -Description "Sync POS sales to Supabase" -StartupType Automatic
 Start-Service -Name "PosSupabaseSync"
 ```
 
-To uninstall:
+To uninstall manually:
 ```
 Stop-Service -Name "PosSupabaseSync"
 sc delete PosSupabaseSync

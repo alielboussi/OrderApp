@@ -15,6 +15,11 @@ builder.Services.AddSingleton<SupabaseClient>();
 builder.Services.AddHttpClient("Supabase");
 builder.Services.AddHostedService<PosSyncWorker>();
 
+builder.Services.AddWindowsService(options =>
+{
+    options.ServiceName = "PosSupabaseSync";
+});
+
 builder.Services.Configure<LoggerFilterOptions>(options =>
 {
     // Default to Information; override via Logging:LogLevel in config.
@@ -24,11 +29,6 @@ builder.Services.Configure<LoggerFilterOptions>(options =>
 builder.Services.AddLogging(logging =>
 {
     logging.AddSimpleConsole();
-});
-
-builder.Host.UseWindowsService(options =>
-{
-    options.ServiceName = "PosSupabaseSync";
 });
 
 var host = builder.Build();

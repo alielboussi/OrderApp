@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pos-sync-service", "pos-sync-service", "{C5CE305F-3C45-A660-11C3-F94BB34C0DA0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosSyncService", "pos-sync-service\PosSyncService.csproj", "{AA931FFE-F304-2BAF-88AC-C434B6178E30}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AA931FFE-F304-2BAF-88AC-C434B6178E30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA931FFE-F304-2BAF-88AC-C434B6178E30}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA931FFE-F304-2BAF-88AC-C434B6178E30}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA931FFE-F304-2BAF-88AC-C434B6178E30}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{AA931FFE-F304-2BAF-88AC-C434B6178E30} = {C5CE305F-3C45-A660-11C3-F94BB34C0DA0}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7FBABF8D-438C-42F8-85A5-4FD8B712A880}
+	EndGlobalSection
+EndGlobal

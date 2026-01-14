@@ -38,6 +38,7 @@ public sealed class SupabaseClient
             source_event_id = order.SourceEventId,
             sale_id = order.PosSaleId,
             outlet_id = _outlet.Id,
+            branch_id = order.BranchId,
             occurred_at = order.OccurredAt,
             order_type = order.OrderType,
             bill_type = order.BillType,
@@ -74,7 +75,9 @@ public sealed class SupabaseClient
                 remaining_quantity = ic.RemainingQuantity,
                 pos_date = ic.PosDate,
                 kdsid = ic.KdsId,
-                typec = ic.Typec
+                typec = ic.Typec,
+                branch_id = ic.BranchId,
+                branch_missing_note = ic.BranchMissingNote
             }).ToList()
         };
 
