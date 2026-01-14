@@ -4,6 +4,31 @@ import type { TransferItem, WarehouseTransfer } from '@/types/transfers';
 
 const MAX_LIMIT = 200;
 
+type TransferItemRaw = {
+  id: string;
+  transfer_id: string | null;
+  product_id?: string | null;
+  item_id?: string | null;
+  variant_key?: string | null;
+  variation_key?: string | null;
+  qty_units?: number | string | null;
+  qty?: number | string | null;
+  item?: { id: string; name: string | null } | null;
+  product?: { id: string; name: string | null } | null;
+  variant?: { id: string; name: string | null } | null;
+  variation?: { id: string; name: string | null } | null;
+};
+
+type TransferRecordRaw = {
+  id: string;
+  reference_code?: string | null;
+  note?: string | null;
+  created_at?: string | null;
+  source_warehouse_id: string | null;
+  destination_warehouse_id: string | null;
+  items?: TransferItemRaw[] | null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -78,19 +103,15 @@ export async function GET(req: NextRequest) {
       query = query.lte('created_at', endIso);
     }
 
-    type TransferRecord = WarehouseTransfer & {
-      items: Array<TransferItem & { qty: number | string | null }> | null;
-    };
-
-    const { data, error } = (await query) as { data: TransferRecord[] | null; error: Error | null };
+    const { data, error } = (await query) as { data: TransferRecordRaw[] | null; error: Error | null };
     if (error) {
       throw error;
     }
 
     const warehouseIds = new Set<string>();
     (data ?? []).forEach((transfer) => {
-      if ((transfer as any).source_warehouse_id) warehouseIds.add((transfer as any).source_warehouse_id as string);
-      if ((transfer as any).destination_warehouse_id) warehouseIds.add((transfer as any).destination_warehouse_id as string);
+      if (transfer.source_warehouse_id) warehouseIds.add(transfer.source_warehouse_id);
+      if (transfer.destination_warehouse_id) warehouseIds.add(transfer.destination_warehouse_id);
     });
 
     const warehouseMap = new Map<string, string | null>();
@@ -110,14 +131,14 @@ export async function GET(req: NextRequest) {
     }
 
     const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => {
-      const sourceIdValue = (transfer as any).source_warehouse_id as string | null;
-      const destIdValue = (transfer as any).destination_warehouse_id as string | null;
+      const sourceIdValue = transfer.source_warehouse_id;
+      const destIdValue = transfer.destination_warehouse_id;
       const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;
       const destName = destIdValue ? warehouseMap.get(destIdValue) ?? null : null;
 
       return {
         id: transfer.id,
-        reference_code: (transfer as any).reference_code ?? null,
+        reference_code: transfer.reference_code ?? null,
         status: 'completed',
         note: transfer.note ?? null,
         created_at: transfer.created_at ?? null,
@@ -126,18 +147,18 @@ export async function GET(req: NextRequest) {
         dest_location_id: destIdValue,
         source: sourceIdValue ? { id: sourceIdValue, name: sourceName } : null,
         dest: destIdValue ? { id: destIdValue, name: destName } : null,
-        items: Array.isArray((transfer as any).items)
-          ? ((transfer as any).items as Array<TransferItem & { qty_units?: number | string | null; variant_key?: string | null }>).map((item) => {
-              const variantKey = (item as any).variant_key ?? (item as any).variation_key ?? null;
+        items: Array.isArray(transfer.items)
+          ? transfer.items.map((item) => {
+              const variantKey = item.variant_key ?? item.variation_key ?? null;
 
               return {
                 id: item.id,
-                transfer_id: (item as any).transfer_id ?? null,
-                product_id: item.product_id ?? (item as any).item_id ?? null,
+                transfer_id: item.transfer_id ?? null,
+                product_id: item.product_id ?? item.item_id ?? null,
                 variant_key: variantKey,
-                qty: Number((item as any).qty_units ?? item.qty ?? 0) || 0,
-                product: (item as any).item ?? item.product ?? null,
-                variation: variantKey ? { id: variantKey, name: variantKey } : (item as any).variant ?? item.variation ?? null,
+                qty: Number(item.qty_units ?? item.qty ?? 0) || 0,
+                product: item.item ?? item.product ?? null,
+                variation: variantKey ? { id: variantKey, name: variantKey } : item.variant ?? item.variation ?? null,
               } satisfies TransferItem;
             })
           : [],

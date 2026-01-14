@@ -4,6 +4,32 @@ import type { PurchaseItem, WarehousePurchase } from '@/types/purchases';
 
 const MAX_LIMIT = 200;
 
+type PurchaseItemRaw = {
+  id: string;
+  receipt_id: string | null;
+  item_id: string | null;
+  variant_key?: string | null;
+  variation_key?: string | null;
+  qty_units?: number | string | null;
+  qty_input_mode?: string | null;
+  unit_cost?: number | string | null;
+  item?: { id: string; name: string | null } | null;
+  variant?: { id: string; name: string | null } | null;
+};
+
+type PurchaseRecordRaw = {
+  id: string;
+  warehouse_id: string | null;
+  supplier_id?: string | null;
+  reference_code?: string | null;
+  note?: string | null;
+  auto_whatsapp?: boolean | null;
+  recorded_at?: string | null;
+  received_at?: string | null;
+  supplier?: { id: string; name: string | null } | null;
+  items?: PurchaseItemRaw[] | null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -79,18 +105,14 @@ export async function GET(req: NextRequest) {
       query = query.lte('recorded_at', endIso);
     }
 
-    type PurchaseRecord = WarehousePurchase & {
-      items: Array<PurchaseItem & { qty_units?: number | string | null; unit_cost?: number | string | null }> | null;
-    };
-
-    const { data, error } = (await query) as { data: PurchaseRecord[] | null; error: Error | null };
+    const { data, error } = (await query) as { data: PurchaseRecordRaw[] | null; error: Error | null };
     if (error) {
       throw error;
     }
 
     const warehouseIds = new Set<string>();
     (data ?? []).forEach((purchase) => {
-      if ((purchase as any).warehouse_id) warehouseIds.add((purchase as any).warehouse_id as string);
+      if (purchase.warehouse_id) warehouseIds.add(purchase.warehouse_id);
     });
 
     const warehouseMap = new Map<string, string | null>();
@@ -110,34 +132,34 @@ export async function GET(req: NextRequest) {
     }
 
     const purchases: WarehousePurchase[] = (data ?? []).map((purchase) => {
-      const whId = (purchase as any).warehouse_id as string | null;
+      const whId = purchase.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
 
       return {
         id: purchase.id,
         warehouse_id: whId,
         warehouse: whId ? { id: whId, name: warehouseName } : null,
-        supplier_id: (purchase as any).supplier_id ?? null,
-        supplier: (purchase as any).supplier ?? null,
-        reference_code: (purchase as any).reference_code ?? null,
+        supplier_id: purchase.supplier_id ?? null,
+        supplier: purchase.supplier ?? null,
+        reference_code: purchase.reference_code ?? null,
         note: purchase.note ?? null,
-        auto_whatsapp: (purchase as any).auto_whatsapp ?? null,
-        recorded_at: (purchase as any).recorded_at ?? null,
-        received_at: (purchase as any).received_at ?? null,
-        items: Array.isArray((purchase as any).items)
-          ? ((purchase as any).items as Array<PurchaseItem & { qty_units?: number | string | null; unit_cost?: number | string | null; variant_key?: string | null }>).map((item) => {
-              const variantKey = (item as any).variant_key ?? (item as any).variation_key ?? null;
+        auto_whatsapp: purchase.auto_whatsapp ?? null,
+        recorded_at: purchase.recorded_at ?? null,
+        received_at: purchase.received_at ?? null,
+        items: Array.isArray(purchase.items)
+          ? purchase.items.map((item) => {
+              const variantKey = item.variant_key ?? item.variation_key ?? null;
 
               return {
                 id: item.id,
-                receipt_id: (item as any).receipt_id ?? null,
-                item_id: item.item_id ?? (item as any).item_id ?? null,
+                receipt_id: item.receipt_id ?? null,
+                item_id: item.item_id ?? null,
                 variant_key: variantKey,
-                qty: Number((item as any).qty_units ?? 0) || 0,
-                qty_input_mode: (item as any).qty_input_mode ?? null,
-                unit_cost: item.unit_cost != null ? Number(item.unit_cost) : (item as any).unit_cost != null ? Number((item as any).unit_cost) : null,
-                item: (item as any).item ?? null,
-                variant: variantKey ? { id: variantKey, name: variantKey } : (item as any).variant ?? null,
+                qty: Number(item.qty_units ?? 0) || 0,
+                qty_input_mode: item.qty_input_mode ?? null,
+                unit_cost: item.unit_cost != null ? Number(item.unit_cost) : null,
+                item: item.item ?? null,
+                variant: variantKey ? { id: variantKey, name: variantKey } : item.variant ?? null,
               } satisfies PurchaseItem;
             })
           : [],

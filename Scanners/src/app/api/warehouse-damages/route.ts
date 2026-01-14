@@ -4,6 +4,24 @@ import type { WarehouseDamage, DamageItem } from '@/types/damages';
 
 const MAX_LIMIT = 200;
 
+type DamageContextLine = {
+  product_id?: string | null;
+  item_id?: string | null;
+  variant_key?: string | null;
+  variation_key?: string | null;
+  qty?: number | string | null;
+  qty_units?: number | string | null;
+  note?: string | null;
+};
+
+type DamageRecordRaw = {
+  id: string;
+  warehouse_id: string | null;
+  note: string | null;
+  context?: unknown;
+  created_at?: string | null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -57,9 +75,7 @@ export async function GET(req: NextRequest) {
       query = query.lte('created_at', endIso);
     }
 
-    type DamageRecord = WarehouseDamage & { context?: any };
-
-    const { data, error } = (await query) as { data: DamageRecord[] | null; error: Error | null };
+    const { data, error } = (await query) as { data: DamageRecordRaw[] | null; error: Error | null };
     if (error) {
       throw error;
     }
@@ -68,17 +84,17 @@ export async function GET(req: NextRequest) {
     const itemIds = new Set<string>();
 
     const parsedDamages = (data ?? []).map((damage) => {
-      const lines = Array.isArray((damage as any).context) ? ((damage as any).context as any[]) : [];
+      const lines = Array.isArray(damage.context) ? (damage.context as DamageContextLine[]) : [];
 
       lines.forEach((line) => {
         const itemId = (line?.product_id ?? line?.item_id ?? '').toString();
         if (itemId) itemIds.add(itemId);
       });
 
-      const whId = (damage as any).warehouse_id as string | null;
+      const whId = damage.warehouse_id;
       if (whId) warehouseIds.add(whId);
 
-      return { ...damage, parsedLines: lines } as DamageRecord & { parsedLines: any[] };
+      return { ...damage, parsedLines: lines } as DamageRecordRaw & { parsedLines: DamageContextLine[] };
     });
 
     const warehouseMap = new Map<string, string | null>();
@@ -112,7 +128,7 @@ export async function GET(req: NextRequest) {
     }
 
     const damages: WarehouseDamage[] = parsedDamages.map((damage) => {
-      const whId = (damage as any).warehouse_id as string | null;
+      const whId = damage.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
 
       const items: DamageItem[] = Array.isArray(damage.parsedLines)
@@ -140,7 +156,7 @@ export async function GET(req: NextRequest) {
         warehouse_id: whId,
         warehouse: whId ? { id: whId, name: warehouseName } : null,
         note: damage.note ?? null,
-        created_at: (damage as any).created_at ?? null,
+        created_at: damage.created_at ?? null,
         items,
       };
     });

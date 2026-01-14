@@ -2,11 +2,11 @@
     "views": [
         {
             "view_name": "outlet_stock_summary",
-            "definition": " SELECT osb.outlet_id,\n    osb.item_id,\n    ci.name AS item_name,\n    osb.variant_id,\n    cv.name AS variant_name,\n    osb.sent_units,\n    osb.consumed_units,\n    osb.on_hand_units\n   FROM outlet_stock_balances osb\n     LEFT JOIN catalog_items ci ON ci.id = osb.item_id\n     LEFT JOIN catalog_variants cv ON cv.id = osb.variant_id;"
+            "definition": " SELECT osb.outlet_id,\n    osb.item_id,\n    ci.name AS item_name,\n    osb.variant_key,\n    osb.sent_units,\n    osb.consumed_units,\n    osb.on_hand_units\n   FROM outlet_stock_balances osb\n     LEFT JOIN catalog_items ci ON ci.id = osb.item_id;"
         },
         {
             "view_name": "warehouse_layer_stock",
-            "definition": " SELECT w.id AS warehouse_id,\n    w.stock_layer,\n    sl.item_id,\n    ci.name AS item_name,\n    sl.variant_id,\n    cv.name AS variant_name,\n    sum(sl.delta_units) AS net_units\n   FROM stock_ledger sl\n     JOIN warehouses w ON w.id = sl.warehouse_id\n     LEFT JOIN catalog_items ci ON ci.id = sl.item_id\n     LEFT JOIN catalog_variants cv ON cv.id = sl.variant_id\n  WHERE sl.location_type = 'warehouse'::text\n  GROUP BY w.id, w.stock_layer, sl.item_id, ci.name, sl.variant_id, cv.name;"
+            "definition": " SELECT w.id AS warehouse_id,\n    w.stock_layer,\n    sl.item_id,\n    ci.name AS item_name,\n    sl.variant_key,\n    sum(sl.delta_units) AS net_units\n   FROM stock_ledger sl\n     JOIN warehouses w ON w.id = sl.warehouse_id\n     LEFT JOIN catalog_items ci ON ci.id = sl.item_id\n  WHERE sl.location_type = 'warehouse'::text\n  GROUP BY w.id, w.stock_layer, sl.item_id, ci.name, sl.variant_key;"
         }
     ],
     "tables": [
@@ -137,6 +137,12 @@
                     "data_type": "uuid",
                     "column_name": "locked_from_warehouse_id",
                     "is_nullable": "YES"
+                },
+                {
+                    "default": "'[]'::jsonb",
+                    "data_type": "jsonb",
+                    "column_name": "variants",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -200,45 +206,21 @@
         {
             "columns": [
                 {
-                    "default": "gen_random_uuid()",
-                    "data_type": "uuid",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "item_id",
-                    "is_nullable": "NO"
-                },
-                {
                     "default": null,
                     "data_type": "text",
-                    "column_name": "name",
+                    "column_name": "counter_key",
                     "is_nullable": "NO"
                 },
                 {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "sku",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "1",
-                    "data_type": "numeric",
-                    "column_name": "units_per_purchase_pack",
+                    "default": "'00000000-0000-0000-0000-000000000000'::uuid",
+                    "data_type": "uuid",
+                    "column_name": "scope_id",
                     "is_nullable": "NO"
                 },
                 {
-                    "default": "true",
-                    "data_type": "boolean",
-                    "column_name": "active",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
+                    "default": "0",
+                    "data_type": "bigint",
+                    "column_name": "last_value",
                     "is_nullable": "NO"
                 },
                 {
@@ -246,133 +228,20 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "updated_at",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": "'each'::text",
-                    "data_type": "text",
-                    "column_name": "consumption_uom",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "0",
-                    "data_type": "numeric",
-                    "column_name": "cost",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "image_url",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "default_warehouse_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "'each'::text",
-                    "data_type": "text",
-                    "column_name": "purchase_pack_unit",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "purchase_unit_mass",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "USER-DEFINED",
-                    "column_name": "purchase_unit_mass_uom",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "'each'::text",
-                    "data_type": "text",
-                    "column_name": "transfer_unit",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "1",
-                    "data_type": "numeric",
-                    "column_name": "transfer_quantity",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "true",
-                    "data_type": "boolean",
-                    "column_name": "outlet_order_visible",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "locked_from_warehouse_id",
-                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
                 {
-                    "definition": "CREATE UNIQUE INDEX catalog_variants_pkey ON public.catalog_variants USING btree (id)",
-                    "index_name": "catalog_variants_pkey"
-                },
-                {
-                    "definition": "CREATE INDEX idx_catalog_variants_locked_from ON public.catalog_variants USING btree (locked_from_warehouse_id)",
-                    "index_name": "idx_catalog_variants_locked_from"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX idx_catalog_variants_name_unique ON public.catalog_variants USING btree (item_id, lower(name))",
-                    "index_name": "idx_catalog_variants_name_unique"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX idx_catalog_variants_sku_unique ON public.catalog_variants USING btree (lower(sku)) WHERE (sku IS NOT NULL)",
-                    "index_name": "idx_catalog_variants_sku_unique"
+                    "definition": "CREATE UNIQUE INDEX counter_values_pkey ON public.counter_values USING btree (counter_key, scope_id)",
+                    "index_name": "counter_values_pkey"
                 }
             ],
-            "table_name": "catalog_variants",
+            "table_name": "counter_values",
             "constraints": [
                 {
-                    "definition": "CHECK (cost >= 0::numeric)",
-                    "constraint_name": "catalog_variants_cost_check",
-                    "constraint_type": "c"
-                },
-                {
-                    "definition": "FOREIGN KEY (default_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
-                    "constraint_name": "catalog_variants_default_warehouse_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-                    "constraint_name": "catalog_variants_item_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (locked_from_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
-                    "constraint_name": "catalog_variants_locked_from_warehouse_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "CHECK (units_per_purchase_pack > 0::numeric)",
-                    "constraint_name": "catalog_variants_package_contains_check",
-                    "constraint_type": "c"
-                },
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "catalog_variants_pkey",
+                    "definition": "PRIMARY KEY (counter_key, scope_id)",
+                    "constraint_name": "counter_values_pkey",
                     "constraint_type": "p"
-                },
-                {
-                    "definition": "CHECK (purchase_unit_mass IS NULL OR purchase_unit_mass > 0::numeric)",
-                    "constraint_name": "catalog_variants_purchase_unit_mass_check",
-                    "constraint_type": "c"
-                },
-                {
-                    "definition": "CHECK (transfer_quantity > 0::numeric)",
-                    "constraint_name": "catalog_variants_transfer_quantity_check",
-                    "constraint_type": "c"
                 }
             ],
             "row_security": true
@@ -390,12 +259,6 @@
                     "data_type": "uuid",
                     "column_name": "finished_item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "finished_variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -438,13 +301,21 @@
                     "data_type": "uuid",
                     "column_name": "source_warehouse_id",
                     "is_nullable": "YES"
+                },
+                {
+                    "default": "1",
+                    "data_type": "numeric",
+                    "column_name": "yield_qty_units",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "finished_variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_recipes_finished ON public.item_ingredient_recipes USING btree (finished_item_id, finished_variant_id)",
-                    "index_name": "idx_recipes_finished"
-                },
                 {
                     "definition": "CREATE INDEX idx_recipes_ingredient ON public.item_ingredient_recipes USING btree (ingredient_item_id)",
                     "index_name": "idx_recipes_ingredient"
@@ -466,11 +337,6 @@
                     "constraint_type": "f"
                 },
                 {
-                    "definition": "FOREIGN KEY (finished_variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "item_ingredient_recipes_finished_variant_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
                     "definition": "FOREIGN KEY (ingredient_item_id) REFERENCES catalog_items(id) ON DELETE RESTRICT",
                     "constraint_name": "item_ingredient_recipes_ingredient_item_id_fkey",
                     "constraint_type": "f"
@@ -489,6 +355,11 @@
                     "definition": "FOREIGN KEY (source_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
                     "constraint_name": "item_ingredient_recipes_source_warehouse_id_fkey",
                     "constraint_type": "f"
+                },
+                {
+                    "definition": "CHECK (yield_qty_units > 0::numeric)",
+                    "constraint_name": "item_ingredient_recipes_yield_qty_units_check",
+                    "constraint_type": "c"
                 }
             ],
             "row_security": true
@@ -504,191 +375,8 @@
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "recipe_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "ingredient_item_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "ingredient_variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "qty_units",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "false",
-                    "data_type": "boolean",
-                    "column_name": "is_leaf",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_item_recipe_ingredients_recipe ON public.item_recipe_ingredients USING btree (recipe_id)",
-                    "index_name": "idx_item_recipe_ingredients_recipe"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX item_recipe_ingredients_pkey ON public.item_recipe_ingredients USING btree (id)",
-                    "index_name": "item_recipe_ingredients_pkey"
-                }
-            ],
-            "table_name": "item_recipe_ingredients",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (ingredient_item_id) REFERENCES catalog_items(id)",
-                    "constraint_name": "item_recipe_ingredients_ingredient_item_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (ingredient_variant_id) REFERENCES catalog_variants(id)",
-                    "constraint_name": "item_recipe_ingredients_ingredient_variant_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "item_recipe_ingredients_pkey",
-                    "constraint_type": "p"
-                },
-                {
-                    "definition": "CHECK (qty_units > 0::numeric)",
-                    "constraint_name": "item_recipe_ingredients_qty_units_check",
-                    "constraint_type": "c"
-                },
-                {
-                    "definition": "FOREIGN KEY (recipe_id) REFERENCES item_recipes(id) ON DELETE CASCADE",
-                    "constraint_name": "item_recipe_ingredients_recipe_id_fkey",
-                    "constraint_type": "f"
-                }
-            ],
-            "row_security": false
-        },
-        {
-            "columns": [
-                {
-                    "default": "gen_random_uuid()",
-                    "data_type": "uuid",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "finished_item_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "finished_variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "name",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "true",
-                    "data_type": "boolean",
-                    "column_name": "active",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "1",
-                    "data_type": "numeric",
-                    "column_name": "yield_qty_units",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "'{}'::jsonb",
-                    "data_type": "jsonb",
-                    "column_name": "context",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "updated_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_item_recipes_finished ON public.item_recipes USING btree (finished_item_id, finished_variant_id) WHERE active",
-                    "index_name": "idx_item_recipes_finished"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX item_recipes_pkey ON public.item_recipes USING btree (id)",
-                    "index_name": "item_recipes_pkey"
-                }
-            ],
-            "table_name": "item_recipes",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (finished_item_id) REFERENCES catalog_items(id)",
-                    "constraint_name": "item_recipes_finished_item_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (finished_variant_id) REFERENCES catalog_variants(id)",
-                    "constraint_name": "item_recipes_finished_variant_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "item_recipes_pkey",
-                    "constraint_type": "p"
-                },
-                {
-                    "definition": "CHECK (yield_qty_units > 0::numeric)",
-                    "constraint_name": "item_recipes_yield_qty_units_check",
-                    "constraint_type": "c"
-                }
-            ],
-            "row_security": false
-        },
-        {
-            "columns": [
-                {
-                    "default": "gen_random_uuid()",
-                    "data_type": "uuid",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -725,6 +413,12 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "updated_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -739,10 +433,6 @@
                 {
                     "definition": "CREATE UNIQUE INDEX item_transfer_profiles_pkey ON public.item_transfer_profiles USING btree (id)",
                     "index_name": "item_transfer_profiles_pkey"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX ux_item_transfer_profile_scope ON public.item_transfer_profiles USING btree (item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), from_warehouse_id, to_warehouse_id)",
-                    "index_name": "ux_item_transfer_profile_scope"
                 }
             ],
             "table_name": "item_transfer_profiles",
@@ -771,11 +461,6 @@
                     "definition": "CHECK (transfer_quantity > 0::numeric)",
                     "constraint_name": "item_transfer_profiles_transfer_quantity_check",
                     "constraint_type": "c"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "item_transfer_profiles_variant_id_fkey",
-                    "constraint_type": "f"
                 }
             ],
             "row_security": false
@@ -793,12 +478,6 @@
                     "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -835,6 +514,12 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "updated_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -845,10 +530,6 @@
                 {
                     "definition": "CREATE UNIQUE INDEX item_warehouse_handling_policies_pkey ON public.item_warehouse_handling_policies USING btree (id)",
                     "index_name": "item_warehouse_handling_policies_pkey"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX ux_item_warehouse_policy_scope ON public.item_warehouse_handling_policies USING btree (warehouse_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))",
-                    "index_name": "ux_item_warehouse_policy_scope"
                 }
             ],
             "table_name": "item_warehouse_handling_policies",
@@ -862,11 +543,6 @@
                     "definition": "PRIMARY KEY (id)",
                     "constraint_name": "item_warehouse_handling_policies_pkey",
                     "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "item_warehouse_handling_policies_variant_id_fkey",
-                    "constraint_type": "f"
                 },
                 {
                     "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
@@ -895,12 +571,6 @@
                     "data_type": "uuid",
                     "column_name": "product_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variation_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -961,13 +631,15 @@
                     "data_type": "text",
                     "column_name": "receiving_uom",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variation_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_order_items_item ON public.order_items USING btree (product_id, variation_id)",
-                    "index_name": "idx_order_items_item"
-                },
                 {
                     "definition": "CREATE INDEX idx_order_items_order ON public.order_items USING btree (order_id)",
                     "index_name": "idx_order_items_order"
@@ -1003,11 +675,6 @@
                     "definition": "CHECK (qty > 0::numeric)",
                     "constraint_name": "order_items_qty_check",
                     "constraint_type": "c"
-                },
-                {
-                    "definition": "FOREIGN KEY (variation_id) REFERENCES catalog_variants(id) ON DELETE RESTRICT",
-                    "constraint_name": "order_items_variation_id_fkey",
-                    "constraint_type": "f"
                 },
                 {
                     "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
@@ -1204,6 +871,96 @@
                     "data_type": "integer",
                     "column_name": "branch_id",
                     "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "order_type",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "bill_type",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "total_discount",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "total_discount_amount",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "total_gst",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "service_charges",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "delivery_charges",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "tip",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "pos_fee",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "price_type",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "customer_name",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "customer_phone",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": "'{}'::jsonb",
+                    "data_type": "jsonb",
+                    "column_name": "raw_payload",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "jsonb",
+                    "column_name": "payments",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "integer",
+                    "column_name": "pos_branch_id",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -1260,93 +1017,25 @@
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "target_outlet_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "target_warehouse_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "updated_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_outlet_deduction_target ON public.outlet_deduction_mappings USING btree (target_outlet_id)",
-                    "index_name": "idx_outlet_deduction_target"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX outlet_deduction_mappings_pkey ON public.outlet_deduction_mappings USING btree (outlet_id)",
-                    "index_name": "outlet_deduction_mappings_pkey"
-                }
-            ],
-            "table_name": "outlet_deduction_mappings",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_deduction_mappings_outlet_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (outlet_id)",
-                    "constraint_name": "outlet_deduction_mappings_pkey",
-                    "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (target_outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_deduction_mappings_target_outlet_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (target_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
-                    "constraint_name": "outlet_deduction_mappings_target_warehouse_id_fkey",
-                    "constraint_type": "f"
-                }
-            ],
-            "row_security": true
-        },
-        {
-            "columns": [
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "outlet_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
                 },
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "variant_id",
+                    "column_name": "warehouse_id",
                     "is_nullable": "YES"
                 },
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "warehouse_id",
-                    "is_nullable": "NO"
+                    "column_name": "target_outlet_id",
+                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
-                    "data_type": "uuid",
-                    "column_name": "target_outlet_id",
+                    "data_type": "boolean",
+                    "column_name": "deduct_enabled",
                     "is_nullable": "YES"
                 },
                 {
@@ -1362,95 +1051,64 @@
                     "is_nullable": "NO"
                 },
                 {
-                    "default": null,
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "normalized_variant_key",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "gen_random_uuid()",
                     "data_type": "uuid",
-                    "column_name": "normalized_variant_id",
+                    "column_name": "id",
                     "is_nullable": "NO"
                 }
             ],
             "indexes": [
                 {
-                    "definition": "CREATE UNIQUE INDEX outlet_item_warehouse_map_pkey ON public.outlet_item_warehouse_map USING btree (outlet_id, item_id, normalized_variant_id)",
-                    "index_name": "outlet_item_warehouse_map_pkey"
+                    "definition": "CREATE UNIQUE INDEX idx_outlet_item_routes_global_unique ON public.outlet_item_routes USING btree (item_id, normalized_variant_key) WHERE (outlet_id IS NULL)",
+                    "index_name": "idx_outlet_item_routes_global_unique"
                 },
                 {
-                    "definition": "CREATE UNIQUE INDEX ux_outlet_item_wh_map_scope ON public.outlet_item_warehouse_map USING btree (outlet_id, item_id, normalized_variant_id)",
-                    "index_name": "ux_outlet_item_wh_map_scope"
+                    "definition": "CREATE UNIQUE INDEX idx_outlet_item_routes_local_unique ON public.outlet_item_routes USING btree (outlet_id, item_id, normalized_variant_key) WHERE (outlet_id IS NOT NULL)",
+                    "index_name": "idx_outlet_item_routes_local_unique"
+                },
+                {
+                    "definition": "CREATE UNIQUE INDEX outlet_item_routes_pkey ON public.outlet_item_routes USING btree (outlet_id, item_id, normalized_variant_key)",
+                    "index_name": "outlet_item_routes_pkey"
                 }
             ],
-            "table_name": "outlet_item_warehouse_map",
+            "table_name": "outlet_item_routes",
             "constraints": [
                 {
                     "definition": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_item_warehouse_map_item_id_fkey",
+                    "constraint_name": "outlet_item_routes_item_id_fkey",
                     "constraint_type": "f"
                 },
                 {
                     "definition": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_item_warehouse_map_outlet_id_fkey",
+                    "constraint_name": "outlet_item_routes_outlet_id_fkey",
                     "constraint_type": "f"
                 },
                 {
-                    "definition": "PRIMARY KEY (outlet_id, item_id, normalized_variant_id)",
-                    "constraint_name": "outlet_item_warehouse_map_pkey",
+                    "definition": "PRIMARY KEY (outlet_id, item_id, normalized_variant_key)",
+                    "constraint_name": "outlet_item_routes_pkey",
                     "constraint_type": "p"
                 },
                 {
                     "definition": "FOREIGN KEY (target_outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_item_warehouse_map_target_outlet_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_item_warehouse_map_variant_id_fkey",
+                    "constraint_name": "outlet_item_routes_target_outlet_id_fkey",
                     "constraint_type": "f"
                 },
                 {
                     "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_item_warehouse_map_warehouse_id_fkey",
+                    "constraint_name": "outlet_item_routes_warehouse_id_fkey",
                     "constraint_type": "f"
-                }
-            ],
-            "row_security": false
-        },
-        {
-            "columns": [
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "outlet_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "0",
-                    "data_type": "bigint",
-                    "column_name": "last_value",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "updated_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX outlet_order_counters_pkey ON public.outlet_order_counters USING btree (outlet_id)",
-                    "index_name": "outlet_order_counters_pkey"
-                }
-            ],
-            "table_name": "outlet_order_counters",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_order_counters_outlet_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (outlet_id)",
-                    "constraint_name": "outlet_order_counters_pkey",
-                    "constraint_type": "p"
                 }
             ],
             "row_security": true
@@ -1474,12 +1132,6 @@
                     "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -1522,13 +1174,15 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "created_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_outlet_sales_item ON public.outlet_sales USING btree (item_id, variant_id)",
-                    "index_name": "idx_outlet_sales_item"
-                },
                 {
                     "definition": "CREATE INDEX idx_outlet_sales_outlet ON public.outlet_sales USING btree (outlet_id, sold_at DESC)",
                     "index_name": "idx_outlet_sales_outlet"
@@ -1566,11 +1220,6 @@
                     "constraint_type": "c"
                 },
                 {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_sales_variant_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
                     "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
                     "constraint_name": "outlet_sales_warehouse_id_fkey",
                     "constraint_type": "f"
@@ -1599,12 +1248,6 @@
                     "is_nullable": "NO"
                 },
                 {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
-                },
-                {
                     "default": "0",
                     "data_type": "numeric",
                     "column_name": "sent_units",
@@ -1627,24 +1270,26 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "updated_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "NO"
                 }
             ],
             "indexes": [
                 {
-                    "definition": "CREATE INDEX idx_outlet_stock_balances_item ON public.outlet_stock_balances USING btree (item_id, variant_id)",
-                    "index_name": "idx_outlet_stock_balances_item"
+                    "definition": "CREATE UNIQUE INDEX idx_outlet_stock_balances_key ON public.outlet_stock_balances USING btree (outlet_id, item_id, variant_key)",
+                    "index_name": "idx_outlet_stock_balances_key"
                 },
                 {
                     "definition": "CREATE INDEX idx_outlet_stock_balances_outlet ON public.outlet_stock_balances USING btree (outlet_id)",
                     "index_name": "idx_outlet_stock_balances_outlet"
                 },
                 {
-                    "definition": "CREATE UNIQUE INDEX outlet_stock_balances_pkey ON public.outlet_stock_balances USING btree (id)",
+                    "definition": "CREATE UNIQUE INDEX outlet_stock_balances_pkey ON public.outlet_stock_balances USING btree (outlet_id, item_id, variant_key)",
                     "index_name": "outlet_stock_balances_pkey"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX ux_outlet_stock_balances_scope ON public.outlet_stock_balances USING btree (outlet_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))",
-                    "index_name": "ux_outlet_stock_balances_scope"
                 }
             ],
             "table_name": "outlet_stock_balances",
@@ -1660,14 +1305,9 @@
                     "constraint_type": "f"
                 },
                 {
-                    "definition": "PRIMARY KEY (id)",
+                    "definition": "PRIMARY KEY (outlet_id, item_id, variant_key)",
                     "constraint_name": "outlet_stock_balances_pkey",
                     "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_stock_balances_variant_id_fkey",
-                    "constraint_type": "f"
                 }
             ],
             "row_security": true
@@ -1691,12 +1331,6 @@
                     "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -1739,13 +1373,15 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "created_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_outlet_stocktakes_item ON public.outlet_stocktakes USING btree (item_id, variant_id)",
-                    "index_name": "idx_outlet_stocktakes_item"
-                },
                 {
                     "definition": "CREATE INDEX idx_outlet_stocktakes_outlet ON public.outlet_stocktakes USING btree (outlet_id, counted_at DESC)",
                     "index_name": "idx_outlet_stocktakes_outlet"
@@ -1776,11 +1412,6 @@
                     "definition": "PRIMARY KEY (id)",
                     "constraint_name": "outlet_stocktakes_pkey",
                     "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "outlet_stocktakes_variant_id_fkey",
-                    "constraint_type": "f"
                 }
             ],
             "row_security": true
@@ -2059,33 +1690,29 @@
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "catalog_variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
                     "column_name": "warehouse_id",
                     "is_nullable": "YES"
                 },
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "normalized_variant_id",
+                    "column_name": "outlet_id",
                     "is_nullable": "NO"
                 },
                 {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "outlet_id",
-                    "is_nullable": "NO"
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "catalog_variant_key",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "normalized_variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX pos_item_map_pkey ON public.pos_item_map USING btree (outlet_id, pos_item_id, normalized_variant_id)",
-                    "index_name": "pos_item_map_pkey"
-                }
             ],
             "table_name": "pos_item_map",
             "constraints": [
@@ -2095,145 +1722,9 @@
                     "constraint_type": "f"
                 },
                 {
-                    "definition": "FOREIGN KEY (catalog_variant_id) REFERENCES catalog_variants(id)",
-                    "constraint_name": "pos_item_map_catalog_variant_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (outlet_id, pos_item_id, normalized_variant_id)",
-                    "constraint_name": "pos_item_map_pkey",
-                    "constraint_type": "p"
-                },
-                {
                     "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)",
                     "constraint_name": "pos_item_map_warehouse_id_fkey",
                     "constraint_type": "f"
-                }
-            ],
-            "row_security": false
-        },
-        {
-            "columns": [
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "order_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "order_type",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "bill_type",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "total_discount",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "total_discount_amount",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "total_gst",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "service_charges",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "delivery_charges",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "tip",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "pos_fee",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "price_type",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "customer_name",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "customer_phone",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "'{}'::jsonb",
-                    "data_type": "jsonb",
-                    "column_name": "raw_payload",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "jsonb",
-                    "column_name": "payments",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "integer",
-                    "column_name": "branch_id",
-                    "is_nullable": "YES"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX pos_order_meta_pkey ON public.pos_order_meta USING btree (order_id)",
-                    "index_name": "pos_order_meta_pkey"
-                }
-            ],
-            "table_name": "pos_order_meta",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE",
-                    "constraint_name": "pos_order_meta_order_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (order_id)",
-                    "constraint_name": "pos_order_meta_pkey",
-                    "constraint_type": "p"
                 }
             ],
             "row_security": false
@@ -2257,12 +1748,6 @@
                     "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -2299,6 +1784,12 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "updated_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -2311,10 +1802,6 @@
                     "index_name": "idx_product_supplier_links_supplier"
                 },
                 {
-                    "definition": "CREATE INDEX idx_product_supplier_links_variant ON public.product_supplier_links USING btree (variant_id)",
-                    "index_name": "idx_product_supplier_links_variant"
-                },
-                {
                     "definition": "CREATE INDEX idx_product_supplier_links_warehouse ON public.product_supplier_links USING btree (warehouse_id)",
                     "index_name": "idx_product_supplier_links_warehouse"
                 },
@@ -2323,8 +1810,8 @@
                     "index_name": "product_supplier_links_pkey"
                 },
                 {
-                    "definition": "CREATE UNIQUE INDEX ux_supplier_item_variant_warehouse ON public.product_supplier_links USING btree (supplier_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(warehouse_id, '00000000-0000-0000-0000-000000000000'::uuid))",
-                    "index_name": "ux_supplier_item_variant_warehouse"
+                    "definition": "CREATE UNIQUE INDEX ux_supplier_item_vkey_wh ON public.product_supplier_links USING btree (supplier_id, item_id, variant_key, COALESCE(warehouse_id, '00000000-0000-0000-0000-000000000000'::uuid))",
+                    "index_name": "ux_supplier_item_vkey_wh"
                 }
             ],
             "table_name": "product_supplier_links",
@@ -2342,11 +1829,6 @@
                 {
                     "definition": "FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE",
                     "constraint_name": "product_supplier_links_supplier_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "product_supplier_links_variant_id_fkey",
                     "constraint_type": "f"
                 },
                 {
@@ -2456,12 +1938,6 @@
                 },
                 {
                     "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
                     "data_type": "numeric",
                     "column_name": "delta_units",
                     "is_nullable": "NO"
@@ -2483,6 +1959,12 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "occurred_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -2512,11 +1994,6 @@
                     "definition": "PRIMARY KEY (id)",
                     "constraint_name": "stock_ledger_pkey",
                     "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "stock_ledger_variant_id_fkey",
-                    "constraint_type": "f"
                 },
                 {
                     "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
@@ -2707,95 +2184,6 @@
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "damage_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "item_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "qty_units",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "note",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_damage_items_damage ON public.warehouse_damage_items USING btree (damage_id)",
-                    "index_name": "idx_damage_items_damage"
-                },
-                {
-                    "definition": "CREATE INDEX idx_damage_items_item ON public.warehouse_damage_items USING btree (item_id, variant_id)",
-                    "index_name": "idx_damage_items_item"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX warehouse_damage_items_pkey ON public.warehouse_damage_items USING btree (id)",
-                    "index_name": "warehouse_damage_items_pkey"
-                }
-            ],
-            "table_name": "warehouse_damage_items",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (damage_id) REFERENCES warehouse_damages(id) ON DELETE CASCADE",
-                    "constraint_name": "warehouse_damage_items_damage_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE RESTRICT",
-                    "constraint_name": "warehouse_damage_items_item_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "warehouse_damage_items_pkey",
-                    "constraint_type": "p"
-                },
-                {
-                    "definition": "CHECK (qty_units > 0::numeric)",
-                    "constraint_name": "warehouse_damage_items_qty_units_check",
-                    "constraint_type": "c"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE RESTRICT",
-                    "constraint_name": "warehouse_damage_items_variant_id_fkey",
-                    "constraint_type": "f"
-                }
-            ],
-            "row_security": true
-        },
-        {
-            "columns": [
-                {
-                    "default": "gen_random_uuid()",
-                    "data_type": "uuid",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
                     "column_name": "warehouse_id",
                     "is_nullable": "NO"
                 },
@@ -2865,74 +2253,6 @@
                 {
                     "default": null,
                     "data_type": "uuid",
-                    "column_name": "warehouse_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "item_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "created_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX ux_warehouse_defaults_item_variant ON public.warehouse_defaults USING btree (item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))",
-                    "index_name": "ux_warehouse_defaults_item_variant"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX warehouse_defaults_pkey ON public.warehouse_defaults USING btree (id)",
-                    "index_name": "warehouse_defaults_pkey"
-                }
-            ],
-            "table_name": "warehouse_defaults",
-            "constraints": [
-                {
-                    "definition": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-                    "constraint_name": "warehouse_defaults_item_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "warehouse_defaults_pkey",
-                    "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE CASCADE",
-                    "constraint_name": "warehouse_defaults_variant_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
-                    "constraint_name": "warehouse_defaults_warehouse_id_fkey",
-                    "constraint_type": "f"
-                }
-            ],
-            "row_security": true
-        },
-        {
-            "columns": [
-                {
-                    "default": "gen_random_uuid()",
-                    "data_type": "uuid",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
                     "column_name": "receipt_id",
                     "is_nullable": "NO"
                 },
@@ -2941,12 +2261,6 @@
                     "data_type": "uuid",
                     "column_name": "item_id",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -2971,13 +2285,15 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "created_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_purchase_items_item ON public.warehouse_purchase_items USING btree (item_id, variant_id)",
-                    "index_name": "idx_purchase_items_item"
-                },
                 {
                     "definition": "CREATE INDEX idx_purchase_items_receipt ON public.warehouse_purchase_items USING btree (receipt_id)",
                     "index_name": "idx_purchase_items_receipt"
@@ -3008,51 +2324,9 @@
                     "definition": "FOREIGN KEY (receipt_id) REFERENCES warehouse_purchase_receipts(id) ON DELETE CASCADE",
                     "constraint_name": "warehouse_purchase_items_receipt_id_fkey",
                     "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE RESTRICT",
-                    "constraint_name": "warehouse_purchase_items_variant_id_fkey",
-                    "constraint_type": "f"
                 }
             ],
             "row_security": true
-        },
-        {
-            "columns": [
-                {
-                    "default": "1",
-                    "data_type": "integer",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "0",
-                    "data_type": "bigint",
-                    "column_name": "last_value",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "updated_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX warehouse_purchase_receipt_counters_pkey ON public.warehouse_purchase_receipt_counters USING btree (id)",
-                    "index_name": "warehouse_purchase_receipt_counters_pkey"
-                }
-            ],
-            "table_name": "warehouse_purchase_receipt_counters",
-            "constraints": [
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "warehouse_purchase_receipt_counters_pkey",
-                    "constraint_type": "p"
-                }
-            ],
-            "row_security": false
         },
         {
             "columns": [
@@ -3159,43 +2433,6 @@
         {
             "columns": [
                 {
-                    "default": "1",
-                    "data_type": "integer",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "0",
-                    "data_type": "bigint",
-                    "column_name": "last_value",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "updated_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX warehouse_transfer_counters_pkey ON public.warehouse_transfer_counters USING btree (id)",
-                    "index_name": "warehouse_transfer_counters_pkey"
-                }
-            ],
-            "table_name": "warehouse_transfer_counters",
-            "constraints": [
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "warehouse_transfer_counters_pkey",
-                    "constraint_type": "p"
-                }
-            ],
-            "row_security": false
-        },
-        {
-            "columns": [
-                {
                     "default": "gen_random_uuid()",
                     "data_type": "uuid",
                     "column_name": "id",
@@ -3215,12 +2452,6 @@
                 },
                 {
                     "default": null,
-                    "data_type": "uuid",
-                    "column_name": "variant_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
                     "data_type": "numeric",
                     "column_name": "qty_units",
                     "is_nullable": "NO"
@@ -3230,13 +2461,15 @@
                     "data_type": "timestamp with time zone",
                     "column_name": "created_at",
                     "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
-                {
-                    "definition": "CREATE INDEX idx_transfer_items_item ON public.warehouse_transfer_items USING btree (item_id, variant_id)",
-                    "index_name": "idx_transfer_items_item"
-                },
                 {
                     "definition": "CREATE INDEX idx_transfer_items_transfer ON public.warehouse_transfer_items USING btree (transfer_id)",
                     "index_name": "idx_transfer_items_transfer"
@@ -3266,11 +2499,6 @@
                 {
                     "definition": "FOREIGN KEY (transfer_id) REFERENCES warehouse_transfers(id) ON DELETE CASCADE",
                     "constraint_name": "warehouse_transfer_items_transfer_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "FOREIGN KEY (variant_id) REFERENCES catalog_variants(id) ON DELETE RESTRICT",
-                    "constraint_name": "warehouse_transfer_items_variant_id_fkey",
                     "constraint_type": "f"
                 }
             ],
@@ -3476,23 +2704,13 @@
         },
         {
             "cmd": "ALL",
-            "qual": "is_admin(auth.uid())",
+            "qual": "(auth.role() = 'service_role'::text)",
             "roles": [
                 "public"
             ],
-            "table_name": "catalog_variants",
-            "with_check": "is_admin(auth.uid())",
-            "policy_name": "catalog_variants_admin_rw"
-        },
-        {
-            "cmd": "SELECT",
-            "qual": "((auth.uid() IS NOT NULL) AND active)",
-            "roles": [
-                "authenticated"
-            ],
-            "table_name": "catalog_variants",
-            "with_check": null,
-            "policy_name": "catalog_variants_select_active"
+            "table_name": "counter_values",
+            "with_check": "(auth.role() = 'service_role'::text)",
+            "policy_name": "counter_values_service_all"
         },
         {
             "cmd": "ALL",
@@ -3595,24 +2813,24 @@
             "policy_name": "outlet_balances_scoped"
         },
         {
-            "cmd": "ALL",
-            "qual": "is_admin(auth.uid())",
+            "cmd": "SELECT",
+            "qual": "((auth.role() = 'service_role'::text) OR (outlet_id = ANY (COALESCE(member_outlet_ids(auth.uid()), ARRAY[]::uuid[]))))",
             "roles": [
                 "public"
             ],
-            "table_name": "outlet_deduction_mappings",
-            "with_check": "is_admin(auth.uid())",
-            "policy_name": "outlet_deduction_mappings_admin_rw"
+            "table_name": "outlet_item_routes",
+            "with_check": null,
+            "policy_name": "outlet_item_routes_select"
         },
         {
             "cmd": "ALL",
-            "qual": "is_admin(auth.uid())",
+            "qual": "(auth.role() = 'service_role'::text)",
             "roles": [
-                "authenticated"
+                "public"
             ],
-            "table_name": "outlet_order_counters",
-            "with_check": "is_admin(auth.uid())",
-            "policy_name": "outlet_order_counters_admin_rw"
+            "table_name": "outlet_item_routes",
+            "with_check": "(auth.role() = 'service_role'::text)",
+            "policy_name": "outlet_item_routes_write"
         },
         {
             "cmd": "ALL",
@@ -3790,29 +3008,9 @@
             "roles": [
                 "authenticated"
             ],
-            "table_name": "warehouse_damage_items",
-            "with_check": "is_admin(auth.uid())",
-            "policy_name": "warehouse_damage_items_admin_rw"
-        },
-        {
-            "cmd": "ALL",
-            "qual": "is_admin(auth.uid())",
-            "roles": [
-                "authenticated"
-            ],
             "table_name": "warehouse_damages",
             "with_check": "is_admin(auth.uid())",
             "policy_name": "warehouse_damages_admin_rw"
-        },
-        {
-            "cmd": "ALL",
-            "qual": "is_admin(auth.uid())",
-            "roles": [
-                "public"
-            ],
-            "table_name": "warehouse_defaults",
-            "with_check": "is_admin(auth.uid())",
-            "policy_name": "warehouse_defaults_admin_rw"
         },
         {
             "cmd": "ALL",
@@ -3877,34 +3075,6 @@
     ],
     "triggers": [
         {
-            "timing": "AFTER",
-            "condition": null,
-            "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
-            "manipulation": "DELETE",
-            "trigger_name": "trg_catalog_variants_flag_sync"
-        },
-        {
-            "timing": "AFTER",
-            "condition": null,
-            "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
-            "manipulation": "UPDATE",
-            "trigger_name": "trg_catalog_variants_flag_sync"
-        },
-        {
-            "timing": "AFTER",
-            "condition": null,
-            "statement": "EXECUTE FUNCTION catalog_variants_flag_sync()",
-            "manipulation": "INSERT",
-            "trigger_name": "trg_catalog_variants_flag_sync"
-        },
-        {
-            "timing": "BEFORE",
-            "condition": null,
-            "statement": "EXECUTE FUNCTION assert_order_item_editable()",
-            "manipulation": "UPDATE",
-            "trigger_name": "trg_order_items_lock"
-        },
-        {
             "timing": "BEFORE",
             "condition": null,
             "statement": "EXECUTE FUNCTION assert_order_item_editable()",
@@ -3916,6 +3086,13 @@
             "condition": null,
             "statement": "EXECUTE FUNCTION assert_order_item_editable()",
             "manipulation": "DELETE",
+            "trigger_name": "trg_order_items_lock"
+        },
+        {
+            "timing": "BEFORE",
+            "condition": null,
+            "statement": "EXECUTE FUNCTION assert_order_item_editable()",
+            "manipulation": "UPDATE",
             "trigger_name": "trg_order_items_lock"
         },
         {
@@ -3928,14 +3105,8 @@
     ],
     "functions": [
         {
-            "arguments": "p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_id uuid DEFAULT NULL::uuid, p_context jsonb DEFAULT '{}'::jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_id uuid DEFAULT NULL::uuid, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  rec record;\r\nBEGIN\r\n  IF p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN\r\n    RAISE EXCEPTION 'item + qty required for recipe deductions';\r\n  END IF;\r\n\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse required for recipe deductions';\r\n  END IF;\r\n\r\n  FOR rec IN\r\n    SELECT ingredient_item_id, qty_per_unit\r\n    FROM public.item_ingredient_recipes\r\n    WHERE finished_item_id = p_item_id\r\n      AND (finished_variant_id IS NULL OR finished_variant_id = p_variant_id)\r\n      AND active\r\n  LOOP\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      warehouse_id,\r\n      item_id,\r\n      variant_id,\r\n      delta_units,\r\n      reason,\r\n      context\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.ingredient_item_id,\r\n      NULL,\r\n      -1 * (p_qty_units * rec.qty_per_unit),\r\n      'recipe_consumption',\r\n      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')\r\n    );\r\n  END LOOP;\r\nEND;\r\n$function$\n",
-            "return_type": "void",
-            "function_name": "apply_recipe_deductions"
-        },
-        {
-            "arguments": "p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_id uuid DEFAULT NULL::uuid, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[]",
-            "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_id uuid DEFAULT NULL::uuid, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  comp record;\r\n  v_recipe record;\r\n  v_effective_qty numeric;\r\n  v_yield numeric;\r\nBEGIN\r\n  IF p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN\r\n    RAISE EXCEPTION 'item + qty required for recipe deductions';\r\n  END IF;\r\n\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse required for recipe deductions';\r\n  END IF;\r\n\r\n  IF p_depth > 8 OR p_item_id = ANY(p_seen) THEN\r\n    RAISE EXCEPTION 'recipe recursion detected for item %', p_item_id;\r\n  END IF;\r\n\r\n  SELECT r.id, r.yield_qty_units\r\n  INTO v_recipe\r\n  FROM public.item_recipes r\r\n  WHERE r.active\r\n    AND r.finished_item_id = p_item_id\r\n    AND (r.finished_variant_id IS NULL OR r.finished_variant_id = p_variant_id)\r\n  ORDER BY r.finished_variant_id DESC NULLS LAST\r\n  LIMIT 1;\r\n\r\n  IF v_recipe.id IS NULL THEN\r\n    INSERT INTO public.stock_ledger(\r\n      location_type,\r\n      warehouse_id,\r\n      item_id,\r\n      variant_id,\r\n      delta_units,\r\n      reason,\r\n      context\r\n    ) VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_item_id,\r\n      p_variant_id,\r\n      -1 * p_qty_units,\r\n      'recipe_consumption',\r\n      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')\r\n    );\r\n    RETURN;\r\n  END IF;\r\n\r\n  v_yield := coalesce(nullif(v_recipe.yield_qty_units, 0), 1);\r\n\r\n  FOR comp IN\r\n    (\r\n      SELECT iri.ingredient_item_id AS item_id,\r\n             iri.ingredient_variant_id AS variant_id,\r\n             iri.qty_units,\r\n             iri.is_leaf AS force_leaf\r\n      FROM public.item_recipe_ingredients iri\r\n      WHERE iri.recipe_id = v_recipe.id\r\n    )\r\n    UNION ALL\r\n    (\r\n      SELECT iir.ingredient_item_id AS item_id,\r\n             NULL AS variant_id,\r\n             iir.qty_per_unit AS qty_units,\r\n             true AS force_leaf\r\n      FROM public.item_ingredient_recipes iir\r\n      WHERE iir.finished_item_id = p_item_id\r\n        AND (iir.finished_variant_id IS NULL OR iir.finished_variant_id = p_variant_id)\r\n        AND iir.active\r\n    )\r\n  LOOP\r\n    v_effective_qty := (p_qty_units / v_yield) * comp.qty_units;\r\n\r\n    IF comp.force_leaf THEN\r\n      INSERT INTO public.stock_ledger(\r\n        location_type,\r\n        warehouse_id,\r\n        item_id,\r\n        variant_id,\r\n        delta_units,\r\n        reason,\r\n        context\r\n      ) VALUES (\r\n        'warehouse',\r\n        p_warehouse_id,\r\n        comp.item_id,\r\n        comp.variant_id,\r\n        -1 * v_effective_qty,\r\n        'recipe_consumption',\r\n        jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units, 'component_qty', comp.qty_units) || coalesce(p_context, '{}')\r\n      );\r\n    ELSE\r\n      PERFORM public.apply_recipe_deductions(\r\n        comp.item_id,\r\n        v_effective_qty,\r\n        p_warehouse_id,\r\n        comp.variant_id,\r\n        coalesce(p_context, '{}') || jsonb_build_object('via', p_item_id),\r\n        p_depth + 1,\r\n        array_append(p_seen, p_item_id)\r\n      );\r\n    END IF;\r\n  END LOOP;\r\nEND;\r\n$function$\n",
+            "arguments": "p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[]",
+            "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  comp record;\r\n  v_yield numeric := 1;\r\n  v_has_recipe boolean := false;\r\n  v_effective_qty numeric;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'item + qty required for recipe deductions';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required for recipe deductions';\r\n  end if;\r\n\r\n  if p_depth > 8 or p_item_id = any(p_seen) then\r\n    raise exception 'recipe recursion detected for item %', p_item_id;\r\n  end if;\r\n\r\n  select true, coalesce(min(iir.yield_qty_units), 1)\r\n  into v_has_recipe, v_yield\r\n  from public.item_ingredient_recipes iir\r\n  where iir.active\r\n    and iir.finished_item_id = p_item_id\r\n    and public.normalize_variant_key(coalesce(iir.finished_variant_key, 'base')) = v_variant_key;\r\n\r\n  if not v_has_recipe then\r\n    insert into public.stock_ledger(\r\n      location_type,\r\n      warehouse_id,\r\n      item_id,\r\n      variant_key,\r\n      delta_units,\r\n      reason,\r\n      context\r\n    ) values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_item_id,\r\n      v_variant_key,\r\n      -1 * p_qty_units,\r\n      'recipe_consumption',\r\n      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')\r\n    );\r\n    return;\r\n  end if;\r\n\r\n  for comp in\r\n    select iir.ingredient_item_id as item_id,\r\n           iir.qty_per_unit as qty_units,\r\n           exists (\r\n             select 1 from public.item_ingredient_recipes nested\r\n             where nested.active\r\n               and nested.finished_item_id = iir.ingredient_item_id\r\n           ) as has_nested\r\n    from public.item_ingredient_recipes iir\r\n    where iir.active\r\n      and iir.finished_item_id = p_item_id\r\n      and public.normalize_variant_key(coalesce(iir.finished_variant_key, 'base')) = v_variant_key\r\n  loop\r\n    v_effective_qty := (p_qty_units / v_yield) * comp.qty_units;\r\n\r\n    if comp.has_nested then\r\n      perform public.apply_recipe_deductions(\r\n        comp.item_id,\r\n        v_effective_qty,\r\n        p_warehouse_id,\r\n        'base',\r\n        coalesce(p_context, '{}') || jsonb_build_object('via', p_item_id),\r\n        p_depth + 1,\r\n        array_append(p_seen, p_item_id)\r\n      );\r\n    else\r\n      insert into public.stock_ledger(\r\n        location_type,\r\n        warehouse_id,\r\n        item_id,\r\n        variant_key,\r\n        delta_units,\r\n        reason,\r\n        context\r\n      ) values (\r\n        'warehouse',\r\n        p_warehouse_id,\r\n        comp.item_id,\r\n        'base',\r\n        -1 * v_effective_qty,\r\n        'recipe_consumption',\r\n        jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units, 'component_qty', comp.qty_units) || coalesce(p_context, '{}')\r\n      );\r\n    end if;\r\n  end loop;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "apply_recipe_deductions"
         },
@@ -3950,12 +3121,6 @@
             "definition": "CREATE OR REPLACE FUNCTION public.assert_order_item_editable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_order public.orders%ROWTYPE;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = COALESCE(NEW.order_id, OLD.order_id);\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order not found for item';\r\n  END IF;\r\n\r\n  IF COALESCE(v_order.locked, false)\r\n     OR lower(COALESCE(v_order.status, '')) IN ('approved', 'loaded', 'offloaded', 'delivered') THEN\r\n    RAISE EXCEPTION 'order % is locked; items cannot be modified', v_order.id;\r\n  END IF;\r\n\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
             "return_type": "trigger",
             "function_name": "assert_order_item_editable"
-        },
-        {
-            "arguments": "",
-            "definition": "CREATE OR REPLACE FUNCTION public.catalog_variants_flag_sync()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_new uuid;\r\n  v_old uuid;\r\nBEGIN\r\n  v_new := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.item_id ELSE NULL END;\r\n  v_old := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.item_id ELSE NULL END;\r\n\r\n  IF v_new IS NOT NULL THEN\r\n    PERFORM public.refresh_catalog_has_variations(v_new);\r\n  END IF;\r\n  IF v_old IS NOT NULL AND (v_new IS NULL OR v_old <> v_new) THEN\r\n    PERFORM public.refresh_catalog_has_variations(v_old);\r\n  END IF;\r\n\r\n  IF TG_OP = 'DELETE' THEN\r\n    RETURN OLD;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
-            "return_type": "trigger",
-            "function_name": "catalog_variants_flag_sync"
         },
         {
             "arguments": "p_include_inactive boolean DEFAULT false, p_locked_ids uuid[] DEFAULT NULL::uuid[]",
@@ -4019,21 +3184,27 @@
         },
         {
             "arguments": "p_outlet_id uuid",
-            "definition": "CREATE OR REPLACE FUNCTION public.next_order_number(p_outlet_id uuid)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_prefix text;\r\n  v_next bigint;\r\nBEGIN\r\n  IF p_outlet_id IS NULL THEN\r\n    RAISE EXCEPTION 'outlet id required for numbering';\r\n  END IF;\r\n\r\n  INSERT INTO public.outlet_order_counters(outlet_id, last_value)\r\n  VALUES (p_outlet_id, 1)\r\n  ON CONFLICT (outlet_id)\r\n  DO UPDATE SET last_value = public.outlet_order_counters.last_value + 1,\r\n                updated_at = now()\r\n  RETURNING last_value INTO v_next;\r\n\r\n  SELECT COALESCE(NULLIF(o.code, ''), substr(o.id::text, 1, 4)) INTO v_prefix\r\n  FROM public.outlets o\r\n  WHERE o.id = p_outlet_id;\r\n\r\n  v_prefix := COALESCE(v_prefix, 'OUT');\r\n  v_prefix := upper(regexp_replace(v_prefix, '[^A-Za-z0-9]', '', 'g'));\r\n  RETURN v_prefix || '-' || lpad(v_next::text, 4, '0');\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.next_order_number(p_outlet_id uuid)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_prefix text;\r\n  v_next bigint;\r\n  v_scope uuid := coalesce(p_outlet_id, '00000000-0000-0000-0000-000000000000');\r\nbegin\r\n  if p_outlet_id is null then\r\n    raise exception 'outlet id required for numbering';\r\n  end if;\r\n\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('order_number', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  select coalesce(nullif(o.code, ''), substr(o.id::text, 1, 4)) into v_prefix\r\n  from public.outlets o\r\n  where o.id = p_outlet_id;\r\n\r\n  v_prefix := coalesce(v_prefix, 'OUT');\r\n  v_prefix := upper(regexp_replace(v_prefix, '[^A-Za-z0-9]', '', 'g'));\r\n  return v_prefix || '-' || lpad(v_next::text, 4, '0');\r\nend;\r\n$function$\n",
             "return_type": "text",
             "function_name": "next_order_number"
         },
         {
             "arguments": "",
-            "definition": "CREATE OR REPLACE FUNCTION public.next_purchase_receipt_reference()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_next bigint;\r\nBEGIN\r\n  INSERT INTO public.warehouse_purchase_receipt_counters(id, last_value)\r\n  VALUES (1, 1)\r\n  ON CONFLICT (id)\r\n  DO UPDATE SET last_value = public.warehouse_purchase_receipt_counters.last_value + 1,\r\n                updated_at = now()\r\n  RETURNING last_value INTO v_next;\r\n\r\n  RETURN 'PR-' || lpad(v_next::text, 6, '0');\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.next_purchase_receipt_reference()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_next bigint;\r\n  v_scope uuid := '00000000-0000-0000-0000-000000000000';\r\nbegin\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('purchase_receipt', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  return 'PR-' || lpad(v_next::text, 6, '0');\r\nend;\r\n$function$\n",
             "return_type": "text",
             "function_name": "next_purchase_receipt_reference"
         },
         {
             "arguments": "",
-            "definition": "CREATE OR REPLACE FUNCTION public.next_transfer_reference()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_next bigint;\r\nBEGIN\r\n  INSERT INTO public.warehouse_transfer_counters(id, last_value)\r\n  VALUES (1, 1)\r\n  ON CONFLICT (id)\r\n  DO UPDATE SET last_value = public.warehouse_transfer_counters.last_value + 1,\r\n                updated_at = now()\r\n  RETURNING last_value INTO v_next;\r\n\r\n  RETURN 'WT-' || lpad(v_next::text, 6, '0');\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.next_transfer_reference()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_next bigint;\r\n  v_scope uuid := '00000000-0000-0000-0000-000000000000';\r\nbegin\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('transfer', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  return 'WT-' || lpad(v_next::text, 6, '0');\r\nend;\r\n$function$\n",
             "return_type": "text",
             "function_name": "next_transfer_reference"
+        },
+        {
+            "arguments": "p_variant_key text",
+            "definition": "CREATE OR REPLACE FUNCTION public.normalize_variant_key(p_variant_key text)\n RETURNS text\n LANGUAGE sql\nAS $function$\r\n  select coalesce(nullif($1, ''), 'base');\r\n$function$\n",
+            "return_type": "text",
+            "function_name": "normalize_variant_key"
         },
         {
             "arguments": "p_order_id uuid, p_user_id uuid",
@@ -4055,31 +3226,31 @@
         },
         {
             "arguments": "p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_damage(p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  rec record;\r\n  v_damage_id uuid;\r\nBEGIN\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse_id is required';\r\n  END IF;\r\n\r\n  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN\r\n    RAISE EXCEPTION 'at least one damage line is required';\r\n  END IF;\r\n\r\n  INSERT INTO public.warehouse_damages(warehouse_id, note, context, created_by)\r\n  VALUES (p_warehouse_id, p_note, coalesce(p_items, '[]'::jsonb), auth.uid())\r\n  RETURNING id INTO v_damage_id;\r\n\r\n  FOR rec IN\r\n    SELECT\r\n      (elem->>'product_id')::uuid AS item_id,\r\n      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,\r\n      (elem->>'qty')::numeric AS qty_units,\r\n      NULLIF(elem->>'note', '') AS line_note\r\n    FROM jsonb_array_elements(p_items) elem\r\n  LOOP\r\n    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN\r\n      RAISE EXCEPTION 'each damage line needs product_id and qty > 0';\r\n    END IF;\r\n\r\n    INSERT INTO public.warehouse_damage_items(damage_id, item_id, variant_id, qty_units, note)\r\n    VALUES (v_damage_id, rec.item_id, rec.variant_id, rec.qty_units, rec.line_note);\r\n\r\n    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)\r\n    VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      rec.variant_id,\r\n      -1 * rec.qty_units,\r\n      'damage',\r\n      jsonb_build_object('damage_id', v_damage_id, 'note', coalesce(rec.line_note, p_note))\r\n    );\r\n  END LOOP;\r\n\r\n  RETURN v_damage_id;\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_damage(p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_damage_id uuid;\r\n  v_variant_key text;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one damage line is required';\r\n  end if;\r\n\r\n  insert into public.warehouse_damages(warehouse_id, note, context, created_by)\r\n  values (p_warehouse_id, p_note, coalesce(p_items, '[]'::jsonb), auth.uid())\r\n  returning id into v_damage_id;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      nullif(elem->>'note', '') as line_note\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each damage line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      public.normalize_variant_key(rec.variant_key),\r\n      -1 * rec.qty_units,\r\n      'damage',\r\n      jsonb_build_object('damage_id', v_damage_id, 'note', coalesce(rec.line_note, p_note))\r\n    );\r\n  end loop;\r\n\r\n  return v_damage_id;\r\nend;\r\n$function$\n",
             "return_type": "uuid",
             "function_name": "record_damage"
         },
         {
             "arguments": "p_order_id uuid",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_order_fulfillment(p_order_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  oi record;\r\n  v_order public.orders%ROWTYPE;\r\n  v_wh uuid;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  FOR oi IN\r\n    SELECT oi.id, oi.order_id, oi.product_id AS item_id, oi.variation_id AS variant_id, oi.qty, oi.warehouse_id\r\n    FROM public.order_items oi\r\n    WHERE oi.order_id = p_order_id AND oi.qty > 0\r\n  LOOP\r\n    v_wh := coalesce(oi.warehouse_id, (\r\n      SELECT wd.warehouse_id FROM public.warehouse_defaults wd\r\n      WHERE wd.item_id = oi.item_id AND (wd.variant_id IS NULL OR wd.variant_id = oi.variant_id)\r\n      ORDER BY wd.variant_id NULLS LAST LIMIT 1\r\n    ));\r\n\r\n    IF v_wh IS NULL THEN\r\n      RAISE EXCEPTION 'no warehouse mapping for item %', oi.item_id;\r\n    END IF;\r\n\r\n    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)\r\n    VALUES ('warehouse', v_wh, oi.item_id, oi.variant_id, -1 * oi.qty, 'order_fulfillment', jsonb_build_object('order_id', p_order_id, 'order_item_id', oi.id));\r\n\r\n    INSERT INTO public.outlet_stock_balances(outlet_id, item_id, variant_id, sent_units, consumed_units)\r\n    VALUES (v_order.outlet_id, oi.item_id, oi.variant_id, oi.qty, 0)\r\n    ON CONFLICT (outlet_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))\r\n    DO UPDATE SET sent_units = public.outlet_stock_balances.sent_units + EXCLUDED.sent_units,\r\n                  updated_at = now();\r\n  END LOOP;\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_order_fulfillment(p_order_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  oi record;\r\n  v_order public.orders%rowtype;\r\n  v_wh uuid;\r\n  v_key text;\r\nbegin\r\n  select * into v_order from public.orders where id = p_order_id for update;\r\n  if not found then\r\n    raise exception 'order % not found', p_order_id;\r\n  end if;\r\n\r\n  for oi in\r\n    select oi.id, oi.order_id, oi.product_id as item_id, oi.variation_key as variant_key, oi.qty, oi.warehouse_id\r\n    from public.order_items oi\r\n    where oi.order_id = p_order_id and oi.qty > 0\r\n  loop\r\n    v_key := public.normalize_variant_key(oi.variant_key);\r\n\r\n    v_wh := coalesce(\r\n      oi.warehouse_id,\r\n      (\r\n        select r.warehouse_id\r\n        from public.outlet_item_routes r\r\n        where r.item_id = oi.item_id\r\n          and r.normalized_variant_key = v_key\r\n          and (r.outlet_id = v_order.outlet_id or r.outlet_id is null)\r\n        order by case when r.outlet_id = v_order.outlet_id then 0 else 1 end, r.updated_at desc nulls last\r\n        limit 1\r\n      )\r\n    );\r\n\r\n    if v_wh is null then\r\n      raise exception 'no warehouse mapping for item % (order %)', oi.item_id, p_order_id;\r\n    end if;\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values ('warehouse', v_wh, oi.item_id, v_key, -1 * oi.qty, 'order_fulfillment', jsonb_build_object('order_id', p_order_id, 'order_item_id', oi.id));\r\n\r\n    insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n    values (v_order.outlet_id, oi.item_id, v_key, oi.qty, 0)\r\n    on conflict (outlet_id, item_id, variant_key)\r\n    do update set sent_units = public.outlet_stock_balances.sent_units + excluded.sent_units,\r\n            variant_key = excluded.variant_key,\r\n            updated_at = now();\r\n  end loop;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "record_order_fulfillment"
         },
         {
-            "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_id uuid DEFAULT NULL::uuid, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_id uuid DEFAULT NULL::uuid, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_sale public.outlet_sales%ROWTYPE;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\nBEGIN\r\n  IF p_outlet_id IS NULL OR p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN\r\n    RAISE EXCEPTION 'outlet, item, qty required';\r\n  END IF;\r\n\r\n  SELECT coalesce(deduct_on_pos_sale, true) INTO v_deduct_enabled\r\n  FROM public.outlets WHERE id = p_outlet_id;\r\n\r\n  IF v_deduct_enabled = false THEN\r\n    INSERT INTO public.outlet_sales(\r\n      outlet_id, item_id, variant_id, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) VALUES (\r\n      p_outlet_id, p_item_id, p_variant_id, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) RETURNING * INTO v_sale;\r\n    RETURN v_sale;\r\n  END IF;\r\n\r\n  SELECT warehouse_id, target_outlet_id\r\n  INTO v_route\r\n  FROM public.outlet_item_warehouse_map\r\n  WHERE outlet_id = p_outlet_id\r\n    AND item_id = p_item_id\r\n    AND (variant_id IS NULL OR variant_id = p_variant_id)\r\n  ORDER BY variant_id DESC NULLS LAST\r\n  LIMIT 1;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(\r\n    p_warehouse_id,\r\n    v_route.warehouse_id,\r\n    (\r\n      SELECT wd.warehouse_id\r\n      FROM public.warehouse_defaults wd\r\n      WHERE wd.item_id = p_item_id\r\n        AND (wd.variant_id IS NULL OR wd.variant_id = p_variant_id)\r\n      ORDER BY wd.variant_id DESC NULLS LAST\r\n      LIMIT 1\r\n    )\r\n  );\r\n\r\n  IF v_deduct_wh IS NULL THEN\r\n    RAISE EXCEPTION 'no warehouse mapping for outlet %, item %, variant %', p_outlet_id, p_item_id, p_variant_id;\r\n  END IF;\r\n\r\n  INSERT INTO public.outlet_sales(\r\n    outlet_id, item_id, variant_id, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) VALUES (\r\n    p_outlet_id, p_item_id, p_variant_id, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) RETURNING * INTO v_sale;\r\n\r\n  INSERT INTO public.outlet_stock_balances(outlet_id, item_id, variant_id, sent_units, consumed_units)\r\n  VALUES (p_outlet_id, p_item_id, p_variant_id, 0, p_qty_units)\r\n  ON CONFLICT (outlet_id, item_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'::uuid))\r\n  DO UPDATE SET\r\n    consumed_units = public.outlet_stock_balances.consumed_units + EXCLUDED.consumed_units,\r\n    updated_at = now();\r\n\r\n  INSERT INTO public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_id,\r\n    delta_units,\r\n    reason,\r\n    context\r\n  ) VALUES (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    p_variant_id,\r\n    -1 * p_qty_units,\r\n    'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  PERFORM public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    p_variant_id,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  RETURN v_sale;\r\nEND;\r\n$function$\n",
+            "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set\r\n    consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n    updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * p_qty_units,\r\n    'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
             "return_type": "outlet_sales",
             "function_name": "record_outlet_sale"
         },
         {
             "arguments": "p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false)\n RETURNS warehouse_purchase_receipts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  rec record;\r\n  v_receipt public.warehouse_purchase_receipts%ROWTYPE;\r\n  v_reference text;\r\nBEGIN\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse_id is required';\r\n  END IF;\r\n\r\n  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN\r\n    RAISE EXCEPTION 'at least one purchase item is required';\r\n  END IF;\r\n\r\n  v_reference := COALESCE(NULLIF(p_reference_code, ''), public.next_purchase_receipt_reference());\r\n\r\n  INSERT INTO public.warehouse_purchase_receipts(\r\n    warehouse_id,\r\n    supplier_id,\r\n    reference_code,\r\n    note,\r\n    auto_whatsapp,\r\n    context,\r\n    recorded_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_supplier_id,\r\n    v_reference,\r\n    p_note,\r\n    coalesce(p_auto_whatsapp, false),\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) RETURNING * INTO v_receipt;\r\n\r\n  FOR rec IN\r\n    SELECT\r\n      (elem->>'product_id')::uuid AS item_id,\r\n      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,\r\n      (elem->>'qty')::numeric AS qty_units,\r\n      COALESCE(NULLIF(elem->>'qty_input_mode', ''), 'units') AS qty_input_mode,\r\n      NULLIF(elem->>'unit_cost', '')::numeric AS unit_cost\r\n    FROM jsonb_array_elements(p_items) elem\r\n  LOOP\r\n    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN\r\n      RAISE EXCEPTION 'each purchase line needs product_id and qty > 0';\r\n    END IF;\r\n\r\n    INSERT INTO public.warehouse_purchase_items(\r\n      receipt_id,\r\n      item_id,\r\n      variant_id,\r\n      qty_units,\r\n      qty_input_mode,\r\n      unit_cost\r\n    ) VALUES (\r\n      v_receipt.id,\r\n      rec.item_id,\r\n      rec.variant_id,\r\n      rec.qty_units,\r\n      rec.qty_input_mode,\r\n      rec.unit_cost\r\n    );\r\n\r\n    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)\r\n    VALUES (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      rec.variant_id,\r\n      rec.qty_units,\r\n      'purchase_receipt',\r\n      jsonb_build_object('receipt_id', v_receipt.id, 'reference_code', v_receipt.reference_code, 'supplier_id', p_supplier_id)\r\n    );\r\n  END LOOP;\r\n\r\n  RETURN v_receipt;\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false)\n RETURNS warehouse_purchase_receipts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_receipt public.warehouse_purchase_receipts%rowtype;\r\n  v_reference text;\r\n  v_variant_key text;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one purchase item is required';\r\n  end if;\r\n\r\n  v_reference := coalesce(nullif(p_reference_code, ''), public.next_purchase_receipt_reference());\r\n\r\n  insert into public.warehouse_purchase_receipts(\r\n    warehouse_id,\r\n    supplier_id,\r\n    reference_code,\r\n    note,\r\n    auto_whatsapp,\r\n    context,\r\n    recorded_by\r\n  ) values (\r\n    p_warehouse_id,\r\n    p_supplier_id,\r\n    v_reference,\r\n    p_note,\r\n    coalesce(p_auto_whatsapp, false),\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning * into v_receipt;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      coalesce(nullif(elem->>'qty_input_mode', ''), 'units') as qty_input_mode,\r\n      nullif(elem->>'unit_cost', '')::numeric as unit_cost\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each purchase line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.warehouse_purchase_items(\r\n      receipt_id,\r\n      item_id,\r\n      variant_key,\r\n      qty_units,\r\n      qty_input_mode,\r\n      unit_cost\r\n    ) values (\r\n      v_receipt.id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      rec.qty_input_mode,\r\n      rec.unit_cost\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'purchase_receipt',\r\n      jsonb_build_object('receipt_id', v_receipt.id, 'reference_code', v_receipt.reference_code, 'supplier_id', p_supplier_id)\r\n    );\r\n  end loop;\r\n\r\n  return v_receipt;\r\nend;\r\n$function$\n",
             "return_type": "warehouse_purchase_receipts",
             "function_name": "record_purchase_receipt"
         },
         {
             "arguments": "p_item_id uuid",
-            "definition": "CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_item_id IS NULL THEN\r\n    RETURN;\r\n  END IF;\r\n  UPDATE public.catalog_items ci\r\n  SET has_variations = EXISTS (\r\n        SELECT 1 FROM public.catalog_variants v\r\n      WHERE v.item_id = ci.id AND v.active AND v.outlet_order_visible\r\n      ),\r\n      updated_at = now()\r\n  WHERE ci.id = p_item_id;\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if p_item_id is null then\r\n    return;\r\n  end if;\r\n  update public.catalog_items ci\r\n  set has_variations = false,\r\n      updated_at = now()\r\n  where ci.id = p_item_id;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "refresh_catalog_has_variations"
         },
@@ -4097,13 +3268,13 @@
         },
         {
             "arguments": "payload jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_order(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_outlet   uuid := (payload->>'outlet_id')::uuid;\r\n  v_source   text := payload->>'source_event_id';\r\n  v_order_id uuid;\r\n  v_now      timestamptz := now();\r\n  v_item     jsonb;\r\n  v_map      record;\r\n  v_qty      numeric;\r\n  v_branch   integer := nullif(payload->>'branch_id','')::integer;\r\nbegin\r\n  if v_outlet is null or v_source is null then\r\n    raise exception 'outlet_id and source_event_id are required';\r\n  end if;\r\n\r\n  select id into v_order_id from public.orders where source_event_id = v_source;\r\n  if found then return; end if;\r\n\r\n  insert into public.orders(outlet_id, source_event_id, status, locked, branch_id, created_at, updated_at)\r\n  values (v_outlet, v_source, 'placed', false, v_branch, v_now, v_now)\r\n  returning id into v_order_id;\r\n\r\n  insert into public.pos_order_meta(\r\n    order_id, order_type, bill_type, total_discount, total_discount_amount,\r\n    total_gst, service_charges, delivery_charges, tip, pos_fee, price_type,\r\n    customer_name, customer_phone, payments, raw_payload, branch_id\r\n  ) values (\r\n    v_order_id,\r\n    payload->>'order_type',\r\n    payload->>'bill_type',\r\n    (payload->>'total_discount')::numeric,\r\n    (payload->>'total_discount_amount')::numeric,\r\n    (payload->>'total_gst')::numeric,\r\n    (payload->>'service_charges')::numeric,\r\n    (payload->>'delivery_charges')::numeric,\r\n    (payload->>'tip')::numeric,\r\n    (payload->>'pos_fee')::numeric,\r\n    payload->>'price_type',\r\n    payload#>>'{customer,name}',\r\n    payload#>>'{customer,phone}',\r\n    payload->'payments',\r\n    payload,\r\n    v_branch\r\n  );\r\n\r\n  for v_item in select * from jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) loop\r\n    select catalog_item_id, catalog_variant_id, warehouse_id\r\n      into v_map\r\n    from public.pos_item_map\r\n    where outlet_id = v_outlet\r\n      and pos_item_id = v_item->>'pos_item_id';\r\n    if not found then raise exception 'No mapping for pos_item_id % at outlet %', v_item->>'pos_item_id', v_outlet; end if;\r\n\r\n    v_qty := (v_item->>'quantity')::numeric;\r\n    if v_qty is null or v_qty <= 0 then raise exception 'quantity required for item %', v_item->>'pos_item_id'; end if;\r\n\r\n    perform public.record_outlet_sale(\r\n      v_outlet,\r\n      v_map.catalog_item_id,\r\n      v_qty,\r\n      v_map.catalog_variant_id,\r\n      false,\r\n      v_map.warehouse_id,\r\n      (payload->>'occurred_at')::timestamptz,\r\n      jsonb_build_object('pos_item_id', v_item->>'pos_item_id', 'source_event_id', v_source, 'order_id', v_order_id)\r\n    );\r\n  end loop;\r\n\r\n  insert into public.pos_inventory_consumed(\r\n    source_event_id,\r\n    outlet_id,\r\n    order_id,\r\n    raw_item_id,\r\n    quantity_consumed,\r\n    remaining_quantity,\r\n    occurred_at,\r\n    pos_date,\r\n    kdsid,\r\n    typec,\r\n    context,\r\n    unassigned_branch_note\r\n  )\r\n  select\r\n    v_source || '-ic-' || coalesce(nullif(ic->>'pos_id',''), md5(ic::text)),\r\n    v_outlet,\r\n    v_order_id,\r\n    ic->>'raw_item_id',\r\n    (ic->>'quantity_consumed')::numeric,\r\n    nullif(ic->>'remaining_quantity','')::numeric,\r\n    coalesce((ic->>'occurred_at')::timestamptz, (ic->>'pos_date')::timestamptz, v_now),\r\n    coalesce((ic->>'pos_date')::date, v_now::date),\r\n    ic->>'kdsid',\r\n    ic->>'typec',\r\n    ic,\r\n    CASE\r\n      WHEN ic ? 'branch_missing_note' THEN ic->>'branch_missing_note'\r\n      WHEN coalesce(nullif(ic->>'branch_id',''),'') = '' THEN 'Branch missing on POS inventory row'\r\n      ELSE NULL\r\n    END\r\n  from jsonb_array_elements(coalesce(payload->'inventory_consumed','[]'::jsonb)) ic\r\n  on conflict (source_event_id) do nothing;\r\n\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_order(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_outlet   uuid := (payload->>'outlet_id')::uuid;\r\n  v_source   text := payload->>'source_event_id';\r\n  v_order_id uuid;\r\n  v_now      timestamptz := now();\r\n  v_item     jsonb;\r\n  v_map      record;\r\n  v_qty      numeric;\r\n  v_branch   integer := nullif(payload->>'branch_id','')::integer;\r\nbegin\r\n  if v_outlet is null or v_source is null then\r\n    raise exception 'outlet_id and source_event_id are required';\r\n  end if;\r\n\r\n  select id into v_order_id from public.orders where source_event_id = v_source;\r\n  if found then return; end if;\r\n\r\n  insert into public.orders(\r\n    outlet_id,\r\n    source_event_id,\r\n    status,\r\n    locked,\r\n    branch_id,\r\n    pos_branch_id,\r\n    order_type,\r\n    bill_type,\r\n    total_discount,\r\n    total_discount_amount,\r\n    total_gst,\r\n    service_charges,\r\n    delivery_charges,\r\n    tip,\r\n    pos_fee,\r\n    price_type,\r\n    customer_name,\r\n    customer_phone,\r\n    payments,\r\n    raw_payload,\r\n    created_at,\r\n    updated_at\r\n  ) values (\r\n    v_outlet,\r\n    v_source,\r\n    'placed',\r\n    false,\r\n    v_branch,\r\n    v_branch,\r\n    payload->>'order_type',\r\n    payload->>'bill_type',\r\n    (payload->>'total_discount')::numeric,\r\n    (payload->>'total_discount_amount')::numeric,\r\n    (payload->>'total_gst')::numeric,\r\n    (payload->>'service_charges')::numeric,\r\n    (payload->>'delivery_charges')::numeric,\r\n    (payload->>'tip')::numeric,\r\n    (payload->>'pos_fee')::numeric,\r\n    payload->>'price_type',\r\n    payload#>>'{customer,name}',\r\n    payload#>>'{customer,phone}',\r\n    payload->'payments',\r\n    payload,\r\n    v_now,\r\n    v_now\r\n  ) returning id into v_order_id;\r\n\r\n  for v_item in select * from jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) loop\r\n    select catalog_item_id, catalog_variant_key, warehouse_id\r\n      into v_map\r\n    from public.pos_item_map\r\n    where outlet_id = v_outlet\r\n      and pos_item_id = v_item->>'pos_item_id';\r\n    if not found then raise exception 'No mapping for pos_item_id % at outlet %', v_item->>'pos_item_id', v_outlet; end if;\r\n\r\n    v_qty := (v_item->>'quantity')::numeric;\r\n    if v_qty is null or v_qty <= 0 then raise exception 'quantity required for item %', v_item->>'pos_item_id'; end if;\r\n\r\n    perform public.record_outlet_sale(\r\n      v_outlet,\r\n      v_map.catalog_item_id,\r\n      v_qty,\r\n      v_map.catalog_variant_key,\r\n      false,\r\n      v_map.warehouse_id,\r\n      (payload->>'occurred_at')::timestamptz,\r\n      jsonb_build_object('pos_item_id', v_item->>'pos_item_id', 'source_event_id', v_source, 'order_id', v_order_id)\r\n    );\r\n  end loop;\r\n\r\n  insert into public.pos_inventory_consumed(\r\n    source_event_id,\r\n    outlet_id,\r\n    order_id,\r\n    raw_item_id,\r\n    quantity_consumed,\r\n    remaining_quantity,\r\n    occurred_at,\r\n    pos_date,\r\n    kdsid,\r\n    typec,\r\n    context,\r\n    unassigned_branch_note\r\n  )\r\n  select\r\n    v_source || '-ic-' || coalesce(nullif(ic->>'pos_id',''), md5(ic::text)),\r\n    v_outlet,\r\n    v_order_id,\r\n    ic->>'raw_item_id',\r\n    (ic->>'quantity_consumed')::numeric,\r\n    nullif(ic->>'remaining_quantity','')::numeric,\r\n    coalesce((ic->>'occurred_at')::timestamptz, (ic->>'pos_date')::timestamptz, v_now),\r\n    coalesce((ic->>'pos_date')::date, v_now::date),\r\n    ic->>'kdsid',\r\n    ic->>'typec',\r\n    ic,\r\n    case\r\n      when ic ? 'branch_missing_note' then ic->>'branch_missing_note'\r\n      when coalesce(nullif(ic->>'branch_id',''),'') = '' then 'Branch missing on POS inventory row'\r\n      else null\r\n    end\r\n  from jsonb_array_elements(coalesce(payload->'inventory_consumed','[]'::jsonb)) ic\r\n  on conflict (source_event_id) do nothing;\r\n\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "sync_pos_order"
         },
         {
             "arguments": "p_source uuid, p_destination uuid, p_items jsonb, p_note text DEFAULT NULL::text",
-            "definition": "CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(p_source uuid, p_destination uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  rec record;\r\n  v_transfer_id uuid;\r\n  v_reference text;\r\nBEGIN\r\n  IF p_source IS NULL OR p_destination IS NULL THEN\r\n    RAISE EXCEPTION 'source and destination are required';\r\n  END IF;\r\n\r\n  IF p_source = p_destination THEN\r\n    RAISE EXCEPTION 'source and destination cannot match';\r\n  END IF;\r\n\r\n  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN\r\n    RAISE EXCEPTION 'at least one line item is required';\r\n  END IF;\r\n\r\n  v_reference := public.next_transfer_reference();\r\n\r\n  INSERT INTO public.warehouse_transfers(\r\n    reference_code,\r\n    source_warehouse_id,\r\n    destination_warehouse_id,\r\n    note,\r\n    context,\r\n    created_by\r\n  ) VALUES (\r\n    v_reference,\r\n    p_source,\r\n    p_destination,\r\n    p_note,\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) RETURNING id INTO v_transfer_id;\r\n\r\n  FOR rec IN\r\n    SELECT\r\n      (elem->>'product_id')::uuid AS item_id,\r\n      NULLIF(elem->>'variation_id', '')::uuid AS variant_id,\r\n      (elem->>'qty')::numeric AS qty_units\r\n    FROM jsonb_array_elements(p_items) elem\r\n  LOOP\r\n    IF rec.item_id IS NULL OR rec.qty_units IS NULL OR rec.qty_units <= 0 THEN\r\n      RAISE EXCEPTION 'each line needs product_id and qty > 0';\r\n    END IF;\r\n\r\n    INSERT INTO public.warehouse_transfer_items(transfer_id, item_id, variant_id, qty_units)\r\n    VALUES (v_transfer_id, rec.item_id, rec.variant_id, rec.qty_units);\r\n\r\n    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)\r\n    VALUES (\r\n      'warehouse',\r\n      p_source,\r\n      rec.item_id,\r\n      rec.variant_id,\r\n      -1 * rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'out')\r\n    );\r\n\r\n    INSERT INTO public.stock_ledger(location_type, warehouse_id, item_id, variant_id, delta_units, reason, context)\r\n    VALUES (\r\n      'warehouse',\r\n      p_destination,\r\n      rec.item_id,\r\n      rec.variant_id,\r\n      rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'in')\r\n    );\r\n  END LOOP;\r\n\r\n  RETURN v_reference;\r\nEND;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(p_source uuid, p_destination uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_reference text;\r\n  v_transfer_id uuid;\r\n  v_variant_key text;\r\nbegin\r\n  if p_source is null or p_destination is null then\r\n    raise exception 'source and destination required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one transfer line is required';\r\n  end if;\r\n\r\n  v_reference := public.next_transfer_reference();\r\n\r\n  insert into public.warehouse_transfers(\r\n    reference_code,\r\n    source_warehouse_id,\r\n    destination_warehouse_id,\r\n    note,\r\n    context,\r\n    created_by\r\n  ) values (\r\n    v_reference,\r\n    p_source,\r\n    p_destination,\r\n    p_note,\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning id into v_transfer_id;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.warehouse_transfer_items(transfer_id, item_id, variant_key, qty_units)\r\n    values (v_transfer_id, rec.item_id, v_variant_key, rec.qty_units);\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_source,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      -1 * rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'out')\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_destination,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'in')\r\n    );\r\n  end loop;\r\n\r\n  return v_reference;\r\nend;\r\n$function$\n",
             "return_type": "text",
             "function_name": "transfer_units_between_warehouses"
         },

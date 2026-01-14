@@ -74,6 +74,15 @@ function cleanUuid(value: unknown): string | null {
 
 type VariantRecord = VariantPayload & { key?: string; id?: string };
 
+type CatalogItemRow = {
+  id: string;
+  name?: string | null;
+  variants?: VariantRecord[] | null;
+  active?: boolean | null;
+};
+
+const asVariantArray = (value: unknown): VariantRecord[] => (Array.isArray(value) ? (value as VariantRecord[]) : []);
+
 function toVariantResponse(itemId: string, variant: VariantRecord) {
   const key = (variant.key ?? variant.id ?? "").toString().trim();
   if (!key) return null;
@@ -109,13 +118,13 @@ export async function GET(request: Request) {
     if (itemId) query = query.eq("id", itemId);
     query = query.eq("active", true);
 
-    const { data, error } = await query;
+    const { data, error } = (await query) as { data: CatalogItemRow[] | null; error: Error | null };
     if (error) throw error;
 
     const variants = (data ?? []).flatMap((item) => {
-      const entries = Array.isArray((item as any).variants) ? ((item as any).variants as VariantRecord[]) : [];
+      const entries = asVariantArray(item.variants);
       return entries
-        .map((variant) => toVariantResponse((item as any).id as string, variant))
+        .map((variant) => toVariantResponse(item.id, variant))
         .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> => Boolean(v));
     });
 
@@ -189,15 +198,15 @@ export async function POST(request: Request) {
     };
 
     const supabase = getServiceClient();
-    const { data: itemRow, error: itemError } = await supabase
+    const { data: itemRow, error: itemError } = (await supabase
       .from("catalog_items")
       .select("variants")
       .eq("id", itemId)
-      .maybeSingle();
+      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
-    const existing = Array.isArray((itemRow as any).variants) ? ((itemRow as any).variants as VariantRecord[]) : [];
+    const existing = asVariantArray(itemRow.variants);
     const newVariant: VariantRecord = { ...payload, key: randomUUID() };
     const nextVariants = [...existing, newVariant];
 
@@ -269,15 +278,15 @@ export async function PUT(request: Request) {
     };
 
     const supabase = getServiceClient();
-    const { data: itemRow, error: itemError } = await supabase
+    const { data: itemRow, error: itemError } = (await supabase
       .from("catalog_items")
       .select("variants")
       .eq("id", itemId)
-      .maybeSingle();
+      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
-    const existing = Array.isArray((itemRow as any).variants) ? ((itemRow as any).variants as VariantRecord[]) : [];
+    const existing = asVariantArray(itemRow.variants);
     const updated = existing.map((variant) => {
       const key = (variant?.key ?? variant?.id ?? "").toString().trim();
       if (key && key === id) {

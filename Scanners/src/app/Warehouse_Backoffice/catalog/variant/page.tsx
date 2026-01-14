@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import styles from "./variant.module.css";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 
 const qtyUnits = ["each", "g", "kg", "mg", "ml", "l"] as const;
@@ -126,24 +127,23 @@ export default function VariantCreatePage() {
   const back = () => router.push("/Warehouse_Backoffice/catalog");
 
   return (
-    <div style={styles.page}>
-      <style>{globalStyles}</style>
-      <main style={styles.shell}>
-        <header style={styles.hero}>
-          <div style={{ flex: 1 }}>
-            <p style={styles.kicker}>Catalog</p>
-            <h1 style={styles.title}>Create Variant</h1>
-            <p style={styles.subtitle}>
+    <div className={styles.page}>
+      <main className={styles.shell}>
+        <header className={styles.hero}>
+          <div className={styles.grow}>
+            <p className={styles.kicker}>Catalog</p>
+            <h1 className={styles.title}>Create Variant</h1>
+            <p className={styles.subtitle}>
               Attach a variant to an existing product. Use clear names so teams know what quantity to type.
             </p>
           </div>
-          <button onClick={back} style={styles.backButton}>
+          <button onClick={back} className={styles.backButton}>
             Back
           </button>
         </header>
 
-        <form style={styles.form} onSubmit={submit}>
-          <div style={styles.fieldGrid}>
+        <form className={styles.form} onSubmit={submit}>
+          <div className={styles.fieldGrid}>
             <Select
               label="Parent product"
               hint="Pick the product this variant belongs to"
@@ -251,7 +251,7 @@ export default function VariantCreatePage() {
             />
           </div>
 
-          <div style={styles.toggleRow}>
+          <div className={styles.toggleRow}>
             <Checkbox
               label="Show in outlet orders"
               hint="If off, this variant stays hidden from outlet ordering"
@@ -267,16 +267,16 @@ export default function VariantCreatePage() {
           </div>
 
           {result && (
-            <div style={{ ...styles.callout, borderColor: result.ok ? "#22c55e" : "#f87171" }}>
+            <div className={`${styles.callout} ${result.ok ? styles.calloutSuccess : styles.calloutError}`}>
               {result.message}
             </div>
           )}
 
-          <div style={styles.actions}>
-            <button type="button" onClick={() => setForm(defaultForm)} style={styles.secondaryButton}>
+          <div className={styles.actions}>
+            <button type="button" onClick={() => setForm(defaultForm)} className={styles.secondaryButton}>
               Clear form
             </button>
-            <button type="submit" style={styles.primaryButton} disabled={saving}>
+            <button type="submit" className={styles.primaryButton} disabled={saving}>
               {saving ? "Saving..." : "Save variant"}
             </button>
           </div>
@@ -299,14 +299,14 @@ type FieldProps = {
 
 function Field({ label, hint, value, onChange, required, type = "text", step, min }: FieldProps) {
   return (
-    <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
-      <small style={styles.hint}>{hint}</small>
+    <label className={styles.field}>
+      <span className={styles.label}>{label}</span>
+      <small className={styles.hint}>{hint}</small>
       <input
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={styles.input}
+        className={styles.input}
         type={type}
         step={step}
         min={min}
@@ -326,10 +326,10 @@ type SelectProps = {
 
 function Select({ label, hint, value, onChange, options, required }: SelectProps) {
   return (
-    <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
-      <small style={styles.hint}>{hint}</small>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={styles.input} required={required}>
+    <label className={styles.field}>
+      <span className={styles.label}>{label}</span>
+      <small className={styles.hint}>{hint}</small>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={styles.input} required={required}>
         {options.map((option) => (
           <option key={option.value || option.label} value={option.value}>
             {option.label}
@@ -349,174 +349,12 @@ type CheckboxProps = {
 
 function Checkbox({ label, hint, checked, onChange }: CheckboxProps) {
   return (
-    <label style={styles.checkbox}>
+    <label className={styles.checkbox}>
       <div>
-        <span style={styles.label}>{label}</span>
-        <small style={styles.hint}>{hint}</small>
+        <span className={styles.label}>{label}</span>
+        <small className={styles.hint}>{hint}</small>
       </div>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input className={styles.checkboxInput} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
     </label>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "radial-gradient(circle at 20% 20%, #182647, #060b16 70%)",
-    display: "flex",
-    justifyContent: "center",
-    padding: "40px 24px 60px",
-    color: "#f4f6ff",
-    fontFamily: '"Space Grotesk", "Segoe UI", system-ui, sans-serif',
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 1200,
-    display: "flex",
-    flexDirection: "column",
-    gap: 24,
-  },
-  hero: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 24,
-    borderRadius: 28,
-    border: "1px solid rgba(255,255,255,0.1)",
-    padding: 22,
-    background: "rgba(6,11,22,0.78)",
-    boxShadow: "0 28px 60px rgba(0,0,0,0.48)",
-  },
-  kicker: {
-    margin: 0,
-    fontSize: 13,
-    letterSpacing: 3,
-    textTransform: "uppercase",
-    color: "#8da2ff",
-  },
-  title: {
-    margin: "8px 0 6px",
-    fontSize: 38,
-    letterSpacing: -0.4,
-    fontWeight: 700,
-  },
-  subtitle: {
-    margin: 0,
-    color: "#c6d2ff",
-    maxWidth: 640,
-    lineHeight: 1.5,
-    fontSize: 16,
-  },
-  backButton: {
-    background: "transparent",
-    color: "#f8fafc",
-    border: "1px solid rgba(255,255,255,0.3)",
-    borderRadius: 999,
-    padding: "10px 18px",
-    fontWeight: 600,
-    letterSpacing: 1,
-    cursor: "pointer",
-  },
-  form: {
-    borderRadius: 22,
-    border: "1px solid rgba(125,211,252,0.35)",
-    background: "rgba(12,17,33,0.88)",
-    padding: 22,
-    boxShadow: "0 24px 48px rgba(0,0,0,0.5)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 20,
-  },
-  fieldGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: 16,
-  },
-  field: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    padding: 12,
-    borderRadius: 16,
-    border: "1.5px solid rgba(125,211,252,0.35)",
-    background: "rgba(17,24,39,0.6)",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#e2e8f0",
-    letterSpacing: 0.3,
-  },
-  hint: {
-    fontSize: 12,
-    color: "#93c5fd",
-  },
-  input: {
-    marginTop: 4,
-    width: "100%",
-    borderRadius: 12,
-    border: "1px solid rgba(34,197,94,0.7)",
-    background: "#0c152b",
-    color: "#f8fafc",
-    padding: "12px 12px",
-    fontSize: 15,
-  },
-  checkbox: {
-    border: "1.5px solid rgba(34,197,94,0.7)",
-    borderRadius: 14,
-    padding: 12,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    background: "rgba(17,24,39,0.6)",
-  },
-  toggleRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: 12,
-  },
-  callout: {
-    border: "1.5px solid",
-    borderRadius: 14,
-    padding: 12,
-    background: "rgba(12,17,33,0.8)",
-    color: "#f8fafc",
-    fontWeight: 600,
-  },
-  actions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  primaryButton: {
-    background: "linear-gradient(90deg, #22c55e, #16a34a)",
-    color: "#0b1020",
-    border: "1px solid #22c55e",
-    borderRadius: 14,
-    padding: "12px 18px",
-    fontWeight: 800,
-    letterSpacing: 0.5,
-    cursor: "pointer",
-    minWidth: 150,
-  },
-  secondaryButton: {
-    background: "transparent",
-    color: "#f8fafc",
-    border: "1px solid rgba(255,255,255,0.35)",
-    borderRadius: 14,
-    padding: "12px 18px",
-    fontWeight: 700,
-    letterSpacing: 0.5,
-    cursor: "pointer",
-    minWidth: 120,
-  },
-};
-
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-input, select, button { font-family: inherit; }
-input:focus, select:focus { outline: 2px solid #22c55e; }
-button:hover { transform: translateY(-1px); }
-`;

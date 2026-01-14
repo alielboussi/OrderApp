@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import styles from "./purchases.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import type { Warehouse } from "@/types/warehouse";
 import type { WarehousePurchase } from "@/types/purchases";
@@ -277,23 +277,22 @@ export default function WarehousePurchasesWeb() {
   }
 
   return (
-    <div style={styles.page}>
-      <style>{globalStyles}</style>
-      <main style={styles.shell}>
-        <header style={styles.header}>
-          <button style={styles.primaryBtn} onClick={handleBack}>
+    <div className={styles.page}>
+      <main className={styles.shell}>
+        <header className={styles.header}>
+          <button className={styles.primaryBtn} onClick={handleBack}>
             Back
           </button>
-          <div style={{ flex: 1 }} />
+          <div className={styles.grow} />
           <button
-            style={{ ...styles.iconBtn, ...(loading ? styles.iconBtnSpin : null) }}
+            className={`${styles.iconBtn} ${loading ? styles.iconBtnSpin : ""}`}
             onClick={() => setManualRefreshTick((v) => v + 1)}
             title="Refresh purchases"
           >
             Refresh
           </button>
           <button
-            style={styles.linkBtn}
+            className={styles.linkBtn}
             onClick={() => {
               allowNavRef.current = true;
               window.location.href = "/";
@@ -303,20 +302,20 @@ export default function WarehousePurchasesWeb() {
           </button>
         </header>
 
-        <section style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={styles.h1}>Warehouse Purchases</h1>
-          <p style={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
-          <p style={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
+        <section className={styles.stackXs}>
+          <h1 className={styles.h1}>Warehouse Purchases</h1>
+          <p className={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
+          <p className={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
         </section>
 
         {loading && (
-          <div style={styles.progressBarWrap}>
-            <div style={styles.progressBar} />
+          <div className={styles.progressBarWrap}>
+            <div className={styles.progressBar} />
           </div>
         )}
 
-        <section style={styles.panel}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <section className={styles.panel}>
+          <div className={styles.stackLg}>
             <LabeledSelect
               label="Warehouse"
               value={lockedFromActive ? lockedFromId : warehouseId}
@@ -325,24 +324,24 @@ export default function WarehousePurchasesWeb() {
               placeholder={lockedFromActive ? "Locked to source warehouse" : "Any warehouse"}
               locked={lockedFromActive}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className={styles.gridTwo}>
               <LabeledDate label="From date" value={formatDateRangeValue(startDate)} onChange={setStartDate} />
               <LabeledDate label="To date" value={formatDateRangeValue(endDate)} onChange={setEndDate} />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={styles.label}>Search everything</label>
-              <div style={styles.searchBox}>
+            <div className={styles.stackSm}>
+              <label className={styles.label}>Search everything</label>
+              <div className={styles.searchBox}>
                 <input
-                  style={styles.searchInput}
+                  className={styles.searchInput}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Warehouse, supplier, reference, product"
                 />
               </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className={styles.pillRow}>
                 <button
-                  style={styles.dangerPill}
+                  className={styles.dangerPill}
                   onClick={() => {
                   setWarehouseId(lockedFromActive ? lockedFromId : "");
                     setStartDate("");
@@ -355,38 +354,32 @@ export default function WarehousePurchasesWeb() {
                 </button>
               </div>
             </div>
-            {error && <p style={{ color: "#FF8B99", fontSize: 14 }}>{error}</p>}
-            <div style={styles.listShell}>
+            {error && <p className={styles.errorText}>{error}</p>}
+            <div className={styles.listShell}>
               {loading && purchases.length === 0 ? (
-                <div style={styles.centered}>Loading purchases...</div>
+                <div className={styles.centered}>Loading purchases...</div>
               ) : filteredPurchases.length === 0 ? (
-                <div style={styles.centered}>No purchases match the current filters.</div>
+                <div className={styles.centered}>No purchases match the current filters.</div>
               ) : (
-                <div style={styles.listScroll}>
+                <div className={styles.listScroll}>
                   {filteredPurchases.map((p) => {
                     const warehouseName = p.warehouse?.name || warehouseMap.get(p.warehouse_id ?? "") || p.warehouse_id || "Warehouse";
                     const supplierName = p.supplier?.name || "Supplier";
                     const expanded = expandedId === p.id;
                     return (
-                      <article key={p.id} style={styles.card}>
-                        <div style={styles.cardHeader}>
-                          <div style={{ flex: 1 }}>
-                            <p style={styles.cardTitle}>{warehouseName}</p>
-                            <p style={styles.cardSub}>{formatTimestamp(p.recorded_at)}</p>
-                            {p.reference_code ? <p style={styles.cardSub}>Ref: {p.reference_code}</p> : null}
-                            <p style={styles.cardSub}>Supplier: {supplierName}</p>
+                      <article key={p.id} className={styles.card}>
+                        <div className={styles.cardHeader}>
+                          <div className={styles.grow}>
+                            <p className={styles.cardTitle}>{warehouseName}</p>
+                            <p className={styles.cardSub}>{formatTimestamp(p.recorded_at)}</p>
+                            {p.reference_code ? <p className={styles.cardSub}>Ref: {p.reference_code}</p> : null}
+                            <p className={styles.cardSub}>Supplier: {supplierName}</p>
                           </div>
-                          <span
-                            style={{
-                              ...styles.statusChip,
-                              backgroundColor: "#22c55e33",
-                              borderColor: "#22c55e",
-                            }}
-                          >
+                          <span className={`${styles.statusChip} ${styles.statusChipComplete}`}>
                             Received
                           </span>
                           <button
-                            style={styles.iconBtn}
+                            className={styles.iconBtn}
                             onClick={() => toggleExpand(p.id)}
                             aria-label="Toggle expand"
                           >
@@ -394,19 +387,19 @@ export default function WarehousePurchasesWeb() {
                           </button>
                         </div>
 
-                        <p style={styles.cardNote}>{p.note || "No note"}</p>
+                        <p className={styles.cardNote}>{p.note || "No note"}</p>
 
-                        <div style={styles.itemsList}>
+                        <div className={styles.itemsList}>
                           {(expanded ? p.items : p.items.slice(0, 3)).map((item) => {
                             const lineTotal = item.unit_cost != null ? item.unit_cost * item.qty : null;
                             return (
-                              <div key={item.id} style={styles.itemRow}>
+                              <div key={item.id} className={styles.itemRow}>
                                 <div>
-                                  <p style={styles.itemTitle}>{item.item?.name ?? "Item"}</p>
-                                  {item.variant?.name ? <p style={styles.itemSub}>{item.variant.name}</p> : null}
-                                  <p style={styles.itemSub}>Qty: {item.qty}</p>
-                                  {item.unit_cost != null ? <p style={styles.itemSub}>Unit cost: {currency(item.unit_cost)}</p> : null}
-                                  {lineTotal != null ? <p style={styles.itemSub}>Line total: {currency(lineTotal)}</p> : null}
+                                  <p className={styles.itemTitle}>{item.item?.name ?? "Item"}</p>
+                                  {item.variant?.name ? <p className={styles.itemSub}>{item.variant.name}</p> : null}
+                                  <p className={styles.itemSub}>Qty: {item.qty}</p>
+                                  {item.unit_cost != null ? <p className={styles.itemSub}>Unit cost: {currency(item.unit_cost)}</p> : null}
+                                  {lineTotal != null ? <p className={styles.itemSub}>Line total: {currency(lineTotal)}</p> : null}
                                 </div>
                               </div>
                             );
@@ -414,7 +407,7 @@ export default function WarehousePurchasesWeb() {
                         </div>
 
                         {p.items.length > 3 && (
-                          <button style={styles.expandBtn} onClick={() => toggleExpand(p.id)}>
+                          <button className={styles.expandBtn} onClick={() => toggleExpand(p.id)}>
                             {expanded ? "Hide items" : `Show all ${p.items.length} items`}
                           </button>
                         )}
@@ -447,14 +440,19 @@ function LabeledSelect({
   locked?: boolean;
 }) {
   const lockSelection = Boolean(locked && options.length <= 1);
+  const selectId = useId();
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={styles.label}>{label}</label>
+    <div className={styles.fieldStack}>
+      <label className={styles.label} htmlFor={selectId}>
+        {label}
+      </label>
       <select
-        style={styles.select}
+        className={styles.select}
+        id={selectId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={lockSelection}
+        title={label}
       >
         {lockSelection ? null : <option value="">{placeholder || "Select"}</option>}
         {options.map((opt) => (
@@ -468,255 +466,20 @@ function LabeledSelect({
 }
 
 function LabeledDate({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const inputId = useId();
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={styles.label}>{label}</label>
-      <input style={styles.dateInput} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+    <div className={styles.fieldStack}>
+      <label className={styles.label} htmlFor={inputId}>
+        {label}
+      </label>
+      <input
+        className={styles.dateInput}
+        id={inputId}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        title={label}
+      />
     </div>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "radial-gradient(circle at 20% 20%, #182647, #060b16 70%)",
-    display: "flex",
-    justifyContent: "center",
-    padding: "40px 24px",
-    color: "#f4f6ff",
-    fontFamily: '"Space Grotesk", "Segoe UI", system-ui, sans-serif',
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 1280,
-    display: "flex",
-    flexDirection: "column",
-    gap: 24,
-  },
-  header: {
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-  },
-  primaryBtn: {
-    background: "#22c55e",
-    border: "1px solid #22c55e",
-    color: "#0b1020",
-    borderRadius: 14,
-    padding: "10px 14px",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  linkBtn: {
-    background: "transparent",
-    border: "1px solid #ffffff33",
-    color: "#e5edff",
-    borderRadius: 14,
-    padding: "10px 14px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  iconBtn: {
-    background: "#0f172a",
-    border: "1px solid #1f2a44",
-    color: "#e5edff",
-    borderRadius: 12,
-    padding: "10px 14px",
-    cursor: "pointer",
-    transition: "transform 160ms ease",
-  },
-  iconBtnSpin: {
-    animation: "spin 1s linear infinite",
-  },
-  h1: {
-    margin: 0,
-    fontSize: 32,
-    letterSpacing: -0.5,
-  },
-  subtle: {
-    margin: 0,
-    color: "#c6d2ff",
-    fontSize: 14,
-  },
-  panel: {
-    background: "rgba(6,11,22,0.75)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 24,
-    padding: 20,
-    boxShadow: "0 20px 40px rgba(0,0,0,0.45)",
-  },
-  label: {
-    fontSize: 13,
-    color: "#c7d2fe",
-    letterSpacing: 0.4,
-  },
-  select: {
-    background: "#0f172a",
-    border: "1px solid #1f2a44",
-    color: "#e5edff",
-    borderRadius: 12,
-    padding: "12px 12px",
-    minHeight: 44,
-  },
-  dateInput: {
-    background: "#0f172a",
-    border: "1px solid #1f2a44",
-    color: "#e5edff",
-    borderRadius: 12,
-    padding: "12px 12px",
-    minHeight: 44,
-    fontSize: 16,
-    fontWeight: 700,
-    colorScheme: "dark",
-  },
-  searchBox: {
-    background: "#0f172a",
-    border: "1px solid #1f2a44",
-    borderRadius: 12,
-    padding: "10px 12px",
-  },
-  searchInput: {
-    width: "100%",
-    background: "transparent",
-    border: "none",
-    color: "#e5edff",
-    fontSize: 16,
-    outline: "none",
-  },
-  dangerPill: {
-    background: "#1f2937",
-    border: "1px solid #22c55e",
-    color: "#22c55e",
-    borderRadius: 999,
-    padding: "10px 16px",
-    cursor: "pointer",
-  },
-  listShell: {
-    border: "1px solid rgba(255,255,255,0.05)",
-    borderRadius: 18,
-    background: "rgba(15,23,42,0.75)",
-    minHeight: 180,
-  },
-  listScroll: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 16,
-    padding: 16,
-    maxHeight: "70vh",
-    overflow: "auto",
-  },
-  centered: {
-    padding: 24,
-    textAlign: "center",
-    color: "#cbd5f5",
-  },
-  card: {
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 18,
-    padding: 16,
-    background: "linear-gradient(135deg, rgba(27,31,46,0.9), rgba(20,24,39,0.9))",
-  },
-  cardHeader: {
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-  },
-  cardTitle: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 700,
-  },
-  cardSub: {
-    margin: "4px 0",
-    color: "#cbd5f5",
-    fontSize: 13,
-  },
-  statusChip: {
-    borderRadius: 999,
-    padding: "6px 10px",
-    border: "1px solid #22c55e",
-    color: "#22c55e",
-    fontWeight: 700,
-    letterSpacing: 0.5,
-  },
-  cardNote: {
-    margin: "8px 0 12px",
-    color: "#cbd5f5",
-    fontSize: 14,
-  },
-  itemsList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
-  itemRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 12,
-    padding: "10px 12px",
-    background: "rgba(15,23,42,0.6)",
-  },
-  itemTitle: {
-    margin: 0,
-    fontWeight: 600,
-  },
-  itemSub: {
-    margin: "4px 0 0",
-    color: "#cbd5f5",
-    fontSize: 13,
-  },
-  qtyBadge: {
-    background: "#22c55e",
-    color: "#0b1020",
-    borderRadius: 12,
-    padding: "8px 10px",
-    fontWeight: 800,
-  },
-  expandBtn: {
-    marginTop: 10,
-    background: "transparent",
-    border: "1px solid #ffffff33",
-    color: "#e5edff",
-    borderRadius: 12,
-    padding: "8px 12px",
-    cursor: "pointer",
-  },
-  progressBarWrap: {
-    width: "100%",
-    height: 4,
-    background: "#0f172a",
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-  progressBar: {
-    width: "40%",
-    height: "100%",
-    background: "linear-gradient(90deg, #22c55e, #4ade80)",
-    animation: "loading 1s linear infinite",
-  },
-};
-
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-
-button {
-  background: none;
-  border: none;
-}
-
-button:hover {
-  transform: translateY(-1px);
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes loading {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
-}
-`;

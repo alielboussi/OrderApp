@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import styles from "./transfers.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 
 // Types approximated from the Android WarehousesAdminScreen
@@ -307,23 +307,22 @@ export default function WarehouseTransfersWeb() {
   }
 
   return (
-    <div style={styles.page}>
-      <style>{globalStyles}</style>
-      <main style={styles.shell}>
-        <header style={styles.header}>
-          <button style={styles.primaryBtn} onClick={handleBack}>
+    <div className={styles.page}>
+      <main className={styles.shell}>
+        <header className={styles.header}>
+          <button className={styles.primaryBtn} onClick={handleBack}>
             Back
           </button>
-          <div style={{ flex: 1 }} />
+          <div className={styles.grow} />
           <button
-            style={{ ...styles.iconBtn, ...(loading ? styles.iconBtnSpin : null) }}
+            className={`${styles.iconBtn} ${loading ? styles.iconBtnSpin : ""}`}
             onClick={() => setManualRefreshTick((v) => v + 1)}
             title="Refresh transfers"
           >
             Refresh
           </button>
           <button
-            style={styles.linkBtn}
+            className={styles.linkBtn}
             onClick={() => {
               allowNavRef.current = true;
               window.location.href = "/";
@@ -333,21 +332,21 @@ export default function WarehouseTransfersWeb() {
           </button>
         </header>
 
-        <section style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={styles.h1}>Warehouse Transfers</h1>
-          <p style={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
-          <p style={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
+        <section className={styles.stackXs}>
+          <h1 className={styles.h1}>Warehouse Transfers</h1>
+          <p className={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
+          <p className={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
         </section>
 
         {loading && (
-          <div style={styles.progressBarWrap}>
-            <div style={styles.progressBar} />
+          <div className={styles.progressBarWrap}>
+            <div className={styles.progressBar} />
           </div>
         )}
 
-        <section style={styles.panel}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <section className={styles.panel}>
+          <div className={styles.stackLg}>
+            <div className={styles.gridTwo}>
               <LabeledSelect
                 label="From warehouse"
                 value={lockedFromActive ? lockedFromId : sourceId}
@@ -364,24 +363,24 @@ export default function WarehouseTransfersWeb() {
                 placeholder="Any warehouse"
               />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className={styles.gridTwo}>
               <LabeledDate label="From date" value={formatDateRangeValue(startDate)} onChange={setStartDate} />
               <LabeledDate label="To date" value={formatDateRangeValue(endDate)} onChange={setEndDate} />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={styles.label}>Search everything</label>
-              <div style={styles.searchBox}>
+            <div className={styles.stackSm}>
+              <label className={styles.label}>Search everything</label>
+              <div className={styles.searchBox}>
                 <input
-                  style={styles.searchInput}
+                  className={styles.searchInput}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Warehouse, product, SKU, note"
                 />
               </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className={styles.pillRow}>
                 <button
-                  style={styles.dangerPill}
+                  className={styles.dangerPill}
                   onClick={() => {
                     setSourceId(lockedFromActive ? lockedFromId : "");
                     setDestId("");
@@ -395,14 +394,14 @@ export default function WarehouseTransfersWeb() {
                 </button>
               </div>
             </div>
-            {error && <p style={{ color: "#FF8B99", fontSize: 14 }}>{error}</p>}
-            <div style={styles.listShell}>
+            {error && <p className={styles.errorText}>{error}</p>}
+            <div className={styles.listShell}>
               {loading && transfers.length === 0 ? (
-                <div style={styles.centered}>Loading transfers...</div>
+                <div className={styles.centered}>Loading transfers...</div>
               ) : filteredTransfers.length === 0 ? (
-                <div style={styles.centered}>No transfers match the current filters.</div>
+                <div className={styles.centered}>No transfers match the current filters.</div>
               ) : (
-                <div style={styles.listScroll}>
+                <div className={styles.listScroll}>
                   {filteredTransfers.map((t) => {
                     const sourceName =
                       warehouseMap.get(t.source_location_id ?? "") ||
@@ -418,54 +417,46 @@ export default function WarehouseTransfersWeb() {
                     const statusValue = t.status?.toLowerCase() ?? "";
                     const isCompleted = statusValue === "completed";
                     return (
-                      <article key={t.id} style={styles.card}>
-                        <div style={styles.cardHeader}>
-                          <div style={{ flex: 1 }}>
-                            <p style={styles.cardTitle}>
-                              {sourceName} <span style={{ color: "#ffffff66" }}>-</span> {destName}
+                      <article key={t.id} className={styles.card}>
+                        <div className={styles.cardHeader}>
+                          <div className={styles.grow}>
+                            <p className={styles.cardTitle}>
+                              {sourceName} <span className={styles.muted}>-</span> {destName}
                             </p>
-                            <p style={styles.cardSub}>{formatTimestamp(t.created_at)}</p>
+                            <p className={styles.cardSub}>{formatTimestamp(t.created_at)}</p>
                             {t.reference_code ? (
-                              <p style={styles.cardSub}>Ref: {t.reference_code}</p>
+                              <p className={styles.cardSub}>Ref: {t.reference_code}</p>
                             ) : null}
                           </div>
-                          <span
-                            style={{
-                              ...styles.statusChip,
-                              backgroundColor: isCompleted ? "#FF1B2D33" : "transparent",
-                              borderColor: "#FF1B2D",
-                            }}
-                          >
+                          <span className={`${styles.statusChip} ${isCompleted ? styles.statusChipComplete : ""}`}>
                             {titleCase(t.status)}
                           </span>
                           <button
-                            style={styles.iconBtn}
+                            className={styles.iconBtn}
                             onClick={() => toggleExpand(t.id)}
                             aria-label="Toggle expand"
                           >
                             {expanded ? "^" : "v"}
                           </button>
                         </div>
-                        {t.note && <p style={styles.cardNote}>Note: {t.note}</p>}
-                        {t.completed_at && (
-                          <p style={styles.cardSub}>Completed {formatTimestamp(t.completed_at)}</p>
-                        )}
+                        {t.note && <p className={styles.cardNote}>Note: {t.note}</p>}
+                        {t.completed_at && <p className={styles.cardSub}>Completed {formatTimestamp(t.completed_at)}</p>}
                         {expanded && (
-                          <div style={styles.itemsBlock}>
+                          <div className={styles.itemsBlock}>
                             {t.items?.map((item) => (
-                              <div key={item.id} style={styles.itemRow}>
+                              <div key={item.id} className={styles.itemRow}>
                                 <div>
-                                  <p style={styles.itemName}>
+                                  <p className={styles.itemName}>
                                     {item.product?.name ?? "Unknown product"}
                                     {item.variation?.name ? (
-                                      <span style={styles.itemSub}> - {item.variation.name}</span>
+                                      <span className={styles.itemSub}> - {item.variation.name}</span>
                                     ) : null}
                                   </p>
-                                    <p style={styles.itemSub}>{item.product_id ?? item.variant_key ?? "Item"}</p>
+                                  <p className={styles.itemSub}>{item.product_id ?? item.variant_key ?? "Item"}</p>
                                 </div>
-                                <div style={{ textAlign: "right" }}>
-                                  <p style={styles.itemQty}>{item.qty}</p>
-                                  <p style={styles.itemSub}>{item.variation?.uom ?? item.product?.uom ?? "units"}</p>
+                                <div className={styles.textRight}>
+                                  <p className={styles.itemQty}>{item.qty}</p>
+                                  <p className={styles.itemSub}>{item.variation?.uom ?? item.product?.uom ?? "units"}</p>
                                 </div>
                               </div>
                             ))}
@@ -477,7 +468,7 @@ export default function WarehouseTransfersWeb() {
                 </div>
               )}
             </div>
-            <p style={styles.footerText}>Syncs automatically every 5 minutes - Use refresh to pull now</p>
+            <p className={styles.footerText}>Syncs automatically every 5 minutes - Use refresh to pull now</p>
           </div>
         </section>
       </main>
@@ -496,12 +487,12 @@ function LabeledSelect(props: {
   const { label, value, onChange, options, placeholder, locked } = props;
   const lockSelection = Boolean(locked && options.length <= 1);
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={styles.label}>{label}</span>
+    <label className={styles.fieldStack}>
+      <span className={styles.label}>{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={styles.select}
+        className={styles.select}
         disabled={lockSelection}
       >
         {lockSelection ? null : <option value="">{placeholder ?? "Any"}</option>}
@@ -518,229 +509,14 @@ function LabeledSelect(props: {
 function LabeledDate(props: { label: string; value: string; onChange: (v: string) => void }) {
   const { label, value, onChange } = props;
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={styles.label}>{label}</span>
+    <label className={styles.fieldStack}>
+      <span className={styles.label}>{label}</span>
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={styles.dateInput}
+        className={styles.dateInput}
       />
     </label>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    minWidth: "320px",
-    background: "radial-gradient(circle at top, #111827 0%, #050a1b 60%)",
-    color: "#fff",
-    display: "flex",
-    justifyContent: "center",
-    padding: "24px",
-  },
-  shell: {
-    width: "100%",
-    maxWidth: "1200px",
-    minHeight: "1080px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "18px",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "16px 18px",
-    borderRadius: "24px",
-    background: "#131C35",
-    border: "1px solid rgba(255,255,255,0.1)",
-    boxShadow: "0 18px 50px rgba(0,0,0,0.65)",
-  },
-  h1: { fontSize: 28, fontWeight: 700, margin: 0 },
-  subtle: { color: "#ffffffb3", fontSize: 14, margin: 0 },
-  primaryBtn: {
-    background: "linear-gradient(100deg, #ff1b2d, #ff445a)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 999,
-    padding: "10px 20px",
-    fontWeight: 700,
-    cursor: "pointer",
-    boxShadow: "0 4px 20px rgba(255,27,45,0.35)",
-  },
-  iconBtn: {
-    background: "transparent",
-    border: "1px solid rgba(255,255,255,0.3)",
-    color: "#fff",
-    borderRadius: "999px",
-    padding: 10,
-    cursor: "pointer",
-    minWidth: 40,
-  },
-  iconBtnSpin: {
-    animation: "spin 1s linear infinite",
-  },
-  linkBtn: {
-    background: "transparent",
-    border: "none",
-    color: "#ffffffcc",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  progressBarWrap: {
-    width: "100%",
-    height: 8,
-    borderRadius: 8,
-    overflow: "hidden",
-    background: "rgba(255,255,255,0.08)",
-  },
-  progressBar: {
-    width: "33%",
-    height: "100%",
-    background: "#FF1B2D",
-    animation: "pulse 1.2s ease-in-out infinite",
-  },
-  panel: {
-    borderRadius: 24,
-    border: "1px solid rgba(255,255,255,0.1)",
-    background: "#131C35",
-    boxShadow: "0 25px 70px rgba(0,0,0,0.7)",
-    padding: 24,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: 700,
-    letterSpacing: 0.08,
-    textTransform: "uppercase",
-    color: "#ffffffb3",
-  },
-  select: {
-    width: "100%",
-    borderRadius: 18,
-    border: "1.5px solid #ff1b2d",
-    padding: "12px 14px",
-    background: "#0c152b",
-    color: "#fff",
-    fontSize: 14,
-  },
-  dateInput: {
-    width: "100%",
-    borderRadius: 18,
-    border: "1.5px solid #ff1b2d",
-    padding: "12px 14px",
-    background: "#0c152b",
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: 700,
-    colorScheme: "dark",
-  },
-  searchBox: {
-    border: "1.5px solid #ff1b2d",
-    borderRadius: 18,
-    padding: "10px 14px",
-    background: "#0c152b",
-  },
-  searchInput: {
-    width: "100%",
-    background: "transparent",
-    border: "none",
-    outline: "none",
-    color: "#fff",
-    fontSize: 14,
-  },
-  dangerPill: {
-    border: "1px solid rgba(255,27,45,0.6)",
-    background: "rgba(255,27,45,0.15)",
-    color: "#fff",
-    padding: "10px 16px",
-    borderRadius: 999,
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-  listShell: {
-    minHeight: 480,
-    borderRadius: 20,
-    border: "1px solid rgba(255,255,255,0.05)",
-    background: "#0c152b",
-    padding: 12,
-  },
-  listScroll: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    maxHeight: 520,
-    overflowY: "auto",
-    paddingRight: 6,
-  },
-  centered: {
-    height: 480,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#ffffffb3",
-  },
-  card: {
-    borderRadius: 20,
-    border: "1.5px solid rgba(255,27,45,0.6)",
-    background: "#131C35",
-    padding: 16,
-    boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
-  },
-  cardHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-  cardTitle: { margin: 0, fontSize: 18, fontWeight: 700 },
-  cardSub: { margin: 0, fontSize: 13, color: "#ffffff99" },
-  statusChip: {
-    border: "1px solid #ff1b2d",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 11,
-    textTransform: "uppercase",
-    fontWeight: 700,
-    color: "#fff",
-  },
-  cardNote: { marginTop: 8, marginBottom: 0, color: "#ffffffcc", fontSize: 13 },
-  itemsBlock: {
-    marginTop: 12,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    background: "rgba(0,0,0,0.2)",
-    padding: 10,
-    borderRadius: 12,
-  },
-  itemRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  itemName: { margin: 0, fontSize: 14, fontWeight: 600 },
-  itemSub: { margin: 0, fontSize: 12, color: "#ffffff80" },
-  itemQty: { margin: 0, fontSize: 16, fontWeight: 700 },
-  footerText: {
-    color: "#ffffff80",
-    fontSize: 12,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-};
-
-const globalStyles = `
-@keyframes pulse {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(50%); }
-  100% { transform: translateX(200%); }
-}
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #ff1b2d; border-radius: 999px; }
-`;
