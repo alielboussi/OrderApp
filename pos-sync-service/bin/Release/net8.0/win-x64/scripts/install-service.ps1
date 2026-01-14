@@ -14,7 +14,6 @@ $csprojPath = Resolve-Path (Join-Path $PSScriptRoot "..\..\pos-sync-service.cspr
 
 # If we cannot find the project (e.g., running on outlet machine), default to skip publish.
 if (-not $SkipPublish -and -not $csprojPath) {
-    Write-Warn "pos-sync-service.csproj not found; skipping publish. Pass -SkipPublish to silence this warning."
     $SkipPublish = $true
 }
 
@@ -40,7 +39,7 @@ if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
 
 $svcName = "TimeSettingsLock"
 $svcExe = Join-Path $InstallPath "PosSyncService.exe"
-$binArgs = "\"$svcExe\" --run-as-service --contentRoot \"$ConfigRoot\""
+$binArgs = '"' + $svcExe + '" --run-as-service --contentRoot "' + $ConfigRoot + '"'
 
 # 4) Install service
 if (Get-Service -Name $svcName -ErrorAction SilentlyContinue) {

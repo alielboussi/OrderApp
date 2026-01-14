@@ -11,6 +11,7 @@ export type WarehouseStockRow = {
   warehouse_name?: string | null;
   product_id: string;
   product_name: string;
+  variant_key: string | null;
   variation_id: string | null;
   variation_name: string | null;
   qty: number;

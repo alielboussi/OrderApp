@@ -19,9 +19,10 @@ Config
    - Sync.PollSeconds / Sync.BatchSize: adjust if needed.
 
 Install as Windows Service
-1) In Admin PowerShell, cd to this folder.
-2) Run:
-   pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\PosSyncService" -ConfigRoot "C:\\Users\\<you>\\AppData\\Local\\XtZ"
+1) Open PowerShell as Administrator, cd to this folder.
+2) Run (Windows PowerShell):
+   powershell -ExecutionPolicy Bypass -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\PosSyncService" -ConfigRoot "C:\\Users\\<aliel>\\AppData\\Local\\XtZ"
+   - Replace <you> with your Windows user folder name.
    - Change ConfigRoot if you want appsettings.json elsewhere. If the file is missing there, the script copies this template for you to edit.
 3) The service name is TimeSettingsLock (shows as "Time Settings Lock" in Services). It starts automatically.
 

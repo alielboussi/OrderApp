@@ -7,6 +7,7 @@ export type DamageItem = {
   id: string;
   damage_id?: string | null;
   item_id?: string | null;
+  variant_key?: string | null;
   variant_id?: string | null;
   qty: number;
   note?: string | null;

@@ -396,7 +396,7 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class PlaceOrderItem(
         @SerialName("product_id") val productId: String? = null,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variation_key") val variantKey: String? = null,
         val name: String,
         @SerialName("receiving_uom")
         @JsonNames("uom")
@@ -610,10 +610,9 @@ class SupabaseProvider(context: Context) {
         val id: String,
         @SerialName("movement_id") val movementId: String,
         @SerialName("product_id") val productId: String,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
         val qty: Double = 0.0,
-        val product: StockMovementReferenceName? = null,
-        val variation: StockMovementReferenceName? = null
+        val product: StockMovementReferenceName? = null
     )
 
     @Serializable
@@ -641,8 +640,8 @@ class SupabaseProvider(context: Context) {
         @SerialName("warehouse_name") val warehouseName: String,
         @SerialName("product_id") val productId: String,
         @SerialName("product_name") val productName: String,
-        @SerialName("variation_id") val variationId: String? = null,
-        @SerialName("variation_name") val variationName: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
+        @SerialName("variant_name") val variantName: String? = null,
         @SerialName("pack_label") val packLabel: String,
         @SerialName("packs_ordered") val packsOrdered: Double,
         @SerialName("units_per_pack") val unitsPerPack: Double,
@@ -656,7 +655,7 @@ class SupabaseProvider(context: Context) {
         val id: String,
         @SerialName("warehouse_id") val warehouseId: String,
         @SerialName("product_id") val productId: String,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
         @SerialName("counted_qty") val countedQty: Double,
         val delta: Double,
         val note: String? = null,
@@ -669,7 +668,7 @@ class SupabaseProvider(context: Context) {
         val id: String,
         @SerialName("outlet_id") val outletId: String,
         @SerialName("product_id") val productId: String,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
         @SerialName("qty_units") val qtyUnits: Double,
         @SerialName("qty_cases") val qtyCases: Double? = null,
         @SerialName("sale_reference") val saleReference: String? = null,
@@ -694,7 +693,7 @@ class SupabaseProvider(context: Context) {
         val id: String,
         @SerialName("period_id") val periodId: String,
         @SerialName("product_id") val productId: String,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
         @SerialName("opening_qty") val openingQty: Double = 0.0,
         @SerialName("ordered_qty") val orderedQty: Double = 0.0,
         @SerialName("pos_sales_qty") val posSalesQty: Double = 0.0,
@@ -710,7 +709,7 @@ class SupabaseProvider(context: Context) {
         @SerialName("outlet_id") val outletId: String,
         @SerialName("period_id") val periodId: String? = null,
         @SerialName("product_id") val productId: String,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
         @SerialName("counted_qty") val countedQty: Double,
         @SerialName("snapshot_kind") val snapshotKind: String,
         val note: String? = null,
@@ -743,13 +742,31 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    private data class VariantJson(
+        val key: String? = null,
+        val name: String = "",
+        val sku: String? = null,
+        val cost: Double? = null,
+        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true,
+        @SerialName("purchase_pack_unit") val uom: String? = null,
+        @SerialName("consumption_uom") val consumptionUom: String? = null,
+        @SerialName("units_per_purchase_pack") val packageContains: Double? = null
+    )
+
+    @Serializable
+    private data class CatalogItemVariantsDto(
+        val id: String,
+        val variants: List<VariantJson> = emptyList()
+    )
+
+    @Serializable
     data class WarehouseStockRowDto(
         @SerialName("warehouse_id") val warehouseId: String,
         @SerialName("warehouse_name") val warehouseName: String,
         @SerialName("product_id") val productId: String,
         @SerialName("product_name") val productName: String,
-        @SerialName("variation_id") val variationId: String? = null,
-        @SerialName("variation_name") val variationName: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
+        @SerialName("variant_name") val variantName: String? = null,
         val qty: Double = 0.0
     )
 
@@ -886,9 +903,8 @@ class SupabaseProvider(context: Context) {
         urlBuilder.append("?select=")
         urlBuilder.append(
             "id,status,note,created_at,completed_at,source_location_id,dest_location_id," +
-                "items:stock_movement_items(id,movement_id,product_id,variation_id,qty," +
-                "product:catalog_items!stock_movement_items_product_id_fkey(name,uom,sku,cost)," +
-                "variation:catalog_variants!stock_movement_items_variation_id_fkey(name,uom,sku))"
+                "items:stock_movement_items(id,movement_id,product_id,variant_key,qty," +
+                "product:catalog_items!stock_movement_items_product_id_fkey(name,uom,sku,cost))"
         )
         urlBuilder.append("&source_location_type=eq.warehouse&dest_location_type=eq.warehouse")
         sourceWarehouseId?.takeIf { it.isNotBlank() }?.let {
@@ -1072,23 +1088,49 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&outlet_order_visible=eq.true&select=id,item_id,name,purchase_pack_unit,consumption_uom,cost,units_per_purchase_pack,sku,outlet_order_visible&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_items?id=eq.$productId&select=id,variants&limit=1"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleVariation.serializer()), txt)
+        val items = Json { ignoreUnknownKeys = true }
+            .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
+        val item = items.firstOrNull() ?: return emptyList()
+        return item.variants.mapNotNull { toSimpleVariation(productId, it) }
     }
 
     suspend fun listAllVariations(jwt: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/catalog_variants?active=eq.true&outlet_order_visible=eq.true&select=id,item_id,name,purchase_pack_unit,consumption_uom,cost,units_per_purchase_pack,sku,outlet_order_visible&order=item_id.asc,name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_items?select=id,variants&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleVariation.serializer()), txt)
+        val items = Json { ignoreUnknownKeys = true }
+            .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
+        return items.flatMap { item ->
+            item.variants.mapNotNull { variant -> toSimpleVariation(item.id, variant) }
+        }
+    }
+
+    private fun toSimpleVariation(productId: String, variant: VariantJson): SimpleVariation? {
+        val key = variant.key?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
+        if (!variant.outletOrderVisible) return null
+        val uom = variant.uom ?: "unit"
+        val consumption = variant.consumptionUom ?: variant.uom ?: "each"
+        val name = variant.name.ifBlank { "Base" }
+        return SimpleVariation(
+            id = key,
+            productId = productId,
+            name = name,
+            uom = uom,
+            consumptionUom = consumption,
+            cost = variant.cost,
+            packageContains = variant.packageContains,
+            sku = variant.sku,
+            outletOrderVisible = variant.outletOrderVisible
+        )
     }
 
     suspend fun fetchWarehouseStock(jwt: String, warehouseId: String, search: String? = null): WarehouseStockResponse {
@@ -1114,7 +1156,7 @@ class SupabaseProvider(context: Context) {
     suspend fun fetchStocktakeLog(jwt: String, warehouseId: String?, limit: Int = 200): List<StocktakeLogRow> {
         val urlBuilder = StringBuilder()
         urlBuilder.append("$supabaseUrl/rest/v1/warehouse_stocktakes")
-        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,counted_qty,delta,note,recorded_by,recorded_at,product:catalog_items(name),variation:catalog_variants(name)")
+        urlBuilder.append("?select=id,warehouse_id,product_id,variant_key,counted_qty,delta,note,recorded_by,recorded_at,product:catalog_items(name)")
         urlBuilder.append("&order=recorded_at.desc")
         urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
         warehouseId?.let { urlBuilder.append("&warehouse_id=eq.").append(it) }
@@ -1138,7 +1180,7 @@ class SupabaseProvider(context: Context) {
     ): List<StockEntryRow> {
         val urlBuilder = StringBuilder()
         urlBuilder.append("$supabaseUrl/rest/v1/warehouse_stock_entries")
-        urlBuilder.append("?select=id,warehouse_id,product_id,variation_id,entry_kind,qty,note,recorded_by,recorded_at,product:catalog_items(name),variation:catalog_variants(name),warehouse:warehouses(name)")
+        urlBuilder.append("?select=id,warehouse_id,product_id,variant_key,entry_kind,qty,note,recorded_by,recorded_at,product:catalog_items(name),warehouse:warehouses(name)")
         urlBuilder.append("&order=recorded_at.desc")
         urlBuilder.append("&limit=").append(limit.coerceAtMost(500))
         warehouseId?.let { urlBuilder.append("&warehouse_id=eq.").append(it) }
@@ -1159,7 +1201,7 @@ class SupabaseProvider(context: Context) {
         jwt: String,
         warehouseId: String,
         productId: String,
-        variationId: String?,
+        variantKey: String?,
         entryKind: StockEntryKind,
         units: Double,
         note: String?
@@ -1171,7 +1213,7 @@ class SupabaseProvider(context: Context) {
             "p_entry_kind" to entryKind.apiValue,
             "p_units" to units
         )
-        variationId?.let { body["p_variation_id"] = it }
+        variantKey?.let { body["p_variant_key"] = it }
         note?.takeIf { it.isNotBlank() }?.let { body["p_note"] = it }
         val resp = http.post(endpoint) {
             header("apikey", supabaseAnonKey)
@@ -1191,14 +1233,14 @@ class SupabaseProvider(context: Context) {
         search: String?,
         warehouseId: String?,
         productId: String?,
-        variationId: String?
+        variantKey: String?
     ): List<StockEntryReportRow> {
         val endpoint = "$supabaseUrl/rest/v1/rpc/report_stock_entry_balances"
         val payload = mutableMapOf<String, Any?>()
         search?.takeIf { it.isNotBlank() }?.let { payload["p_search"] = it }
         warehouseId?.let { payload["p_warehouse_id"] = it }
         productId?.let { payload["p_product_id"] = it }
-        variationId?.let { payload["p_variation_id"] = it }
+        variantKey?.let { payload["p_variant_key"] = it }
         val resp = http.post(endpoint) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1241,7 +1283,7 @@ class SupabaseProvider(context: Context) {
         jwt: String,
         warehouseId: String,
         productId: String,
-        variationId: String?,
+        variantKey: String?,
         countedQty: Double,
         note: String?
     ): StocktakeResult {
@@ -1251,7 +1293,7 @@ class SupabaseProvider(context: Context) {
             "p_product_id" to productId,
             "p_counted_qty" to countedQty
         )
-        body["p_variation_id"] = variationId
+        variantKey?.let { body["p_variant_key"] = it }
         note?.takeIf { it.isNotBlank() }?.let { body["p_note"] = it }
         val resp = http.post(endpoint) {
             header("apikey", supabaseAnonKey)
@@ -1270,7 +1312,7 @@ class SupabaseProvider(context: Context) {
         outletId: String,
         productId: String,
         qty: Double,
-        variationId: String? = null,
+        variantKey: String? = null,
         saleReference: String? = null,
         saleSource: String? = null,
         qtyInputMode: String = "auto",
@@ -1283,7 +1325,7 @@ class SupabaseProvider(context: Context) {
             "p_qty" to qty,
             "p_qty_input_mode" to qtyInputMode.lowercase()
         )
-        variationId?.let { body["p_variation_id"] = it }
+        variantKey?.let { body["p_variant_key"] = it }
         saleReference?.takeIf { it.isNotBlank() }?.let { body["p_sale_reference"] = it }
         saleSource?.takeIf { it.isNotBlank() }?.let { body["p_sale_source"] = it }
         soldAtIso?.takeIf { it.isNotBlank() }?.let { body["p_sold_at"] = it }
@@ -1525,7 +1567,7 @@ class SupabaseProvider(context: Context) {
     data class OrderItemInsertPayload(
         @SerialName("order_id") val orderId: String,
         @SerialName("product_id") val productId: String?,
-        @SerialName("variation_id") val variationId: String?,
+        @SerialName("variation_key") val variantKey: String?,
         val name: String,
         @SerialName("receiving_uom") val receivingUom: String,
         @SerialName("consumption_uom") val consumptionUom: String,
@@ -1582,7 +1624,7 @@ class SupabaseProvider(context: Context) {
             OrderItemInsertPayload(
                 orderId = orderId,
                 productId = it.productId,
-                variationId = it.variationId,
+                variantKey = it.variantKey,
                 name = it.name,
                 receivingUom = it.receivingUom,
                 consumptionUom = it.consumptionUom,

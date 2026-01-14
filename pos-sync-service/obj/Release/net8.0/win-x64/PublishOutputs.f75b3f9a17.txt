@@ -2,6 +2,14 @@ c:\Projects\Afterten Orders App\pos-sync-service\installation\scripts\install-se
 c:\Projects\Afterten Orders App\pos-sync-service\installation\PosSyncService.exe
 c:\Projects\Afterten Orders App\pos-sync-service\installation\appsettings.Development.json
 c:\Projects\Afterten Orders App\pos-sync-service\installation\appsettings.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\appsettings.Development.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\appsettings.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\installation\appsettings.Development.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\installation\appsettings.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\installation\PosSyncService.deps.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\installation\PosSyncService.runtimeconfig.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\PosSyncService.deps.json
+c:\Projects\Afterten Orders App\pos-sync-service\installation\installation\PosSyncService.runtimeconfig.json
 c:\Projects\Afterten Orders App\pos-sync-service\installation\PosSyncService.dll
 c:\Projects\Afterten Orders App\pos-sync-service\installation\PosSyncService.deps.json
 c:\Projects\Afterten Orders App\pos-sync-service\installation\PosSyncService.runtimeconfig.json

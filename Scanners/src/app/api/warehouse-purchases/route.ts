@@ -57,11 +57,11 @@ export async function GET(req: NextRequest) {
           receipt_id,
           item_id,
           variant_id,
+          variant_key,
           qty_units,
           qty_input_mode,
           unit_cost,
-          item:catalog_items ( id, name ),
-          variant:catalog_variants ( id, name )
+          item:catalog_items ( id, name )
         )
       `
       )
@@ -126,17 +126,23 @@ export async function GET(req: NextRequest) {
         recorded_at: (purchase as any).recorded_at ?? null,
         received_at: (purchase as any).received_at ?? null,
         items: Array.isArray((purchase as any).items)
-          ? ((purchase as any).items as Array<PurchaseItem & { qty_units?: number | string | null; unit_cost?: number | string | null }>).map((item) => ({
-              id: item.id,
-              receipt_id: (item as any).receipt_id ?? null,
-              item_id: item.item_id ?? (item as any).item_id ?? null,
-              variant_id: item.variant_id ?? (item as any).variant_id ?? null,
-              qty: Number((item as any).qty_units ?? 0) || 0,
-              qty_input_mode: (item as any).qty_input_mode ?? null,
-              unit_cost: item.unit_cost != null ? Number(item.unit_cost) : (item as any).unit_cost != null ? Number((item as any).unit_cost) : null,
-              item: (item as any).item ?? null,
-              variant: (item as any).variant ?? null,
-            }))
+          ? ((purchase as any).items as Array<PurchaseItem & { qty_units?: number | string | null; unit_cost?: number | string | null; variant_key?: string | null }>).map((item) => {
+              const variantKey = (item as any).variant_key ?? (item as any).variation_key ?? null;
+              const variantId = (item as any).variant_id ?? null;
+
+              return {
+                id: item.id,
+                receipt_id: (item as any).receipt_id ?? null,
+                item_id: item.item_id ?? (item as any).item_id ?? null,
+                variant_key: variantKey,
+                variant_id: variantId ?? variantKey ?? null,
+                qty: Number((item as any).qty_units ?? 0) || 0,
+                qty_input_mode: (item as any).qty_input_mode ?? null,
+                unit_cost: item.unit_cost != null ? Number(item.unit_cost) : (item as any).unit_cost != null ? Number((item as any).unit_cost) : null,
+                item: (item as any).item ?? null,
+                variant: variantKey ? { id: variantKey, name: variantKey } : (item as any).variant ?? null,
+              } satisfies PurchaseItem;
+            })
           : [],
       };
     });

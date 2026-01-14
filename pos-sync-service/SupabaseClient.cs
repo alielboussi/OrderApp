@@ -31,6 +31,10 @@ public sealed class SupabaseClient
         var client = _clientFactory.CreateClient("Supabase");
         client.BaseAddress = new Uri(_options.Url);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ServiceKey);
+        if (!client.DefaultRequestHeaders.Contains("apikey"))
+        {
+            client.DefaultRequestHeaders.Add("apikey", _options.ServiceKey);
+        }
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         var payload = new
@@ -58,7 +62,8 @@ public sealed class SupabaseClient
                 unit_price = i.UnitPrice,
                 discount = i.Discount,
                 tax = i.Tax,
-                variant_id = i.VariantId
+                variant_id = i.VariantId,
+                variant_key = i.VariantKey
             }).ToList(),
             payments = order.Payments.Select(p => new { method = p.Method, amount = p.Amount }).ToList(),
             customer = order.Customer is null ? null : new
@@ -83,7 +88,8 @@ public sealed class SupabaseClient
 
         var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/sync_pos_order")
         {
-            Content = JsonContent.Create(payload, options: JsonOptions)
+            // PostgREST expects RPC arguments by name; wrap the payload under the function parameter key
+            Content = JsonContent.Create(new { payload }, options: JsonOptions)
         };
 
         try

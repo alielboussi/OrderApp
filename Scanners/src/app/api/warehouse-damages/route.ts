@@ -41,24 +41,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient();
     let query = supabase
       .from('warehouse_damages')
-      .select(
-        `
-        id,
-        warehouse_id,
-        note,
-        created_at,
-        items:warehouse_damage_items (
-          id,
-          damage_id,
-          item_id,
-          variant_id,
-          qty_units,
-          note,
-          item:catalog_items ( id, name ),
-          variant:catalog_variants ( id, name )
-        )
-      `
-      )
+      .select('id, warehouse_id, note, context, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -74,9 +57,7 @@ export async function GET(req: NextRequest) {
       query = query.lte('created_at', endIso);
     }
 
-    type DamageRecord = WarehouseDamage & {
-      items: Array<DamageItem & { qty_units?: number | string | null }> | null;
-    };
+    type DamageRecord = WarehouseDamage & { context?: any };
 
     const { data, error } = (await query) as { data: DamageRecord[] | null; error: Error | null };
     if (error) {
@@ -84,8 +65,21 @@ export async function GET(req: NextRequest) {
     }
 
     const warehouseIds = new Set<string>();
-    (data ?? []).forEach((damage) => {
-      if ((damage as any).warehouse_id) warehouseIds.add((damage as any).warehouse_id as string);
+    const itemIds = new Set<string>();
+
+    const parsedDamages = (data ?? []).map((damage) => {
+      const lines = Array.isArray((damage as any).context) ? ((damage as any).context as any[]) : [];
+
+      lines.forEach((line) => {
+        const itemId = (line?.product_id ?? line?.item_id ?? '').toString();
+        const variantId = (line?.variation_id ?? line?.variant_id ?? '').toString();
+        if (itemId) itemIds.add(itemId);
+      });
+
+      const whId = (damage as any).warehouse_id as string | null;
+      if (whId) warehouseIds.add(whId);
+
+      return { ...damage, parsedLines: lines } as DamageRecord & { parsedLines: any[] };
     });
 
     const warehouseMap = new Map<string, string | null>();
@@ -104,28 +98,53 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const damages: WarehouseDamage[] = (data ?? []).map((damage) => {
+    const itemMap = new Map<string, string | null>();
+    if (itemIds.size > 0) {
+      const { data: itemRows, error: itemError } = await supabase
+        .from('catalog_items')
+        .select('id,name')
+        .in('id', Array.from(itemIds));
+      if (itemError) throw itemError;
+      itemRows?.forEach((row) => {
+        if (row?.id) {
+          itemMap.set(row.id, row.name ?? null);
+        }
+      });
+    }
+
+    const damages: WarehouseDamage[] = parsedDamages.map((damage) => {
       const whId = (damage as any).warehouse_id as string | null;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
+
+      const items: DamageItem[] = Array.isArray(damage.parsedLines)
+        ? damage.parsedLines.map((line, index) => {
+            const itemId = (line?.product_id ?? line?.item_id ?? null) as string | null;
+            const variantKey = (line?.variant_key ?? line?.variation_key ?? null) as string | null;
+            const variantId = (line?.variation_id ?? line?.variant_id ?? null) as string | null;
+            const qty = Number((line?.qty ?? line?.qty_units ?? 0) as number) || 0;
+            const note = (line?.note ?? null) as string | null;
+
+            return {
+              id: `${damage.id}-${index + 1}`,
+              damage_id: damage.id,
+              item_id: itemId,
+              variant_key: variantKey,
+              variant_id: variantId ?? variantKey ?? null,
+              qty,
+              note,
+              item: itemId ? { id: itemId, name: itemMap.get(itemId) ?? null } : null,
+              variant: variantKey ? { id: variantKey, name: variantKey } : variantId ? { id: variantId, name: variantId } : null,
+            };
+          })
+        : [];
 
       return {
         id: damage.id,
         warehouse_id: whId,
         warehouse: whId ? { id: whId, name: warehouseName } : null,
         note: damage.note ?? null,
-        created_at: damage.created_at ?? null,
-        items: Array.isArray((damage as any).items)
-          ? ((damage as any).items as Array<DamageItem & { qty_units?: number | string | null }>).map((item) => ({
-              id: item.id,
-              damage_id: (item as any).damage_id ?? null,
-              item_id: item.item_id ?? (item as any).item_id ?? null,
-              variant_id: item.variant_id ?? (item as any).variant_id ?? null,
-              qty: Number((item as any).qty_units ?? 0) || 0,
-              note: item.note ?? null,
-              item: (item as any).item ?? null,
-              variant: (item as any).variant ?? null,
-            }))
-          : [],
+        created_at: (damage as any).created_at ?? null,
+        items,
       };
     });
 

@@ -13,6 +13,7 @@ export type TransferItem = {
   id: string;
   transfer_id?: string | null;
   product_id?: string | null;
+  variant_key?: string | null;
   variation_id?: string | null;
   qty: number;
   product?: TransferProductRef | null;

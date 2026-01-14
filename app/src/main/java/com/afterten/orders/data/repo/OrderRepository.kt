@@ -85,7 +85,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         val id: String,
         @SerialName("order_id") val orderId: String,
         @SerialName("product_id") val productId: String? = null,
-        @SerialName("variation_id") val variationId: String? = null,
+        @SerialName("variation_key") val variantKey: String? = null,
         val name: String,
         @SerialName("receiving_uom") val uom: String,
         @SerialName("consumption_uom") val consumptionUom: String,
@@ -93,14 +93,12 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         val qty: Double,
         @SerialName("receiving_contains") val packageContains: Double? = null,
         @SerialName("qty_cases") val qtyCases: Double? = null,
-        @SerialName("catalog_items") val product: ProductRef? = null,
-        @SerialName("catalog_variants") val variation: VariationRef? = null
+        @SerialName("catalog_items") val product: ProductRef? = null
     )
 
     suspend fun listOrderItems(jwt: String, orderId: String): List<OrderItemRow> {
         val select = encode(
-            "id,order_id,product_id,variation_id,catalog_items(name)," +
-                "catalog_variants(name,receiving_uom,consumption_uom)," +
+            "id,order_id,product_id,variation_key,catalog_items(name)," +
                 "name,receiving_uom,consumption_uom,cost,qty,receiving_contains,qty_cases"
         )
         val groupedOrder = encode("products(name).asc")
@@ -134,7 +132,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     suspend fun updateOrderItemVariation(
         jwt: String,
         orderItemId: String,
-        variationId: String,
+        variantKey: String,
         name: String,
         receivingUom: String,
         consumptionUom: String,
@@ -144,7 +142,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
     ) {
         val body = mutableMapOf<String, Any?>(
             "id" to orderItemId,
-            "variation_id" to variationId,
+            "variation_key" to variantKey,
             "name" to name,
             "receiving_uom" to receivingUom,
             "consumption_uom" to consumptionUom,

@@ -89,8 +89,8 @@ ORDER BY bt.id ASC;";
                 occurredAt = saleDate;
             }
 
-            var items = await LoadLineItemsAsync(conn, saleId, cancellationToken);
-            var inventory = await LoadInventoryConsumedAsync(conn, saleDate.Date, branchId, billId, saleId, cancellationToken);
+            var items = await LoadLineItemsAsync(saleId, cancellationToken);
+            var inventory = await LoadInventoryConsumedAsync(saleDate.Date, branchId, billId, saleId, cancellationToken);
 
             var payments = new List<PosPayment>();
             if (!reader.IsDBNull(reader.GetOrdinal("PaymentAmount")))
@@ -241,7 +241,7 @@ ORDER BY bt.id DESC;";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PosLineItem>> LoadLineItemsAsync(SqlConnection openConnection, string saleId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<PosLineItem>> LoadLineItemsAsync(string saleId, CancellationToken cancellationToken)
     {
         const string lineSql = @"
 SELECT sd.saleid AS SaleId,
@@ -257,7 +257,10 @@ WHERE sd.saleid = @SaleId;";
 
         var items = new List<PosLineItem>();
 
-        await using var cmd = new SqlCommand(lineSql, openConnection)
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqlCommand(lineSql, conn)
         {
             CommandType = CommandType.Text
         };
@@ -273,63 +276,67 @@ WHERE sd.saleid = @SaleId;";
                 UnitPrice: Convert.ToDecimal(reader["UnitPrice"]),
                 Discount: reader.IsDBNull(reader.GetOrdinal("Discount")) ? 0 : Convert.ToDecimal(reader["Discount"]),
                 Tax: reader.IsDBNull(reader.GetOrdinal("Tax")) ? 0 : Convert.ToDecimal(reader["Tax"]),
-                VariantId: null
+                VariantId: null,
+                VariantKey: null
             ));
         }
 
         return items;
     }
 
-        private async Task<IReadOnlyList<PosInventoryConsumed>> LoadInventoryConsumedAsync(SqlConnection openConnection, DateTime saleDate, int? branchId, string billId, string saleId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<PosInventoryConsumed>> LoadInventoryConsumedAsync(DateTime saleDate, int? branchId, string billId, string saleId, CancellationToken cancellationToken)
+    {
+        // Heuristic match: same sale date + pending, optionally narrowed by branchid if present.
+        const string sql = @"
+SELECT Id,
+       RawItemId,
+       QuantityConsumed,
+       RemainingQuantity,
+       Date,
+       kdsid,
+       typec,
+       uploadstatus
+FROM dbo.InventoryConsumed WITH (NOLOCK)
+WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
+  AND Date = @SaleDate
+  AND (@BranchId IS NULL OR branchid = @BranchId);";
+
+        var rows = new List<PosInventoryConsumed>();
+
+        var branchMissingNote = branchId is null ? $"Branch missing for sale {saleId} (bill {billId})" : null;
+        if (branchMissingNote is not null)
         {
-            // Heuristic match: same sale date + pending, optionally narrowed by branchid if present.
-            const string sql = @"
-    SELECT Id,
-           RawItemId,
-           QuantityConsumed,
-           RemainingQuantity,
-           Date,
-           kdsid,
-           typec,
-           uploadstatus
-    FROM dbo.InventoryConsumed WITH (NOLOCK)
-    WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
-      AND Date = @SaleDate
-      AND (@BranchId IS NULL OR branchid = @BranchId);";
-
-            var rows = new List<PosInventoryConsumed>();
-
-            var branchMissingNote = branchId is null ? $"Branch missing for sale {saleId} (bill {billId})" : null;
-            if (branchMissingNote is not null)
-            {
-                _logger.LogWarning("Inventory match using date-only; branchid missing for sale on {SaleDate}", saleDate.Date);
-            }
-
-            await using var cmd = new SqlCommand(sql, openConnection)
-            {
-                CommandType = CommandType.Text
-            };
-            cmd.Parameters.AddWithValue("@SaleDate", saleDate);
-            cmd.Parameters.AddWithValue("@BranchId", (object?)branchId ?? DBNull.Value);
-
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                rows.Add(new PosInventoryConsumed(
-                    PosId: reader["Id"].ToString() ?? string.Empty,
-                    RawItemId: reader["RawItemId"].ToString() ?? string.Empty,
-                    QuantityConsumed: Convert.ToDecimal(reader["QuantityConsumed"]),
-                    RemainingQuantity: reader.IsDBNull(reader.GetOrdinal("RemainingQuantity")) ? null : Convert.ToDecimal(reader["RemainingQuantity"]),
-                    PosDate: reader.IsDBNull(reader.GetOrdinal("Date")) ? null : reader.GetDateTime(reader.GetOrdinal("Date")),
-                    KdsId: reader["kdsid"]?.ToString(),
-                    Typec: reader["typec"]?.ToString(),
-                    BranchId: branchId,
-                    BranchMissingNote: branchMissingNote
-                ));
-            }
-
-            return rows;
+            _logger.LogWarning("Inventory match using date-only; branchid missing for sale on {SaleDate}", saleDate.Date);
         }
+
+        await using var conn = new SqlConnection(_options.ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqlCommand(sql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+        cmd.Parameters.AddWithValue("@SaleDate", saleDate);
+        cmd.Parameters.AddWithValue("@BranchId", (object?)branchId ?? DBNull.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new PosInventoryConsumed(
+                PosId: reader["Id"].ToString() ?? string.Empty,
+                RawItemId: reader["RawItemId"].ToString() ?? string.Empty,
+                QuantityConsumed: Convert.ToDecimal(reader["QuantityConsumed"]),
+                RemainingQuantity: reader.IsDBNull(reader.GetOrdinal("RemainingQuantity")) ? null : Convert.ToDecimal(reader["RemainingQuantity"]),
+                PosDate: reader.IsDBNull(reader.GetOrdinal("Date")) ? null : reader.GetDateTime(reader.GetOrdinal("Date")),
+                KdsId: reader["kdsid"]?.ToString(),
+                Typec: reader["typec"]?.ToString(),
+                BranchId: branchId,
+                BranchMissingNote: branchMissingNote
+            ));
+        }
+
+        return rows;
+    }
 
     private PosCustomer? BuildCustomer(SqlDataReader reader)
     {

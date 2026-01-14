@@ -30,7 +30,8 @@ public sealed record PosLineItem(
     decimal UnitPrice,
     decimal Discount,
     decimal Tax,
-    string? VariantId
+    string? VariantId,
+    string? VariantKey
 );
 
 public sealed record PosPayment(
