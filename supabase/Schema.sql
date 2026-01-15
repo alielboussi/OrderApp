@@ -1,4 +1,4 @@
-﻿{
+{
     "views": [
         {
             "view_name": "outlet_stock_summary",
@@ -95,12 +95,6 @@
                     "data_type": "uuid",
                     "column_name": "default_warehouse_id",
                     "is_nullable": "YES"
-                },
-                {
-                    "default": "'each'::text",
-                    "data_type": "text",
-                    "column_name": "purchase_pack_unit",
-                    "is_nullable": "NO"
                 },
                 {
                     "default": null,
@@ -255,6 +249,12 @@
                     "is_nullable": "NO"
                 },
                 {
+                    "default": "'finished'::text",
+                    "data_type": "text",
+                    "column_name": "recipe_for_kind",
+                    "is_nullable": "NO"
+                },
+                {
                     "default": null,
                     "data_type": "uuid",
                     "column_name": "finished_item_id",
@@ -317,48 +317,53 @@
             ],
             "indexes": [
                 {
-                    "definition": "CREATE INDEX idx_recipes_ingredient ON public.item_ingredient_recipes USING btree (ingredient_item_id)",
+                    "definition": "CREATE INDEX idx_recipes_ingredient ON public.recipes USING btree (ingredient_item_id)",
                     "index_name": "idx_recipes_ingredient"
                 },
                 {
-                    "definition": "CREATE INDEX idx_recipes_source_warehouse ON public.item_ingredient_recipes USING btree (source_warehouse_id)",
+                    "definition": "CREATE INDEX idx_recipes_source_warehouse ON public.recipes USING btree (source_warehouse_id)",
                     "index_name": "idx_recipes_source_warehouse"
                 },
                 {
-                    "definition": "CREATE UNIQUE INDEX item_ingredient_recipes_pkey ON public.item_ingredient_recipes USING btree (id)",
-                    "index_name": "item_ingredient_recipes_pkey"
+                    "definition": "CREATE UNIQUE INDEX recipes_pkey ON public.recipes USING btree (id)",
+                    "index_name": "recipes_pkey"
                 }
             ],
-            "table_name": "item_ingredient_recipes",
+            "table_name": "recipes",
             "constraints": [
                 {
                     "definition": "FOREIGN KEY (finished_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-                    "constraint_name": "item_ingredient_recipes_finished_item_id_fkey",
+                    "constraint_name": "recipes_finished_item_id_fkey",
                     "constraint_type": "f"
                 },
                 {
                     "definition": "FOREIGN KEY (ingredient_item_id) REFERENCES catalog_items(id) ON DELETE RESTRICT",
-                    "constraint_name": "item_ingredient_recipes_ingredient_item_id_fkey",
+                    "constraint_name": "recipes_ingredient_item_id_fkey",
                     "constraint_type": "f"
                 },
                 {
                     "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "item_ingredient_recipes_pkey",
+                    "constraint_name": "recipes_pkey",
                     "constraint_type": "p"
                 },
                 {
                     "definition": "CHECK (qty_per_unit > 0::numeric)",
-                    "constraint_name": "item_ingredient_recipes_qty_per_unit_check",
+                    "constraint_name": "recipes_qty_per_unit_check",
                     "constraint_type": "c"
                 },
                 {
                     "definition": "FOREIGN KEY (source_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
-                    "constraint_name": "item_ingredient_recipes_source_warehouse_id_fkey",
+                    "constraint_name": "recipes_source_warehouse_id_fkey",
                     "constraint_type": "f"
                 },
                 {
                     "definition": "CHECK (yield_qty_units > 0::numeric)",
-                    "constraint_name": "item_ingredient_recipes_yield_qty_units_check",
+                    "constraint_name": "recipes_yield_qty_units_check",
+                    "constraint_type": "c"
+                },
+                {
+                    "definition": "CHECK (recipe_for_kind = ANY (ARRAY['finished'::text, 'ingredient'::text]))",
+                    "constraint_name": "recipes_recipe_for_kind_check",
                     "constraint_type": "c"
                 }
             ],
@@ -1475,117 +1480,7 @@
             ],
             "indexes": [
                 {
-                    "definition": "CREATE UNIQUE INDEX outlets_auth_user_id_key ON public.outlets USING btree (auth_user_id)",
-                    "index_name": "outlets_auth_user_id_key"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX outlets_pkey ON public.outlets USING btree (id)",
-                    "index_name": "outlets_pkey"
-                },
-                {
-                    "definition": "CREATE UNIQUE INDEX ux_outlets_code ON public.outlets USING btree (lower(code)) WHERE (code IS NOT NULL)",
-                    "index_name": "ux_outlets_code"
-                }
-            ],
-            "table_name": "outlets",
-            "constraints": [
-                {
                     "definition": "FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE SET NULL",
-                    "constraint_name": "outlets_auth_user_id_fkey",
-                    "constraint_type": "f"
-                },
-                {
-                    "definition": "UNIQUE (auth_user_id)",
-                    "constraint_name": "outlets_auth_user_id_key",
-                    "constraint_type": "u"
-                },
-                {
-                    "definition": "PRIMARY KEY (id)",
-                    "constraint_name": "outlets_pkey",
-                    "constraint_type": "p"
-                }
-            ],
-            "row_security": true
-        },
-        {
-            "columns": [
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "user_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": "now()",
-                    "data_type": "timestamp with time zone",
-                    "column_name": "granted_at",
-                    "is_nullable": "NO"
-                }
-            ],
-            "indexes": [
-                {
-                    "definition": "CREATE UNIQUE INDEX platform_admins_pkey ON public.platform_admins USING btree (user_id)",
-                    "index_name": "platform_admins_pkey"
-                }
-            ],
-            "table_name": "platform_admins",
-            "constraints": [
-                {
-                    "definition": "PRIMARY KEY (user_id)",
-                    "constraint_name": "platform_admins_pkey",
-                    "constraint_type": "p"
-                },
-                {
-                    "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
-                    "constraint_name": "platform_admins_user_id_fkey",
-                    "constraint_type": "f"
-                }
-            ],
-            "row_security": true
-        },
-        {
-            "columns": [
-                {
-                    "default": "nextval('pos_inventory_consumed_id_seq'::regclass)",
-                    "data_type": "bigint",
-                    "column_name": "id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "source_event_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "outlet_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "uuid",
-                    "column_name": "order_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "raw_item_id",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "quantity_consumed",
-                    "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "remaining_quantity",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": "now()",
@@ -2718,9 +2613,9 @@
             "roles": [
                 "public"
             ],
-            "table_name": "item_ingredient_recipes",
+            "table_name": "recipes",
             "with_check": "is_admin(auth.uid())",
-            "policy_name": "item_recipes_admin_rw"
+            "policy_name": "recipes_admin_rw"
         },
         {
             "cmd": "DELETE",
@@ -3106,7 +3001,12 @@
     "functions": [
         {
             "arguments": "p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[]",
-            "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  comp record;\r\n  v_yield numeric := 1;\r\n  v_has_recipe boolean := false;\r\n  v_effective_qty numeric;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'item + qty required for recipe deductions';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required for recipe deductions';\r\n  end if;\r\n\r\n  if p_depth > 8 or p_item_id = any(p_seen) then\r\n    raise exception 'recipe recursion detected for item %', p_item_id;\r\n  end if;\r\n\r\n  select true, coalesce(min(iir.yield_qty_units), 1)\r\n  into v_has_recipe, v_yield\r\n  from public.item_ingredient_recipes iir\r\n  where iir.active\r\n    and iir.finished_item_id = p_item_id\r\n    and public.normalize_variant_key(coalesce(iir.finished_variant_key, 'base')) = v_variant_key;\r\n\r\n  if not v_has_recipe then\r\n    insert into public.stock_ledger(\r\n      location_type,\r\n      warehouse_id,\r\n      item_id,\r\n      variant_key,\r\n      delta_units,\r\n      reason,\r\n      context\r\n    ) values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_item_id,\r\n      v_variant_key,\r\n      -1 * p_qty_units,\r\n      'recipe_consumption',\r\n      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')\r\n    );\r\n    return;\r\n  end if;\r\n\r\n  for comp in\r\n    select iir.ingredient_item_id as item_id,\r\n           iir.qty_per_unit as qty_units,\r\n           exists (\r\n             select 1 from public.item_ingredient_recipes nested\r\n             where nested.active\r\n               and nested.finished_item_id = iir.ingredient_item_id\r\n           ) as has_nested\r\n    from public.item_ingredient_recipes iir\r\n    where iir.active\r\n      and iir.finished_item_id = p_item_id\r\n      and public.normalize_variant_key(coalesce(iir.finished_variant_key, 'base')) = v_variant_key\r\n  loop\r\n    v_effective_qty := (p_qty_units / v_yield) * comp.qty_units;\r\n\r\n    if comp.has_nested then\r\n      perform public.apply_recipe_deductions(\r\n        comp.item_id,\r\n        v_effective_qty,\r\n        p_warehouse_id,\r\n        'base',\r\n        coalesce(p_context, '{}') || jsonb_build_object('via', p_item_id),\r\n        p_depth + 1,\r\n        array_append(p_seen, p_item_id)\r\n      );\r\n    else\r\n      insert into public.stock_ledger(\r\n        location_type,\r\n        warehouse_id,\r\n        item_id,\r\n        variant_key,\r\n        delta_units,\r\n        reason,\r\n        context\r\n      ) values (\r\n        'warehouse',\r\n        p_warehouse_id,\r\n        comp.item_id,\r\n        'base',\r\n        -1 * v_effective_qty,\r\n        'recipe_consumption',\r\n        jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units, 'component_qty', comp.qty_units) || coalesce(p_context, '{}')\r\n      );\r\n    end if;\r\n  end loop;\r\nend;\r\n$function$\n",
+                        "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[])
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$\r\ndeclare\r\n  comp record;\r\n  v_yield numeric := 1;\r\n  v_has_recipe boolean := false;\r\n  v_effective_qty numeric;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_item_kind text;\r\nbegin\r\n  if p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'item + qty required for recipe deductions';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required for recipe deductions';\r\n  end if;\r\n\r\n  if p_depth > 8 or p_item_id = any(p_seen) then\r\n    raise exception 'recipe recursion detected for item %', p_item_id;\r\n  end if;\r\n\r\n  select ci.item_kind\r\n  into v_item_kind\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  if v_item_kind is null then\r\n    raise exception 'catalog item % not found for recipe deductions', p_item_id;\r\n  end if;\r\n\r\n  select true, coalesce(min(r.yield_qty_units), 1)\r\n  into v_has_recipe, v_yield\r\n  from public.recipes r\r\n  where r.active\r\n    and r.finished_item_id = p_item_id\r\n    and r.recipe_for_kind = v_item_kind\r\n    and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = v_variant_key;\r\n\r\n  if not v_has_recipe then\r\n    insert into public.stock_ledger(\r\n      location_type,\r\n      warehouse_id,\r\n      item_id,\r\n      variant_key,\r\n      delta_units,\r\n      reason,\r\n      context\r\n    ) values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      p_item_id,\r\n      v_variant_key,\r\n      -1 * p_qty_units,\r\n      'recipe_consumption',\r\n      jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units) || coalesce(p_context, '{}')\r\n    );\r\n    return;\r\n  end if;\r\n\r\n  for comp in\r\n    select r.ingredient_item_id as item_id,\r\n           r.qty_per_unit as qty_units,\r\n           ci.item_kind as component_kind\r\n    from public.recipes r\r\n    join public.catalog_items ci on ci.id = r.ingredient_item_id\r\n    where r.active\r\n      and r.finished_item_id = p_item_id\r\n      and r.recipe_for_kind = v_item_kind\r\n      and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = v_variant_key\r\n  loop\r\n    v_effective_qty := (p_qty_units / v_yield) * comp.qty_units;\r\n\r\n    if comp.component_kind = 'ingredient' then\r\n      perform public.apply_recipe_deductions(\r\n        comp.item_id,\r\n        v_effective_qty,\r\n        p_warehouse_id,\r\n        'base',\r\n        coalesce(p_context, '{}') || jsonb_build_object('via', p_item_id),\r\n        p_depth + 1,\r\n        array_append(p_seen, p_item_id)\r\n      );\r\n    else\r\n      insert into public.stock_ledger(\r\n        location_type,\r\n        warehouse_id,\r\n        item_id,\r\n        variant_key,\r\n        delta_units,\r\n        reason,\r\n        context\r\n      ) values (\r\n        'warehouse',\r\n        p_warehouse_id,\r\n        comp.item_id,\r\n        'base',\r\n        -1 * v_effective_qty,\r\n        'recipe_consumption',\r\n        jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units, 'component_qty', comp.qty_units) || coalesce(p_context, '{}')\r\n      );\r\n    end if;\r\n  end loop;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "apply_recipe_deductions"
         },

@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj": {}
+    "C:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj": {}
   },
   "projects": {
-    "c:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj": {
+    "C:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj",
+        "projectUniqueName": "C:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj",
         "projectName": "PosSyncService",
-        "projectPath": "c:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj",
+        "projectPath": "C:\\Projects\\Afterten Orders App\\pos-sync-service\\PosSyncService.csproj",
         "packagesPath": "C:\\Users\\aliel\\.nuget\\packages\\",
-        "outputPath": "c:\\Projects\\Afterten Orders App\\pos-sync-service\\obj\\",
+        "outputPath": "C:\\Projects\\Afterten Orders App\\pos-sync-service\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\aliel\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -78,10 +78,6 @@
               "version": "[8.0.23, 8.0.23]"
             },
             {
-              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-              "version": "[8.0.23, 8.0.23]"
-            },
-            {
               "name": "Microsoft.NETCore.App.Host.win-x64",
               "version": "[8.0.23, 8.0.23]"
             },
@@ -90,15 +86,7 @@
               "version": "[8.0.23, 8.0.23]"
             },
             {
-              "name": "Microsoft.NETCore.App.Runtime.win-x64",
-              "version": "[8.0.23, 8.0.23]"
-            },
-            {
               "name": "Microsoft.WindowsDesktop.App.Ref",
-              "version": "[8.0.23, 8.0.23]"
-            },
-            {
-              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
               "version": "[8.0.23, 8.0.23]"
             }
           ],
@@ -108,11 +96,6 @@
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "win-x64": {
-          "#import": []
         }
       }
     }
