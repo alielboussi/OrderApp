@@ -24,7 +24,7 @@ export type WarehouseTransfer = {
   reference_code?: string | null;
   status?: string | null;
   note?: string | null;
-  created_at: string;
+  created_at: string | null;
   completed_at?: string | null;
   source_location_id?: string | null;
   dest_location_id?: string | null;
