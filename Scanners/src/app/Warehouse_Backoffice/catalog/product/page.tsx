@@ -8,6 +8,7 @@ const qtyUnits = ["each", "g", "kg", "mg", "ml", "l"] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },
+  { value: "raw", label: "Raw (unprocessed material)" },
 ];
 
 type Warehouse = { id: string; name: string };
@@ -15,7 +16,7 @@ type Warehouse = { id: string; name: string };
 type FormState = {
   name: string;
   sku: string;
-  item_kind: "finished" | "ingredient";
+  item_kind: "finished" | "ingredient" | "raw";
   base_unit: string;
   consumption_uom: string;
   purchase_pack_unit: string;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
-const ITEM_KINDS = ["finished", "ingredient"] as const;
+const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
 const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l"] as const;
 
 type ItemKind = (typeof ITEM_KINDS)[number];
@@ -46,7 +46,7 @@ function pickItemKind(value: unknown): CleanResult<ItemKind> {
   if (typeof value === "string" && ITEM_KINDS.includes(value as ItemKind)) {
     return { ok: true, value: value as ItemKind };
   }
-  return { ok: false, error: "item_kind must be 'finished' or 'ingredient'" };
+  return { ok: false, error: "item_kind must be 'finished', 'ingredient', or 'raw'" };
 }
 
 function toNumber(value: unknown, fallback: number, min?: number): CleanResult<number> {

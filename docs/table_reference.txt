@@ -9,9 +9,9 @@ catalog_variants
 ----------------
 Child records tied to `catalog_items` via `item_id`. Represents each pack size or variation; now duplicates the purchase pack metadata (`purchase_pack_unit`, `units_per_purchase_pack`, `purchase_unit_mass`, `transfer_unit`, `transfer_quantity`) alongside consumption defaults. `default_warehouse_id` lets you override the item-level default when allocating inventory.
 
-item_ingredient_recipes
------------------------
-Maps finished goods to ingredient SKUs for pack production or BOM deductions. `finished_item_id`/`finished_variant_id` point to the parent, while `ingredient_item_id` plus `qty_per_unit` describe what to deduct per produced unit. `source_warehouse_id` locks each ingredient to the warehouse that should supply the grams/ml/units. Used by the `record_outlet_sale` function when `is_production` is true.
+recipes
+-------
+Maps finished, ingredient, or raw goods to ingredient SKUs for production or BOM deductions. `finished_item_id`/`finished_variant_id` point to the parent, while `ingredient_item_id` plus `qty_per_unit` describe what to deduct per produced unit. `recipe_for_kind` keeps recipes scoped to the item's `item_kind` (including `raw`). `source_warehouse_id` locks each ingredient to the warehouse that should supply the grams/ml/units. Used by `record_outlet_sale` when `is_production` is true and by recursive recipe deductions.
 
 item_transfer_profiles
 ----------------------

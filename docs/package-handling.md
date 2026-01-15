@@ -20,12 +20,11 @@
 - Inter-warehouse moves can pin default units via `item_transfer_profiles`. Define the source/destination warehouses, the unit label (jars, bottles, etc.), and the quantity that should pre-fill transfer scanners. This saves time when repeatedly staging the same SKUs between depots.
 - `item_warehouse_handling_policies` lets you force gram/ml deductions or mark the warehouse that recipes must draw from. Fields include the warehouse, optional variant, `deduction_uom`, and a `recipe_source` flag.
 - Recipes reference the warehouse in two places now:
-	- `item_ingredient_recipes.source_warehouse_id` points at the warehouse that physically holds the ingredient.
+	- `recipes.source_warehouse_id` points at the warehouse that physically holds the ingredient.
 	- When `recipe_source` is set on a handling policy, all deductions for that item are constrained to the specified warehouse/unit combo even if the outlet normally consumes units.
 
-## Recipe-Driven Ingredient Deduction
-- Warehouse admins pre-program recipes per product or variation using `item_ingredient_recipes` (and the scanner-side helpers).
-- Each recipe defines the finished good, optional finished variation, ingredient SKU/variant, measurement unit, quantity, and (now) the warehouse it must hit.
+- Warehouse admins pre-program recipes per product or variation using `recipes` (and the scanner-side helpers).
+- Each recipe defines the finished or raw/ingredient good, optional finished variation, ingredient SKU/variant, measurement unit, quantity, and (now) the warehouse it must hit.
 - The helper function `recipe_deductions_for_product(product_id, variation_id, qty_units)` emits the exact ingredient totals to subtract from warehouses, taking the warehouse override into account.
 - Recipes remain RLS-protected: admins can edit, while transfer managers get read-only access for transparency when balancing stock across depots.
 
