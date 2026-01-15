@@ -10,6 +10,7 @@ export default function WarehouseBackofficeDashboard() {
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
+  const goToRecipes = () => router.push("/Warehouse_Backoffice/recipes");
 
   if (status !== "ok") {
     return null;
@@ -58,6 +59,21 @@ export default function WarehouseBackofficeDashboard() {
           >
             <p style={{ ...styles.cardTitle, color: "#22c55e" }}>Catalog</p>
             <p style={styles.cardBody}>Create products and variants for the warehouse catalog.</p>
+            <span style={styles.cardCta}>Open</span>
+          </button>
+
+          <button
+            onClick={goToRecipes}
+            style={{
+              ...styles.actionCard,
+              borderColor: "#a855f788",
+              boxShadow: "0 20px 40px #a855f733",
+              width: "6.5cm",
+              minHeight: "6.5cm",
+            }}
+          >
+            <p style={{ ...styles.cardTitle, color: "#c084fc" }}>Recipes</p>
+            <p style={styles.cardBody}>Link finished goods to ingredients, and ingredients to raw materials.</p>
             <span style={styles.cardCta}>Open</span>
           </button>
         </section>

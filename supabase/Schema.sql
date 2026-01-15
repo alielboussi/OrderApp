@@ -1847,7 +1847,7 @@
                     "constraint_type": "c"
                 },
                 {
-                    "definition": "CHECK (recipe_for_kind = ANY (ARRAY['raw'::item_kind, 'ingredient'::item_kind, 'finished'::item_kind]))",
+                    "definition": "CHECK (recipe_for_kind = ANY (ARRAY['ingredient'::item_kind, 'finished'::item_kind]))",
                     "constraint_name": "recipes_recipe_for_kind_chk",
                     "constraint_type": "c"
                 }

@@ -162,7 +162,7 @@ export default function ProductCreatePage() {
             />
             <Select
               label="Stock kind"
-              hint="Finished = sellable; Ingredient = used inside recipes"
+              hint="Finished = sellable; Ingredient = used inside recipes; Raw = unprocessed input"
               value={form.item_kind}
               onChange={(v) => handleChange("item_kind", v)}
               options={itemKinds}

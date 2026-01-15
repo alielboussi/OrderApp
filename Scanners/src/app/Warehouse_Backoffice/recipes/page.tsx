@@ -1,0 +1,369 @@
+"use client";
+
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { createClient } from "@supabase/supabase-js";
+import styles from "./recipes.module.css";
+
+type ItemKind = "raw" | "ingredient" | "finished";
+
+type CatalogItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  item_kind: ItemKind;
+};
+
+type PendingLine = {
+  ingredientId: string;
+  qty: string;
+  uom: string;
+};
+
+const UOMS = ["ml", "l", "g", "kg", "mg", "microgram"];
+
+function buildClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) {
+    throw new Error("Supabase URL and anon key are required");
+  }
+  return createClient(url, anon, { auth: { persistSession: true } });
+}
+
+export default function RecipesPage() {
+  const supabase = useMemo(() => buildClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const [finishedItems, setFinishedItems] = useState<CatalogItem[]>([]);
+  const [ingredientItems, setIngredientItems] = useState<CatalogItem[]>([]);
+  const [rawItems, setRawItems] = useState<CatalogItem[]>([]);
+
+  const [selectedFinished, setSelectedFinished] = useState<string>("");
+  const [selectedIngredientTarget, setSelectedIngredientTarget] = useState<string>("");
+
+  const [finishedLines, setFinishedLines] = useState<PendingLine[]>([
+    { ingredientId: "", qty: "", uom: "g" },
+  ]);
+  const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([
+    { ingredientId: "", qty: "", uom: "g" },
+  ]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        setError(null);
+        setSuccess(null);
+        setLoading(true);
+
+        const [fin, ing, raw] = await Promise.all([
+          supabase
+            .from("catalog_items")
+            .select("id,name,sku,item_kind")
+            .eq("item_kind", "finished")
+            .order("name", { ascending: true }),
+          supabase
+            .from("catalog_items")
+            .select("id,name,sku,item_kind")
+            .eq("item_kind", "ingredient")
+            .order("name", { ascending: true }),
+          supabase
+            .from("catalog_items")
+            .select("id,name,sku,item_kind")
+            .eq("item_kind", "raw")
+            .order("name", { ascending: true }),
+        ]);
+
+        if (!active) return;
+        if (fin.error) throw fin.error;
+        if (ing.error) throw ing.error;
+        if (raw.error) throw raw.error;
+
+        setFinishedItems(fin.data || []);
+        setIngredientItems(ing.data || []);
+        setRawItems(raw.data || []);
+      } catch (e: any) {
+        if (!active) return;
+        setError(e?.message || "Failed to load catalog items");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const ingredientOptionsForFinished = useMemo(() => ingredientItems, [ingredientItems]);
+  const rawOptionsForIngredient = useMemo(() => rawItems, [rawItems]);
+
+  const addLine = (setter: Dispatch<SetStateAction<PendingLine[]>>) => {
+    setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "g" }]);
+  };
+
+  const updateLine = (
+    idx: number,
+    field: keyof PendingLine,
+    value: string,
+    setter: Dispatch<SetStateAction<PendingLine[]>>
+  ) => {
+    setter((prev) => prev.map((line, i) => (i === idx ? { ...line, [field]: value } : line)));
+  };
+
+  const validFinishedLines = finishedLines.filter((l) => l.ingredientId && l.qty);
+  const validIngredientLines = ingredientLines.filter((l) => l.ingredientId && l.qty);
+
+  const submitFinishedRecipe = async () => {
+    if (!selectedFinished || validFinishedLines.length === 0) {
+      setError("Pick a finished product and add at least one ingredient line.");
+      setSuccess(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = validFinishedLines.map((line) => ({
+        finished_item_id: selectedFinished,
+        finished_variant_key: "base",
+        ingredient_item_id: line.ingredientId,
+        qty_per_unit: Number(line.qty),
+        qty_unit: line.uom,
+        recipe_for_kind: "finished",
+        active: true,
+      }));
+
+      const { error: insertError } = await supabase.from("recipes").insert(payload);
+      if (insertError) throw insertError;
+      setSuccess("Finished product recipe saved.");
+    } catch (e: any) {
+      setError(e?.message || "Unable to save finished product recipe.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitIngredientRecipe = async () => {
+    if (!selectedIngredientTarget || validIngredientLines.length === 0) {
+      setError("Pick the ingredient to prepare and add at least one raw material line.");
+      setSuccess(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = validIngredientLines.map((line) => ({
+        finished_item_id: selectedIngredientTarget,
+        finished_variant_key: "base",
+        ingredient_item_id: line.ingredientId,
+        qty_per_unit: Number(line.qty),
+        qty_unit: line.uom,
+        recipe_for_kind: "ingredient",
+        active: true,
+      }));
+
+      const { error: insertError } = await supabase.from("recipes").insert(payload);
+      if (insertError) throw insertError;
+      setSuccess("Ingredient prep recipe saved.");
+    } catch (e: any) {
+      setError(e?.message || "Unable to save ingredient recipe.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.kicker}>Warehouse Backoffice</p>
+          <h1 className={styles.title}>Recipes</h1>
+          <p className={styles.subtitle}>
+            Link finished products to the ingredients they consume, and link those ingredients to their raw materials.
+          </p>
+        </div>
+        {loading && <span className={styles.pill}>Loading…</span>}
+      </header>
+
+      {error && <div className={styles.toastError}>{error}</div>}
+      {success && <div className={styles.toastSuccess}>{success}</div>}
+
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div>
+            <p className={styles.kicker}>Step 1</p>
+            <h2 className={styles.cardTitle}>Finished product recipe</h2>
+            <p className={styles.cardSubtitle}>
+              Choose a sellable finished product, then list the ingredient items it uses per unit.
+            </p>
+          </div>
+          <button className={styles.primaryButton} onClick={submitFinishedRecipe} disabled={loading}>
+            Save finished product recipe
+          </button>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Finished product (sellable)</label>
+          <select
+            className={styles.select}
+            value={selectedFinished}
+            onChange={(e) => setSelectedFinished(e.target.value)}
+          >
+            <option value="">Select a finished product</option>
+            {finishedItems.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} {item.sku ? `• SKU ${item.sku}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.linesHeader}>
+          <h3>Ingredients used by this finished product</h3>
+          <button className={styles.secondaryButton} onClick={() => addLine(setFinishedLines)}>
+            + Add ingredient line
+          </button>
+        </div>
+
+        <div className={styles.lines}>
+          {finishedLines.map((line, idx) => (
+            <div key={idx} className={styles.lineRow}>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Ingredient item (prepped)</label>
+                <select
+                  className={styles.select}
+                  value={line.ingredientId}
+                  onChange={(e) => updateLine(idx, "ingredientId", e.target.value, setFinishedLines)}
+                >
+                  <option value="">Select ingredient</option>
+                  {ingredientOptionsForFinished.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} {item.sku ? `• SKU ${item.sku}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Quantity per finished unit</label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={line.qty}
+                  onChange={(e) => updateLine(idx, "qty", e.target.value, setFinishedLines)}
+                  placeholder="e.g., 0.25"
+                />
+              </div>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Unit of measure</label>
+                <select
+                  className={styles.select}
+                  value={line.uom}
+                  onChange={(e) => updateLine(idx, "uom", e.target.value, setFinishedLines)}
+                >
+                  {UOMS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div>
+            <p className={styles.kicker}>Step 2</p>
+            <h2 className={styles.cardTitle}>Ingredient prep recipe</h2>
+            <p className={styles.cardSubtitle}>
+              Choose an ingredient you prepare, then list the raw materials it consumes per unit.
+            </p>
+          </div>
+          <button className={styles.primaryButton} onClick={submitIngredientRecipe} disabled={loading}>
+            Save ingredient recipe
+          </button>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Ingredient being prepared</label>
+          <select
+            className={styles.select}
+            value={selectedIngredientTarget}
+            onChange={(e) => setSelectedIngredientTarget(e.target.value)}
+          >
+            <option value="">Select ingredient</option>
+            {ingredientItems.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} {item.sku ? `• SKU ${item.sku}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.linesHeader}>
+          <h3>Raw materials used by this ingredient</h3>
+          <button className={styles.secondaryButton} onClick={() => addLine(setIngredientLines)}>
+            + Add raw material line
+          </button>
+        </div>
+
+        <div className={styles.lines}>
+          {ingredientLines.map((line, idx) => (
+            <div key={idx} className={styles.lineRow}>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Raw material</label>
+                <select
+                  className={styles.select}
+                  value={line.ingredientId}
+                  onChange={(e) => updateLine(idx, "ingredientId", e.target.value, setIngredientLines)}
+                >
+                  <option value="">Select raw material</option>
+                  {rawOptionsForIngredient.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} {item.sku ? `• SKU ${item.sku}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Quantity per ingredient unit</label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={line.qty}
+                  onChange={(e) => updateLine(idx, "qty", e.target.value, setIngredientLines)}
+                  placeholder="e.g., 1.5"
+                />
+              </div>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Unit of measure</label>
+                <select
+                  className={styles.select}
+                  value={line.uom}
+                  onChange={(e) => updateLine(idx, "uom", e.target.value, setIngredientLines)}
+                >
+                  {UOMS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}

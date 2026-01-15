@@ -26,13 +26,6 @@ const actionCards = [
     accent: "#22c55e",
     path: "/Warehouse_Backoffice/purchases",
   },
-  {
-    title: "Catalog (Products & Variants)",
-    body: "Create products and attach variants into catalog tables.",
-    cta: "Build Catalog",
-    accent: "#7dd3fc",
-    path: "/Warehouse_Backoffice/catalog",
-  },
 ];
 
 export default function InventoryMenu() {
