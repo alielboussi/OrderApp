@@ -103,6 +103,7 @@ export async function GET() {
     if (err?.code === "42703" || (typeof err?.message === "string" && err.message.includes("pos_item_name"))) {
       try {
         const supabase = getServiceClient();
+        const enrichWithCatalogLegacy = buildEnricher(supabase);
         const legacyCols = [
           "pos_item_id",
           "pos_flavour_id",
@@ -122,7 +123,7 @@ export async function GET() {
         }));
         let enriched = mapped;
         try {
-          enriched = await enrichWithCatalog(mapped);
+          enriched = await enrichWithCatalogLegacy(mapped);
         } catch (enrichError) {
           console.error("[pos-item-map] catalog enrich failed (legacy)", enrichError);
           enriched = mapped;
