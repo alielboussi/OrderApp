@@ -1,0 +1,84 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(circle at 20% 20%, #182647, #060b16 70%);
+  padding: 24px;
+  color: #f4f6ff;
+  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+}
+
+.shell {
+  width: 100%;
+  max-width: 520px;
+}
+
+.card {
+  background: rgba(6, 11, 22, 0.85);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 28px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+}
+
+.kicker {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: #8da2ff;
+}
+
+.title {
+  margin: 10px 0 6px;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0 0 18px;
+  color: #c6d2ff;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.label {
+  font-size: 14px;
+  color: #cdd6f4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f8fafc;
+  outline: none;
+}
+
+.submit {
+  margin-top: 6px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid #ff1b2d;
+  background: linear-gradient(120deg, #ff1b2d, #ff6b6b);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.error {
+  color: #ff8b99;
+  margin: 0;
+  font-size: 14px;
+}

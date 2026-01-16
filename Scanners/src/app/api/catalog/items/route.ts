@@ -21,7 +21,6 @@ type ItemPayload = {
   transfer_quantity: number;
   cost: number;
   has_variations: boolean;
-  locked_from_warehouse_id?: string | null;
   outlet_order_visible: boolean;
   image_url?: string | null;
   default_warehouse_id?: string | null;
@@ -156,7 +155,6 @@ export async function POST(request: Request) {
       transfer_quantity: transferQuantity.value,
       cost: cost.value,
       has_variations: cleanBoolean(body.has_variations, false),
-      locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: cleanUuid(body.default_warehouse_id),
@@ -226,7 +224,6 @@ export async function PUT(request: Request) {
       transfer_quantity: transferQuantity.value,
       cost: cost.value,
       has_variations: cleanBoolean(body.has_variations, false),
-      locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: cleanUuid(body.default_warehouse_id),

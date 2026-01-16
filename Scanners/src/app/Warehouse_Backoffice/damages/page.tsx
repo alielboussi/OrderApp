@@ -131,7 +131,12 @@ export default function WarehouseDamagesWeb() {
 
   const handleBack = () => {
     allowNavRef.current = true;
-    router.push("/Warehouse_Backoffice/inventory");
+    router.push("/Warehouse_Backoffice");
+  };
+
+  const handleBackOne = () => {
+    allowNavRef.current = true;
+    router.back();
   };
 
   useEffect(() => {
@@ -273,9 +278,14 @@ export default function WarehouseDamagesWeb() {
     <div className={styles.page}>
       <main className={styles.shell}>
         <header className={styles.header}>
-          <button className={styles.primaryBtn} onClick={handleBack}>
-            Back
-          </button>
+          <div className={styles.headerButtons}>
+            <button className={styles.primaryBtn} onClick={handleBackOne}>
+              Back
+            </button>
+            <button className={styles.primaryBtn} onClick={handleBack}>
+              Back to Dashboard
+            </button>
+          </div>
           <div className={styles.grow} />
           <button
             className={`${styles.iconBtn} ${loading ? styles.iconBtnSpin : ""}`}

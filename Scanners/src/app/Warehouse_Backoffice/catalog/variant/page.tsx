@@ -34,7 +34,6 @@ type FormState = {
   transfer_unit: string;
   transfer_quantity: string;
   cost: string;
-  locked_from_warehouse_id: string;
   outlet_order_visible: boolean;
   image_url: string;
   default_warehouse_id: string;
@@ -53,7 +52,6 @@ const defaultForm: FormState = {
   transfer_unit: "each",
   transfer_quantity: "1",
   cost: "0",
-  locked_from_warehouse_id: "",
   outlet_order_visible: true,
   image_url: "",
   default_warehouse_id: "",
@@ -112,7 +110,6 @@ export default function VariantCreatePage() {
         transfer_quantity: toNumber(form.transfer_quantity, 1),
         cost: toNumber(form.cost, 0),
         default_warehouse_id: form.default_warehouse_id || null,
-        locked_from_warehouse_id: form.locked_from_warehouse_id || null,
       };
 
       const res = await fetch("/api/catalog/variants", {
@@ -136,7 +133,8 @@ export default function VariantCreatePage() {
     }
   };
 
-  const back = () => router.push("/Warehouse_Backoffice/catalog");
+  const back = () => router.push("/Warehouse_Backoffice");
+  const backOne = () => router.back();
 
   return (
     <div className={styles.page}>
@@ -149,9 +147,14 @@ export default function VariantCreatePage() {
               Attach a variant to an existing product. Use clear names so teams know what quantity to type.
             </p>
           </div>
-          <button onClick={back} className={styles.backButton}>
-            Back
-          </button>
+          <div className={styles.headerButtons}>
+            <button onClick={backOne} className={styles.backButton}>
+              Back
+            </button>
+            <button onClick={back} className={styles.backButton}>
+              Back to Dashboard
+            </button>
+          </div>
         </header>
 
         <form className={styles.form} onSubmit={submit}>
@@ -246,13 +249,6 @@ export default function VariantCreatePage() {
               hint="Where this variant normally lives"
               value={form.default_warehouse_id}
               onChange={(v) => handleChange("default_warehouse_id", v)}
-              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
-            />
-            <Select
-              label="Lock ordering to warehouse"
-              hint="If set, outlets will draw only from this warehouse"
-              value={form.locked_from_warehouse_id}
-              onChange={(v) => handleChange("locked_from_warehouse_id", v)}
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
             <Field

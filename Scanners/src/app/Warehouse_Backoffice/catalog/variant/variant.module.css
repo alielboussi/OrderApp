@@ -21,6 +21,12 @@
 .hero {
   display: flex;
   align-items: center;
+
+.headerButtons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
   justify-content: space-between;
   gap: 24px;
   border-radius: 28px;

@@ -84,7 +84,10 @@
   aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 12px;
+  position: relative;
+  padding-bottom: 36px;
 }
 
 .inventoryCard {
@@ -95,6 +98,11 @@
 .catalogCard {
   border-color: #22c55e88;
   box-shadow: 0 20px 40px #22c55e33;
+}
+
+.routingCard {
+  border-color: #fbbf2488;
+  box-shadow: 0 20px 40px #fbbf2433;
 }
 
 .cardTitle {
@@ -112,6 +120,10 @@
   color: #22c55e;
 }
 
+.routingTitle {
+  color: #fbbf24;
+}
+
 .cardBody {
   margin: 0 0 20px;
   color: #cbd5f5;
@@ -124,6 +136,9 @@
   letter-spacing: 2px;
   text-transform: uppercase;
   color: #f8fafc;
+  position: absolute;
+  left: 24px;
+  bottom: 18px;
 }
 
 .actionCard:hover {

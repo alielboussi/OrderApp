@@ -11,7 +11,8 @@ export default function CatalogMenu() {
   if (status !== "ok") return null;
 
   const go = (path: string) => router.push(path);
-  const back = () => router.push("/Warehouse_Backoffice/inventory");
+  const back = () => router.push("/Warehouse_Backoffice");
+  const backOne = () => router.back();
 
   return (
     <div className={styles.page}>
@@ -22,9 +23,14 @@ export default function CatalogMenu() {
             <h1 className={styles.title}>Catalog Builder</h1>
             <p className={styles.subtitle}>Create products and their variants. Use the buttons below to open the forms.</p>
           </div>
-          <button onClick={back} className={styles.backButton}>
-            Back
-          </button>
+          <div className={styles.headerButtons}>
+            <button onClick={backOne} className={styles.backButton}>
+              Back
+            </button>
+            <button onClick={back} className={styles.backButton}>
+              Back to Dashboard
+            </button>
+          </div>
         </header>
 
         <section className={styles.actionsGrid}>

@@ -24,6 +24,12 @@
   align-items: center;
 }
 
+.headerButtons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .grow {
   flex: 1;
 }

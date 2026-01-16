@@ -34,6 +34,7 @@ export default function InventoryMenu() {
 
   const handleNavigate = (path: string) => router.push(path);
   const handleBack = () => router.push("/Warehouse_Backoffice");
+  const handleBackOne = () => router.back();
 
   if (status !== "ok") return null;
 
@@ -47,13 +48,17 @@ export default function InventoryMenu() {
             <h1 className={styles.title}>Inventory</h1>
             <p className={styles.subtitle}>Choose a workspace to continue.</p>
           </div>
-          <button onClick={handleBack} className={styles.backButton}>
-            Back
-          </button>
+          <div className={styles.headerButtons}>
+            <button onClick={handleBackOne} className={styles.backButton}>
+              Back
+            </button>
+            <button onClick={handleBack} className={styles.backButton}>
+              Back to Dashboard
+            </button>
+          </div>
         </header>
 
         <section className={styles.actionsGrid}>
-          <button onClick={handleBack} className={styles.backGhost}>Back to Dashboard</button>
           {actionCards.map((card) => (
             <button
               key={card.title}

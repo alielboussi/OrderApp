@@ -30,6 +30,12 @@
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.48);
 }
 
+.headerButtons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .grow {
   flex: 1;
 }

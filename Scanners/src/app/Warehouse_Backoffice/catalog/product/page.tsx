@@ -40,7 +40,6 @@ type FormState = {
   transfer_quantity: string;
   cost: string;
   has_variations: boolean;
-  locked_from_warehouse_id: string;
   outlet_order_visible: boolean;
   image_url: string;
   default_warehouse_id: string;
@@ -61,7 +60,6 @@ const defaultForm: FormState = {
   transfer_quantity: "1",
   cost: "0",
   has_variations: false,
-  locked_from_warehouse_id: "",
   outlet_order_visible: true,
   image_url: "",
   default_warehouse_id: "",
@@ -117,7 +115,6 @@ export default function ProductCreatePage() {
         transfer_quantity: toNumber(form.transfer_quantity, 1),
         cost: toNumber(form.cost, 0),
         default_warehouse_id: form.default_warehouse_id || null,
-        locked_from_warehouse_id: form.locked_from_warehouse_id || null,
       };
 
       const res = await fetch("/api/catalog/items", {
@@ -141,7 +138,8 @@ export default function ProductCreatePage() {
     }
   };
 
-  const back = () => router.push("/Warehouse_Backoffice/catalog");
+  const back = () => router.push("/Warehouse_Backoffice");
+  const backOne = () => router.back();
 
   return (
     <div className={styles.page}>
@@ -155,9 +153,14 @@ export default function ProductCreatePage() {
               Insert a new product into catalog_items. Labels below tell you exactly what to type (pack qty vs sent qty, etc.).
             </p>
           </div>
-          <button onClick={back} className={styles.backButton}>
-            Back
-          </button>
+          <div className={styles.headerButtons}>
+            <button onClick={backOne} className={styles.backButton}>
+              Back
+            </button>
+            <button onClick={back} className={styles.backButton}>
+              Back to Dashboard
+            </button>
+          </div>
         </header>
 
         <form className={styles.form} onSubmit={submit}>
@@ -254,13 +257,6 @@ export default function ProductCreatePage() {
                   onChange={(v) => handleChange("cost", v)}
                   step="0.01"
                   min="0"
-                />
-                <Select
-                  label="Lock ordering to warehouse"
-                  hint="If set, outlets will draw only from this warehouse"
-                  value={form.locked_from_warehouse_id}
-                  onChange={(v) => handleChange("locked_from_warehouse_id", v)}
-                  options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
                 />
               </>
             )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import styles from "./recipes.module.css";
 
@@ -21,6 +22,16 @@ type PendingLine = {
 
 const UOMS = ["ml", "l", "g", "kg", "mg", "microgram"];
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 function buildClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -31,6 +42,7 @@ function buildClient() {
 }
 
 export default function RecipesPage() {
+  const router = useRouter();
   const supabase = useMemo(() => buildClient(), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,9 +96,9 @@ export default function RecipesPage() {
         setFinishedItems(fin.data || []);
         setIngredientItems(ing.data || []);
         setRawItems(raw.data || []);
-      } catch (e: any) {
+      } catch (error) {
         if (!active) return;
-        setError(e?.message || "Failed to load catalog items");
+        setError(toErrorMessage(error) || "Failed to load catalog items");
       } finally {
         if (active) setLoading(false);
       }
@@ -140,8 +152,8 @@ export default function RecipesPage() {
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
       setSuccess("Finished product recipe saved.");
-    } catch (e: any) {
-      setError(e?.message || "Unable to save finished product recipe.");
+    } catch (error) {
+      setError(toErrorMessage(error) || "Unable to save finished product recipe.");
     } finally {
       setLoading(false);
     }
@@ -170,8 +182,8 @@ export default function RecipesPage() {
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
       setSuccess("Ingredient prep recipe saved.");
-    } catch (e: any) {
-      setError(e?.message || "Unable to save ingredient recipe.");
+    } catch (error) {
+      setError(toErrorMessage(error) || "Unable to save ingredient recipe.");
     } finally {
       setLoading(false);
     }
@@ -187,7 +199,15 @@ export default function RecipesPage() {
             Link finished products to the ingredients they consume, and link those ingredients to their raw materials.
           </p>
         </div>
-        {loading && <span className={styles.pill}>Loading…</span>}
+        <div className={styles.headerActions}>
+          <button className={styles.backButton} onClick={() => router.back()}>
+            Back
+          </button>
+          <button className={styles.backButton} onClick={() => router.push("/Warehouse_Backoffice")}>
+            Back to Dashboard
+          </button>
+          {loading && <span className={styles.pill}>Loading…</span>}
+        </div>
       </header>
 
       {error && <div className={styles.toastError}>{error}</div>}
