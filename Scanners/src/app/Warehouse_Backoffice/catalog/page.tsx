@@ -44,6 +44,14 @@ export default function CatalogMenu() {
             <p className={styles.cardBody}>Attach a variant to an existing product.</p>
             <span className={styles.cardCta}>Open form</span>
           </button>
+          <button
+            onClick={() => go("/Warehouse_Backoffice/recipes")}
+            className={`${styles.actionCard} ${styles.recipeCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleRecipe}`}>Recipes</p>
+            <p className={styles.cardBody}>Link finished goods to ingredients, and ingredients to raw materials.</p>
+            <span className={styles.cardCta}>Open recipes</span>
+          </button>
         </section>
       </main>
     </div>

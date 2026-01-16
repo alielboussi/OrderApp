@@ -1,8 +1,8 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "./useWarehouseAuth";
+import styles from "./dashboard.module.css";
 
 export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
@@ -10,170 +10,43 @@ export default function WarehouseBackofficeDashboard() {
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
-  const goToRecipes = () => router.push("/Warehouse_Backoffice/recipes");
 
   if (status !== "ok") {
     return null;
   }
-
   return (
-    <div style={styles.page}>
+    <div className={styles.page}>
       <style>{globalStyles}</style>
-      <main style={styles.shell}>
-        <header style={styles.hero}>
-          <div style={{ flex: 1 }}>
-            <p style={styles.kicker}>AfterTen Logistics</p>
-            <h1 style={styles.title}>Warehouse Backoffice</h1>
-            <p style={styles.subtitle}>
+      <main className={styles.shell}>
+        <header className={styles.hero}>
+          <div className={styles.grow}>
+            <p className={styles.kicker}>AfterTen Logistics</p>
+            <h1 className={styles.title}>Warehouse Backoffice</h1>
+            <p className={styles.subtitle}>
               Choose where to work today. Transfers are live now; additional control rooms will plug in here soon.
             </p>
-            <p style={styles.notice}>Live metrics will return once final dashboards are signed off.</p>
+            <p className={styles.notice}>Live metrics will return once final dashboards are signed off.</p>
           </div>
         </header>
 
-        <section style={styles.actionsGrid}>
-          <button
-            onClick={goToInventory}
-            style={{
-              ...styles.actionCard,
-              borderColor: "#7dd3fc88",
-              boxShadow: "0 20px 40px #7dd3fc33",
-              width: "6.5cm",
-              minHeight: "6.5cm",
-            }}
-          >
-            <p style={{ ...styles.cardTitle, color: "#7dd3fc" }}>Inventory</p>
-            <p style={styles.cardBody}>Enter transfers, damages, and purchases.</p>
-            <span style={styles.cardCta}>Open</span>
+        <section className={styles.actionsGrid}>
+          <button onClick={goToInventory} className={`${styles.actionCard} ${styles.inventoryCard}`}>
+            <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Inventory</p>
+            <p className={styles.cardBody}>Enter transfers, damages, and purchases.</p>
+            <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button
-            onClick={goToCatalog}
-            style={{
-              ...styles.actionCard,
-              borderColor: "#22c55e88",
-              boxShadow: "0 20px 40px #22c55e33",
-              width: "6.5cm",
-              minHeight: "6.5cm",
-            }}
-          >
-            <p style={{ ...styles.cardTitle, color: "#22c55e" }}>Catalog</p>
-            <p style={styles.cardBody}>Create products and variants for the warehouse catalog.</p>
-            <span style={styles.cardCta}>Open</span>
-          </button>
-
-          <button
-            onClick={goToRecipes}
-            style={{
-              ...styles.actionCard,
-              borderColor: "#a855f788",
-              boxShadow: "0 20px 40px #a855f733",
-              width: "6.5cm",
-              minHeight: "6.5cm",
-            }}
-          >
-            <p style={{ ...styles.cardTitle, color: "#c084fc" }}>Recipes</p>
-            <p style={styles.cardBody}>Link finished goods to ingredients, and ingredients to raw materials.</p>
-            <span style={styles.cardCta}>Open</span>
+          <button onClick={goToCatalog} className={`${styles.actionCard} ${styles.catalogCard}`}>
+            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Catalog</p>
+            <p className={styles.cardBody}>Create products and variants for the warehouse catalog.</p>
+            <span className={styles.cardCta}>Open</span>
           </button>
         </section>
 
       </main>
     </div>
   );
-}
-
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "radial-gradient(circle at 20% 20%, #182647, #060b16 70%)",
-    display: "flex",
-    justifyContent: "center",
-    padding: "40px 24px",
-    color: "#f4f6ff",
-    fontFamily: '"Space Grotesk", "Segoe UI", system-ui, sans-serif',
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 1280,
-    display: "flex",
-    flexDirection: "column",
-    gap: 32,
-  },
-  hero: {
-    display: "flex",
-    gap: 32,
-    borderRadius: 32,
-    border: "1px solid rgba(255,255,255,0.1)",
-    padding: 32,
-    background: "rgba(6,11,22,0.75)",
-    backdropFilter: "blur(16px)",
-    boxShadow: "0 30px 60px rgba(0,0,0,0.45)",
-  },
-  kicker: {
-    margin: 0,
-    fontSize: 14,
-    letterSpacing: 4,
-    textTransform: "uppercase",
-    color: "#8da2ff",
-  },
-  title: {
-    margin: "8px 0 12px",
-    fontSize: 48,
-    letterSpacing: -1,
-    fontWeight: 700,
-  },
-  subtitle: {
-    margin: 0,
-    color: "#c6d2ff",
-    maxWidth: 640,
-    lineHeight: 1.5,
-  },
-  notice: {
-    marginTop: 28,
-    fontSize: 14,
-    color: "#7dd3fc",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  actionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(6.5cm, 1fr))",
-    gap: 28,
-    justifyItems: "center",
-  },
-  actionCard: {
-    textAlign: "left",
-    borderRadius: 32,
-    padding: 24,
-    background: "rgba(12,17,33,0.85)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    color: "inherit",
-    transition: "transform 180ms ease, box-shadow 180ms ease",
-    width: "6cm",
-    minHeight: "6cm",
-    aspectRatio: "1 / 1",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  },
-  cardTitle: {
-    fontSize: 22,
-    letterSpacing: 0.5,
-    margin: "0 0 12px",
-    fontWeight: 600,
-  },
-  cardBody: {
-    margin: "0 0 20px",
-    color: "#cbd5f5",
-    lineHeight: 1.45,
-  },
-  cardCta: {
-    fontWeight: 600,
-    fontSize: 14,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: "#f8fafc",
+    </div>
   },
 };
 

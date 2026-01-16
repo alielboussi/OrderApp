@@ -5,7 +5,19 @@ import { useRouter } from "next/navigation";
 import styles from "./variant.module.css";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 
-const qtyUnits = ["each", "g", "kg", "mg", "ml", "l"] as const;
+const qtyUnits = [
+  "each",
+  "g",
+  "kg",
+  "mg",
+  "ml",
+  "l",
+  "case",
+  "crate",
+  "bottle",
+  "Tin Can",
+  "Jar",
+] as const;
 
 type Warehouse = { id: string; name: string };
 type Item = { id: string; name: string; sku?: string | null };

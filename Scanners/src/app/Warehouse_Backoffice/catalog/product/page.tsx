@@ -1,10 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
+import styles from "./product.module.css";
 
-const qtyUnits = ["each", "g", "kg", "mg", "ml", "l"] as const;
+const qtyUnits = [
+  "each",
+  "g",
+  "kg",
+  "mg",
+  "ml",
+  "l",
+  "case",
+  "crate",
+  "bottle",
+  "Tin Can",
+  "Jar",
+] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },
@@ -62,6 +75,8 @@ export default function ProductCreatePage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const disableVariantControlled = form.has_variations;
 
   useEffect(() => {
     async function loadWarehouses() {
@@ -129,24 +144,24 @@ export default function ProductCreatePage() {
   const back = () => router.push("/Warehouse_Backoffice/catalog");
 
   return (
-    <div style={styles.page}>
+    <div className={styles.page}>
       <style>{globalStyles}</style>
-      <main style={styles.shell}>
-        <header style={styles.hero}>
-          <div style={{ flex: 1 }}>
-            <p style={styles.kicker}>Catalog</p>
-            <h1 style={styles.title}>Create Product</h1>
-            <p style={styles.subtitle}>
+      <main className={styles.shell}>
+        <header className={styles.hero}>
+          <div className={styles.grow}>
+            <p className={styles.kicker}>Catalog</p>
+            <h1 className={styles.title}>Create Product</h1>
+            <p className={styles.subtitle}>
               Insert a new product into catalog_items. Labels below tell you exactly what to type (pack qty vs sent qty, etc.).
             </p>
           </div>
-          <button onClick={back} style={styles.backButton}>
+          <button onClick={back} className={styles.backButton}>
             Back
           </button>
         </header>
 
-        <form style={styles.form} onSubmit={submit}>
-          <div style={styles.fieldGrid}>
+        <form className={styles.form} onSubmit={submit}>
+          <div className={styles.fieldGrid}>
             <Field
               label="Product name"
               hint="Friendly name staff will see"
@@ -173,6 +188,7 @@ export default function ProductCreatePage() {
               value={form.base_unit}
               onChange={(v) => handleChange("base_unit", v)}
               options={qtyUnits.map((value) => ({ value, label: value }))}
+              disabled={disableVariantControlled}
             />
             <Select
               label="Consumption unit"
@@ -180,6 +196,7 @@ export default function ProductCreatePage() {
               value={form.consumption_uom}
               onChange={(v) => handleChange("consumption_uom", v)}
               options={qtyUnits.map((value) => ({ value, label: value }))}
+              disabled={disableVariantControlled}
             />
             <Select
               label="Supplier pack unit"
@@ -187,6 +204,7 @@ export default function ProductCreatePage() {
               value={form.purchase_pack_unit}
               onChange={(v) => handleChange("purchase_pack_unit", v)}
               options={qtyUnits.map((value) => ({ value, label: value }))}
+              disabled={disableVariantControlled}
             />
             <Field
               type="number"
@@ -196,6 +214,7 @@ export default function ProductCreatePage() {
               onChange={(v) => handleChange("units_per_purchase_pack", v)}
               step="0.01"
               min="0"
+              disabled={disableVariantControlled}
             />
             <Field
               type="number"
@@ -205,6 +224,7 @@ export default function ProductCreatePage() {
               onChange={(v) => handleChange("purchase_unit_mass", v)}
               step="0.01"
               min="0"
+              disabled={disableVariantControlled}
             />
             <Select
               label="Mass/volume unit"
@@ -212,6 +232,7 @@ export default function ProductCreatePage() {
               value={form.purchase_unit_mass_uom}
               onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
               options={qtyUnits.map((value) => ({ value, label: value }))}
+              disabled={disableVariantControlled}
             />
             <Select
               label="Transfer unit"
@@ -219,6 +240,7 @@ export default function ProductCreatePage() {
               value={form.transfer_unit}
               onChange={(v) => handleChange("transfer_unit", v)}
               options={qtyUnits.map((value) => ({ value, label: value }))}
+              disabled={disableVariantControlled}
             />
             <Field
               type="number"
@@ -228,6 +250,7 @@ export default function ProductCreatePage() {
               onChange={(v) => handleChange("transfer_quantity", v)}
               step="0.01"
               min="0"
+              disabled={disableVariantControlled}
             />
             <Field
               type="number"
@@ -237,6 +260,7 @@ export default function ProductCreatePage() {
               onChange={(v) => handleChange("cost", v)}
               step="0.01"
               min="0"
+              disabled={disableVariantControlled}
             />
             <Select
               label="Default warehouse"
@@ -251,6 +275,7 @@ export default function ProductCreatePage() {
               value={form.locked_from_warehouse_id}
               onChange={(v) => handleChange("locked_from_warehouse_id", v)}
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
+              disabled={disableVariantControlled}
             />
             <Field
               label="Image URL (optional)"
@@ -260,7 +285,7 @@ export default function ProductCreatePage() {
             />
           </div>
 
-          <div style={styles.toggleRow}>
+          <div className={styles.toggleRow}>
             <Checkbox
               label="Show in outlet orders"
               hint="If off, this item stays hidden from outlet ordering"
@@ -282,16 +307,16 @@ export default function ProductCreatePage() {
           </div>
 
           {result && (
-            <div style={{ ...styles.callout, borderColor: result.ok ? "#22c55e" : "#f87171" }}>
+            <div className={`${styles.callout} ${result.ok ? styles.calloutSuccess : styles.calloutError}`}>
               {result.message}
             </div>
           )}
 
-          <div style={styles.actions}>
-            <button type="button" onClick={() => setForm(defaultForm)} style={styles.secondaryButton}>
+          <div className={styles.actions}>
+            <button type="button" onClick={() => setForm(defaultForm)} className={styles.secondaryButton}>
               Clear form
             </button>
-            <button type="submit" style={styles.primaryButton} disabled={saving}>
+            <button type="submit" className={styles.primaryButton} disabled={saving}>
               {saving ? "Saving..." : "Save product"}
             </button>
           </div>
@@ -310,21 +335,23 @@ type FieldProps = {
   type?: string;
   step?: string;
   min?: string;
+  disabled?: boolean;
 };
 
-function Field({ label, hint, value, onChange, required, type = "text", step, min }: FieldProps) {
+function Field({ label, hint, value, onChange, required, type = "text", step, min, disabled }: FieldProps) {
   return (
-    <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
-      <small style={styles.hint}>{hint}</small>
+    <label className={styles.field}>
+      <span className={styles.label}>{label}</span>
+      <small className={styles.hint}>{hint}</small>
       <input
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={styles.input}
+        className={styles.input}
         type={type}
         step={step}
         min={min}
+        disabled={disabled}
       />
     </label>
   );
@@ -337,14 +364,21 @@ type SelectProps = {
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
   required?: boolean;
+  disabled?: boolean;
 };
 
-function Select({ label, hint, value, onChange, options, required }: SelectProps) {
+function Select({ label, hint, value, onChange, options, required, disabled }: SelectProps) {
   return (
-    <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
-      <small style={styles.hint}>{hint}</small>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={styles.input} required={required}>
+    <label className={styles.field}>
+      <span className={styles.label}>{label}</span>
+      <small className={styles.hint}>{hint}</small>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={styles.input}
+        required={required}
+        disabled={disabled}
+      >
         {options.map((option) => (
           <option key={option.value || option.label} value={option.value}>
             {option.label}
@@ -364,170 +398,20 @@ type CheckboxProps = {
 
 function Checkbox({ label, hint, checked, onChange }: CheckboxProps) {
   return (
-    <label style={styles.checkbox}>
+    <label className={styles.checkbox}>
       <div>
-        <span style={styles.label}>{label}</span>
-        <small style={styles.hint}>{hint}</small>
+        <span className={styles.label}>{label}</span>
+        <small className={styles.hint}>{hint}</small>
       </div>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input
+        className={styles.checkboxInput}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
     </label>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "radial-gradient(circle at 20% 20%, #182647, #060b16 70%)",
-    display: "flex",
-    justifyContent: "center",
-    padding: "40px 24px 60px",
-    color: "#f4f6ff",
-    fontFamily: '"Space Grotesk", "Segoe UI", system-ui, sans-serif',
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 1200,
-    display: "flex",
-    flexDirection: "column",
-    gap: 24,
-  },
-  hero: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 24,
-    borderRadius: 28,
-    border: "1px solid rgba(255,255,255,0.1)",
-    padding: 22,
-    background: "rgba(6,11,22,0.78)",
-    boxShadow: "0 28px 60px rgba(0,0,0,0.48)",
-  },
-  kicker: {
-    margin: 0,
-    fontSize: 13,
-    letterSpacing: 3,
-    textTransform: "uppercase",
-    color: "#8da2ff",
-  },
-  title: {
-    margin: "8px 0 6px",
-    fontSize: 38,
-    letterSpacing: -0.4,
-    fontWeight: 700,
-  },
-  subtitle: {
-    margin: 0,
-    color: "#c6d2ff",
-    maxWidth: 640,
-    lineHeight: 1.5,
-    fontSize: 16,
-  },
-  backButton: {
-    background: "transparent",
-    color: "#f8fafc",
-    border: "1px solid rgba(255,255,255,0.3)",
-    borderRadius: 999,
-    padding: "10px 18px",
-    fontWeight: 600,
-    letterSpacing: 1,
-    cursor: "pointer",
-  },
-  form: {
-    borderRadius: 22,
-    border: "1px solid rgba(125,211,252,0.35)",
-    background: "rgba(12,17,33,0.88)",
-    padding: 22,
-    boxShadow: "0 24px 48px rgba(0,0,0,0.5)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 20,
-  },
-  fieldGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: 16,
-  },
-  field: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    padding: 12,
-    borderRadius: 16,
-    border: "1.5px solid rgba(125,211,252,0.35)",
-    background: "rgba(17,24,39,0.6)",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#e2e8f0",
-    letterSpacing: 0.3,
-  },
-  hint: {
-    fontSize: 12,
-    color: "#93c5fd",
-  },
-  input: {
-    marginTop: 4,
-    width: "100%",
-    borderRadius: 12,
-    border: "1px solid rgba(34,197,94,0.7)",
-    background: "#0c152b",
-    color: "#f8fafc",
-    padding: "12px 12px",
-    fontSize: 15,
-  },
-  checkbox: {
-    border: "1.5px solid rgba(34,197,94,0.7)",
-    borderRadius: 14,
-    padding: 12,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    background: "rgba(17,24,39,0.6)",
-  },
-  toggleRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: 12,
-  },
-  callout: {
-    border: "1.5px solid",
-    borderRadius: 14,
-    padding: 12,
-    background: "rgba(12,17,33,0.8)",
-    color: "#f8fafc",
-    fontWeight: 600,
-  },
-  actions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  primaryButton: {
-    background: "linear-gradient(90deg, #22c55e, #16a34a)",
-    color: "#0b1020",
-    border: "1px solid #22c55e",
-    borderRadius: 14,
-    padding: "12px 18px",
-    fontWeight: 800,
-    letterSpacing: 0.5,
-    cursor: "pointer",
-    minWidth: 150,
-  },
-  secondaryButton: {
-    background: "transparent",
-    color: "#f8fafc",
-    border: "1px solid rgba(255,255,255,0.35)",
-    borderRadius: 14,
-    padding: "12px 18px",
-    fontWeight: 700,
-    letterSpacing: 0.5,
-    cursor: "pointer",
-    minWidth: 120,
-  },
-};
 
 const globalStyles = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');

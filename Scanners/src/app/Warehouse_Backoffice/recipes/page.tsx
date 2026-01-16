@@ -213,6 +213,7 @@ export default function RecipesPage() {
             className={styles.select}
             value={selectedFinished}
             onChange={(e) => setSelectedFinished(e.target.value)}
+            aria-label="Finished product"
           >
             <option value="">Select a finished product</option>
             {finishedItems.map((item) => (
@@ -239,6 +240,7 @@ export default function RecipesPage() {
                   className={styles.select}
                   value={line.ingredientId}
                   onChange={(e) => updateLine(idx, "ingredientId", e.target.value, setFinishedLines)}
+                  aria-label="Ingredient item"
                 >
                   <option value="">Select ingredient</option>
                   {ingredientOptionsForFinished.map((item) => (
@@ -266,6 +268,7 @@ export default function RecipesPage() {
                   className={styles.select}
                   value={line.uom}
                   onChange={(e) => updateLine(idx, "uom", e.target.value, setFinishedLines)}
+                  aria-label="Unit of measure"
                 >
                   {UOMS.map((u) => (
                     <option key={u} value={u}>
@@ -299,6 +302,7 @@ export default function RecipesPage() {
             className={styles.select}
             value={selectedIngredientTarget}
             onChange={(e) => setSelectedIngredientTarget(e.target.value)}
+            aria-label="Ingredient being prepared"
           >
             <option value="">Select ingredient</option>
             {ingredientItems.map((item) => (
@@ -325,6 +329,7 @@ export default function RecipesPage() {
                   className={styles.select}
                   value={line.ingredientId}
                   onChange={(e) => updateLine(idx, "ingredientId", e.target.value, setIngredientLines)}
+                  aria-label="Raw material"
                 >
                   <option value="">Select raw material</option>
                   {rawOptionsForIngredient.map((item) => (
@@ -352,6 +357,7 @@ export default function RecipesPage() {
                   className={styles.select}
                   value={line.uom}
                   onChange={(e) => updateLine(idx, "uom", e.target.value, setIngredientLines)}
+                  aria-label="Unit of measure"
                 >
                   {UOMS.map((u) => (
                     <option key={u} value={u}>
