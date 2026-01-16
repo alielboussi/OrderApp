@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "./product.module.css";
@@ -73,7 +73,7 @@ const defaultForm: FormState = {
   active: true,
 };
 
-export default function ProductCreatePage() {
+function ProductCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { status } = useWarehouseAuth();
@@ -439,6 +439,14 @@ export default function ProductCreatePage() {
         </form>
       </main>
     </div>
+  );
+}
+
+export default function ProductCreatePageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <ProductCreatePage />
+    </Suspense>
   );
 }
 
