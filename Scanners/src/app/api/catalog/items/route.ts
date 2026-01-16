@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
 const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
-const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l"] as const;
+const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle", "Tin Can", "Jar", "plastic"] as const;
 
 type ItemKind = (typeof ITEM_KINDS)[number];
 type QtyUnit = (typeof QTY_UNITS)[number];
@@ -17,10 +17,13 @@ type ItemPayload = {
   units_per_purchase_pack: number;
   purchase_unit_mass?: number | null;
   purchase_unit_mass_uom?: QtyUnit | null;
+  consumption_unit_mass?: number | null;
+  consumption_unit_mass_uom?: QtyUnit | null;
   transfer_unit: string;
   transfer_quantity: number;
   cost: number;
   has_variations: boolean;
+  has_recipe: boolean;
   outlet_order_visible: boolean;
   image_url?: string | null;
   default_warehouse_id?: string | null;
@@ -28,6 +31,16 @@ type ItemPayload = {
 };
 
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+const BASE_FIELDS =
+  "id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active";
+
+const OPTIONAL_COLUMNS = ["has_recipe", "consumption_unit_mass", "consumption_unit_mass_uom"] as const;
+
+function selectFields(optional: string[]) {
+  const optionalPart = optional.length ? `,${optional.join(",")}` : "";
+  return `${BASE_FIELDS}${optionalPart}`;
+}
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value.trim());
@@ -88,23 +101,42 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim() || null;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-    const baseSelect = supabase
-      .from("catalog_items")
-      .select("id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active");
+    let optional = [...OPTIONAL_COLUMNS];
+    let data: unknown;
+    let error: any;
+    let single = false;
 
-    if (id) {
-      const { data, error } = await baseSelect.eq("id", id).maybeSingle();
-      if (error) throw error;
+    while (true) {
+      const baseSelect = supabase.from("catalog_items").select(selectFields(optional));
+      if (id) {
+        const result = await baseSelect.eq("id", id).maybeSingle();
+        data = result.data;
+        error = result.error;
+        single = true;
+      } else {
+        let listQuery = baseSelect.order("name");
+        if (search) listQuery = listQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
+        const result = await listQuery;
+        data = Array.isArray(result.data) ? result.data : [];
+        error = result.error;
+        single = false;
+      }
+
+      if (error?.code === "42703" && optional.length) {
+        optional.pop();
+        continue;
+      }
+      break;
+    }
+
+    if (error) throw error;
+
+    if (single) {
       if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ item: data });
     }
 
-    let listQuery = baseSelect.order("name");
-    if (search) listQuery = listQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
-
-    const { data, error } = await listQuery;
-    if (error) throw error;
-    return NextResponse.json({ items: Array.isArray(data) ? data : [] });
+    return NextResponse.json({ items: data as unknown[] });
   } catch (error) {
     console.error("[catalog/items] GET failed", error);
     return NextResponse.json({ error: "Unable to load items" }, { status: 500 });
@@ -141,6 +173,13 @@ export async function POST(request: Request) {
       purchaseUnitMass = mass.value;
     }
 
+    let consumptionUnitMassValue: number | null = null;
+    if (body.consumption_unit_mass !== undefined && body.consumption_unit_mass !== null && `${body.consumption_unit_mass}`.trim() !== "") {
+      const mass = toNumber(body.consumption_unit_mass, 0, 0);
+      if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+      consumptionUnitMassValue = mass.value;
+    }
+
     const payload: ItemPayload = {
       name,
       sku: cleanText(body.sku) ?? null,
@@ -151,10 +190,16 @@ export async function POST(request: Request) {
       units_per_purchase_pack: unitsPerPack.value,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
+      consumption_unit_mass: consumptionUnitMassValue,
+      consumption_unit_mass_uom:
+        consumptionUnitMassValue !== null && consumptionUnitMassValue !== undefined
+          ? pickQtyUnit(body.consumption_unit_mass_uom, "kg")
+          : null,
       transfer_unit: transferUnit,
       transfer_quantity: transferQuantity.value,
       cost: cost.value,
       has_variations: cleanBoolean(body.has_variations, false),
+      has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: cleanUuid(body.default_warehouse_id),
@@ -162,11 +207,28 @@ export async function POST(request: Request) {
     };
 
     const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("catalog_items")
-      .insert([payload])
-      .select("id,name,sku,item_kind")
-      .single();
+    let attemptPayload: Partial<ItemPayload> = payload;
+    let optionalKeys = [...OPTIONAL_COLUMNS];
+    let data;
+    let error: any;
+
+    while (true) {
+      ({ data, error } = await supabase
+        .from("catalog_items")
+        .insert([attemptPayload])
+        .select("id,name,sku,item_kind")
+        .single());
+
+      if (error?.code === "42703" && optionalKeys.length) {
+        const removeKey = optionalKeys.shift();
+        if (removeKey) {
+          const { [removeKey]: _removed, ...rest } = attemptPayload as Record<string, unknown>;
+          attemptPayload = rest as Partial<ItemPayload>;
+          continue;
+        }
+      }
+      break;
+    }
 
     if (error) throw error;
 
@@ -209,6 +271,13 @@ export async function PUT(request: Request) {
       if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
       purchaseUnitMass = mass.value;
     }
+    
+    let consumptionUnitMassValue: number | null = null;
+    if (body.consumption_unit_mass !== undefined && body.consumption_unit_mass !== null && `${body.consumption_unit_mass}`.trim() !== "") {
+      const mass = toNumber(body.consumption_unit_mass, 0, 0);
+      if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+      consumptionUnitMassValue = mass.value;
+    }
 
     const payload: ItemPayload = {
       name,
@@ -220,10 +289,16 @@ export async function PUT(request: Request) {
       units_per_purchase_pack: unitsPerPack.value,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
+      consumption_unit_mass: consumptionUnitMassValue,
+      consumption_unit_mass_uom:
+        consumptionUnitMassValue !== null && consumptionUnitMassValue !== undefined
+          ? pickQtyUnit(body.consumption_unit_mass_uom, "kg")
+          : null,
       transfer_unit: transferUnit,
       transfer_quantity: transferQuantity.value,
       cost: cost.value,
       has_variations: cleanBoolean(body.has_variations, false),
+      has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: cleanUuid(body.default_warehouse_id),
@@ -231,12 +306,29 @@ export async function PUT(request: Request) {
     };
 
     const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("catalog_items")
-      .update(payload)
-      .eq("id", id)
-      .select("id,name,sku,item_kind")
-      .single();
+    let attemptPayload: Partial<ItemPayload> = payload;
+    let optionalKeys = [...OPTIONAL_COLUMNS];
+    let data;
+    let error: any;
+
+    while (true) {
+      ({ data, error } = await supabase
+        .from("catalog_items")
+        .update(attemptPayload)
+        .eq("id", id)
+        .select("id,name,sku,item_kind")
+        .single());
+
+      if (error?.code === "42703" && optionalKeys.length) {
+        const removeKey = optionalKeys.shift();
+        if (removeKey) {
+          const { [removeKey]: _removed, ...rest } = attemptPayload as Record<string, unknown>;
+          attemptPayload = rest as Partial<ItemPayload>;
+          continue;
+        }
+      }
+      break;
+    }
 
     if (error) throw error;
 

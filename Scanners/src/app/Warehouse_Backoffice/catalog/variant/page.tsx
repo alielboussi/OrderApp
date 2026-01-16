@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./variant.module.css";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 
@@ -60,12 +60,17 @@ const defaultForm: FormState = {
 
 export default function VariantCreatePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { status } = useWarehouseAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [loadingVariant, setLoadingVariant] = useState(false);
+
+  const editingId = searchParams?.get("id")?.trim() || "";
+  const incomingItemId = searchParams?.get("item_id")?.trim() || "";
 
   useEffect(() => {
     async function load() {
@@ -85,6 +90,46 @@ export default function VariantCreatePage() {
     }
     load();
   }, []);
+
+  useEffect(() => {
+    async function loadVariant(id: string) {
+      if (!id) return;
+      setLoadingVariant(true);
+      try {
+        const res = await fetch(`/api/catalog/variants?id=${encodeURIComponent(id)}`);
+        if (!res.ok) throw new Error("Failed to load variant");
+        const json = await res.json();
+        const variant = json?.variant;
+        if (variant) {
+          setForm({
+            item_id: variant.item_id ?? incomingItemId ?? "",
+            name: variant.name ?? "",
+            sku: variant.sku ?? "",
+            consumption_uom: variant.consumption_uom ?? "each",
+            purchase_pack_unit: variant.purchase_pack_unit ?? "each",
+            units_per_purchase_pack: (variant.units_per_purchase_pack ?? 1).toString(),
+            purchase_unit_mass: variant.purchase_unit_mass != null ? variant.purchase_unit_mass.toString() : "",
+            purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? "kg",
+            transfer_unit: variant.transfer_unit ?? "each",
+            transfer_quantity: (variant.transfer_quantity ?? 1).toString(),
+            cost: (variant.cost ?? 0).toString(),
+            outlet_order_visible: variant.outlet_order_visible ?? true,
+            image_url: variant.image_url ?? "",
+            default_warehouse_id: variant.default_warehouse_id ?? "",
+            active: variant.active ?? true,
+          });
+        }
+      } catch (error) {
+        console.error("variant load failed", error);
+        setResult({ ok: false, message: error instanceof Error ? error.message : "Failed to load variant" });
+      } finally {
+        setLoadingVariant(false);
+      }
+    }
+
+    if (editingId) loadVariant(editingId);
+    if (!editingId && incomingItemId) setForm((prev) => ({ ...prev, item_id: incomingItemId }));
+  }, [editingId, incomingItemId]);
 
   const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select parent product" }, ...items], [items]);
@@ -112,10 +157,11 @@ export default function VariantCreatePage() {
         transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
         cost: toNumber(form.cost, 0, -0.0001),
         default_warehouse_id: form.default_warehouse_id || null,
+        ...(editingId ? { id: editingId } : {}),
       };
 
       const res = await fetch("/api/catalog/variants", {
-        method: "POST",
+        method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -125,8 +171,8 @@ export default function VariantCreatePage() {
         throw new Error(json.error || "Could not create variant");
       }
 
-      setResult({ ok: true, message: "Variant saved" });
-      setForm(defaultForm);
+      setResult({ ok: true, message: editingId ? "Variant updated" : "Variant saved" });
+      if (!editingId) setForm(defaultForm);
     } catch (error) {
       console.error(error);
       setResult({ ok: false, message: error instanceof Error ? error.message : "Failed to save variant" });
@@ -144,9 +190,11 @@ export default function VariantCreatePage() {
         <header className={styles.hero}>
           <div className={styles.grow}>
             <p className={styles.kicker}>Catalog</p>
-            <h1 className={styles.title}>Create Variant</h1>
+            <h1 className={styles.title}>{editingId ? "Edit Variant" : "Create Variant"}</h1>
             <p className={styles.subtitle}>
-              Attach a variant to an existing product. Use clear names so teams know what quantity to type.
+              {editingId
+                ? "Update an existing variant attached to a product."
+                : "Attach a variant to an existing product. Use clear names so teams know what quantity to type."}
             </p>
           </div>
           <div className={styles.headerButtons}>

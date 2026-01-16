@@ -20,7 +20,20 @@ type PendingLine = {
   uom: string;
 };
 
-const UOMS = ["ml", "l", "g", "kg", "mg", "microgram"];
+const UOMS = [
+  { value: "each", label: "Each" },
+  { value: "g", label: "Grams" },
+  { value: "kg", label: "Kilograms" },
+  { value: "mg", label: "Miligrams" },
+  { value: "ml", label: "Mililitres" },
+  { value: "l", label: "Litres" },
+  { value: "case", label: "Case(s)" },
+  { value: "crate", label: "Crate(s)" },
+  { value: "bottle", label: "Bottle(s)" },
+  { value: "Tin Can", label: "Tin Can(s)" },
+  { value: "Jar", label: "Jar(s)" },
+  { value: "plastic", label: "Plastic(s)" },
+];
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -291,8 +304,8 @@ export default function RecipesPage() {
                   aria-label="Unit of measure"
                 >
                   {UOMS.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
+                    <option key={u.value} value={u.value}>
+                      {u.label}
                     </option>
                   ))}
                 </select>
@@ -380,8 +393,8 @@ export default function RecipesPage() {
                   aria-label="Unit of measure"
                 >
                   {UOMS.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
+                    <option key={u.value} value={u.value}>
+                      {u.label}
                     </option>
                   ))}
                 </select>

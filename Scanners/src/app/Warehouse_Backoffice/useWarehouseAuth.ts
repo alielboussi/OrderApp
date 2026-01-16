@@ -2,19 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient, type Session } from "@supabase/supabase-js";
+import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 
 const allowedRoleId = "6b9e657a-6131-4a0b-8afa-0ce260f8ed0c";
 const allowedSlugLower = "administrator";
 const allowedUserIds = new Set(["8d4feee9-c61b-44e2-80e9-fa264075fca3"]);
 
-function buildClient() {
+let browserClient: SupabaseClient | null = null;
+
+function getBrowserClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {
     throw new Error("Supabase URL and anon key are required");
   }
-  return createClient(url, anon, { auth: { persistSession: true } });
+  if (!browserClient) {
+    browserClient = createClient(url, anon, { auth: { persistSession: true } });
+  }
+  return browserClient;
 }
 
 function isAllowed(session: Session | null): boolean {
@@ -29,7 +34,7 @@ function isAllowed(session: Session | null): boolean {
 
 export function useWarehouseAuth() {
   const router = useRouter();
-  const supabase = useMemo(() => buildClient(), []);
+  const supabase = useMemo(() => getBrowserClient(), []);
   const [status, setStatus] = useState<"checking" | "ok" | "redirecting">("checking");
 
   useEffect(() => {

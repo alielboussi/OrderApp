@@ -143,6 +143,24 @@
                     "data_type": "jsonb",
                     "column_name": "variants",
                     "is_nullable": "YES"
+                },
+                {
+                    "default": "false",
+                    "data_type": "boolean",
+                    "column_name": "has_recipe",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "consumption_unit_mass",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "consumption_unit_mass_uom",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -1022,34 +1040,10 @@
                     "is_nullable": "NO"
                 },
                 {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "sale_price",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "vat_exc_price",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
-                    "data_type": "numeric",
-                    "column_name": "flavour_price",
-                    "is_nullable": "YES"
-                },
-                {
                     "default": "false",
                     "data_type": "boolean",
                     "column_name": "is_production",
                     "is_nullable": "NO"
-                },
-                {
-                    "default": null,
-                    "data_type": "text",
-                    "column_name": "flavour_id",
-                    "is_nullable": "YES"
                 },
                 {
                     "default": null,
@@ -1085,6 +1079,30 @@
                     "default": "'base'::text",
                     "data_type": "text",
                     "column_name": "variant_key",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "sale_price",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "vat_exc_price",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "flavour_price",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "flavour_id",
                     "is_nullable": "YES"
                 }
             ],
@@ -1589,12 +1607,6 @@
                 },
                 {
                     "default": null,
-                    "data_type": "text",
-                    "column_name": "pos_flavour_id",
-                    "is_nullable": "YES"
-                },
-                {
-                    "default": null,
                     "data_type": "uuid",
                     "column_name": "catalog_item_id",
                     "is_nullable": "NO"
@@ -1621,6 +1633,36 @@
                     "default": "'base'::text",
                     "data_type": "text",
                     "column_name": "normalized_variant_key",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "pos_flavour_id",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "pos_item_name",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "pos_flavour_name",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "catalog_item_name",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "catalog_variant_name",
                     "is_nullable": "YES"
                 }
             ],
@@ -2748,6 +2790,16 @@
             "policy_name": "catalog_items_select_active"
         },
         {
+            "cmd": "SELECT",
+            "qual": "true",
+            "roles": [
+                "authenticated"
+            ],
+            "table_name": "catalog_items",
+            "with_check": null,
+            "policy_name": "catalog_items_select_any_auth"
+        },
+        {
             "cmd": "ALL",
             "qual": "(auth.role() = 'service_role'::text)",
             "roles": [
@@ -2986,6 +3038,16 @@
             "table_name": "platform_admins",
             "with_check": null,
             "policy_name": "platform_admins_self_select"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "true",
+            "roles": [
+                "authenticated"
+            ],
+            "table_name": "pos_item_map",
+            "with_check": null,
+            "policy_name": "pos_item_map_select_any_auth"
         },
         {
             "cmd": "ALL",
@@ -3282,8 +3344,14 @@
             "function_name": "record_order_fulfillment"
         },
         {
+            "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n      is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n      coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n      p_flavour_id, p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n    is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n    coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n    p_flavour_id, v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n  values (\r\n    'warehouse', v_deduct_wh, p_item_id, v_variant_key, -1 * p_qty_units, 'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id, 'sale_price', p_sale_price,\r\n                       'vat_exc_price', p_vat_exc_price, 'flavour_id', p_flavour_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
+            "return_type": "outlet_sales",
+            "function_name": "record_outlet_sale"
+        },
+        {
             "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price, is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price, coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false), p_flavour_id, p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price, is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price, coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false), p_flavour_id, v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set\r\n    consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n    updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * p_qty_units,\r\n    'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id, 'sale_price', p_sale_price, 'vat_exc_price', p_vat_exc_price, 'flavour_id', p_flavour_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set\r\n    consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n    updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * p_qty_units,\r\n    'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
             "return_type": "outlet_sales",
             "function_name": "record_outlet_sale"
         },
@@ -3313,7 +3381,7 @@
         },
         {
             "arguments": "payload jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_order(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_outlet   uuid := (payload->>'outlet_id')::uuid;\r\n  v_source   text := payload->>'source_event_id';\r\n  v_order_id uuid;\r\n  v_now      timestamptz := now();\r\n  v_item     jsonb;\r\n  v_map      record;\r\n  v_qty      numeric;\r\n  v_branch   integer := nullif(payload->>'branch_id','')::integer;\r\nbegin\r\n  if v_outlet is null or v_source is null then\r\n    raise exception 'outlet_id and source_event_id are required';\r\n  end if;\r\n\r\n  select id into v_order_id from public.orders where source_event_id = v_source;\r\n  if found then return; end if;\r\n\r\n  insert into public.orders(\r\n    outlet_id,\r\n    source_event_id,\r\n    status,\r\n    locked,\r\n    branch_id,\r\n    pos_branch_id,\r\n    order_type,\r\n    bill_type,\r\n    total_discount,\r\n    total_discount_amount,\r\n    total_gst,\r\n    service_charges,\r\n    delivery_charges,\r\n    tip,\r\n    pos_fee,\r\n    price_type,\r\n    customer_name,\r\n    customer_phone,\r\n    payments,\r\n    raw_payload,\r\n    created_at,\r\n    updated_at\r\n  ) values (\r\n    v_outlet,\r\n    v_source,\r\n    'placed',\r\n    false,\r\n    v_branch,\r\n    v_branch,\r\n    payload->>'order_type',\r\n    payload->>'bill_type',\r\n    (payload->>'total_discount')::numeric,\r\n    (payload->>'total_discount_amount')::numeric,\r\n    (payload->>'total_gst')::numeric,\r\n    (payload->>'service_charges')::numeric,\r\n    (payload->>'delivery_charges')::numeric,\r\n    (payload->>'tip')::numeric,\r\n    (payload->>'pos_fee')::numeric,\r\n    payload->>'price_type',\r\n    payload#>>'{customer,name}',\r\n    payload#>>'{customer,phone}',\r\n    payload->'payments',\r\n    payload,\r\n    v_now,\r\n    v_now\r\n  ) returning id into v_order_id;\r\n\r\n  for v_item in select * from jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) loop\r\n    select catalog_item_id, catalog_variant_key, warehouse_id\r\n      into v_map\r\n    from public.pos_item_map\r\n    where outlet_id = v_outlet\r\n      and pos_item_id = v_item->>'pos_item_id'\r\n      and (pos_flavour_id is null or pos_flavour_id = nullif(v_item->>'flavour_id',''))\r\n    order by case when pos_flavour_id is null then 1 else 0 end\r\n    limit 1;\r\n    if not found then raise exception 'No mapping for pos_item_id % at outlet %', v_item->>'pos_item_id', v_outlet; end if;\r\n\r\n    v_qty := (v_item->>'quantity')::numeric;\r\n    if v_qty is null or v_qty <= 0 then raise exception 'quantity required for item %', v_item->>'pos_item_id'; end if;\r\n\r\n    perform public.record_outlet_sale(\r\n      v_outlet,\r\n      v_map.catalog_item_id,\r\n      v_qty,\r\n      v_map.catalog_variant_key,\r\n      false,\r\n      v_map.warehouse_id,\r\n      (payload->>'occurred_at')::timestamptz,\r\n      nullif(v_item->>'sale_price','')::numeric,\r\n      nullif(v_item->>'vat_exc_price','')::numeric,\r\n      coalesce(nullif(v_item->>'flavour_price','')::numeric, nullif(v_item->>'vat_exc_price','')::numeric),\r\n      nullif(v_item->>'flavour_id',''),\r\n      jsonb_build_object('pos_item_id', v_item->>'pos_item_id', 'source_event_id', v_source, 'order_id', v_order_id, 'sale_price', nullif(v_item->>'sale_price','')::numeric, 'vat_exc_price', nullif(v_item->>'vat_exc_price','')::numeric, 'flavour_id', nullif(v_item->>'flavour_id',''), 'flavour_price', coalesce(nullif(v_item->>'flavour_price','')::numeric, nullif(v_item->>'vat_exc_price','')::numeric))\r\n    );\r\n  end loop;\r\n\r\n  insert into public.pos_inventory_consumed(\r\n    source_event_id,\r\n    outlet_id,\r\n    order_id,\r\n    raw_item_id,\r\n    quantity_consumed,\r\n    remaining_quantity,\r\n    occurred_at,\r\n    pos_date,\r\n    kdsid,\r\n    typec,\r\n    context,\r\n    unassigned_branch_note\r\n  )\r\n  select\r\n    v_source || '-ic-' || coalesce(nullif(ic->>'pos_id',''), md5(ic::text)),\r\n    v_outlet,\r\n    v_order_id,\r\n    ic->>'raw_item_id',\r\n    (ic->>'quantity_consumed')::numeric,\r\n    nullif(ic->>'remaining_quantity','')::numeric,\r\n    coalesce((ic->>'occurred_at')::timestamptz, (ic->>'pos_date')::timestamptz, v_now),\r\n    coalesce((ic->>'pos_date')::date, v_now::date),\r\n    ic->>'kdsid',\r\n    ic->>'typec',\r\n    ic,\r\n    case\r\n      when ic ? 'branch_missing_note' then ic->>'branch_missing_note'\r\n      when coalesce(nullif(ic->>'branch_id',''),'') = '' then 'Branch missing on POS inventory row'\r\n      else null\r\n    end\r\n  from jsonb_array_elements(coalesce(payload->'inventory_consumed','[]'::jsonb)) ic\r\n  on conflict (source_event_id) do nothing;\r\n\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_order(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_outlet   uuid := (payload->>'outlet_id')::uuid;\r\n  v_source   text := payload->>'source_event_id';\r\n  v_order_id uuid;\r\n  v_now      timestamptz := now();\r\n  v_item     jsonb;\r\n  v_map      record;\r\n  v_qty      numeric;\r\n  v_branch   integer := nullif(payload->>'branch_id','')::integer;\r\nbegin\r\n  if v_outlet is null or v_source is null then\r\n    raise exception 'outlet_id and source_event_id are required';\r\n  end if;\r\n\r\n  select id into v_order_id from public.orders where source_event_id = v_source;\r\n  if found then return; end if;\r\n\r\n  insert into public.orders(\r\n    outlet_id, source_event_id, status, locked, branch_id, pos_branch_id,\r\n    order_type, bill_type, total_discount, total_discount_amount, total_gst,\r\n    service_charges, delivery_charges, tip, pos_fee, price_type,\r\n    customer_name, customer_phone, payments, raw_payload, created_at, updated_at\r\n  ) values (\r\n    v_outlet, v_source, 'placed', false, v_branch, v_branch,\r\n    payload->>'order_type', payload->>'bill_type',\r\n    (payload->>'total_discount')::numeric, (payload->>'total_discount_amount')::numeric,\r\n    (payload->>'total_gst')::numeric, (payload->>'service_charges')::numeric,\r\n    (payload->>'delivery_charges')::numeric, (payload->>'tip')::numeric,\r\n    (payload->>'pos_fee')::numeric, payload->>'price_type',\r\n    payload#>>'{customer,name}', payload#>>'{customer,phone}',\r\n    payload->'payments', payload, v_now, v_now\r\n  ) returning id into v_order_id;\r\n\r\n  for v_item in select * from jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) loop\r\n    select catalog_item_id, catalog_variant_key, warehouse_id\r\n      into v_map\r\n    from public.pos_item_map\r\n    where outlet_id = v_outlet\r\n      and pos_item_id = v_item->>'pos_item_id'\r\n      and (pos_flavour_id is null or pos_flavour_id = nullif(v_item->>'flavour_id',''))\r\n    order by case when pos_flavour_id is null then 1 else 0 end\r\n    limit 1;\r\n    if not found then raise exception 'No mapping for pos_item_id % at outlet %', v_item->>'pos_item_id', v_outlet; end if;\r\n\r\n    v_qty := (v_item->>'quantity')::numeric;\r\n    if v_qty is null or v_qty <= 0 then raise exception 'quantity required for item %', v_item->>'pos_item_id'; end if;\r\n\r\n    perform public.record_outlet_sale(\r\n      v_outlet,\r\n      v_map.catalog_item_id,\r\n      v_qty,\r\n      v_map.catalog_variant_key,\r\n      false,\r\n      v_map.warehouse_id,\r\n      (payload->>'occurred_at')::timestamptz,\r\n      nullif(v_item->>'sale_price','')::numeric,\r\n      nullif(v_item->>'vat_exc_price','')::numeric,\r\n      coalesce(nullif(v_item->>'flavour_price','')::numeric, nullif(v_item->>'vat_exc_price','')::numeric),\r\n      nullif(v_item->>'flavour_id',''),\r\n      jsonb_build_object(\r\n        'pos_item_id', v_item->>'pos_item_id',\r\n        'source_event_id', v_source,\r\n        'order_id', v_order_id,\r\n        'sale_price', nullif(v_item->>'sale_price','')::numeric,\r\n        'vat_exc_price', nullif(v_item->>'vat_exc_price','')::numeric,\r\n        'flavour_id', nullif(v_item->>'flavour_id',''),\r\n        'flavour_price', coalesce(nullif(v_item->>'flavour_price','')::numeric, nullif(v_item->>'vat_exc_price','')::numeric)\r\n      )\r\n    );\r\n  end loop;\r\n\r\n  insert into public.pos_inventory_consumed(\r\n    source_event_id, outlet_id, order_id, raw_item_id, quantity_consumed, remaining_quantity,\r\n    occurred_at, pos_date, kdsid, typec, context, unassigned_branch_note\r\n  )\r\n  select\r\n    v_source || '-ic-' || coalesce(nullif(ic->>'pos_id',''), md5(ic::text)),\r\n    v_outlet,\r\n    v_order_id,\r\n    ic->>'raw_item_id',\r\n    (ic->>'quantity_consumed')::numeric,\r\n    nullif(ic->>'remaining_quantity','')::numeric,\r\n    coalesce((ic->>'occurred_at')::timestamptz, (ic->>'pos_date')::timestamptz, v_now),\r\n    coalesce((ic->>'pos_date')::date, v_now::date),\r\n    ic->>'kdsid',\r\n    ic->>'typec',\r\n    ic,\r\n    case\r\n      when ic ? 'branch_missing_note' then ic->>'branch_missing_note'\r\n      when coalesce(nullif(ic->>'branch_id',''),'') = '' then 'Branch missing on POS inventory row'\r\n      else null\r\n    end\r\n  from jsonb_array_elements(coalesce(payload->'inventory_consumed','[]'::jsonb)) ic\r\n  on conflict (source_event_id) do nothing;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "sync_pos_order"
         },
