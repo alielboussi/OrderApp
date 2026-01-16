@@ -178,18 +178,19 @@ export async function POST(request: Request) {
       const { data, error } = await supabase.from("pos_item_map").insert(payload).select(selectCols).single();
       if (error) throw error;
 
+      const row = data as any;
       let catalogName: string | null = null;
       let catalogVariantLabel: string | null = null;
-      if (data?.catalog_item_id) {
+      if (row?.catalog_item_id) {
         const { data: catalogItem, error: catalogError } = await supabase
           .from("catalog_items")
           .select("id,name,variants")
-          .eq("id", data.catalog_item_id)
+          .eq("id", row.catalog_item_id)
           .single();
         if (!catalogError && catalogItem) {
-          catalogName = catalogItem.name ?? null;
-          const variants = Array.isArray(catalogItem.variants) ? catalogItem.variants : [];
-          const variantKey = data.catalog_variant_key || data.normalized_variant_key || "base";
+          catalogName = (catalogItem as any).name ?? null;
+          const variants = Array.isArray((catalogItem as any).variants) ? (catalogItem as any).variants : [];
+          const variantKey = row.catalog_variant_key || row.normalized_variant_key || "base";
           const match = variants.find(
             (v: any) => v?.key === variantKey || v?.id === variantKey || v?.name === variantKey || v?.label === variantKey
           );
@@ -198,11 +199,11 @@ export async function POST(request: Request) {
       }
 
       return {
-        ...data,
+        ...row,
         catalog_item_name: catalogName,
         catalog_variant_label: catalogVariantLabel,
-        pos_item_name: data.pos_item_name ?? catalogName ?? data.pos_item_id ?? null,
-        pos_flavour_name: data.pos_flavour_name ?? data.pos_flavour_id ?? null,
+        pos_item_name: row.pos_item_name ?? catalogName ?? row.pos_item_id ?? null,
+        pos_flavour_name: row.pos_flavour_name ?? row.pos_flavour_id ?? null,
       };
     };
 
