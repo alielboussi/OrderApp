@@ -93,9 +93,11 @@ export default function VariantCreatePage() {
 
   const handleChange = (key: keyof FormState, value: string | boolean) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const toNumber = (value: string, fallback: number) => {
+  const toNumber = (value: string, fallback: number, min = 0) => {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
+    if (!Number.isFinite(parsed)) return fallback;
+    if (parsed <= min) return fallback;
+    return parsed;
   };
 
   const submit = async (event: FormEvent) => {
@@ -105,10 +107,10 @@ export default function VariantCreatePage() {
     try {
       const payload = {
         ...form,
-        units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
-        purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0),
-        transfer_quantity: toNumber(form.transfer_quantity, 1),
-        cost: toNumber(form.cost, 0),
+        units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1, 0),
+        purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0, 0),
+        transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
+        cost: toNumber(form.cost, 0, -0.0001),
         default_warehouse_id: form.default_warehouse_id || null,
       };
 
@@ -201,7 +203,7 @@ export default function VariantCreatePage() {
               value={form.units_per_purchase_pack}
               onChange={(v) => handleChange("units_per_purchase_pack", v)}
               step="0.01"
-              min="0"
+              min="0.01"
             />
             <Field
               type="number"
@@ -233,7 +235,7 @@ export default function VariantCreatePage() {
               value={form.transfer_quantity}
               onChange={(v) => handleChange("transfer_quantity", v)}
               step="0.01"
-              min="0"
+              min="0.01"
             />
             <Field
               type="number"

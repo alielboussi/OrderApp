@@ -32,6 +32,7 @@ export default function CatalogMenuPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +80,9 @@ export default function CatalogMenuPage() {
       })
       .filter((entry): entry is ItemWithVariants => Boolean(entry));
   }, [items, variants, search]);
+
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const variantCount = useMemo(() => variants.length, [variants]);
 
@@ -130,46 +134,67 @@ export default function CatalogMenuPage() {
               {grouped.length === 0 && !loading ? (
                 <div className={styles.emptyCard}>No products found.</div>
               ) : (
-                grouped.map(({ item, variants: itemVariants }) => (
-                  <article key={item.id} className={styles.card}>
-                    <div className={styles.cardHeader}>
-                      <div>
-                        <p className={styles.itemKind}>{item.item_kind || "product"}</p>
-                        <h2 className={styles.itemName}>{item.name}</h2>
-                        {item.sku && <p className={styles.sku}>SKU: {item.sku}</p>}
-                      </div>
-                      <div className={styles.badges}>
-                        <span className={`${styles.badge} ${item.active === false ? styles.badgeMuted : styles.badgeLive}`}>
-                          {item.active === false ? "Inactive" : "Active"}
-                        </span>
-                        <span className={styles.badge}>
-                          {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
-                        </span>
-                        {item.has_variations && <span className={styles.badge}>Has variations</span>}
-                      </div>
-                    </div>
-
-                    <div className={styles.variantList}>
-                      {itemVariants.length === 0 ? (
-                        <p className={styles.empty}>No variants recorded.</p>
-                      ) : (
-                        itemVariants.map((variant) => (
-                          <div key={variant.id} className={styles.variantRow}>
-                            <div>
-                              <p className={styles.variantName}>{variant.name}</p>
-                              {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
-                            </div>
-                            <span
-                              className={`${styles.badge} ${variant.active === false ? styles.badgeMuted : styles.badgeLive}`}
-                            >
-                              {variant.active === false ? "Inactive" : "Active"}
-                            </span>
+                grouped.map(({ item, variants: itemVariants }) => {
+                  const open = expanded[item.id] ?? false;
+                  return (
+                    <article key={item.id} className={styles.card}>
+                      <div className={styles.cardHeader}>
+                        <div className={styles.cardTitleBlock}>
+                          <div className={styles.rowTop}>
+                            <p className={styles.itemKind}>{item.item_kind || "product"}</p>
+                            <button className={styles.linkButton} onClick={() => router.push(`/Warehouse_Backoffice/catalog/product?id=${item.id}`)}>
+                              Edit product
+                            </button>
                           </div>
-                        ))
+                          <h2 className={styles.itemName}>{item.name}</h2>
+                          {item.sku && <p className={styles.sku}>SKU: {item.sku}</p>}
+                        </div>
+                        <div className={styles.badges}>
+                          <span className={`${styles.badge} ${item.active === false ? styles.badgeMuted : styles.badgeLive}`}>
+                            {item.active === false ? "Inactive" : "Active"}
+                          </span>
+                          <span className={styles.badge}>
+                            {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
+                          </span>
+                          {item.has_variations && <span className={styles.badge}>Has variations</span>}
+                          <button className={styles.chipButton} onClick={() => toggleExpanded(item.id)}>
+                            {open ? "Hide variants" : "Show variants"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {open && (
+                        <div className={styles.variantList}>
+                          {itemVariants.length === 0 ? (
+                            <p className={styles.empty}>No variants recorded.</p>
+                          ) : (
+                            itemVariants.map((variant) => (
+                              <div key={variant.id} className={styles.variantRow}>
+                                <div>
+                                  <p className={styles.variantName}>{variant.name}</p>
+                                  {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
+                                </div>
+                                <div className={styles.variantActions}>
+                                  <span
+                                    className={`${styles.badge} ${variant.active === false ? styles.badgeMuted : styles.badgeLive}`}
+                                  >
+                                    {variant.active === false ? "Inactive" : "Active"}
+                                  </span>
+                                  <button
+                                    className={styles.linkButton}
+                                    onClick={() => router.push(`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${item.id}`)}
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       )}
-                    </div>
-                  </article>
-                ))
+                    </article>
+                  );
+                })
               )}
             </section>
           </>
