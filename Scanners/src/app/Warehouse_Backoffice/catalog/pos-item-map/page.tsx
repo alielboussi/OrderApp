@@ -11,8 +11,10 @@ type Mapping = {
   pos_flavour_id: string | null;
   pos_flavour_name?: string | null;
   catalog_item_id: string;
+  catalog_item_name?: string | null;
   catalog_variant_key: string | null;
   normalized_variant_key: string | null;
+  catalog_variant_label?: string | null;
   warehouse_id: string | null;
   outlet_id: string;
 };
@@ -126,8 +128,8 @@ export default function PosItemMapPage() {
                 <span>POS Item Name</span>
                 <span>POS Flavour ID</span>
                 <span>POS Flavour Name</span>
-                <span>Catalog Item ID</span>
-                <span>Variant Key</span>
+                <span>Catalog Item</span>
+                <span>Variant</span>
                 <span>Warehouse ID</span>
                 <span>Outlet ID</span>
               </div>
@@ -140,8 +142,10 @@ export default function PosItemMapPage() {
                     <span className={m.pos_item_name ? undefined : styles.muted}>{m.pos_item_name ?? "—"}</span>
                     <span className={m.pos_flavour_id ? undefined : styles.muted}>{m.pos_flavour_id ?? "—"}</span>
                     <span className={m.pos_flavour_name ? undefined : styles.muted}>{m.pos_flavour_name ?? "—"}</span>
-                    <span>{m.catalog_item_id}</span>
-                    <span className={styles.badge}>{m.catalog_variant_key || m.normalized_variant_key || "base"}</span>
+                    <span>{m.catalog_item_name || m.catalog_item_id}</span>
+                    <span className={styles.badge}>
+                      {m.catalog_variant_label || m.catalog_variant_key || m.normalized_variant_key || "base"}
+                    </span>
                     <span className={m.warehouse_id ? undefined : styles.muted}>{m.warehouse_id ?? "—"}</span>
                     <span>{m.outlet_id}</span>
                   </div>
