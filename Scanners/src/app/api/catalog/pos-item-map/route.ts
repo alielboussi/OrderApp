@@ -94,8 +94,9 @@ export async function GET() {
     }
     return NextResponse.json({ mappings });
   } catch (error) {
+    const err = error as { code?: string; message?: unknown };
     // If the new columns aren't in the DB yet, fall back to legacy columns so the page still works.
-    if (error?.code === "42703" || (typeof error?.message === "string" && error.message.includes("pos_item_name"))) {
+    if (err?.code === "42703" || (typeof err?.message === "string" && err.message.includes("pos_item_name"))) {
       try {
         const supabase = getServiceClient();
         const legacyCols = [
@@ -214,7 +215,8 @@ export async function POST(request: Request) {
       const data = await insertAndSelect(basePayload, fullSelect);
       return NextResponse.json({ mapping: data }, { status: 201 });
     } catch (error: any) {
-      if (error?.code === "42703" || (typeof error?.message === "string" && error.message.includes("pos_item_name"))) {
+      const err = error as { code?: string; message?: unknown };
+      if (err?.code === "42703" || (typeof err?.message === "string" && err.message.includes("pos_item_name"))) {
         // DB does not have the name columns yet; retry without them.
         const legacyPayload = { ...basePayload };
         delete legacyPayload.pos_item_name;
