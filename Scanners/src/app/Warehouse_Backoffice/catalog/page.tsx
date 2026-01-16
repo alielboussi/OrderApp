@@ -51,6 +51,22 @@ export default function CatalogMenu() {
             <span className={styles.cardCta}>Open form</span>
           </button>
           <button
+            onClick={() => go("/Warehouse_Backoffice/catalog/menu")}
+            className={`${styles.actionCard} ${styles.menuCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Menu</p>
+            <p className={styles.cardBody}>View all current products and their variants.</p>
+            <span className={styles.cardCta}>Open menu</span>
+          </button>
+          <button
+            onClick={() => go("/Warehouse_Backoffice/catalog/pos-item-map")}
+            className={`${styles.actionCard} ${styles.variantCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleVariant}`}>Pos/App Match</p>
+            <p className={styles.cardBody}>Review POS item/flavour to catalog mappings.</p>
+            <span className={styles.cardCta}>Open map</span>
+          </button>
+          <button
             onClick={() => go("/Warehouse_Backoffice/recipes")}
             className={`${styles.actionCard} ${styles.recipeCard}`}
           >

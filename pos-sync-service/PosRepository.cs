@@ -244,16 +244,17 @@ ORDER BY bt.id DESC;";
     private async Task<IReadOnlyList<PosLineItem>> LoadLineItemsAsync(string saleId, CancellationToken cancellationToken)
     {
         const string lineSql = @"
-SELECT sd.saleid AS SaleId,
-       sd.MenuItemId AS ItemId,
-       mi.Name AS ItemName,
-       sd.Quantity AS Qty,
-       sd.Price AS UnitPrice,
-       sd.Itemdiscount AS Discount,
-       sd.ItemGst AS Tax
-FROM dbo.Saledetails sd WITH (NOLOCK)
-LEFT JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = sd.MenuItemId
-WHERE sd.saleid = @SaleId;";
+    SELECT sd.saleid AS SaleId,
+           sd.MenuItemId AS ItemId,
+           mi.Name AS ItemName,
+           sd.Quantity AS Qty,
+           sd.Price AS UnitPrice,
+           sd.Itemdiscount AS Discount,
+           sd.ItemGst AS Tax,
+           sd.FlavourId AS FlavourId
+    FROM dbo.Saledetails sd WITH (NOLOCK)
+    LEFT JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = sd.MenuItemId
+    WHERE sd.saleid = @SaleId;";
 
         var items = new List<PosLineItem>();
 
@@ -269,13 +270,25 @@ WHERE sd.saleid = @SaleId;";
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var unitPrice = Convert.ToDecimal(reader["UnitPrice"]);
+            var salePrice = unitPrice; // POS sends price tax-inclusive; treat as sale price entered by customer.
+            var vatExcPrice = Math.Round(salePrice / 1.16m, 2, MidpointRounding.AwayFromZero);
+            var flavourOrdinal = TryGetOrdinal(reader, "FlavourId");
+            var flavourId = flavourOrdinal is null || reader.IsDBNull(flavourOrdinal.Value)
+                ? null
+                : reader.GetValue(flavourOrdinal.Value)?.ToString();
+
             items.Add(new PosLineItem(
                 PosItemId: reader["ItemId"].ToString() ?? string.Empty,
                 Name: reader["ItemName"].ToString() ?? string.Empty,
                 Quantity: Convert.ToDecimal(reader["Qty"]),
-                UnitPrice: Convert.ToDecimal(reader["UnitPrice"]),
+                UnitPrice: unitPrice,
+                SalePrice: salePrice,
+                VatExclusivePrice: vatExcPrice,
+                FlavourPrice: vatExcPrice,
                 Discount: reader.IsDBNull(reader.GetOrdinal("Discount")) ? 0 : Convert.ToDecimal(reader["Discount"]),
                 Tax: reader.IsDBNull(reader.GetOrdinal("Tax")) ? 0 : Convert.ToDecimal(reader["Tax"]),
+                FlavourId: flavourId,
                 VariantId: null,
                 VariantKey: null
             ));
@@ -351,5 +364,17 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
         return new PosCustomer(Name: string.IsNullOrWhiteSpace(name) ? null : name,
                                Phone: string.IsNullOrWhiteSpace(phone) ? null : phone,
                                Email: null);
+    }
+
+    private static int? TryGetOrdinal(SqlDataReader reader, string columnName)
+    {
+        try
+        {
+            return reader.GetOrdinal(columnName);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
     }
 }

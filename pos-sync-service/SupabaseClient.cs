@@ -60,8 +60,12 @@ public sealed class SupabaseClient
                 name = i.Name,
                 quantity = i.Quantity,
                 unit_price = i.UnitPrice,
+                sale_price = i.SalePrice,
+                vat_exc_price = i.VatExclusivePrice,
+                flavour_price = i.FlavourPrice,
                 discount = i.Discount,
                 tax = i.Tax,
+                flavour_id = i.FlavourId,
                 variant_id = i.VariantId,
                 variant_key = i.VariantKey
             }).ToList(),

@@ -1,0 +1,168 @@
+.page {
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #0f172a 0%, #0a1126 45%, #060c1c 100%);
+  color: #e2e8f0;
+  padding: 32px 16px 64px;
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.kicker {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: #7dd3fc;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.subtitle {
+  color: #cbd5e1;
+  margin-top: 4px;
+}
+
+.headerActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primaryButton {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  color: #fff;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inputLabel {
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.searchInput {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  min-width: 260px;
+}
+
+.error {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.tableCard {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.tableHead,
+.tableRow {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1.1fr 1fr 1fr 1fr 1fr 1fr;
+  gap: 10px;
+  padding: 12px 16px;
+  align-items: center;
+}
+
+.tableHead {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+  color: #bfdbfe;
+  letter-spacing: 0.01em;
+}
+
+.tableRow:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rowAction {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  justify-self: start;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+.empty {
+  padding: 16px;
+  color: #cbd5e1;
+}
+
+.metaLine {
+  color: #94a3b8;
+  margin-top: 6px;
+}
+
+@media (max-width: 1100px) {
+  .tableHead,
+  .tableRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -28,8 +28,12 @@ public sealed record PosLineItem(
     string Name,
     decimal Quantity,
     decimal UnitPrice,
+    decimal SalePrice,
+    decimal VatExclusivePrice,
+    decimal FlavourPrice,
     decimal Discount,
     decimal Tax,
+    string? FlavourId,
     string? VariantId,
     string? VariantKey
 );

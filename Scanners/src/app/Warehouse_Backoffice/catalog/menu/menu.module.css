@@ -1,0 +1,268 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+.page {
+  min-height: 100vh;
+  background: radial-gradient(circle at 15% 20%, #111c34, #050912 65%);
+  color: #e7ecff;
+  font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  justify-content: center;
+  padding: 36px 22px 48px;
+}
+
+.shell {
+  width: 100%;
+  max-width: 1280px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, rgba(16, 25, 46, 0.9), rgba(9, 14, 28, 0.92));
+  box-shadow: 0 26px 50px rgba(0, 0, 0, 0.45);
+}
+
+.kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #8ad8ff;
+}
+
+.title {
+  margin: 6px 0 6px;
+  font-size: 34px;
+  letter-spacing: -0.4px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: #cbd7ff;
+  line-height: 1.45;
+  max-width: 620px;
+}
+
+.metaLine {
+  margin: 8px 0 0;
+  color: #a9b6d6;
+  font-size: 14px;
+}
+
+.headerActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fbff;
+  background: transparent;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.primaryButton {
+  background: linear-gradient(120deg, #22c55e, #14b8a6);
+  border: none;
+  box-shadow: 0 14px 30px rgba(20, 184, 166, 0.35);
+}
+
+.primaryButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.primaryButton:not(:disabled):hover,
+.secondaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.controls {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.inputGroup {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inputLabel {
+  color: #b7c7f0;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.searchInput {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: inherit;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.searchInput:focus {
+  border-color: #22c55e;
+  box-shadow: 0 10px 26px rgba(34, 197, 94, 0.15);
+}
+
+.error {
+  background: rgba(254, 226, 226, 0.1);
+  color: #fecdd3;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: rgba(12, 17, 32, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.4);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.itemKind {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 11px;
+  color: #7ee0a3;
+}
+
+.itemName {
+  margin: 4px 0;
+  font-size: 20px;
+  letter-spacing: -0.2px;
+}
+
+.sku {
+  margin: 0;
+  color: #c9d6ff;
+  font-size: 14px;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #eef3ff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.badgeLive {
+  background: #12321d;
+  border-color: #1ed66b55;
+  color: #9cf4c0;
+}
+
+.badgeMuted {
+  background: #331b16;
+  border-color: #f9731633;
+  color: #fbbf24;
+}
+
+.variantList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.variantRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.variantName {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.15px;
+}
+
+.variantSku {
+  margin: 2px 0 0;
+  color: #cbd7ff;
+  font-size: 13px;
+}
+
+.empty {
+  margin: 0;
+  color: #9aa5c4;
+}
+
+.emptyCard {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  text-align: center;
+  color: #9aa5c4;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+@media (max-width: 720px) {
+  .header {
+    flex-direction: column;
+  }
+
+  .cardHeader {
+    flex-direction: column;
+  }
+}
