@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./variant.module.css";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
@@ -58,7 +58,7 @@ const defaultForm: FormState = {
   active: true,
 };
 
-export default function VariantCreatePage() {
+function VariantCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { status } = useWarehouseAuth();
@@ -341,6 +341,14 @@ export default function VariantCreatePage() {
         </form>
       </main>
     </div>
+  );
+}
+
+export default function VariantCreatePageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <VariantCreatePage />
+    </Suspense>
   );
 }
 
