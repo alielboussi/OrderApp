@@ -182,100 +182,94 @@ export default function ProductCreatePage() {
               onChange={(v) => handleChange("item_kind", v)}
               options={itemKinds}
             />
-            <Select
-              label="Base unit (single piece)"
-              hint="Smallest unit you track (e.g., each, kg)"
-              value={form.base_unit}
-              onChange={(v) => handleChange("base_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
-              disabled={disableVariantControlled}
-            />
-            <Select
-              label="Consumption unit"
-              hint="Unit used when deducting/consuming"
-              value={form.consumption_uom}
-              onChange={(v) => handleChange("consumption_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
-              disabled={disableVariantControlled}
-            />
-            <Select
-              label="Supplier pack unit"
-              hint="Unit written on supplier pack (box, kg, each)"
-              value={form.purchase_pack_unit}
-              onChange={(v) => handleChange("purchase_pack_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
-              disabled={disableVariantControlled}
-            />
-            <Field
-              type="number"
-              label="Units inside one supplier pack"
-              hint="Example: box of 12 = 12 (pack qty, not sent qty)"
-              value={form.units_per_purchase_pack}
-              onChange={(v) => handleChange("units_per_purchase_pack", v)}
-              step="0.01"
-              min="0"
-              disabled={disableVariantControlled}
-            />
-            <Field
-              type="number"
-              label="Weight/volume per purchase unit"
-              hint="Optional. Example: 2.5 (kg) per bag"
-              value={form.purchase_unit_mass}
-              onChange={(v) => handleChange("purchase_unit_mass", v)}
-              step="0.01"
-              min="0"
-              disabled={disableVariantControlled}
-            />
-            <Select
-              label="Mass/volume unit"
-              hint="Used only if weight/volume is set"
-              value={form.purchase_unit_mass_uom}
-              onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
-              disabled={disableVariantControlled}
-            />
-            <Select
-              label="Transfer unit"
-              hint="Unit used when moving stock between warehouses"
-              value={form.transfer_unit}
-              onChange={(v) => handleChange("transfer_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
-              disabled={disableVariantControlled}
-            />
-            <Field
-              type="number"
-              label="Quantity per transfer line"
-              hint="Default quantity moved when you create a transfer line"
-              value={form.transfer_quantity}
-              onChange={(v) => handleChange("transfer_quantity", v)}
-              step="0.01"
-              min="0"
-              disabled={disableVariantControlled}
-            />
-            <Field
-              type="number"
-              label="Cost per base unit"
-              hint="Default unit cost (not pack cost)"
-              value={form.cost}
-              onChange={(v) => handleChange("cost", v)}
-              step="0.01"
-              min="0"
-              disabled={disableVariantControlled}
-            />
+            {!disableVariantControlled && (
+              <>
+                <Select
+                  label="Base unit (single piece)"
+                  hint="Smallest unit you track (e.g., each, kg)"
+                  value={form.base_unit}
+                  onChange={(v) => handleChange("base_unit", v)}
+                  options={qtyUnits.map((value) => ({ value, label: value }))}
+                />
+                <Select
+                  label="Consumption unit"
+                  hint="Unit used when deducting/consuming"
+                  value={form.consumption_uom}
+                  onChange={(v) => handleChange("consumption_uom", v)}
+                  options={qtyUnits.map((value) => ({ value, label: value }))}
+                />
+                <Select
+                  label="Supplier pack unit"
+                  hint="Unit written on supplier pack (box, kg, each)"
+                  value={form.purchase_pack_unit}
+                  onChange={(v) => handleChange("purchase_pack_unit", v)}
+                  options={qtyUnits.map((value) => ({ value, label: value }))}
+                />
+                <Field
+                  type="number"
+                  label="Units inside one supplier pack"
+                  hint="Example: box of 12 = 12 (pack qty, not sent qty)"
+                  value={form.units_per_purchase_pack}
+                  onChange={(v) => handleChange("units_per_purchase_pack", v)}
+                  step="0.01"
+                  min="0"
+                />
+                <Field
+                  type="number"
+                  label="Weight/volume per purchase unit"
+                  hint="Optional. Example: 2.5 (kg) per bag"
+                  value={form.purchase_unit_mass}
+                  onChange={(v) => handleChange("purchase_unit_mass", v)}
+                  step="0.01"
+                  min="0"
+                />
+                <Select
+                  label="Mass/volume unit"
+                  hint="Used only if weight/volume is set"
+                  value={form.purchase_unit_mass_uom}
+                  onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
+                  options={qtyUnits.map((value) => ({ value, label: value }))}
+                />
+                <Select
+                  label="Transfer unit"
+                  hint="Unit used when moving stock between warehouses"
+                  value={form.transfer_unit}
+                  onChange={(v) => handleChange("transfer_unit", v)}
+                  options={qtyUnits.map((value) => ({ value, label: value }))}
+                />
+                <Field
+                  type="number"
+                  label="Quantity per transfer line"
+                  hint="Default quantity moved when you create a transfer line"
+                  value={form.transfer_quantity}
+                  onChange={(v) => handleChange("transfer_quantity", v)}
+                  step="0.01"
+                  min="0"
+                />
+                <Field
+                  type="number"
+                  label="Cost per base unit"
+                  hint="Default unit cost (not pack cost)"
+                  value={form.cost}
+                  onChange={(v) => handleChange("cost", v)}
+                  step="0.01"
+                  min="0"
+                />
+                <Select
+                  label="Lock ordering to warehouse"
+                  hint="If set, outlets will draw only from this warehouse"
+                  value={form.locked_from_warehouse_id}
+                  onChange={(v) => handleChange("locked_from_warehouse_id", v)}
+                  options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
+                />
+              </>
+            )}
             <Select
               label="Default warehouse"
               hint="Where this product normally lives"
               value={form.default_warehouse_id}
               onChange={(v) => handleChange("default_warehouse_id", v)}
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
-            />
-            <Select
-              label="Lock ordering to warehouse"
-              hint="If set, outlets will draw only from this warehouse"
-              value={form.locked_from_warehouse_id}
-              onChange={(v) => handleChange("locked_from_warehouse_id", v)}
-              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
-              disabled={disableVariantControlled}
             />
             <Field
               label="Image URL (optional)"
