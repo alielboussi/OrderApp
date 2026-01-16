@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
-export async function GET() {
-  try {
-    const supabase = getServiceClient();
-    const enrichWithCatalog = async (rows: any[]) => {
+const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
+  return async (rows: any[]) => {
       if (!rows?.length) return [];
 
       const itemIds = Array.from(new Set((rows ?? []).map((r) => r.catalog_item_id).filter(Boolean)));
@@ -56,7 +54,13 @@ export async function GET() {
           pos_flavour_name: row.pos_flavour_name ?? row.pos_flavour_id ?? null,
         };
       });
-    };
+  };
+};
+
+export async function GET() {
+  try {
+    const supabase = getServiceClient();
+    const enrichWithCatalog = buildEnricher(supabase);
 
     const mapWithFallback = (rows: any[]) =>
       rows.map((row) => ({
@@ -166,6 +170,8 @@ export async function POST(request: Request) {
     };
     if (pos_item_name) basePayload.pos_item_name = pos_item_name;
     if (pos_flavour_name) basePayload.pos_flavour_name = pos_flavour_name;
+
+    const enrichWithCatalog = buildEnricher(supabase);
 
     const insertAndSelect = async (payload: Record<string, any>, selectCols: string) => {
       const { data, error } = await supabase.from("pos_item_map").insert(payload).select(selectCols).single();
