@@ -11,8 +11,8 @@ import androidx.work.NetworkType
 import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.data.SupabaseProvider
 import com.afterten.orders.data.SessionStore
+import com.afterten.orders.data.relaxedJson
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import com.afterten.orders.data.SupabaseProvider.PlaceOrderItem
 
 class OrderSyncWorker(
@@ -26,7 +26,7 @@ class OrderSyncWorker(
         val provider = SupabaseProvider(applicationContext)
         val due = dao.due(System.currentTimeMillis())
         if (due.isEmpty()) return Result.success()
-        val json = Json { ignoreUnknownKeys = true }
+        val json = relaxedJson
 
         for (p in due) {
             try {

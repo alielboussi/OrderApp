@@ -3,9 +3,9 @@ package com.afterten.orders.data.repo
 import com.afterten.orders.data.OutletSession
 import com.afterten.orders.data.RoleDescriptor
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.data.relaxedJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 class OutletRepository(private val provider: SupabaseProvider) {
 
@@ -25,11 +25,9 @@ class OutletRepository(private val provider: SupabaseProvider) {
         @SerialName("is_supervisor") val isSupervisor: Boolean = false
     )
 
-    private val json = Json { ignoreUnknownKeys = true }
-
     suspend fun login(email: String, password: String): OutletSession {
         val raw = provider.rpcLogin(email.trim(), password)
-        val parsed = json.decodeFromString<LoginResponse>(raw)
+        val parsed = relaxedJson.decodeFromString<LoginResponse>(raw)
         return OutletSession(
             token = parsed.token,
             refreshToken = parsed.refreshToken,

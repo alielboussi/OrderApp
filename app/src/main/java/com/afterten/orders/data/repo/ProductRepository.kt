@@ -3,20 +3,20 @@ package com.afterten.orders.data.repo
 import com.afterten.orders.data.ProductDto
 import com.afterten.orders.data.SupabaseProvider
 import com.afterten.orders.data.VariationDto
+import com.afterten.orders.data.relaxedJson
 import com.afterten.orders.db.AppDatabase
 import com.afterten.orders.db.ProductEntity
 import com.afterten.orders.db.VariationEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
 
 class ProductRepository(
     private val provider: SupabaseProvider,
     private val db: AppDatabase
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = relaxedJson
 
     @Serializable
     private data class PostgrestError(

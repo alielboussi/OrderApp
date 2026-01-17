@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -9,6 +11,10 @@ plugins {
 // Ensure Kotlin uses JDK 17 toolchain consistently (helps KSP/Javac alignment)
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+        freeCompilerArgs.add("-Xjvm-default=all")
+    }
 }
 
 android {
@@ -56,15 +62,11 @@ android {
         buildConfig = true
     }
 
-
-    // With Kotlin 2.0+, Compose compiler is provided via the kotlin-compose plugin.
-
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-Xjvm-default=all"
-        )
+    composeOptions {
+        // Compose Compiler compatible with Kotlin 2.0.21
+        kotlinCompilerExtensionVersion = "1.7.5"
     }
+
 
     packaging {
         jniLibs {

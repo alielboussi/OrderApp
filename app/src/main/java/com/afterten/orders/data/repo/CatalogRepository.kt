@@ -1,6 +1,7 @@
 package com.afterten.orders.data.repo
 
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.data.relaxedJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -51,12 +52,12 @@ class CatalogRepository(private val provider: SupabaseProvider) {
             prefer = listOf("return=representation")
         )
         val payload = body ?: throw IllegalStateException("No response body returned")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogItemResponse.serializer()), payload).first()
+        return relaxedJson.decodeFromString(ListSerializer(CatalogItemResponse.serializer()), payload).first()
     }
 
     suspend fun listCatalogItems(jwt: String, limit: Int = 100): List<CatalogItemListRow> {
         val body = provider.getWithJwt("/rest/v1/catalog_items?select=*&order=name.asc&limit=${'$'}limit", jwt)
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogItemListRow.serializer()), body)
+        return relaxedJson.decodeFromString(ListSerializer(CatalogItemListRow.serializer()), body)
     }
 
     @Serializable
@@ -70,7 +71,7 @@ class CatalogRepository(private val provider: SupabaseProvider) {
             prefer = listOf("return=representation")
         )
         val payload = body ?: throw IllegalStateException("No response body returned")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogVariationResponse.serializer()), payload).first()
+        return relaxedJson.decodeFromString(ListSerializer(CatalogVariationResponse.serializer()), payload).first()
     }
 
     // --- Listing / search for edit flows ---
@@ -100,7 +101,7 @@ class CatalogRepository(private val provider: SupabaseProvider) {
     suspend fun searchCatalogItems(jwt: String, query: String, limit: Int = 50): List<CatalogItemListRow> {
         val filter = if (query.isBlank()) "" else "&name=ilike.*${'$'}{query}*&or=(sku.ilike.*${'$'}{query}*)"
         val body = provider.getWithJwt("/rest/v1/catalog_items?select=*&order=name.asc&limit=${'$'}limit$filter", jwt)
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogItemListRow.serializer()), body)
+        return relaxedJson.decodeFromString(ListSerializer(CatalogItemListRow.serializer()), body)
     }
 
     suspend fun updateCatalogItem(jwt: String, id: String, patch: CatalogItemInput): CatalogItemResponse {
@@ -111,7 +112,7 @@ class CatalogRepository(private val provider: SupabaseProvider) {
             prefer = listOf("return=representation")
         )
         val payload = body ?: throw IllegalStateException("No response body returned")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogItemResponse.serializer()), payload).first()
+        return relaxedJson.decodeFromString(ListSerializer(CatalogItemResponse.serializer()), payload).first()
     }
 
     @Serializable
@@ -129,7 +130,7 @@ class CatalogRepository(private val provider: SupabaseProvider) {
     suspend fun searchCatalogVariations(jwt: String, query: String, limit: Int = 50): List<CatalogVariationListRow> {
         val filter = if (query.isBlank()) "" else "&name=ilike.*${'$'}{query}*&or=(sku.ilike.*${'$'}{query}*)"
         val body = provider.getWithJwt("/rest/v1/catalog_item_variations?select=*&order=name.asc&limit=${'$'}limit$filter", jwt)
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogVariationListRow.serializer()), body)
+        return relaxedJson.decodeFromString(ListSerializer(CatalogVariationListRow.serializer()), body)
     }
 
     suspend fun updateCatalogVariation(jwt: String, id: String, patch: CatalogVariationInput): CatalogVariationResponse {
@@ -140,6 +141,6 @@ class CatalogRepository(private val provider: SupabaseProvider) {
             prefer = listOf("return=representation")
         )
         val payload = body ?: throw IllegalStateException("No response body returned")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(CatalogVariationResponse.serializer()), payload).first()
+        return relaxedJson.decodeFromString(ListSerializer(CatalogVariationResponse.serializer()), payload).first()
     }
 }

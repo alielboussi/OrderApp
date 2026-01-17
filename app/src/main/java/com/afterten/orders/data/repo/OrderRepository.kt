@@ -1,6 +1,7 @@
 package com.afterten.orders.data.repo
 
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.data.relaxedJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -68,16 +69,14 @@ class OrderRepository(private val supabase: SupabaseProvider) {
             "&order=created_at.desc" +
             "&limit=" + limit
         val text = supabase.getWithJwt(path, jwt)
-        return Json { ignoreUnknownKeys = true }
-            .decodeFromString(ListSerializer(OrderRow.serializer()), text)
+        return relaxedJson.decodeFromString(ListSerializer(OrderRow.serializer()), text)
     }
 
     suspend fun listOrdersForSupervisor(jwt: String, limit: Int = 200): List<OrderRow> {
         val select = "id,order_number,created_at,status,locked,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name"
         val path = "/rest/v1/orders?select=" + encode(select) + "&order=created_at.desc&limit=" + limit
         val text = supabase.getWithJwt(path, jwt)
-        return Json { ignoreUnknownKeys = true }
-            .decodeFromString(ListSerializer(OrderRow.serializer()), text)
+        return relaxedJson.decodeFromString(ListSerializer(OrderRow.serializer()), text)
     }
 
     @Serializable
@@ -104,7 +103,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         val groupedOrder = encode("products(name).asc")
         val path = "/rest/v1/order_items?select=" + select + "&order_id=eq." + orderId + "&order=" + groupedOrder + "&order=name.asc"
         val text = supabase.getWithJwt(path, jwt)
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OrderItemRow.serializer()), text)
+        return relaxedJson.decodeFromString(ListSerializer(OrderItemRow.serializer()), text)
     }
 
     suspend fun fetchOrder(jwt: String, orderId: String): OrderDetail? {
@@ -117,7 +116,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         )
         val path = "/rest/v1/orders?select=" + select + "&id=eq." + orderId + "&limit=1"
         val text = supabase.getWithJwt(path, jwt)
-        val list = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OrderDetail.serializer()), text)
+        val list = relaxedJson.decodeFromString(ListSerializer(OrderDetail.serializer()), text)
         return list.firstOrNull()
     }
 

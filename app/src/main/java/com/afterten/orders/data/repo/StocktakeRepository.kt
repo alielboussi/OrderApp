@@ -1,10 +1,10 @@
 package com.afterten.orders.data.repo
 
 import com.afterten.orders.data.SupabaseProvider
+import com.afterten.orders.data.relaxedJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import java.net.URLEncoder
 
 class StocktakeRepository(private val supabase: SupabaseProvider) {
@@ -45,7 +45,7 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         @SerialName("variance_qty") val varianceQty: Double = 0.0
     )
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = relaxedJson
 
     suspend fun listWarehouses(jwt: String) = supabase.listWarehouses(jwt)
 

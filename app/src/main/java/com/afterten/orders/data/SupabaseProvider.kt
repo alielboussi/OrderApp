@@ -186,7 +186,7 @@ class SupabaseProvider(context: Context) {
             setBody(mapOf("email" to email, "password" to password))
         }.bodyAsText()
 
-        val tokenResp = Json { ignoreUnknownKeys = true }.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
+        val tokenResp = relaxedJson.decodeFromString(AuthTokenResp.serializer(), tokenRespText)
         val jwt = tokenResp.accessToken ?: error("Auth failed: ${tokenRespText}")
         val refresh = tokenResp.refreshToken ?: error("Auth failed: no refresh_token returned")
         val expiresAtMillis = System.currentTimeMillis() + ((tokenResp.expiresInSec ?: 3600L) - 30L) * 1000L
@@ -242,8 +242,7 @@ class SupabaseProvider(context: Context) {
             if (t.startsWith("{") && t.contains("\"code\"")) {
                 throw IllegalStateException("whoami_outlet failed: $t")
             }
-            Json { ignoreUnknownKeys = true }
-                .decodeFromString(ListSerializer(WhoAmI.serializer()), whoText)
+            relaxedJson.decodeFromString(ListSerializer(WhoAmI.serializer()), whoText)
         }
         val who = whoList.firstOrNull()
 
@@ -275,8 +274,7 @@ class SupabaseProvider(context: Context) {
             if (t.startsWith("{") && t.contains("\"code\"")) {
                 throw IllegalStateException("whoami_roles failed: $t")
             }
-            Json { ignoreUnknownKeys = true }
-                .decodeFromString(ListSerializer(WhoRoles.serializer()), rolesText)
+            relaxedJson.decodeFromString(ListSerializer(WhoRoles.serializer()), rolesText)
         }
         val whoRoles = rolesList.firstOrNull()
         val roleDescriptors = when {
@@ -309,7 +307,7 @@ class SupabaseProvider(context: Context) {
             @SerialName("is_supervisor") val isSupervisor: Boolean = false,
             val roles: List<RoleDescriptor> = emptyList()
         )
-        return Json { encodeDefaults = true }.encodeToString(
+        return relaxedJsonWithDefaults.encodeToString(
             LoginPack.serializer(),
             if (who != null) {
                 LoginPack(jwt, refresh, expiresAtMillis, who.outletId, who.outletName, userId, userEmail, isAdminEff, canTransfer, isTransferManager, isSupervisor, roleDescriptors)
@@ -334,7 +332,7 @@ class SupabaseProvider(context: Context) {
             contentType(ContentType.Application.Json)
             setBody(mapOf("refresh_token" to refreshToken))
         }.bodyAsText()
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(RefreshResp.serializer(), text)
+        val parsed = relaxedJson.decodeFromString(RefreshResp.serializer(), text)
         val newJwt = parsed.accessToken ?: error("No access_token in refresh response")
         val expiresAtMillis = System.currentTimeMillis() + ((parsed.expiresInSec ?: 3600L) - 30L) * 1000L
         return newJwt to expiresAtMillis
@@ -455,7 +453,7 @@ class SupabaseProvider(context: Context) {
         }
         val text = response.bodyAsText()
         // RPC returning table comes back as a JSON array with one row
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(PlaceOrderResult.serializer()), text)
+        val parsed = relaxedJson.decodeFromString(ListSerializer(PlaceOrderResult.serializer()), text)
         return parsed.first()
     }
 
@@ -863,7 +861,7 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Outlet.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(Outlet.serializer()), txt)
     }
 
     suspend fun listWarehouses(jwt: String): List<Warehouse> {
@@ -873,7 +871,7 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
     }
 
     suspend fun fetchWarehousesByIds(jwt: String, ids: Collection<String>): List<Warehouse> {
@@ -891,7 +889,7 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) {
             throw IllegalStateException("fetchWarehousesByIds failed: HTTP $code $txt")
         }
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
     }
 
     suspend fun fetchWarehouseTransfers(
@@ -937,7 +935,7 @@ class SupabaseProvider(context: Context) {
             throw IllegalStateException("fetchWarehouseTransfers failed: HTTP $code $txt")
         }
 
-        val baseTransfers = Json { ignoreUnknownKeys = true }
+        val baseTransfers = relaxedJson
             .decodeFromString(ListSerializer(WarehouseTransferDto.serializer()), txt)
         if (baseTransfers.isEmpty()) return baseTransfers
 
@@ -996,7 +994,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("createWarehouse failed: HTTP $code $txt")
-        val list = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
+        val list = relaxedJson.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
         return list.first()
     }
 
@@ -1088,7 +1086,7 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(SimpleProduct.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(SimpleProduct.serializer()), txt)
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
@@ -1098,7 +1096,7 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        val items = Json { ignoreUnknownKeys = true }
+        val items = relaxedJson
             .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
         val item = items.firstOrNull() ?: return emptyList()
         return item.variants.mapNotNull { toSimpleVariation(productId, it) }
@@ -1111,7 +1109,7 @@ class SupabaseProvider(context: Context) {
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        val items = Json { ignoreUnknownKeys = true }
+        val items = relaxedJson
             .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
         return items.flatMap { item ->
             item.variants.mapNotNull { variant -> toSimpleVariation(item.id, variant) }
@@ -1154,7 +1152,7 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) {
             throw IllegalStateException("stock function failed: HTTP $code $txt")
         }
-        return Json { ignoreUnknownKeys = true }.decodeFromString(WarehouseStockResponse.serializer(), txt)
+        return relaxedJson.decodeFromString(WarehouseStockResponse.serializer(), txt)
     }
 
     suspend fun fetchStocktakeLog(jwt: String, warehouseId: String?, limit: Int = 200): List<StocktakeLogRow> {
@@ -1173,7 +1171,7 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) {
             throw IllegalStateException("stocktake log failed: HTTP $code $txt")
         }
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StocktakeLogRow.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(StocktakeLogRow.serializer()), txt)
     }
 
     suspend fun fetchStockEntries(
@@ -1198,7 +1196,7 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) {
             throw IllegalStateException("stock entry log failed: HTTP $code $txt")
         }
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StockEntryRow.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(StockEntryRow.serializer()), txt)
     }
 
     suspend fun recordStockEntry(
@@ -1228,7 +1226,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("record_stock_entry failed: HTTP $code $txt")
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StockEntryRow.serializer()), txt)
+        val parsed = relaxedJson.decodeFromString(ListSerializer(StockEntryRow.serializer()), txt)
         return parsed.first()
     }
 
@@ -1254,7 +1252,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("report_stock_entry_balances failed: HTTP $code $txt")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(StockEntryReportRow.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(StockEntryReportRow.serializer()), txt)
     }
 
     suspend fun reportPackConsumption(
@@ -1280,7 +1278,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("report_pack_consumption failed: HTTP $code $txt")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(PackConsumptionRow.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(PackConsumptionRow.serializer()), txt)
     }
 
     suspend fun recordStocktake(
@@ -1308,7 +1306,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("record_stocktake failed: HTTP $code $txt")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(StocktakeResult.serializer(), txt)
+        return relaxedJson.decodeFromString(StocktakeResult.serializer(), txt)
     }
 
     suspend fun recordPosSale(
@@ -1342,7 +1340,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("record_pos_sale failed: HTTP $code $txt")
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(PosSale.serializer()), txt)
+        val parsed = relaxedJson.decodeFromString(ListSerializer(PosSale.serializer()), txt)
         return parsed.first()
     }
 
@@ -1365,7 +1363,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("listOutletStockPeriods failed: HTTP $code $txt")
-        return Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
+        return relaxedJson.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
     }
 
     suspend fun startOutletStockPeriod(
@@ -1387,7 +1385,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("start_outlet_stock_period failed: HTTP $code $txt")
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
+        val parsed = relaxedJson.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
         return parsed.first()
     }
 
@@ -1410,7 +1408,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("close_outlet_stock_period failed: HTTP $code $txt")
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
+        val parsed = relaxedJson.decodeFromString(ListSerializer(OutletStockPeriod.serializer()), txt)
         return parsed.first()
     }
 
@@ -1445,7 +1443,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("record_outlet_stocktake failed: HTTP $code $txt")
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(OutletStocktake.serializer()), txt)
+        val parsed = relaxedJson.decodeFromString(ListSerializer(OutletStocktake.serializer()), txt)
         return parsed.first()
     }
 
@@ -1501,7 +1499,7 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("createSignedUrl failed: HTTP $code $txt")
-        val parsed = Json { ignoreUnknownKeys = true }.decodeFromString(SignedUrlResp.serializer(), txt)
+        val parsed = relaxedJson.decodeFromString(SignedUrlResp.serializer(), txt)
         val rel = parsed.signedURL ?: parsed.signedUrl ?: throw IllegalStateException("createSignedUrl: no signed URL in response")
         return if (rel.startsWith("http")) rel else "$supabaseUrl$rel"
     }
@@ -1608,7 +1606,7 @@ class SupabaseProvider(context: Context) {
         if (statusCode !in 200..299) {
             throw IllegalStateException("orders insert failed: HTTP $statusCode $text")
         }
-        val list = Json { ignoreUnknownKeys = true }.decodeFromString(
+        val list = relaxedJson.decodeFromString(
             ListSerializer(OrderInsertRow.serializer()), text
         )
         return list.first()
