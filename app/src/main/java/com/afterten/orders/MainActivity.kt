@@ -70,9 +70,10 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
     val session by appViewModel.session.collectAsState()
 
     fun routeFor(session: OutletSession): String = when {
-        // Branch users should land on the outlet dashboard (orders), not stocktake
-        session.hasRole(RoleGuards.Branch) -> Routes.Home.route
+        // If user is a stock operator, take them to stocktake first (even if they also have Branch)
         session.hasRole(RoleGuards.Stocktake) -> Routes.StocktakeDashboard.route
+        // Branch users (without Stocktake) land on the outlet orders dashboard
+        session.hasRole(RoleGuards.Branch) -> Routes.Home.route
         session.hasRole(RoleGuards.Backoffice) -> Routes.BackofficeHome.route
         session.hasRole(RoleGuards.Supervisor) -> Routes.SupervisorOrders.route
         else -> Routes.Login.route
