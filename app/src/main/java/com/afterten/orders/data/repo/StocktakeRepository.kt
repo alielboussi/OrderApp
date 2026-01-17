@@ -47,6 +47,8 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
 
     private val json = relaxedJson
 
+    suspend fun listOutlets(jwt: String) = supabase.listOutlets(jwt)
+
     suspend fun listWarehouses(jwt: String) = supabase.listWarehouses(jwt)
 
     suspend fun fetchOpenPeriod(jwt: String, warehouseId: String): StockPeriod? {

@@ -1,5 +1,6 @@
 package com.afterten.orders.ui.stocktake
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -18,11 +20,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,19 +36,19 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -79,12 +80,18 @@ fun StocktakeDashboardScreen(
         return
     }
 
+    val primaryBlue = Color(0xFF1565C0)
+    val accentBlue = Color(0xFF1E88E5)
+    val surfaceBlue = Color(0xFF0D47A1).copy(alpha = 0.08f)
+
     var note by rememberSaveable { mutableStateOf("") }
+    var outletMenu by remember { mutableStateOf(false) }
     var warehouseMenu by remember { mutableStateOf(false) }
-    var warehouseLabel by remember(ui.selectedWarehouseId, ui.warehouses) {
-        val name = ui.warehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name ?: "Select warehouse"
-        mutableStateOf(name)
-    }
+
+    val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name ?: "Select outlet"
+    val warehouseLabel = ui.filteredWarehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name
+        ?: "Select warehouse"
+    val warehouseEnabled = ui.selectedOutletId != null && ui.filteredWarehouses.isNotEmpty()
 
     val scroll = rememberScrollState()
 
@@ -115,19 +122,51 @@ fun StocktakeDashboardScreen(
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = surfaceBlue)
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Warehouse", style = MaterialTheme.typography.titleMedium)
+                Text("Outlet", style = MaterialTheme.typography.titleMedium, color = primaryBlue)
+                ExposedDropdownMenuBox(
+                    expanded = outletMenu,
+                    onExpandedChange = { outletMenu = !outletMenu }
+                ) {
+                    OutlinedTextField(
+                        value = outletLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Choose outlet") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) }
+                    )
+                    DropdownMenu(
+                        expanded = outletMenu,
+                        onDismissRequest = { outletMenu = false }
+                    ) {
+                        ui.outlets.forEach { outlet ->
+                            DropdownMenuItem(
+                                text = { Text(outlet.name ?: outlet.id) },
+                                onClick = {
+                                    outletMenu = false
+                                    vm.selectOutlet(outlet.id)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Text("Warehouse", style = MaterialTheme.typography.titleMedium, color = primaryBlue)
                 ExposedDropdownMenuBox(
                     expanded = warehouseMenu,
-                    onExpandedChange = { warehouseMenu = !warehouseMenu }
+                    onExpandedChange = { if (warehouseEnabled) warehouseMenu = !warehouseMenu }
                 ) {
                     OutlinedTextField(
                         value = warehouseLabel,
                         onValueChange = {},
+                        enabled = warehouseEnabled,
                         readOnly = true,
-                        modifier = Modifier
-                            .fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                         label = { Text("Choose warehouse") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = warehouseMenu) }
                     )
@@ -135,18 +174,24 @@ fun StocktakeDashboardScreen(
                         expanded = warehouseMenu,
                         onDismissRequest = { warehouseMenu = false }
                     ) {
-                        ui.warehouses.forEach { warehouse ->
+                        ui.filteredWarehouses.forEach { warehouse ->
                             DropdownMenuItem(
                                 text = { Text(warehouse.name) },
                                 onClick = {
                                     warehouseMenu = false
-                                    warehouseLabel = warehouse.name
                                     vm.selectWarehouse(warehouse.id)
                                 }
                             )
                         }
                     }
                 }
+                if (ui.selectedOutletId != null && ui.filteredWarehouses.isEmpty()) {
+                    Text(
+                        "No warehouses available for this outlet",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
@@ -154,9 +199,10 @@ fun StocktakeDashboardScreen(
                     label = { Text("Note (optional)") }
                 )
                 Button(
-                    enabled = ui.openPeriod == null && ui.selectedWarehouseId != null && !ui.loading,
+                    enabled = ui.openPeriod == null && ui.selectedOutletId != null && ui.selectedWarehouseId != null && !ui.loading,
                     onClick = { vm.startStocktake(note.takeIf { it.isNotBlank() }) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryBlue, contentColor = Color.White)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -174,17 +220,22 @@ fun StocktakeDashboardScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = { onOpenCounts(period.id) },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = accentBlue, contentColor = Color.White)
                         ) { Text("Enter counts") }
                         OutlinedButton(
                             onClick = { onOpenVariance(period.id) },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryBlue),
+                            border = BorderStroke(1.dp, primaryBlue)
                         ) { Text("View variance") }
                     }
                     OutlinedButton(
                         onClick = { vm.closePeriod() },
                         enabled = period.status == "open" && !ui.loading,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryBlue),
+                        border = BorderStroke(1.dp, primaryBlue)
                     ) {
                         Text("Close period")
                     }

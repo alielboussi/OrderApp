@@ -15,7 +15,10 @@ class StocktakeViewModel(
 ) : ViewModel() {
 
     data class UiState(
+        val outlets: List<SupabaseProvider.Outlet> = emptyList(),
         val warehouses: List<SupabaseProvider.Warehouse> = emptyList(),
+        val filteredWarehouses: List<SupabaseProvider.Warehouse> = emptyList(),
+        val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
         val variance: List<StocktakeRepository.VarianceRow> = emptyList(),
@@ -36,25 +39,59 @@ class StocktakeViewModel(
             return
         }
         viewModelScope.launch {
-            runCatching { repo.listWarehouses(session.token) }
-                .onSuccess { list ->
-                    val preferred = session.outletId
+            _ui.value = _ui.value.copy(loading = true, error = null)
+            runCatching {
+                val outlets = repo.listOutlets(session.token)
+                val warehouses = repo.listWarehouses(session.token)
+                val preferredOutlet = session.outletId ?: outlets.firstOrNull()?.id
+                val filtered = preferredOutlet?.let { id -> warehouses.filter { it.outletId == id } } ?: emptyList()
+                val selectedWarehouse = filtered.firstOrNull()?.id
+                Triple(outlets, warehouses, Triple(preferredOutlet, filtered, selectedWarehouse))
+            }
+                .onSuccess { (outlets, warehouses, derived) ->
+                    val (preferredOutlet, filtered, selectedWarehouse) = derived
                     _ui.value = _ui.value.copy(
-                        warehouses = list,
-                        selectedWarehouseId = list.firstOrNull { it.outletId == preferred }?.id
-                            ?: list.firstOrNull()?.id,
-                        error = null
+                        outlets = outlets,
+                        warehouses = warehouses,
+                        filteredWarehouses = filtered,
+                        selectedOutletId = preferredOutlet,
+                        selectedWarehouseId = selectedWarehouse,
+                        openPeriod = null,
+                        variance = emptyList(),
+                        lastCount = null,
+                        loading = false,
+                        error = when {
+                            outlets.isEmpty() -> "No outlets available"
+                            preferredOutlet != null && filtered.isEmpty() -> "No warehouses available for this outlet"
+                            else -> null
+                        }
                     )
-                    _ui.value.selectedWarehouseId?.let { refreshOpenPeriod(it) }
+                    selectedWarehouse?.let { refreshOpenPeriod(it) }
                 }
                 .onFailure { err ->
-                    _ui.value = UiState(error = err.message)
+                    _ui.value = UiState(error = err.message, loading = false)
                 }
         }
     }
 
+    fun selectOutlet(id: String) {
+        val current = _ui.value
+        val filtered = current.warehouses.filter { it.outletId == id }
+        val nextWarehouseId = filtered.firstOrNull()?.id
+        _ui.value = current.copy(
+            selectedOutletId = id,
+            filteredWarehouses = filtered,
+            selectedWarehouseId = nextWarehouseId,
+            openPeriod = null,
+            variance = emptyList(),
+            lastCount = null,
+            error = if (filtered.isEmpty()) "No warehouses available for this outlet" else null
+        )
+        nextWarehouseId?.let { viewModelScope.launch { refreshOpenPeriod(it) } }
+    }
+
     fun selectWarehouse(id: String) {
-        _ui.value = _ui.value.copy(selectedWarehouseId = id, openPeriod = null, variance = emptyList())
+        _ui.value = _ui.value.copy(selectedWarehouseId = id, openPeriod = null, variance = emptyList(), error = null)
         viewModelScope.launch { refreshOpenPeriod(id) }
     }
 
