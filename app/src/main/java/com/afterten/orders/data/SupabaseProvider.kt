@@ -867,7 +867,8 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listWarehouses(jwt: String): List<Warehouse> {
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id,outlet_id&order=name.asc"
+        // Schema does not expose outlet_id on warehouses; return core fields only.
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id,kind,stock_layer&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")

@@ -51,7 +51,11 @@ class StocktakeViewModel(
             val warehouses = warehousesResult.getOrElse { emptyList() }
 
             val preferredOutlet = session.outletId.takeIf { it.isNotBlank() } ?: outlets.firstOrNull()?.id
-            val filtered = preferredOutlet?.let { id -> warehouses.filter { it.outletId == id } } ?: emptyList()
+            val hasOutletMapping = warehouses.any { it.outletId != null }
+            val filtered = when {
+                hasOutletMapping && preferredOutlet != null -> warehouses.filter { it.outletId == preferredOutlet }
+                else -> warehouses
+            }
             val selectedWarehouse = filtered.firstOrNull()?.id
 
             fun summarize(t: Throwable?): String? = t?.message?.take(140)
@@ -60,7 +64,7 @@ class StocktakeViewModel(
                 warehousesResult.isFailure -> "Unable to load warehouses: ${summarize(warehousesResult.exceptionOrNull()) ?: "unknown error"}"
                 outletsResult.isFailure && outlets.isEmpty() -> "Unable to load outlets: ${summarize(outletsResult.exceptionOrNull()) ?: "unknown error"}"
                 outletsResult.isFailure -> "Outlets list unavailable; showing your assigned outlet"
-                preferredOutlet != null && filtered.isEmpty() -> "No warehouses available for this outlet"
+                hasOutletMapping && preferredOutlet != null && filtered.isEmpty() -> "No warehouses available for this outlet"
                 else -> null
             }
 
