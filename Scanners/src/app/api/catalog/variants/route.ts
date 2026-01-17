@@ -152,7 +152,7 @@ export async function GET(request: Request) {
             has_recipe: hasRecipe,
           };
         })
-        .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> & { has_recipe?: boolean } => Boolean(v));
+        .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> & { has_recipe: boolean } => Boolean(v));
     });
 
     if (id) {
