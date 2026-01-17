@@ -32,15 +32,10 @@ type FormState = {
   sku: string;
   item_kind: "finished" | "ingredient" | "raw";
   base_unit: string;
-  consumption_uom: string;
-  purchase_pack_unit: string;
-  units_per_purchase_pack: string;
-  purchase_unit_mass: string;
-  purchase_unit_mass_uom: string;
-  consumption_unit_mass: string;
-  consumption_unit_mass_uom: string;
-  transfer_unit: string;
-  transfer_quantity: string;
+  consumption_unit: string;
+  consumption_qty_per_base: string;
+  storage_unit: string;
+  storage_weight: string;
   cost: string;
   has_variations: boolean;
   has_recipe: boolean;
@@ -55,15 +50,10 @@ const defaultForm: FormState = {
   sku: "",
   item_kind: "finished",
   base_unit: "each",
-  consumption_uom: "each",
-  purchase_pack_unit: "each",
-  units_per_purchase_pack: "1",
-  purchase_unit_mass: "",
-  purchase_unit_mass_uom: "kg",
-  consumption_unit_mass: "",
-  consumption_unit_mass_uom: "kg",
-  transfer_unit: "each",
-  transfer_quantity: "1",
+  consumption_unit: "each",
+  consumption_qty_per_base: "1",
+  storage_unit: "",
+  storage_weight: "",
   cost: "0",
   has_variations: false,
   has_recipe: false,
@@ -115,15 +105,10 @@ function ProductCreatePage() {
             sku: item.sku ?? "",
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
             base_unit: item.base_unit ?? "each",
-            consumption_uom: item.consumption_uom ?? "each",
-            purchase_pack_unit: item.purchase_pack_unit ?? "each",
-            units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
-            purchase_unit_mass: item.purchase_unit_mass != null ? item.purchase_unit_mass.toString() : "",
-            purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? "kg",
-            consumption_unit_mass: item.consumption_unit_mass != null ? item.consumption_unit_mass.toString() : "",
-            consumption_unit_mass_uom: item.consumption_unit_mass_uom ?? item.purchase_unit_mass_uom ?? "kg",
-            transfer_unit: item.transfer_unit ?? "each",
-            transfer_quantity: (item.transfer_quantity ?? 1).toString(),
+            consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
+            consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
+            storage_unit: item.storage_unit ?? "",
+            storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
             cost: (item.cost ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
             has_recipe: Boolean(item.has_recipe),
@@ -158,35 +143,28 @@ function ProductCreatePage() {
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
-  const prefillConsumptionMass = () => {
-    const mass = Number(form.purchase_unit_mass);
-    const pack = Number(form.units_per_purchase_pack);
-    if (Number.isFinite(mass) && Number.isFinite(pack) && pack > 0) {
-      const result = Math.round((mass / pack) * 1000) / 1000;
-      setForm((prev) => ({
-        ...prev,
-        consumption_unit_mass: `${result}`,
-        consumption_unit_mass_uom: prev.purchase_unit_mass_uom,
-      }));
-    }
-  };
-
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setResult(null);
     try {
       const payload = {
-        ...form,
-        units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
-        purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0),
-        consumption_unit_mass: form.consumption_unit_mass === "" ? null : toNumber(form.consumption_unit_mass, 0),
-        consumption_unit_mass_uom: form.consumption_unit_mass === "" ? null : form.consumption_unit_mass_uom,
-        transfer_quantity: toNumber(form.transfer_quantity, 1),
+        name: form.name,
+        sku: form.sku,
+        item_kind: form.item_kind,
+        base_unit: form.base_unit,
+        consumption_unit: form.consumption_unit,
+        consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
+        storage_unit: form.storage_unit || null,
+        storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
         cost: toNumber(form.cost, 0),
-        default_warehouse_id: form.default_warehouse_id || null,
-        ...(editingId ? { id: editingId } : {}),
+        has_variations: form.has_variations,
         has_recipe: form.has_recipe,
+        outlet_order_visible: form.outlet_order_visible,
+        image_url: form.image_url,
+        default_warehouse_id: form.default_warehouse_id || null,
+        active: form.active,
+        ...(editingId ? { id: editingId } : {}),
       };
 
       const res = await fetch("/api/catalog/items", {
@@ -261,112 +239,46 @@ function ProductCreatePage() {
             />
             {!disableVariantControlled && (
               <>
-                {!isFinished && (
-                  <Select
-                    label="Base unit (single piece)"
-                    hint="Smallest unit you track (e.g., each, kg)"
-                    value={form.base_unit}
-                    onChange={(v) => handleChange("base_unit", v)}
-                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                  />
-                )}
                 <Select
-                  label="Consumption unit"
-                  hint="Unit used when deducting/consuming"
-                  value={form.consumption_uom}
-                  onChange={(v) => handleChange("consumption_uom", v)}
+                  label="Base unit"
+                  hint="Smallest unit you track (e.g., each, kg)"
+                  value={form.base_unit}
+                  onChange={(v) => handleChange("base_unit", v)}
                   options={qtyUnitOptions as unknown as { value: string; label: string }[]}
                 />
-                {!isFinished && (
-                  <Select
-                    label="Supplier pack unit"
-                    hint="Unit written on supplier pack (box, kg, each)"
-                    value={form.purchase_pack_unit}
-                    onChange={(v) => handleChange("purchase_pack_unit", v)}
-                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                  />
-                )}
-                {!isFinished && (
-                  <Field
-                    type="number"
-                    label="Units inside one supplier pack"
-                    hint="Example: box of 12 = 12 (pack qty, not sent qty)"
-                    value={form.units_per_purchase_pack}
-                    onChange={(v) => handleChange("units_per_purchase_pack", v)}
-                    step="0.01"
-                    min="0"
-                  />
-                )}
-                {!isFinished && (
-                  <Field
-                    type="number"
-                    label="Weight/volume per purchase unit"
-                    hint="Optional. Example: 2.5 (kg) per bag"
-                    value={form.purchase_unit_mass}
-                    onChange={(v) => handleChange("purchase_unit_mass", v)}
-                    step="0.01"
-                    min="0"
-                  />
-                )}
-                {!isFinished && (
-                  <Select
-                    label="Mass/volume unit"
-                    hint="Used only if weight/volume is set"
-                    value={form.purchase_unit_mass_uom}
-                    onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
-                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                  />
-                )}
-                {!isFinished && (
-                  <Field
-                    type="number"
-                    label="Weight/volume per consumption unit"
-                    hint="Optional. Enter manually if you track per-consumption-unit weight/volume"
-                    value={form.consumption_unit_mass}
-                    onChange={(v) => handleChange("consumption_unit_mass", v)}
-                    step="0.01"
-                    min="0"
-                  />
-                )}
-                {!isFinished && (
-                  <button
-                    type="button"
-                    onClick={prefillConsumptionMass}
-                    className={styles.secondaryButton}
-                    style={{ justifySelf: "start" }}
-                  >
-                    Prefill from purchase mass
-                  </button>
-                )}
-                {!isFinished && (
-                  <Select
-                    label="Mass/volume unit (consumption)"
-                    hint="Unit for the consumption-unit weight/volume"
-                    value={form.consumption_unit_mass_uom}
-                    onChange={(v) => handleChange("consumption_unit_mass_uom", v)}
-                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                  />
-                )}
-                {!isFinished && (
-                  <Select
-                    label="Transfer unit"
-                    hint="Unit used when moving stock between warehouses"
-                    value={form.transfer_unit}
-                    onChange={(v) => handleChange("transfer_unit", v)}
-                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                  />
-                )}
-                {!isFinished && (
-                  <Field
-                    type="number"
-                    label="Quantity per transfer line"
-                    hint="Default quantity moved when you create a transfer line"
-                    value={form.transfer_quantity}
-                    onChange={(v) => handleChange("transfer_quantity", v)}
-                    step="0.01"
-                    min="0"
-                  />
-                )}
+                <Select
+                  label="Consumption unit"
+                  hint="Unit deducted per base unit sold/used"
+                  value={form.consumption_unit}
+                  onChange={(v) => handleChange("consumption_unit", v)}
+                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                />
+                <Field
+                  type="number"
+                  label="Consumption qty"
+                  hint="Consumption units used per 1 base unit"
+                  value={form.consumption_qty_per_base}
+                  onChange={(v) => handleChange("consumption_qty_per_base", v)}
+                  step="0.0001"
+                  min="0.0001"
+                  required
+                />
+                <Select
+                  label="Storage unit"
+                  hint="How this item is held in stock (e.g., rods, bags, cases)"
+                  value={form.storage_unit}
+                  onChange={(v) => handleChange("storage_unit", v)}
+                  options={[{ value: "", label: "Not set" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
+                />
+                <Field
+                  type="number"
+                  label="Storage qty"
+                  hint="Optional: quantity per storage unit (weight, volume, or count; e.g., kg per rod/bag)"
+                  value={form.storage_weight}
+                  onChange={(v) => handleChange("storage_weight", v)}
+                  step="0.01"
+                  min="0"
+                />
                 {!isIngredient && (
                   <Field
                     type="number"

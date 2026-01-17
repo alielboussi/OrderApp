@@ -15,7 +15,12 @@ function buildClient() {
   if (!url || !anon) {
     throw new Error("Supabase URL and anon key are required");
   }
-  return createClient(url, anon, { auth: { persistSession: true } });
+  return createClient(url, anon, {
+    auth: {
+      persistSession: true,
+      storageKey: "sb-warehouse-backoffice",
+    },
+  });
 }
 
 export default function WarehouseBackofficeLogin() {

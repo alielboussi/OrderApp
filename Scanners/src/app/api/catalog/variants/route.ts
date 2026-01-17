@@ -24,6 +24,11 @@ type VariantPayload = {
   active: boolean;
 };
 
+type RecipeRow = {
+  finished_item_id: string | null;
+  finished_variant_key: string | null;
+};
+
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function isUuid(value: unknown): value is string {
@@ -121,11 +126,33 @@ export async function GET(request: Request) {
     const { data, error } = (await query) as { data: CatalogItemRow[] | null; error: Error | null };
     if (error) throw error;
 
+    const { data: recipeRows, error: recipeError } = await supabase
+      .from("recipes")
+      .select("finished_item_id, finished_variant_key")
+      .eq("active", true);
+    if (recipeError) throw recipeError;
+    const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
+    const recipeCountByVariant: Record<string, number> = {};
+    (recipeRows as RecipeRow[] | null)?.forEach((row) => {
+      if (!row.finished_item_id) return;
+      const comboKey = `${row.finished_item_id}::${normalizeVariant(row.finished_variant_key)}`;
+      recipeCountByVariant[comboKey] = (recipeCountByVariant[comboKey] || 0) + 1;
+    });
+
     const variants = (data ?? []).flatMap((item) => {
       const entries = asVariantArray(item.variants);
       return entries
-        .map((variant) => toVariantResponse(item.id, variant))
-        .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> => Boolean(v));
+        .map((variant) => {
+          const normalizedKey = normalizeVariant((variant as any).key ?? (variant as any).id ?? null);
+          const hasRecipe = recipeCountByVariant[`${item.id}::${normalizedKey}`] > 0;
+          const response = toVariantResponse(item.id, variant);
+          if (!response) return null;
+          return {
+            ...response,
+            has_recipe: hasRecipe,
+          };
+        })
+        .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> & { has_recipe?: boolean } => Boolean(v));
     });
 
     if (id) {

@@ -48,6 +48,9 @@ object RoleGuards {
         id = "de9f2075-9c97-4da1-a2a0-59ed162947e7",
         blockedIds = setOf("6b9e657a-6131-4a0b-8afa-0ce260f8ed0c")
     )
+    val Stocktake = RoleGuard(
+        id = "95b6a75d-bd46-4764-b5ea-981b1608f1ca"
+    )
     val Administrator: RoleGuard = Backoffice
 
     // Aliases to keep older screens/routes working while enforcing the new role split

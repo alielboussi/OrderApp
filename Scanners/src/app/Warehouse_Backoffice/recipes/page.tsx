@@ -35,6 +35,8 @@ const UOMS = [
   { value: "plastic", label: "Plastic(s)" },
 ];
 
+const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "g" };
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -51,7 +53,12 @@ function buildClient() {
   if (!url || !anon) {
     throw new Error("Supabase URL and anon key are required");
   }
-  return createClient(url, anon, { auth: { persistSession: true } });
+  return createClient(url, anon, {
+    auth: {
+      persistSession: true,
+      storageKey: "sb-warehouse-backoffice",
+    },
+  });
 }
 
 export default function RecipesPage() {
@@ -68,12 +75,8 @@ export default function RecipesPage() {
   const [selectedFinished, setSelectedFinished] = useState<string>("");
   const [selectedIngredientTarget, setSelectedIngredientTarget] = useState<string>("");
 
-  const [finishedLines, setFinishedLines] = useState<PendingLine[]>([
-    { ingredientId: "", qty: "", uom: "g" },
-  ]);
-  const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([
-    { ingredientId: "", qty: "", uom: "g" },
-  ]);
+  const [finishedLines, setFinishedLines] = useState<PendingLine[]>([EMPTY_LINE]);
+  const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([EMPTY_LINE]);
 
   useEffect(() => {
     let active = true;
@@ -122,6 +125,102 @@ export default function RecipesPage() {
       active = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedFinished) {
+      setFinishedLines([EMPTY_LINE]);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadRecipe = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        setSuccess(null);
+        const { data, error } = await supabase
+          .from("recipes")
+          .select("ingredient_item_id, qty_per_unit, qty_unit")
+          .eq("finished_item_id", selectedFinished)
+          .eq("recipe_for_kind", "finished")
+          .eq("active", true)
+          .order("ingredient_item_id", { ascending: true });
+        if (!active) return;
+        if (error) throw error;
+        if (data && data.length > 0) {
+          setFinishedLines(
+            data.map((row) => ({
+              ingredientId: row.ingredient_item_id || "",
+              qty: row.qty_per_unit?.toString() || "",
+              uom: row.qty_unit || "g",
+            }))
+          );
+        } else {
+          setFinishedLines([EMPTY_LINE]);
+        }
+      } catch (error) {
+        if (!active) return;
+        setError(toErrorMessage(error) || "Failed to load recipe");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadRecipe();
+    return () => {
+      active = false;
+    };
+  }, [selectedFinished, supabase]);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedIngredientTarget) {
+      setIngredientLines([EMPTY_LINE]);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadRecipe = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        setSuccess(null);
+        const { data, error } = await supabase
+          .from("recipes")
+          .select("ingredient_item_id, qty_per_unit, qty_unit")
+          .eq("finished_item_id", selectedIngredientTarget)
+          .eq("recipe_for_kind", "ingredient")
+          .eq("active", true)
+          .order("ingredient_item_id", { ascending: true });
+        if (!active) return;
+        if (error) throw error;
+        if (data && data.length > 0) {
+          setIngredientLines(
+            data.map((row) => ({
+              ingredientId: row.ingredient_item_id || "",
+              qty: row.qty_per_unit?.toString() || "",
+              uom: row.qty_unit || "g",
+            }))
+          );
+        } else {
+          setIngredientLines([EMPTY_LINE]);
+        }
+      } catch (error) {
+        if (!active) return;
+        setError(toErrorMessage(error) || "Failed to load recipe");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadRecipe();
+    return () => {
+      active = false;
+    };
+  }, [selectedIngredientTarget, supabase]);
 
   const ingredientOptionsForFinished = useMemo(() => ingredientItems, [ingredientItems]);
   const rawOptionsForIngredient = useMemo(() => rawItems, [rawItems]);

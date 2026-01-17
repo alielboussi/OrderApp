@@ -12,15 +12,10 @@ type ItemPayload = {
   sku?: string | null;
   item_kind: ItemKind;
   base_unit: QtyUnit;
-  consumption_uom: string;
-  purchase_pack_unit: string;
-  units_per_purchase_pack: number;
-  purchase_unit_mass?: number | null;
-  purchase_unit_mass_uom?: QtyUnit | null;
-  consumption_unit_mass?: number | null;
-  consumption_unit_mass_uom?: QtyUnit | null;
-  transfer_unit: string;
-  transfer_quantity: number;
+  consumption_unit: string;
+  consumption_qty_per_base: number;
+  storage_unit?: string | null;
+  storage_weight?: number | null;
   cost: number;
   has_variations: boolean;
   has_recipe: boolean;
@@ -28,14 +23,30 @@ type ItemPayload = {
   image_url?: string | null;
   default_warehouse_id?: string | null;
   active: boolean;
+  /* legacy fields kept for compatibility with existing not-null constraints */
+  consumption_uom?: string;
+  purchase_pack_unit?: string;
+  units_per_purchase_pack?: number;
+  purchase_unit_mass?: number | null;
+  purchase_unit_mass_uom?: QtyUnit | null;
+  consumption_unit_mass?: number | null;
+  consumption_unit_mass_uom?: QtyUnit | null;
+  transfer_unit?: string;
+  transfer_quantity?: number;
+};
+
+type RecipeRow = {
+  finished_item_id: string | null;
+  finished_variant_key: string | null;
+  active?: boolean | null;
 };
 
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const BASE_FIELDS =
-  "id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active";
+  "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active";
 
-const OPTIONAL_COLUMNS = ["has_recipe", "consumption_unit_mass", "consumption_unit_mass_uom"] as const;
+const OPTIONAL_COLUMNS = ["has_recipe", "consumption_unit_mass", "consumption_unit_mass_uom", "storage_unit", "storage_weight"] as const;
 
 function selectFields(optional: string[]) {
   const optionalPart = optional.length ? `,${optional.join(",")}` : "";
@@ -131,12 +142,49 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
+    // Enrich with recipe counts (active recipes only)
+    const { data: recipeRows, error: recipeError } = await supabase
+      .from("recipes")
+      .select("finished_item_id, finished_variant_key, active")
+      .eq("active", true);
+    if (recipeError) throw recipeError;
+
+    const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
+    const recipeCountByItem: Record<string, number> = {};
+    const recipeCountByItemVariant: Record<string, number> = {};
+
+    (recipeRows as RecipeRow[] | null)?.forEach((row) => {
+      if (!row.finished_item_id) return;
+      const variantKey = normalizeVariant(row.finished_variant_key);
+      const itemKey = row.finished_item_id;
+      const comboKey = `${itemKey}::${variantKey}`;
+      recipeCountByItem[itemKey] = (recipeCountByItem[itemKey] || 0) + 1;
+      recipeCountByItemVariant[comboKey] = (recipeCountByItemVariant[comboKey] || 0) + 1;
+    });
+
     if (single) {
       if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      return NextResponse.json({ item: data });
+      const item = data as Record<string, unknown>;
+      const baseCount = recipeCountByItemVariant[`${item.id as string}::base`] || 0;
+      return NextResponse.json({
+        item: {
+          ...item,
+          has_recipe: (item as any).has_recipe ?? recipeCountByItem[item.id as string] > 0,
+          base_recipe_count: baseCount,
+        },
+      });
     }
 
-    return NextResponse.json({ items: data as unknown[] });
+    const enriched = (data as Record<string, unknown>[]).map((item) => {
+      const baseCount = recipeCountByItemVariant[`${item.id as string}::base`] || 0;
+      return {
+        ...item,
+        has_recipe: (item as any).has_recipe ?? recipeCountByItem[item.id as string] > 0,
+        base_recipe_count: baseCount,
+      };
+    });
+
+    return NextResponse.json({ items: enriched });
   } catch (error) {
     console.error("[catalog/items] GET failed", error);
     return NextResponse.json({ error: "Unable to load items" }, { status: 500 });
@@ -153,18 +201,29 @@ export async function POST(request: Request) {
     if (!itemKind.ok) return NextResponse.json({ error: itemKind.error }, { status: 400 });
 
     const baseUnit = pickQtyUnit(body.base_unit, "each");
-    const consumptionUom = cleanText(body.consumption_uom) ?? "each";
-    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? "each";
-    const transferUnit = cleanText(body.transfer_unit) ?? "each";
+    const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
 
-    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
-    if (!unitsPerPack.ok) return NextResponse.json({ error: unitsPerPack.error }, { status: 400 });
+    const consumptionQtyPerBase = toNumber(body.consumption_qty_per_base, 0, 0);
+    if (!consumptionQtyPerBase.ok || consumptionQtyPerBase.value <= 0) {
+      return NextResponse.json({ error: "consumption_qty_per_base must be greater than 0" }, { status: 400 });
+    }
 
-    const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
-    if (!transferQuantity.ok) return NextResponse.json({ error: transferQuantity.error }, { status: 400 });
+    const storageUnit = cleanText(body.storage_unit) ?? null;
+    let storageWeight: number | null = null;
+    if (body.storage_weight !== undefined && body.storage_weight !== null && `${body.storage_weight}`.trim() !== "") {
+      const mass = toNumber(body.storage_weight, 0, 0);
+      if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+      storageWeight = mass.value;
+    }
 
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
+
+    // Legacy-required fields: provide safe defaults to satisfy existing constraints until columns are removed
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit ?? baseUnit;
+    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0); // fallback default 1
+    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? baseUnit;
+    const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
 
     let purchaseUnitMass: number | null = null;
     if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
@@ -185,9 +244,21 @@ export async function POST(request: Request) {
       sku: cleanText(body.sku) ?? null,
       item_kind: itemKind.value,
       base_unit: baseUnit,
-      consumption_uom: consumptionUom,
+      consumption_unit: consumptionUnit,
+      consumption_qty_per_base: consumptionQtyPerBase.value,
+      storage_unit: storageUnit,
+      storage_weight: storageWeight,
+      cost: cost.value,
+      has_variations: cleanBoolean(body.has_variations, false),
+      has_recipe: cleanBoolean(body.has_recipe, false),
+      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
+      image_url: cleanText(body.image_url) ?? null,
+      default_warehouse_id: cleanUuid(body.default_warehouse_id),
+      active: cleanBoolean(body.active, true),
+      // legacy columns kept filled to satisfy constraints
+      consumption_uom: consumptionUnit,
       purchase_pack_unit: purchasePackUnit,
-      units_per_purchase_pack: unitsPerPack.value,
+      units_per_purchase_pack: unitsPerPack.ok ? unitsPerPack.value || 1 : 1,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
       consumption_unit_mass: consumptionUnitMassValue,
@@ -196,14 +267,7 @@ export async function POST(request: Request) {
           ? pickQtyUnit(body.consumption_unit_mass_uom, "kg")
           : null,
       transfer_unit: transferUnit,
-      transfer_quantity: transferQuantity.value,
-      cost: cost.value,
-      has_variations: cleanBoolean(body.has_variations, false),
-      has_recipe: cleanBoolean(body.has_recipe, false),
-      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
-      image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: cleanUuid(body.default_warehouse_id),
-      active: cleanBoolean(body.active, true),
+      transfer_quantity: transferQuantity.ok ? transferQuantity.value || 1 : 1,
     };
 
     const supabase = getServiceClient();
@@ -252,18 +316,28 @@ export async function PUT(request: Request) {
     if (!itemKind.ok) return NextResponse.json({ error: itemKind.error }, { status: 400 });
 
     const baseUnit = pickQtyUnit(body.base_unit, "each");
-    const consumptionUom = cleanText(body.consumption_uom) ?? "each";
-    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? "each";
-    const transferUnit = cleanText(body.transfer_unit) ?? "each";
+    const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
 
-    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
-    if (!unitsPerPack.ok) return NextResponse.json({ error: unitsPerPack.error }, { status: 400 });
+    const consumptionQtyPerBase = toNumber(body.consumption_qty_per_base, 0, 0);
+    if (!consumptionQtyPerBase.ok || consumptionQtyPerBase.value <= 0) {
+      return NextResponse.json({ error: "consumption_qty_per_base must be greater than 0" }, { status: 400 });
+    }
 
-    const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
-    if (!transferQuantity.ok) return NextResponse.json({ error: transferQuantity.error }, { status: 400 });
+    const storageUnit = cleanText(body.storage_unit) ?? null;
+    let storageWeight: number | null = null;
+    if (body.storage_weight !== undefined && body.storage_weight !== null && `${body.storage_weight}`.trim() !== "") {
+      const mass = toNumber(body.storage_weight, 0, 0);
+      if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+      storageWeight = mass.value;
+    }
 
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
+
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit ?? baseUnit;
+    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
+    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? baseUnit;
+    const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
 
     let purchaseUnitMass: number | null = null;
     if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
@@ -271,7 +345,7 @@ export async function PUT(request: Request) {
       if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
       purchaseUnitMass = mass.value;
     }
-    
+
     let consumptionUnitMassValue: number | null = null;
     if (body.consumption_unit_mass !== undefined && body.consumption_unit_mass !== null && `${body.consumption_unit_mass}`.trim() !== "") {
       const mass = toNumber(body.consumption_unit_mass, 0, 0);
@@ -284,9 +358,20 @@ export async function PUT(request: Request) {
       sku: cleanText(body.sku) ?? null,
       item_kind: itemKind.value,
       base_unit: baseUnit,
-      consumption_uom: consumptionUom,
+      consumption_unit: consumptionUnit,
+      consumption_qty_per_base: consumptionQtyPerBase.value,
+      storage_unit: storageUnit,
+      storage_weight: storageWeight,
+      cost: cost.value,
+      has_variations: cleanBoolean(body.has_variations, false),
+      has_recipe: cleanBoolean(body.has_recipe, false),
+      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
+      image_url: cleanText(body.image_url) ?? null,
+      default_warehouse_id: cleanUuid(body.default_warehouse_id),
+      active: cleanBoolean(body.active, true),
+      consumption_uom: consumptionUnit,
       purchase_pack_unit: purchasePackUnit,
-      units_per_purchase_pack: unitsPerPack.value,
+      units_per_purchase_pack: unitsPerPack.ok ? unitsPerPack.value || 1 : 1,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
       consumption_unit_mass: consumptionUnitMassValue,
@@ -295,14 +380,7 @@ export async function PUT(request: Request) {
           ? pickQtyUnit(body.consumption_unit_mass_uom, "kg")
           : null,
       transfer_unit: transferUnit,
-      transfer_quantity: transferQuantity.value,
-      cost: cost.value,
-      has_variations: cleanBoolean(body.has_variations, false),
-      has_recipe: cleanBoolean(body.has_recipe, false),
-      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
-      image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: cleanUuid(body.default_warehouse_id),
-      active: cleanBoolean(body.active, true),
+      transfer_quantity: transferQuantity.ok ? transferQuantity.value || 1 : 1,
     };
 
     const supabase = getServiceClient();

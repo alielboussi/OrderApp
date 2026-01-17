@@ -29,6 +29,7 @@ import com.afterten.orders.util.rememberScreenLogger
 @Composable
 fun BackofficeHomeScreen(
     onOpenCatalog: () -> Unit,
+    onOpenStocktake: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
 ) {
@@ -91,5 +92,13 @@ fun BackofficeHomeScreen(
                 onOpenCatalog()
             }
         ) { Text("Products & Variances") }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                logger.event("StocktakeTapped")
+                onOpenStocktake()
+            }
+        ) { Text("Stocktakes") }
     }
 }

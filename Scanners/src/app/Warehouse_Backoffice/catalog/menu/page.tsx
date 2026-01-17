@@ -12,6 +12,8 @@ type Item = {
   item_kind?: string | null;
   active?: boolean | null;
   has_variations?: boolean | null;
+  has_recipe?: boolean | null;
+  base_recipe_count?: number | null;
 };
 
 type Variant = {
@@ -20,6 +22,7 @@ type Variant = {
   name: string;
   sku?: string | null;
   active?: boolean | null;
+  has_recipe?: boolean | null;
 };
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
@@ -136,6 +139,8 @@ export default function CatalogMenuPage() {
               ) : (
                 grouped.map(({ item, variants: itemVariants }) => {
                   const open = expanded[item.id] ?? false;
+                  const baseRecipeCount = item.base_recipe_count ?? 0;
+                  const hasRecipe = (item.has_recipe ?? false) || baseRecipeCount > 0;
                   return (
                     <article key={item.id} className={styles.card}>
                       <div className={styles.cardHeader}>
@@ -156,6 +161,11 @@ export default function CatalogMenuPage() {
                           <span className={styles.badge}>
                             {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
                           </span>
+                          {hasRecipe && (
+                            <span className={`${styles.badge} ${styles.badgeRecipe}`}>
+                              {baseRecipeCount > 0 ? `Recipes: ${baseRecipeCount}` : "Recipe set"}
+                            </span>
+                          )}
                           {item.has_variations && <span className={styles.badge}>Has variations</span>}
                           <button className={styles.chipButton} onClick={() => toggleExpanded(item.id)}>
                             {open ? "Hide variants" : "Show variants"}
@@ -180,6 +190,9 @@ export default function CatalogMenuPage() {
                                   >
                                     {variant.active === false ? "Inactive" : "Active"}
                                   </span>
+                                  {variant.has_recipe && (
+                                    <span className={`${styles.badge} ${styles.badgeRecipe}`}>Recipe</span>
+                                  )}
                                   <button
                                     className={styles.linkButton}
                                     onClick={() => router.push(`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${item.id}`)}

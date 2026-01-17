@@ -7,6 +7,10 @@
         {
             "view_name": "warehouse_layer_stock",
             "definition": " SELECT w.id AS warehouse_id,\n    w.stock_layer,\n    sl.item_id,\n    ci.name AS item_name,\n    sl.variant_key,\n    sum(sl.delta_units) AS net_units\n   FROM stock_ledger sl\n     JOIN warehouses w ON w.id = sl.warehouse_id\n     LEFT JOIN catalog_items ci ON ci.id = sl.item_id\n  WHERE sl.location_type = 'warehouse'::text\n  GROUP BY w.id, w.stock_layer, sl.item_id, ci.name, sl.variant_key;"
+        },
+        {
+            "view_name": "warehouse_stock_variances",
+            "definition": " SELECT wsp.id AS period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    COALESCE(close_counts.item_id, open_counts.item_id, mov.item_id) AS item_id,\n    COALESCE(close_counts.variant_key, open_counts.variant_key, mov.variant_key, 'base'::text) AS variant_key,\n    COALESCE(open_counts.opening_qty, 0::numeric) AS opening_qty,\n    COALESCE(mov.delta_units, 0::numeric) AS movement_qty,\n    COALESCE(close_counts.closing_qty, 0::numeric) AS closing_qty,\n    COALESCE(open_counts.opening_qty, 0::numeric) + COALESCE(mov.delta_units, 0::numeric) AS expected_qty,\n    COALESCE(close_counts.closing_qty, 0::numeric) - (COALESCE(open_counts.opening_qty, 0::numeric) + COALESCE(mov.delta_units, 0::numeric)) AS variance_qty\n   FROM warehouse_stock_periods wsp\n     LEFT JOIN LATERAL ( SELECT c.item_id,\n            c.variant_key,\n            c.counted_qty AS opening_qty\n           FROM warehouse_stock_counts c\n          WHERE c.period_id = wsp.id AND c.kind = 'opening'::text) open_counts ON true\n     LEFT JOIN LATERAL ( SELECT c.item_id,\n            c.variant_key,\n            c.counted_qty AS closing_qty\n           FROM warehouse_stock_counts c\n          WHERE c.period_id = wsp.id AND c.kind = 'closing'::text) close_counts ON true\n     LEFT JOIN LATERAL ( SELECT sl.item_id,\n            sl.variant_key,\n            sum(sl.delta_units) AS delta_units\n           FROM stock_ledger sl\n          WHERE sl.warehouse_id = wsp.warehouse_id AND sl.occurred_at >= wsp.opened_at AND (wsp.closed_at IS NULL AND sl.occurred_at <= now() OR wsp.closed_at IS NOT NULL AND sl.occurred_at <= wsp.closed_at)\n          GROUP BY sl.item_id, sl.variant_key) mov ON true;"
         }
     ],
     "tables": [
@@ -161,6 +165,30 @@
                     "data_type": "text",
                     "column_name": "consumption_unit_mass_uom",
                     "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "consumption_unit",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "consumption_qty_per_base",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "storage_unit",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "storage_weight",
+                    "is_nullable": "YES"
                 }
             ],
             "indexes": [
@@ -183,6 +211,11 @@
             ],
             "table_name": "catalog_items",
             "constraints": [
+                {
+                    "definition": "CHECK (consumption_qty_per_base IS NULL OR consumption_qty_per_base > 0::numeric)",
+                    "constraint_name": "catalog_items_consumption_qty_positive",
+                    "constraint_type": "c"
+                },
                 {
                     "definition": "CHECK (cost >= 0::numeric)",
                     "constraint_name": "catalog_items_cost_check",
@@ -1882,8 +1915,8 @@
                     "index_name": "item_ingredient_recipes_pkey"
                 },
                 {
-                    "definition": "CREATE UNIQUE INDEX ux_recipes_finished_variant_kind_active ON public.recipes USING btree (finished_item_id, recipe_for_kind, COALESCE(finished_variant_key, 'base'::text)) WHERE active",
-                    "index_name": "ux_recipes_finished_variant_kind_active"
+                    "definition": "CREATE UNIQUE INDEX ux_recipes_finished_variant_kind_ing_active ON public.recipes USING btree (finished_item_id, recipe_for_kind, COALESCE(finished_variant_key, 'base'::text), ingredient_item_id) WHERE active",
+                    "index_name": "ux_recipes_finished_variant_kind_ing_active"
                 }
             ],
             "table_name": "recipes",
@@ -2528,6 +2561,233 @@
                 {
                     "default": null,
                     "data_type": "uuid",
+                    "column_name": "period_id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "item_id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "'base'::text",
+                    "data_type": "text",
+                    "column_name": "variant_key",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "numeric",
+                    "column_name": "counted_qty",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "kind",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "now()",
+                    "data_type": "timestamp with time zone",
+                    "column_name": "counted_at",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "counted_by",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "'{}'::jsonb",
+                    "data_type": "jsonb",
+                    "column_name": "context",
+                    "is_nullable": "YES"
+                }
+            ],
+            "indexes": [
+                {
+                    "definition": "CREATE UNIQUE INDEX warehouse_stock_counts_pkey ON public.warehouse_stock_counts USING btree (id)",
+                    "index_name": "warehouse_stock_counts_pkey"
+                }
+            ],
+            "table_name": "warehouse_stock_counts",
+            "constraints": [
+                {
+                    "definition": "FOREIGN KEY (counted_by) REFERENCES auth.users(id)",
+                    "constraint_name": "warehouse_stock_counts_counted_by_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "CHECK (counted_qty >= 0::numeric)",
+                    "constraint_name": "warehouse_stock_counts_counted_qty_check",
+                    "constraint_type": "c"
+                },
+                {
+                    "definition": "FOREIGN KEY (item_id) REFERENCES catalog_items(id)",
+                    "constraint_name": "warehouse_stock_counts_item_id_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "CHECK (kind = ANY (ARRAY['opening'::text, 'closing'::text]))",
+                    "constraint_name": "warehouse_stock_counts_kind_check",
+                    "constraint_type": "c"
+                },
+                {
+                    "definition": "FOREIGN KEY (period_id) REFERENCES warehouse_stock_periods(id) ON DELETE CASCADE",
+                    "constraint_name": "warehouse_stock_counts_period_id_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "PRIMARY KEY (id)",
+                    "constraint_name": "warehouse_stock_counts_pkey",
+                    "constraint_type": "p"
+                }
+            ],
+            "row_security": true
+        },
+        {
+            "columns": [
+                {
+                    "default": "gen_random_uuid()",
+                    "data_type": "uuid",
+                    "column_name": "id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "warehouse_id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "outlet_id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "'open'::text",
+                    "data_type": "text",
+                    "column_name": "status",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": "now()",
+                    "data_type": "timestamp with time zone",
+                    "column_name": "opened_at",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "opened_by",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "timestamp with time zone",
+                    "column_name": "closed_at",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "closed_by",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "text",
+                    "column_name": "note",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "jsonb",
+                    "column_name": "opening_snapshot",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": null,
+                    "data_type": "jsonb",
+                    "column_name": "closing_snapshot",
+                    "is_nullable": "YES"
+                },
+                {
+                    "default": "next_stocktake_number()",
+                    "data_type": "text",
+                    "column_name": "stocktake_number",
+                    "is_nullable": "YES"
+                }
+            ],
+            "indexes": [
+                {
+                    "definition": "CREATE UNIQUE INDEX idx_wsp_open_unique ON public.warehouse_stock_periods USING btree (warehouse_id) WHERE (status = 'open'::text)",
+                    "index_name": "idx_wsp_open_unique"
+                },
+                {
+                    "definition": "CREATE UNIQUE INDEX warehouse_stock_periods_pkey ON public.warehouse_stock_periods USING btree (id)",
+                    "index_name": "warehouse_stock_periods_pkey"
+                },
+                {
+                    "definition": "CREATE UNIQUE INDEX warehouse_stock_periods_stocktake_number_key ON public.warehouse_stock_periods USING btree (stocktake_number)",
+                    "index_name": "warehouse_stock_periods_stocktake_number_key"
+                }
+            ],
+            "table_name": "warehouse_stock_periods",
+            "constraints": [
+                {
+                    "definition": "FOREIGN KEY (closed_by) REFERENCES auth.users(id)",
+                    "constraint_name": "warehouse_stock_periods_closed_by_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "FOREIGN KEY (opened_by) REFERENCES auth.users(id)",
+                    "constraint_name": "warehouse_stock_periods_opened_by_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
+                    "constraint_name": "warehouse_stock_periods_outlet_id_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "PRIMARY KEY (id)",
+                    "constraint_name": "warehouse_stock_periods_pkey",
+                    "constraint_type": "p"
+                },
+                {
+                    "definition": "CHECK (status = ANY (ARRAY['open'::text, 'closed'::text]))",
+                    "constraint_name": "warehouse_stock_periods_status_check",
+                    "constraint_type": "c"
+                },
+                {
+                    "definition": "UNIQUE (stocktake_number)",
+                    "constraint_name": "warehouse_stock_periods_stocktake_number_key",
+                    "constraint_type": "u"
+                },
+                {
+                    "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
+                    "constraint_name": "warehouse_stock_periods_warehouse_id_fkey",
+                    "constraint_type": "f"
+                }
+            ],
+            "row_security": true
+        },
+        {
+            "columns": [
+                {
+                    "default": "gen_random_uuid()",
+                    "data_type": "uuid",
+                    "column_name": "id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
                     "column_name": "transfer_id",
                     "is_nullable": "NO"
                 },
@@ -3060,6 +3320,26 @@
             "policy_name": "recipes_admin_rw"
         },
         {
+            "cmd": "INSERT",
+            "qual": null,
+            "roles": [
+                "public"
+            ],
+            "table_name": "recipes",
+            "with_check": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (user_roles ur\n     JOIN roles r ON ((r.id = ur.role_id)))\n  WHERE ((ur.user_id = auth.uid()) AND (lower(COALESCE(r.normalized_slug, r.slug)) = 'transfer_manager'::text)))))",
+            "policy_name": "recipes_edit_admin_or_transfer_mgr"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (user_roles ur\n     JOIN roles r ON ((r.id = ur.role_id)))\n  WHERE ((ur.user_id = auth.uid()) AND (lower(COALESCE(r.normalized_slug, r.slug)) = 'transfer_manager'::text)))))",
+            "roles": [
+                "authenticated"
+            ],
+            "table_name": "recipes",
+            "with_check": null,
+            "policy_name": "recipes_read_admin_or_transfer_mgr"
+        },
+        {
             "cmd": "ALL",
             "qual": "is_admin(auth.uid())",
             "roles": [
@@ -3088,6 +3368,46 @@
             "table_name": "stock_ledger",
             "with_check": "is_admin(auth.uid())",
             "policy_name": "stock_ledger_admin_rw"
+        },
+        {
+            "cmd": "ALL",
+            "qual": "(auth.role() = 'service_role'::text)",
+            "roles": [
+                "public"
+            ],
+            "table_name": "warehouse_stock_counts",
+            "with_check": "true",
+            "policy_name": "stocktake_counts_admin"
+        },
+        {
+            "cmd": "ALL",
+            "qual": "is_stocktake_user(auth.uid())",
+            "roles": [
+                "public"
+            ],
+            "table_name": "warehouse_stock_counts",
+            "with_check": "is_stocktake_user(auth.uid())",
+            "policy_name": "stocktake_counts_stocktakers"
+        },
+        {
+            "cmd": "ALL",
+            "qual": "(auth.role() = 'service_role'::text)",
+            "roles": [
+                "public"
+            ],
+            "table_name": "warehouse_stock_periods",
+            "with_check": "true",
+            "policy_name": "stocktake_periods_admin"
+        },
+        {
+            "cmd": "ALL",
+            "qual": "is_stocktake_user(auth.uid())",
+            "roles": [
+                "public"
+            ],
+            "table_name": "warehouse_stock_periods",
+            "with_check": "is_stocktake_user(auth.uid())",
+            "policy_name": "stocktake_periods_stocktakers"
         },
         {
             "cmd": "ALL",
@@ -3208,6 +3528,13 @@
             "statement": "EXECUTE FUNCTION ensure_order_locked_and_allocated()",
             "manipulation": "UPDATE",
             "trigger_name": "trg_orders_lock_allocate"
+        },
+        {
+            "timing": "BEFORE",
+            "condition": null,
+            "statement": "EXECUTE FUNCTION stock_ledger_set_occurred_at()",
+            "manipulation": "INSERT",
+            "trigger_name": "trg_stock_ledger_set_occurred_at"
         }
     ],
     "functions": [
@@ -3228,6 +3555,12 @@
             "definition": "CREATE OR REPLACE FUNCTION public.assert_order_item_editable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_order public.orders%ROWTYPE;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = COALESCE(NEW.order_id, OLD.order_id);\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order not found for item';\r\n  END IF;\r\n\r\n  IF COALESCE(v_order.locked, false)\r\n     OR lower(COALESCE(v_order.status, '')) IN ('approved', 'loaded', 'offloaded', 'delivered') THEN\r\n    RAISE EXCEPTION 'order % is locked; items cannot be modified', v_order.id;\r\n  END IF;\r\n\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
             "return_type": "trigger",
             "function_name": "assert_order_item_editable"
+        },
+        {
+            "arguments": "p_period_id uuid",
+            "definition": "CREATE OR REPLACE FUNCTION public.close_stock_period(p_period_id uuid)\n RETURNS warehouse_stock_periods\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_row public.warehouse_stock_periods%rowtype;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  update public.warehouse_stock_periods\r\n  set status = 'closed',\r\n      closed_at = now(),\r\n      closed_by = auth.uid()\r\n  where id = p_period_id and status = 'open'\r\n  returning * into v_row;\r\n\r\n  if not found then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+            "return_type": "warehouse_stock_periods",
+            "function_name": "close_stock_period"
         },
         {
             "arguments": "p_include_inactive boolean DEFAULT false, p_locked_ids uuid[] DEFAULT NULL::uuid[]",
@@ -3258,6 +3591,12 @@
             "definition": "CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_user_id IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n  RETURN EXISTS (SELECT 1 FROM public.platform_admins pa WHERE pa.user_id = p_user_id);\r\nEND;\r\n$function$\n",
             "return_type": "boolean",
             "function_name": "is_admin"
+        },
+        {
+            "arguments": "p_user uuid",
+            "definition": "CREATE OR REPLACE FUNCTION public.is_stocktake_user(p_user uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\r\n  select exists (\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = p_user\r\n      and ur.role_id = '95b6a75d-bd46-4764-b5ea-981b1608f1ca'\r\n  );\r\n$function$\n",
+            "return_type": "boolean",
+            "function_name": "is_stocktake_user"
         },
         {
             "arguments": "p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
@@ -3303,6 +3642,12 @@
         },
         {
             "arguments": "",
+            "definition": "CREATE OR REPLACE FUNCTION public.next_stocktake_number()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_next bigint;\r\n  v_scope uuid := '00000000-0000-0000-0000-000000000000';\r\nbegin\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('stocktake_number', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  return 'AT' || lpad(v_next::text, 10, '0');\r\nend;\r\n$function$\n",
+            "return_type": "text",
+            "function_name": "next_stocktake_number"
+        },
+        {
+            "arguments": "",
             "definition": "CREATE OR REPLACE FUNCTION public.next_transfer_reference()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_next bigint;\r\n  v_scope uuid := '00000000-0000-0000-0000-000000000000';\r\nbegin\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('transfer', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  return 'WT-' || lpad(v_next::text, 6, '0');\r\nend;\r\n$function$\n",
             "return_type": "text",
             "function_name": "next_transfer_reference"
@@ -3339,33 +3684,51 @@
         },
         {
             "arguments": "p_order_id uuid",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_order_fulfillment(p_order_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  oi record;\r\n  v_order public.orders%rowtype;\r\n  v_wh uuid;\r\n  v_key text;\r\nbegin\r\n  select * into v_order from public.orders where id = p_order_id for update;\r\n  if not found then\r\n    raise exception 'order % not found', p_order_id;\r\n  end if;\r\n\r\n  for oi in\r\n    select oi.id, oi.order_id, oi.product_id as item_id, oi.variation_key as variant_key, oi.qty, oi.warehouse_id\r\n    from public.order_items oi\r\n    where oi.order_id = p_order_id and oi.qty > 0\r\n  loop\r\n    v_key := public.normalize_variant_key(oi.variant_key);\r\n\r\n    v_wh := coalesce(\r\n      oi.warehouse_id,\r\n      (\r\n        select r.warehouse_id\r\n        from public.outlet_item_routes r\r\n        where r.item_id = oi.item_id\r\n          and r.normalized_variant_key = v_key\r\n          and (r.outlet_id = v_order.outlet_id or r.outlet_id is null)\r\n        order by case when r.outlet_id = v_order.outlet_id then 0 else 1 end, r.updated_at desc nulls last\r\n        limit 1\r\n      )\r\n    );\r\n\r\n    if v_wh is null then\r\n      raise exception 'no warehouse mapping for item % (order %)', oi.item_id, p_order_id;\r\n    end if;\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values ('warehouse', v_wh, oi.item_id, v_key, -1 * oi.qty, 'order_fulfillment', jsonb_build_object('order_id', p_order_id, 'order_item_id', oi.id));\r\n\r\n    insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n    values (v_order.outlet_id, oi.item_id, v_key, oi.qty, 0)\r\n    on conflict (outlet_id, item_id, variant_key)\r\n    do update set sent_units = public.outlet_stock_balances.sent_units + excluded.sent_units,\r\n            variant_key = excluded.variant_key,\r\n            updated_at = now();\r\n  end loop;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_order_fulfillment(p_order_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  oi record;\r\n  v_order public.orders%rowtype;\r\n  v_wh uuid;\r\n  v_key text;\r\n  v_delta numeric;\r\n  v_storage_unit text;\r\n  v_base_unit text;\r\n  v_storage_weight numeric;\r\nbegin\r\n  select * into v_order from public.orders where id = p_order_id for update;\r\n  if not found then\r\n    raise exception 'order % not found', p_order_id;\r\n  end if;\r\n\r\n  for oi in\r\n    select oi.id,\r\n           oi.order_id,\r\n           oi.product_id as item_id,\r\n           oi.variation_key as variant_key,\r\n           oi.qty,\r\n           oi.warehouse_id\r\n    from public.order_items oi\r\n    where oi.order_id = p_order_id\r\n      and oi.qty > 0\r\n  loop\r\n    v_key := public.normalize_variant_key(oi.variant_key);\r\n\r\n    v_wh := coalesce(\r\n      oi.warehouse_id,\r\n      (\r\n        select r.warehouse_id\r\n        from public.outlet_item_routes r\r\n        where r.item_id = oi.item_id\r\n          and r.normalized_variant_key = v_key\r\n          and (r.outlet_id = v_order.outlet_id or r.outlet_id is null)\r\n        order by case when r.outlet_id = v_order.outlet_id then 0 else 1 end, r.updated_at desc nulls last\r\n        limit 1\r\n      )\r\n    );\r\n\r\n    if v_wh is null then\r\n      raise exception 'no warehouse mapping for item % (order %)', oi.item_id, p_order_id;\r\n    end if;\r\n\r\n    select ci.storage_unit, ci.base_unit, ci.storage_weight\r\n    into v_storage_unit, v_base_unit, v_storage_weight\r\n    from public.catalog_items ci\r\n    where ci.id = oi.item_id;\r\n\r\n    v_delta := oi.qty;\r\n    if v_storage_weight is not null and v_storage_weight > 0 then\r\n      v_delta := oi.qty * v_storage_weight;\r\n    end if;\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at)\r\n    values (\r\n      'warehouse',\r\n      v_wh,\r\n      oi.item_id,\r\n      v_key,\r\n      -1 * v_delta,\r\n      'order_fulfillment',\r\n      jsonb_build_object(\r\n        'order_id', p_order_id,\r\n        'order_item_id', oi.id,\r\n        'uom_used', coalesce(v_storage_unit, v_base_unit, 'each'),\r\n        'storage_weight', v_storage_weight,\r\n        'source_qty_units', oi.qty,\r\n        'order_created_at', v_order.created_at\r\n      ),\r\n      v_order.created_at\r\n    );\r\n\r\n    insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n    values (v_order.outlet_id, oi.item_id, v_key, v_delta, 0)\r\n    on conflict (outlet_id, item_id, variant_key)\r\n    do update set sent_units = public.outlet_stock_balances.sent_units + excluded.sent_units,\r\n                 variant_key = excluded.variant_key,\r\n                 updated_at = now();\r\n  end loop;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "record_order_fulfillment"
         },
         {
             "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n      is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n      coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n      p_flavour_id, p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n    is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n    coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n    p_flavour_id, v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n  values (\r\n    'warehouse', v_deduct_wh, p_item_id, v_variant_key, -1 * p_qty_units, 'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id, 'sale_price', p_sale_price,\r\n                       'vat_exc_price', p_vat_exc_price, 'flavour_id', p_flavour_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_consumption_per_base numeric := 1;\r\n  v_consumption_unit text;\r\n  v_base_unit text;\r\n  v_effective_qty numeric;\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n      is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n      coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n      p_flavour_id, p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  select coalesce(ci.consumption_qty_per_base, 1), ci.consumption_unit, ci.base_unit\r\n  into v_consumption_per_base, v_consumption_unit, v_base_unit\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  v_effective_qty := p_qty_units * coalesce(v_consumption_per_base, 1);\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n    is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n    coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n    p_flavour_id, v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, v_effective_qty)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at)\r\n  values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * v_effective_qty,\r\n    'outlet_sale',\r\n    jsonb_build_object(\r\n      'sale_id', v_sale.id,\r\n      'outlet_id', p_outlet_id,\r\n      'sale_price', p_sale_price,\r\n      'vat_exc_price', p_vat_exc_price,\r\n      'flavour_id', p_flavour_id,\r\n      'uom_used', coalesce(v_consumption_unit, v_base_unit, 'each'),\r\n      'consumption_qty_per_base', coalesce(v_consumption_per_base, 1),\r\n      'source_qty_units', p_qty_units,\r\n      'sold_at', p_sold_at\r\n    ) || coalesce(p_context, '{}'),\r\n    p_sold_at\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
             "return_type": "outlet_sales",
             "function_name": "record_outlet_sale"
         },
         {
             "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, p_qty_units)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set\r\n    consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n    updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * p_qty_units,\r\n    'outlet_sale',\r\n    jsonb_build_object('sale_id', v_sale.id, 'outlet_id', p_outlet_id) || coalesce(p_context, '{}')\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_consumption_per_base numeric := 1;\r\n  v_consumption_unit text;\r\n  v_base_unit text;\r\n  v_effective_qty numeric;\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true) into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  select warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) as deduct_enabled\r\n  into v_route\r\n  from public.outlet_item_routes\r\n  where outlet_id = p_outlet_id\r\n    and item_id = p_item_id\r\n    and normalized_variant_key = v_variant_key\r\n  limit 1;\r\n\r\n  v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);\r\n  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;\r\n  end if;\r\n\r\n  select coalesce(ci.consumption_qty_per_base, 1), ci.consumption_unit, ci.base_unit\r\n  into v_consumption_per_base, v_consumption_unit, v_base_unit\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  v_effective_qty := p_qty_units * coalesce(v_consumption_per_base, 1);\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false), v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, v_effective_qty)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set\r\n    consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n    updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    occurred_at\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * v_effective_qty,\r\n    'outlet_sale',\r\n    jsonb_build_object(\r\n      'sale_id', v_sale.id,\r\n      'outlet_id', p_outlet_id,\r\n      'uom_used', coalesce(v_consumption_unit, v_base_unit, 'each'),\r\n      'consumption_qty_per_base', coalesce(v_consumption_per_base, 1),\r\n      'source_qty_units', p_qty_units,\r\n      'sold_at', p_sold_at\r\n    ) || coalesce(p_context, '{}'),\r\n    p_sold_at\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',v_deduct_outlet,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
             "return_type": "outlet_sales",
             "function_name": "record_outlet_sale"
         },
         {
             "arguments": "p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false)\n RETURNS warehouse_purchase_receipts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_receipt public.warehouse_purchase_receipts%rowtype;\r\n  v_reference text;\r\n  v_variant_key text;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one purchase item is required';\r\n  end if;\r\n\r\n  v_reference := coalesce(nullif(p_reference_code, ''), public.next_purchase_receipt_reference());\r\n\r\n  insert into public.warehouse_purchase_receipts(\r\n    warehouse_id,\r\n    supplier_id,\r\n    reference_code,\r\n    note,\r\n    auto_whatsapp,\r\n    context,\r\n    recorded_by\r\n  ) values (\r\n    p_warehouse_id,\r\n    p_supplier_id,\r\n    v_reference,\r\n    p_note,\r\n    coalesce(p_auto_whatsapp, false),\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning * into v_receipt;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      coalesce(nullif(elem->>'qty_input_mode', ''), 'units') as qty_input_mode,\r\n      nullif(elem->>'unit_cost', '')::numeric as unit_cost\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each purchase line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.warehouse_purchase_items(\r\n      receipt_id,\r\n      item_id,\r\n      variant_key,\r\n      qty_units,\r\n      qty_input_mode,\r\n      unit_cost\r\n    ) values (\r\n      v_receipt.id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      rec.qty_input_mode,\r\n      rec.unit_cost\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'purchase_receipt',\r\n      jsonb_build_object('receipt_id', v_receipt.id, 'reference_code', v_receipt.reference_code, 'supplier_id', p_supplier_id)\r\n    );\r\n  end loop;\r\n\r\n  return v_receipt;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false)\n RETURNS warehouse_purchase_receipts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_receipt public.warehouse_purchase_receipts%rowtype;\r\n  v_reference text;\r\n  v_variant_key text;\r\n  v_occurred_at timestamptz;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one purchase item is required';\r\n  end if;\r\n\r\n  v_reference := coalesce(nullif(p_reference_code, ''), public.next_purchase_receipt_reference());\r\n\r\n  insert into public.warehouse_purchase_receipts(\r\n    warehouse_id,\r\n    supplier_id,\r\n    reference_code,\r\n    note,\r\n    auto_whatsapp,\r\n    context,\r\n    recorded_by\r\n  ) values (\r\n    p_warehouse_id,\r\n    p_supplier_id,\r\n    v_reference,\r\n    p_note,\r\n    coalesce(p_auto_whatsapp, false),\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning * into v_receipt;\r\n\r\n  v_occurred_at := coalesce(v_receipt.created_at, now());\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      coalesce(nullif(elem->>'qty_input_mode', ''), 'units') as qty_input_mode,\r\n      nullif(elem->>'unit_cost', '')::numeric as unit_cost\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each purchase line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.warehouse_purchase_items(\r\n      receipt_id,\r\n      item_id,\r\n      variant_key,\r\n      qty_units,\r\n      qty_input_mode,\r\n      unit_cost\r\n    ) values (\r\n      v_receipt.id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      rec.qty_input_mode,\r\n      rec.unit_cost\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at)\r\n    values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'purchase_receipt',\r\n      jsonb_build_object('receipt_id', v_receipt.id, 'reference_code', v_receipt.reference_code, 'supplier_id', p_supplier_id, 'receipt_created_at', v_occurred_at),\r\n      v_occurred_at\r\n    );\r\n  end loop;\r\n\r\n  return v_receipt;\r\nend;\r\n$function$\n",
             "return_type": "warehouse_purchase_receipts",
             "function_name": "record_purchase_receipt"
+        },
+        {
+            "arguments": "p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT 'closing'::text, p_context jsonb DEFAULT '{}'::jsonb",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_stock_count(p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT 'closing'::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS warehouse_stock_counts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_period public.warehouse_stock_periods%rowtype;\r\n  v_row public.warehouse_stock_counts%rowtype;\r\n  v_has_opening boolean;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_qty is null or p_qty < 0 then\r\n    raise exception 'qty must be >= 0';\r\n  end if;\r\n\r\n  select * into v_period from public.warehouse_stock_periods where id = p_period_id;\r\n  if not found then\r\n    raise exception 'stock period not found';\r\n  end if;\r\n  if v_period.status <> 'open' then\r\n    raise exception 'stock period is not open';\r\n  end if;\r\n\r\n  select exists (\r\n    select 1 from public.warehouse_stock_counts c\r\n    where c.period_id = p_period_id and c.kind = 'opening'\r\n  ) into v_has_opening;\r\n\r\n  -- If no opening exists (fresh warehouse with no snapshot), seed opening = entered qty for this item\r\n  if not v_has_opening then\r\n    insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n    values (\r\n      p_period_id,\r\n      p_item_id,\r\n      public.normalize_variant_key(p_variant_key),\r\n      p_qty,\r\n      'opening',\r\n      auth.uid(),\r\n      p_context || jsonb_build_object('seeded_opening', true)\r\n    );\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n  values (\r\n    p_period_id,\r\n    p_item_id,\r\n    public.normalize_variant_key(p_variant_key),\r\n    p_qty,\r\n    p_kind,\r\n    auth.uid(),\r\n    p_context\r\n  )\r\n  returning * into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+            "return_type": "warehouse_stock_counts",
+            "function_name": "record_stock_count"
         },
         {
             "arguments": "p_item_id uuid",
             "definition": "CREATE OR REPLACE FUNCTION public.refresh_catalog_has_variations(p_item_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if p_item_id is null then\r\n    return;\r\n  end if;\r\n  update public.catalog_items ci\r\n  set has_variations = false,\r\n      updated_at = now()\r\n  where ci.id = p_item_id;\r\nend;\r\n$function$\n",
             "return_type": "void",
             "function_name": "refresh_catalog_has_variations"
+        },
+        {
+            "arguments": "p_warehouse_id uuid, p_note text DEFAULT NULL::text",
+            "definition": "CREATE OR REPLACE FUNCTION public.start_stock_period(p_warehouse_id uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stock_periods\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_row public.warehouse_stock_periods%rowtype;\r\n  v_outlet uuid;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required';\r\n  end if;\r\n\r\n  if exists (\r\n    select 1 from public.warehouse_stock_periods wsp\r\n    where wsp.warehouse_id = p_warehouse_id and wsp.status = 'open'\r\n  ) then\r\n    raise exception 'open stock period already exists for this warehouse';\r\n  end if;\r\n\r\n  select w.outlet_id into v_outlet from public.warehouses w where w.id = p_warehouse_id;\r\n  if v_outlet is null then\r\n    raise exception 'warehouse has no outlet mapping';\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_periods(\r\n    warehouse_id, outlet_id, status, opened_by, note, opening_snapshot, stocktake_number\r\n  )\r\n  values (\r\n    p_warehouse_id,\r\n    v_outlet,\r\n    'open',\r\n    auth.uid(),\r\n    p_note,\r\n    (\r\n      select coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)\r\n      from (\r\n        select item_id, variant_key, net_units as opening_qty\r\n        from public.warehouse_layer_stock\r\n        where warehouse_id = p_warehouse_id\r\n      ) t\r\n    ),\r\n    public.next_stocktake_number()\r\n  )\r\n  returning * into v_row;\r\n\r\n  -- Seed opening rows only if snapshot had data; otherwise leave empty and let first counts seed openings.\r\n  if coalesce(jsonb_array_length(v_row.opening_snapshot), 0) > 0 then\r\n    insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n    select v_row.id, s.item_id, s.variant_key, s.opening_qty, 'opening', auth.uid(), jsonb_build_object('snapshot', true)\r\n    from jsonb_to_recordset(coalesce(v_row.opening_snapshot, '[]'::jsonb))\r\n      as s(item_id uuid, variant_key text, opening_qty numeric);\r\n  end if;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+            "return_type": "warehouse_stock_periods",
+            "function_name": "start_stock_period"
+        },
+        {
+            "arguments": "",
+            "definition": "CREATE OR REPLACE FUNCTION public.stock_ledger_set_occurred_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  new.occurred_at := coalesce(\r\n    new.occurred_at,\r\n    (new.context->>'sold_at')::timestamptz,\r\n    (new.context->>'order_created_at')::timestamptz,\r\n    (new.context->>'movement_created_at')::timestamptz,\r\n    now()\r\n  );\r\n  return new;\r\nend;\r\n$function$\n",
+            "return_type": "trigger",
+            "function_name": "stock_ledger_set_occurred_at"
         },
         {
             "arguments": "p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
@@ -3387,7 +3750,7 @@
         },
         {
             "arguments": "p_source uuid, p_destination uuid, p_items jsonb, p_note text DEFAULT NULL::text",
-            "definition": "CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(p_source uuid, p_destination uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_reference text;\r\n  v_transfer_id uuid;\r\n  v_variant_key text;\r\nbegin\r\n  if p_source is null or p_destination is null then\r\n    raise exception 'source and destination required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one transfer line is required';\r\n  end if;\r\n\r\n  v_reference := public.next_transfer_reference();\r\n\r\n  insert into public.warehouse_transfers(\r\n    reference_code,\r\n    source_warehouse_id,\r\n    destination_warehouse_id,\r\n    note,\r\n    context,\r\n    created_by\r\n  ) values (\r\n    v_reference,\r\n    p_source,\r\n    p_destination,\r\n    p_note,\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning id into v_transfer_id;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.warehouse_transfer_items(transfer_id, item_id, variant_key, qty_units)\r\n    values (v_transfer_id, rec.item_id, v_variant_key, rec.qty_units);\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_source,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      -1 * rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'out')\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_destination,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'in')\r\n    );\r\n  end loop;\r\n\r\n  return v_reference;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.transfer_units_between_warehouses(p_source uuid, p_destination uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_reference text;\r\n  v_transfer_id uuid;\r\n  v_variant_key text;\r\n  v_occurred_at timestamptz;\r\nbegin\r\n  if p_source is null or p_destination is null then\r\n    raise exception 'source and destination required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one transfer line is required';\r\n  end if;\r\n\r\n  v_reference := public.next_transfer_reference();\r\n\r\n  insert into public.warehouse_transfers(\r\n    reference_code,\r\n    source_warehouse_id,\r\n    destination_warehouse_id,\r\n    note,\r\n    context,\r\n    created_by\r\n  ) values (\r\n    v_reference,\r\n    p_source,\r\n    p_destination,\r\n    p_note,\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning id, created_at into v_transfer_id, v_occurred_at;\r\n\r\n  v_occurred_at := coalesce(v_occurred_at, now());\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.warehouse_transfer_items(transfer_id, item_id, variant_key, qty_units)\r\n    values (v_transfer_id, rec.item_id, v_variant_key, rec.qty_units);\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at)\r\n    values (\r\n      'warehouse',\r\n      p_source,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      -1 * rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'out', 'transfer_created_at', v_occurred_at),\r\n      v_occurred_at\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at)\r\n    values (\r\n      'warehouse',\r\n      p_destination,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'warehouse_transfer',\r\n      jsonb_build_object('transfer_id', v_transfer_id, 'reference_code', v_reference, 'direction', 'in', 'transfer_created_at', v_occurred_at),\r\n      v_occurred_at\r\n    );\r\n  end loop;\r\n\r\n  return v_reference;\r\nend;\r\n$function$\n",
             "return_type": "text",
             "function_name": "transfer_units_between_warehouses"
         },

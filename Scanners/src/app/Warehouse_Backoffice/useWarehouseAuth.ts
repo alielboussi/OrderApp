@@ -17,7 +17,12 @@ function getBrowserClient() {
     throw new Error("Supabase URL and anon key are required");
   }
   if (!browserClient) {
-    browserClient = createClient(url, anon, { auth: { persistSession: true } });
+    browserClient = createClient(url, anon, {
+      auth: {
+        persistSession: true,
+        storageKey: "sb-warehouse-backoffice",
+      },
+    });
   }
   return browserClient;
 }
