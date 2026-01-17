@@ -6,45 +6,48 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Brand palette: Black backgrounds, Red text, White accents where applicable
-private val Black = Color(0xFF000000)
-private val Red = Color(0xFFD32F2F)      // Primary red
-private val White = Color(0xFFFFFFFF)
+// Warehouse backoffice-inspired palette: deep navy surfaces with cyan-blue highlights
+private val Navy = Color(0xFF0B1220)
+private val NavySurface = Color(0xFF0F1B2F)
+private val PrimaryBlue = Color(0xFF4DB7FF)
+private val AccentGreen = Color(0xFF5CF0C1)
+private val AccentAmber = Color(0xFFF4C05E)
+private val TextOnDark = Color(0xFFE6F1FF)
 
 private val BrandDarkColors: ColorScheme = darkColorScheme(
-    primary = Red,
-    onPrimary = White,
-    primaryContainer = Black,
-    onPrimaryContainer = Red,
+    primary = PrimaryBlue,
+    onPrimary = Navy,
+    primaryContainer = NavySurface,
+    onPrimaryContainer = TextOnDark,
 
-    secondary = Red,
-    onSecondary = White,
-    secondaryContainer = Black,
-    onSecondaryContainer = Red,
+    secondary = AccentGreen,
+    onSecondary = Navy,
+    secondaryContainer = NavySurface,
+    onSecondaryContainer = TextOnDark,
 
-    tertiary = Red,
-    onTertiary = White,
-    tertiaryContainer = Black,
-    onTertiaryContainer = Red,
+    tertiary = AccentAmber,
+    onTertiary = Navy,
+    tertiaryContainer = NavySurface,
+    onTertiaryContainer = TextOnDark,
 
-    background = Black,
-    onBackground = Red,
-    surface = Black,
-    onSurface = Red,
-    surfaceVariant = Black,
-    onSurfaceVariant = Red,
+    background = Navy,
+    onBackground = TextOnDark,
+    surface = NavySurface,
+    onSurface = TextOnDark,
+    surfaceVariant = NavySurface,
+    onSurfaceVariant = TextOnDark.copy(alpha = 0.8f),
 
-    outline = Red,
-    outlineVariant = Red,
+    outline = PrimaryBlue.copy(alpha = 0.5f),
+    outlineVariant = PrimaryBlue.copy(alpha = 0.3f),
 
-    error = Red,
-    onError = White,
-    errorContainer = Black,
-    onErrorContainer = Red,
+    error = Color(0xFFFF6B6B),
+    onError = Navy,
+    errorContainer = NavySurface,
+    onErrorContainer = Color(0xFFFF6B6B),
 
-    inverseSurface = Red,
-    inverseOnSurface = Black,
-    inversePrimary = White,
+    inverseSurface = TextOnDark,
+    inverseOnSurface = Navy,
+    inversePrimary = TextOnDark
 )
 
 @Composable

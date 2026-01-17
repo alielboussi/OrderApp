@@ -860,17 +860,21 @@ class SupabaseProvider(context: Context) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
+        val code = resp.status.value
         val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("listOutlets failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(Outlet.serializer()), txt)
     }
 
     suspend fun listWarehouses(jwt: String): List<Warehouse> {
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id,outlet_id&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
+        val code = resp.status.value
         val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("listWarehouses failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
     }
 
