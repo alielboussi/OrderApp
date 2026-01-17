@@ -73,11 +73,7 @@ fun LoginScreen(
             logger.warn("InvalidEmail", mapOf("isBlank" to email.isBlank()))
             return
         }
-        if (password.length < 6) {
-            error = "Password must be at least 6 characters"
-            logger.warn("PasswordTooShort", mapOf("length" to password.length))
-            return
-        }
+        // Accept any length password per new requirement
         loading = true
         val emailDomain = email.substringAfter('@', missingDelimiterValue = "unknown")
         logger.state(

@@ -49,7 +49,9 @@ import com.afterten.orders.data.RoleGuards
 import kotlin.text.Charsets
 
 class SupabaseProvider(context: Context) {
-    val supabaseUrl: String = BuildConfig.SUPABASE_URL
+    // Allow overriding the default Orders backend with the warehouse backoffice endpoint when provided.
+    val supabaseUrl: String = BuildConfig.WAREHOUSE_BACKOFFICE_URL.takeIf { it.isNotBlank() }
+        ?: BuildConfig.SUPABASE_URL
     val supabaseAnonKey: String = BuildConfig.SUPABASE_ANON_KEY
 
     // Ktor client for custom RPC calls (e.g., outlet_login)
@@ -396,6 +398,8 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class PlaceOrderItem(
         @SerialName("product_id") val productId: String? = null,
+        // Support both legacy variation_id and new variation_key; backend can read either.
+        @SerialName("variation_id") val variationId: String? = null,
         @SerialName("variation_key") val variantKey: String? = null,
         val name: String,
         @SerialName("receiving_uom")
@@ -579,7 +583,7 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class Warehouse(
         val id: String,
-        @SerialName("outlet_id") val outletId: String,
+        @SerialName("outlet_id") val outletId: String? = null,
         val name: String,
         val active: Boolean = true,
         @SerialName("parent_warehouse_id") val parentWarehouseId: String? = null
@@ -863,7 +867,7 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listWarehouses(jwt: String): List<Warehouse> {
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,outlet_id,name,active,parent_warehouse_id&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id&order=name.asc"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -877,7 +881,7 @@ class SupabaseProvider(context: Context) {
         if (unique.isEmpty()) return emptyList()
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,outlet_id,name,active,parent_warehouse_id&id=in.$encoded"
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id&id=in.$encoded"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")

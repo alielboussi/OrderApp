@@ -406,13 +406,14 @@ fun OrderSummaryScreen(
                                         SupabaseProvider.PlaceOrderItem(
                                             productId = it.productId,
                                             variationId = it.variationId,
+                                            variantKey = it.variationId,
                                             name = it.name,
-                                                    receivingUom = it.purchasePackUnit,
+                                            receivingUom = it.purchasePackUnit,
                                             consumptionUom = it.consumptionUom,
                                             cost = it.unitPrice,
                                             qty = qtyUnits,
                                             qtyCases = qtyCases,
-                                                    packageContains = unitsPerPack
+                                            packageContains = unitsPerPack
                                         )
                                     }
                                     var placedRemotely = false

@@ -282,7 +282,7 @@ fun SupervisorOrderDetailScreen(
     fun handleVariationChange(rowItem: OrderRepository.OrderItemRow, variation: SupabaseProvider.SimpleVariation) {
         if (!allowItemEdits) return
         val s = session ?: return
-        if (variation.id == rowItem.variationId) return
+        if (variation.id == rowItem.variantKey) return
         scope.launch {
             val qtyUnits = rowItem.qty
             val cost = variation.cost ?: rowItem.cost
@@ -293,7 +293,7 @@ fun SupervisorOrderDetailScreen(
                 repo.updateOrderItemVariation(
                     jwt = s.token,
                     orderItemId = rowItem.id,
-                    variationId = variation.id,
+                    variantKey = variation.id,
                     name = variation.name.ifBlank { rowItem.name },
                     receivingUom = receivingUom,
                     consumptionUom = consumptionUom,
@@ -305,17 +305,12 @@ fun SupervisorOrderDetailScreen(
                 rows = rows.map {
                     if (it.id == rowItem.id) {
                         it.copy(
-                            variationId = variation.id,
+                            variantKey = variation.id,
                             name = variation.name.ifBlank { rowItem.name },
                             uom = receivingUom,
                             consumptionUom = consumptionUom,
                             cost = cost,
-                            packageContains = packageContains ?: it.packageContains,
-                            variation = OrderRepository.VariationRef(
-                                name = variation.name,
-                                uom = receivingUom,
-                                consumptionUom = consumptionUom
-                            )
+                            packageContains = packageContains ?: it.packageContains
                         )
                     } else it
                 }
@@ -701,7 +696,7 @@ private fun SupervisorItemCard(
                 if (variations.isNotEmpty()) {
                     VariationSelector(
                         variations = variations,
-                        selectedId = row.variationId,
+                        selectedId = row.variantKey,
                         enabled = enabled,
                         onSelected = onChangeVariation
                     )
