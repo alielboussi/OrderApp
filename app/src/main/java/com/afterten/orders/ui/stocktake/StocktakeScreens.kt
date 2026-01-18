@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -83,8 +85,23 @@ fun StocktakeDashboardScreen(
     }
 
     val primaryRed = Color(0xFFD50000)
-    val deepRed = Color(0xFFB71C1C)
-    val surfaceRed = Color(0xFF8B0000)
+    val deepRed = Color.Black
+    val surfaceRed = Color.Black
+    val outlinedFieldColors = TextFieldDefaults.colors(
+        focusedIndicatorColor = primaryRed,
+        unfocusedIndicatorColor = primaryRed,
+        disabledIndicatorColor = primaryRed,
+        cursorColor = Color.White,
+        focusedLabelColor = Color.White,
+        unfocusedLabelColor = Color.White,
+        disabledLabelColor = Color.White,
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White,
+        disabledTextColor = Color.White,
+        focusedContainerColor = Color.Black,
+        unfocusedContainerColor = Color.Black,
+        disabledContainerColor = Color.Black
+    )
 
     var note by rememberSaveable { mutableStateOf("") }
     var outletMenu by remember { mutableStateOf(false) }
@@ -147,27 +164,26 @@ fun StocktakeDashboardScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(MenuAnchorType.PrimaryNotEditable, canSelectOutlet),
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
-                            focusedBorderColor = primaryRed,
-                            unfocusedBorderColor = primaryRed,
-                            cursorColor = Color.White,
-                            focusedLabelColor = Color.White,
-                            unfocusedLabelColor = Color.White,
-                            disabledBorderColor = primaryRed,
-                            disabledLabelColor = Color.White,
-                            disabledTextColor = Color.White
-                        ),
+                        colors = outlinedFieldColors,
                         label = { Text(if (canSelectOutlet) "Choose outlet" else "Outlet") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) }
                     )
                     DropdownMenu(
                         expanded = outletMenu,
-                        onDismissRequest = { outletMenu = false }
+                        onDismissRequest = { outletMenu = false },
+                        modifier = Modifier.background(Color.Black)
                     ) {
                         ui.outlets.forEach { outlet ->
                             DropdownMenuItem(
-                                text = { Text(outlet.name ?: outlet.id, color = Color.White) },
+                                text = { Text(outlet.name ?: outlet.id) },
+                                colors = MenuDefaults.itemColors(
+                                    textColor = Color.White,
+                                    leadingIconColor = Color.White,
+                                    trailingIconColor = Color.White,
+                                    disabledTextColor = Color.White,
+                                    disabledLeadingIconColor = Color.White,
+                                    disabledTrailingIconColor = Color.White
+                                ),
                                 onClick = {
                                     outletMenu = false
                                     vm.selectOutlet(outlet.id)
@@ -190,27 +206,26 @@ fun StocktakeDashboardScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(MenuAnchorType.PrimaryNotEditable, warehouseEnabled),
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
-                            focusedBorderColor = primaryRed,
-                            unfocusedBorderColor = primaryRed,
-                            cursorColor = Color.White,
-                            focusedLabelColor = Color.White,
-                            unfocusedLabelColor = Color.White,
-                            disabledBorderColor = primaryRed,
-                            disabledLabelColor = Color.White,
-                            disabledTextColor = Color.White
-                        ),
+                        colors = outlinedFieldColors,
                         label = { Text("Choose warehouse") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = warehouseMenu) }
                     )
                     DropdownMenu(
                         expanded = warehouseMenu,
-                        onDismissRequest = { warehouseMenu = false }
+                        onDismissRequest = { warehouseMenu = false },
+                        modifier = Modifier.background(Color.Black)
                     ) {
                         ui.filteredWarehouses.forEach { warehouse ->
                             DropdownMenuItem(
-                                text = { Text(warehouse.name, color = Color.White) },
+                                text = { Text(warehouse.name) },
+                                colors = MenuDefaults.itemColors(
+                                    textColor = Color.White,
+                                    leadingIconColor = Color.White,
+                                    trailingIconColor = Color.White,
+                                    disabledTextColor = Color.White,
+                                    disabledLeadingIconColor = Color.White,
+                                    disabledTrailingIconColor = Color.White
+                                ),
                                 onClick = {
                                     warehouseMenu = false
                                     vm.selectWarehouse(warehouse.id)
@@ -231,17 +246,7 @@ fun StocktakeDashboardScreen(
                     onValueChange = { note = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Note (optional)") },
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        focusedBorderColor = primaryRed,
-                        unfocusedBorderColor = primaryRed,
-                        cursorColor = Color.White,
-                        focusedLabelColor = Color.White,
-                        unfocusedLabelColor = Color.White,
-                        disabledBorderColor = primaryRed,
-                        disabledLabelColor = Color.White,
-                        disabledTextColor = Color.White
-                    )
+                    colors = outlinedFieldColors
                 )
                 Button(
                     enabled = ui.openPeriod == null && ui.selectedOutletId != null && ui.selectedWarehouseId != null && !ui.loading,

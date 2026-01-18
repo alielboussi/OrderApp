@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -158,7 +159,13 @@ fun LoginScreen(
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = { submit() },
-            enabled = !loading
+            enabled = !loading,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFD50000),
+                contentColor = Color.White,
+                disabledContainerColor = Color(0x80D50000),
+                disabledContentColor = Color.White
+            )
         ) {
             Text(if (loading) "Signing in…" else "Sign In")
         }
