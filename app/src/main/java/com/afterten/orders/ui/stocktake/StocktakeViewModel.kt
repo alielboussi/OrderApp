@@ -1,5 +1,6 @@
 package com.afterten.orders.ui.stocktake
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.afterten.orders.data.OutletSession
@@ -13,6 +14,10 @@ import kotlinx.coroutines.launch
 class StocktakeViewModel(
     private val repo: StocktakeRepository
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "Stocktake"
+    }
 
     data class UiState(
         val outlets: List<SupabaseProvider.Outlet> = emptyList(),
@@ -41,8 +46,14 @@ class StocktakeViewModel(
         viewModelScope.launch {
             _ui.value = _ui.value.copy(loading = true, error = null)
 
+            Log.d(TAG, "bindSession: fetching outlets/warehouses for outletId=${session.outletId}")
+
             val outletsResult = runCatching { repo.listOutlets(session.token) }
             val warehousesResult = runCatching { repo.listWarehouses(session.token) }
+
+            outletsResult.onSuccess { Log.d(TAG, "listOutlets returned ${it.size} outlets") }
+            outletsResult.onFailure { Log.e(TAG, "listOutlets failed", it) }
+            warehousesResult.onFailure { Log.e(TAG, "listWarehouses failed", it) }
 
             val outlets = outletsResult.getOrElse {
                 // Fallback to the session's outlet so the UI still works when the full list fails
@@ -55,6 +66,13 @@ class StocktakeViewModel(
                 } ?: emptyList()
             }
             val warehouses = warehousesResult.getOrElse { emptyList() }
+
+            if (outlets.isEmpty()) {
+                Log.w(TAG, "No outlets available after fetch/fallback; session outletId=${session.outletId}")
+            }
+            if (warehouses.isNotEmpty()) {
+                Log.d(TAG, "Warehouses loaded: ${warehouses.size}")
+            }
 
             val preferredOutlet = session.outletId.takeIf { it.isNotBlank() } ?: outlets.firstOrNull()?.id
             val filtered = warehouses
