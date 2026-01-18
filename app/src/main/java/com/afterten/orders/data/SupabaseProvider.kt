@@ -581,16 +581,26 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class Warehouse(
         val id: String,
-        @SerialName("outlet_id") val outletId: String? = null,
         val name: String,
+        val code: String? = null,
+        val kind: String? = null,
+        @SerialName("parent_warehouse_id") val parentWarehouseId: String? = null,
+        @SerialName("stock_layer") val stockLayer: String? = null,
         val active: Boolean = true,
-        @SerialName("parent_warehouse_id") val parentWarehouseId: String? = null
+        @SerialName("created_at") val createdAt: String? = null,
+        @SerialName("updated_at") val updatedAt: String? = null
     )
 
     @Serializable
     data class Outlet(
         val id: String,
-        val name: String
+        val name: String,
+        val code: String? = null,
+        val channel: String? = null,
+        @SerialName("auth_user_id") val authUserId: String? = null,
+        val active: Boolean = true,
+        @SerialName("created_at") val createdAt: String? = null,
+        @SerialName("updated_at") val updatedAt: String? = null
     )
 
     @Serializable
@@ -855,7 +865,12 @@ class SupabaseProvider(context: Context) {
     )
 
     suspend fun listOutlets(jwt: String): List<Outlet> {
-        val url = "$supabaseUrl/rest/v1/outlets?select=id,name&order=name.asc"
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlets")
+            append("?select=id,name,code,channel,auth_user_id,active,created_at,updated_at")
+            append("&order=name.asc")
+        }
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -867,8 +882,12 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listWarehouses(jwt: String): List<Warehouse> {
-        // Schema does not expose outlet_id on warehouses; return core fields only.
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id,kind,stock_layer&order=name.asc"
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/warehouses")
+            append("?select=id,name,code,kind,parent_warehouse_id,stock_layer,active,created_at,updated_at")
+            append("&order=name.asc")
+        }
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -884,7 +903,7 @@ class SupabaseProvider(context: Context) {
         if (unique.isEmpty()) return emptyList()
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,active,parent_warehouse_id&id=in.$encoded"
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,code,kind,parent_warehouse_id,stock_layer,active,created_at,updated_at&id=in.$encoded"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -978,15 +997,19 @@ class SupabaseProvider(context: Context) {
 
     suspend fun createWarehouse(
         jwt: String,
-        outletId: String,
         name: String,
+        code: String? = null,
+        kind: String? = null,
         parentWarehouseId: String? = null,
+        stockLayer: String? = null,
         active: Boolean = true
     ): Warehouse {
         val body = buildMap<String, Any?> {
-            put("outlet_id", outletId)
             put("name", name)
             put("active", active)
+            if (!code.isNullOrBlank()) put("code", code)
+            if (!kind.isNullOrBlank()) put("kind", kind)
+            if (!stockLayer.isNullOrBlank()) put("stock_layer", stockLayer)
             if (parentWarehouseId != null) put("parent_warehouse_id", parentWarehouseId)
         }
         val resp = http.post("$supabaseUrl/rest/v1/warehouses") {

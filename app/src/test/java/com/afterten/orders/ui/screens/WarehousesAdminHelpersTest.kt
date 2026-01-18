@@ -11,7 +11,7 @@ class WarehousesAdminHelpersTest {
     @Test
     fun `buildWarehouseNameLookup pulls names from transfers`() {
         val warehouses = listOf(
-            Warehouse(id = "primary", outletId = "o1", name = "Main Hub", active = true)
+            Warehouse(id = "primary", name = "Main Hub", code = null, kind = null, parentWarehouseId = null, stockLayer = null, active = true)
         )
         val transfers = listOf(
             transfer(
@@ -40,7 +40,7 @@ class WarehousesAdminHelpersTest {
     @Test
     fun `buildSelectableWarehouses merges fallback labels`() {
         val warehouses = listOf(
-            Warehouse(id = "primary", outletId = "o1", name = "Main Hub", active = true)
+            Warehouse(id = "primary", name = "Main Hub", code = null, kind = null, parentWarehouseId = null, stockLayer = null, active = true)
         )
         val warehouseNames = mapOf(
             "primary" to "Main Hub",

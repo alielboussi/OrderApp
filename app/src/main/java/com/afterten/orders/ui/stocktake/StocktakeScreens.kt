@@ -88,10 +88,14 @@ fun StocktakeDashboardScreen(
     var outletMenu by remember { mutableStateOf(false) }
     var warehouseMenu by remember { mutableStateOf(false) }
 
-    val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name ?: "Select outlet"
+    val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name
+        ?: ui.outlets.firstOrNull()?.name
+        ?: "Select outlet"
     val warehouseLabel = ui.filteredWarehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name
+        ?: ui.filteredWarehouses.firstOrNull()?.name
         ?: "Select warehouse"
-    val warehouseEnabled = ui.selectedOutletId != null && ui.filteredWarehouses.isNotEmpty()
+    val canSelectOutlet = ui.outlets.isNotEmpty()
+    val warehouseEnabled = ui.filteredWarehouses.isNotEmpty()
 
     val scroll = rememberScrollState()
 
@@ -130,14 +134,17 @@ fun StocktakeDashboardScreen(
                 Text("Outlet", style = MaterialTheme.typography.titleMedium, color = primaryBlue)
                 ExposedDropdownMenuBox(
                     expanded = outletMenu,
-                    onExpandedChange = { outletMenu = !outletMenu }
+                    onExpandedChange = { if (canSelectOutlet) outletMenu = !outletMenu }
                 ) {
                     OutlinedTextField(
                         value = outletLabel,
                         onValueChange = {},
                         readOnly = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Choose outlet") },
+                        enabled = canSelectOutlet,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        label = { Text(if (canSelectOutlet) "Choose outlet" else "Outlet") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) }
                     )
                     DropdownMenu(
@@ -166,7 +173,9 @@ fun StocktakeDashboardScreen(
                         onValueChange = {},
                         enabled = warehouseEnabled,
                         readOnly = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
                         label = { Text("Choose warehouse") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = warehouseMenu) }
                     )
