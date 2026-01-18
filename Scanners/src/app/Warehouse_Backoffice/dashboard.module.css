@@ -105,6 +105,11 @@
   box-shadow: 0 20px 40px #fbbf2433;
 }
 
+.mappingCard {
+  border-color: #a855f788;
+  box-shadow: 0 20px 40px #a855f733;
+}
+
 .cardTitle {
   font-size: 22px;
   letter-spacing: 0.5px;
@@ -122,6 +127,10 @@
 
 .routingTitle {
   color: #fbbf24;
+}
+
+.mappingTitle {
+  color: #a855f7;
 }
 
 .cardBody {

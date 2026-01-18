@@ -11,6 +11,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
   const goToOutletRouting = () => router.push("/Warehouse_Backoffice/outlet-routing");
+  const goToOutletWarehouses = () => router.push("/Warehouse_Backoffice/outlet-warehouses");
 
   if (status !== "ok") {
     return null;
@@ -46,6 +47,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToOutletRouting} className={`${styles.actionCard} ${styles.routingCard}`}>
             <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Warehouse Assign</p>
             <p className={styles.cardBody}>Choose which warehouse each outlet deducts from.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToOutletWarehouses} className={`${styles.actionCard} ${styles.mappingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>Outlet Warehouses</p>
+            <p className={styles.cardBody}>Map outlets to the warehouses they stocktake against.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>
