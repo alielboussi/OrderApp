@@ -604,6 +604,11 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    private data class OutletWarehouseLink(
+        @SerialName("warehouse_id") val warehouseId: String
+    )
+
+    @Serializable
     data class StockMovementReferenceName(
         val name: String? = null,
         val uom: String? = null,
@@ -896,6 +901,32 @@ class SupabaseProvider(context: Context) {
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("listWarehouses failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
+    }
+
+    suspend fun listWarehousesForOutlet(jwt: String, outletId: String?): List<Warehouse> {
+        val targetOutlet = outletId?.trim().takeUnless { it.isNullOrEmpty() } ?: return emptyList()
+        val mapUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlet_warehouses")
+            append("?select=warehouse_id")
+            append("&outlet_id=eq.")
+            append(targetOutlet)
+        }
+        val mapResp = http.get(mapUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val mapCode = mapResp.status.value
+        val mapTxt = mapResp.bodyAsText()
+        if (mapCode !in 200..299) throw IllegalStateException("listWarehousesForOutlet mapping failed: HTTP $mapCode $mapTxt")
+
+        val ids = relaxedJson.decodeFromString(ListSerializer(OutletWarehouseLink.serializer()), mapTxt)
+            .mapNotNull { it.warehouseId.trim().takeIf(String::isNotEmpty) }
+            .distinct()
+        if (ids.isEmpty()) return emptyList()
+
+        // Reuse the existing helper to fetch warehouse details and filter to active only.
+        return fetchWarehousesByIds(jwt, ids).filter { it.active }
     }
 
     suspend fun fetchWarehousesByIds(jwt: String, ids: Collection<String>): List<Warehouse> {

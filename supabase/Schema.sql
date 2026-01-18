@@ -1376,6 +1376,47 @@
         {
             "columns": [
                 {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "outlet_id",
+                    "is_nullable": "NO"
+                },
+                {
+                    "default": null,
+                    "data_type": "uuid",
+                    "column_name": "warehouse_id",
+                    "is_nullable": "NO"
+                }
+            ],
+            "indexes": [
+                {
+                    "definition": "CREATE UNIQUE INDEX outlet_warehouses_pkey ON public.outlet_warehouses USING btree (outlet_id, warehouse_id)",
+                    "index_name": "outlet_warehouses_pkey"
+                }
+            ],
+            "table_name": "outlet_warehouses",
+            "constraints": [
+                {
+                    "definition": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
+                    "constraint_name": "outlet_warehouses_outlet_id_fkey",
+                    "constraint_type": "f"
+                },
+                {
+                    "definition": "PRIMARY KEY (outlet_id, warehouse_id)",
+                    "constraint_name": "outlet_warehouses_pkey",
+                    "constraint_type": "p"
+                },
+                {
+                    "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
+                    "constraint_name": "outlet_warehouses_warehouse_id_fkey",
+                    "constraint_type": "f"
+                }
+            ],
+            "row_security": true
+        },
+        {
+            "columns": [
+                {
                     "default": "gen_random_uuid()",
                     "data_type": "uuid",
                     "column_name": "id",
@@ -1697,9 +1738,19 @@
                     "data_type": "text",
                     "column_name": "catalog_variant_name",
                     "is_nullable": "YES"
+                },
+                {
+                    "default": "gen_random_uuid()",
+                    "data_type": "uuid",
+                    "column_name": "id",
+                    "is_nullable": "NO"
                 }
             ],
             "indexes": [
+                {
+                    "definition": "CREATE UNIQUE INDEX pos_item_map_pkey ON public.pos_item_map USING btree (id)",
+                    "index_name": "pos_item_map_pkey"
+                }
             ],
             "table_name": "pos_item_map",
             "constraints": [
@@ -1709,7 +1760,12 @@
                     "constraint_type": "f"
                 },
                 {
-                    "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)",
+                    "definition": "PRIMARY KEY (id)",
+                    "constraint_name": "pos_item_map_pkey",
+                    "constraint_type": "p"
+                },
+                {
+                    "definition": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
                     "constraint_name": "pos_item_map_warehouse_id_fkey",
                     "constraint_type": "f"
                 }
@@ -3260,6 +3316,16 @@
             "policy_name": "outlet_stocktakes_scoped"
         },
         {
+            "cmd": "SELECT",
+            "qual": "(has_stocktake_role(auth.uid()) OR is_admin(auth.uid()))",
+            "roles": [
+                "authenticated"
+            ],
+            "table_name": "outlet_warehouses",
+            "with_check": null,
+            "policy_name": "outlet_warehouses_select_stocktake"
+        },
+        {
             "cmd": "ALL",
             "qual": "is_admin(auth.uid())",
             "roles": [
@@ -3271,13 +3337,13 @@
         },
         {
             "cmd": "SELECT",
-            "qual": "(is_admin(auth.uid()) OR (id = ANY (member_outlet_ids(auth.uid()))))",
+            "qual": "(has_stocktake_role(auth.uid()) OR is_admin(auth.uid()))",
             "roles": [
                 "authenticated"
             ],
             "table_name": "outlets",
             "with_check": null,
-            "policy_name": "outlets_select_scoped"
+            "policy_name": "outlets_select_stocktake"
         },
         {
             "cmd": "ALL",
@@ -3491,13 +3557,13 @@
         },
         {
             "cmd": "SELECT",
-            "qual": "(auth.uid() IS NOT NULL)",
+            "qual": "(has_stocktake_role(auth.uid()) OR is_admin(auth.uid()))",
             "roles": [
                 "authenticated"
             ],
             "table_name": "warehouses",
             "with_check": null,
-            "policy_name": "warehouses_select_scoped"
+            "policy_name": "warehouses_select_stocktake"
         }
     ],
     "triggers": [
@@ -3588,6 +3654,12 @@
         },
         {
             "arguments": "p_user_id uuid",
+            "definition": "CREATE OR REPLACE FUNCTION public.has_stocktake_role(p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.user_roles ur  -- change to your mapping table\r\n    where ur.user_id = p_user_id\r\n      and ur.role_id = '95b6a75d-bd46-4764-b5ea-981b1608f1ca'\r\n  );\r\n$function$\n",
+            "return_type": "boolean",
+            "function_name": "has_stocktake_role"
+        },
+        {
+            "arguments": "p_user_id uuid",
             "definition": "CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF p_user_id IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n  RETURN EXISTS (SELECT 1 FROM public.platform_admins pa WHERE pa.user_id = p_user_id);\r\nEND;\r\n$function$\n",
             "return_type": "boolean",
             "function_name": "is_admin"
@@ -3617,15 +3689,15 @@
             "function_name": "mark_order_offloaded"
         },
         {
-            "arguments": "",
-            "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
-            "return_type": "SETOF uuid",
-            "function_name": "member_outlet_ids"
-        },
-        {
             "arguments": "p_user_id uuid",
             "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
             "return_type": "uuid[]",
+            "function_name": "member_outlet_ids"
+        },
+        {
+            "arguments": "",
+            "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
+            "return_type": "SETOF uuid",
             "function_name": "member_outlet_ids"
         },
         {

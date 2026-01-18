@@ -28,6 +28,12 @@ public sealed class SupabaseClient
 
     public async Task<SupabaseResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken)
     {
+        if (_outlet.Id == Guid.Empty)
+        {
+            _logger.LogError("Outlet Id is not configured; set Outlet:Id to the outlet UUID in Supabase");
+            return new SupabaseResult(false, "Outlet Id is not configured");
+        }
+
         var client = _clientFactory.CreateClient("Supabase");
         client.BaseAddress = new Uri(_options.Url);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ServiceKey);

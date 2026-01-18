@@ -11,10 +11,26 @@ var builder = Host.CreateApplicationBuilder(args);
 var runAsService = args.Any(static a => string.Equals(a, "--run-as-service", StringComparison.OrdinalIgnoreCase));
 var runStatusUi = args.Any(static a => string.Equals(a, "--status-ui", StringComparison.OrdinalIgnoreCase)) || !runAsService;
 
-builder.Services.Configure<PosDbOptions>(builder.Configuration.GetSection("PosDb"));
-builder.Services.Configure<OutletOptions>(builder.Configuration.GetSection("Outlet"));
-builder.Services.Configure<SupabaseOptions>(builder.Configuration.GetSection("Supabase"));
-builder.Services.Configure<SyncOptions>(builder.Configuration.GetSection("Sync"));
+builder.Services.AddOptions<PosDbOptions>()
+    .Bind(builder.Configuration.GetSection("PosDb"))
+    .ValidateOnStart();
+
+builder.Services.AddOptions<OutletOptions>()
+    .Bind(builder.Configuration.GetSection("Outlet"))
+    .Validate(o => o.Id != Guid.Empty, "Outlet:Id is required and must be a valid UUID from public.outlets")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<SupabaseOptions>()
+    .Bind(builder.Configuration.GetSection("Supabase"))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.Url), "Supabase:Url is required")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.ServiceKey), "Supabase:ServiceKey is required")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<SyncOptions>()
+    .Bind(builder.Configuration.GetSection("Sync"))
+    .Validate(o => o.PollSeconds > 0, "Sync:PollSeconds must be > 0")
+    .Validate(o => o.BatchSize > 0, "Sync:BatchSize must be > 0")
+    .ValidateOnStart();
 builder.Services.AddSingleton<PosRepository>();
 builder.Services.AddSingleton<SupabaseClient>();
 builder.Services.AddSingleton<SyncRunner>();

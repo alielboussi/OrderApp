@@ -37,6 +37,12 @@ class StocktakeViewModel(
 
     private var session: OutletSession? = null
 
+    private suspend fun fetchWarehouses(outletId: String?): Pair<List<SupabaseProvider.Warehouse>, Throwable?> {
+        val jwt = session?.token ?: return emptyList<SupabaseProvider.Warehouse>() to null
+        val result = runCatching { repo.listWarehousesForOutlet(jwt, outletId) }
+        return result.getOrElse { emptyList<SupabaseProvider.Warehouse>() } to result.exceptionOrNull()
+    }
+
     fun bindSession(session: OutletSession?) {
         this.session = session
         if (session == null) {
@@ -46,17 +52,13 @@ class StocktakeViewModel(
         viewModelScope.launch {
             _ui.value = _ui.value.copy(loading = true, error = null)
 
-            Log.d(TAG, "bindSession: fetching outlets/warehouses for outletId=${session.outletId}")
+            Log.d(TAG, "bindSession: fetching outlets for outletId=${session.outletId}")
 
             val outletsResult = runCatching { repo.listOutlets(session.token) }
-            val warehousesResult = runCatching { repo.listWarehouses(session.token) }
-
             outletsResult.onSuccess { Log.d(TAG, "listOutlets returned ${it.size} outlets") }
             outletsResult.onFailure { Log.e(TAG, "listOutlets failed", it) }
-            warehousesResult.onFailure { Log.e(TAG, "listWarehouses failed", it) }
 
             val outlets = outletsResult.getOrElse {
-                // Fallback to the session's outlet so the UI still works when the full list fails
                 session.outletId.takeIf { it.isNotBlank() }?.let { oid ->
                     listOf(SupabaseProvider.Outlet(id = oid, name = session.outletName.ifBlank { "Outlet" }))
                 } ?: emptyList()
@@ -65,23 +67,25 @@ class StocktakeViewModel(
                     listOf(SupabaseProvider.Outlet(id = oid, name = session.outletName.ifBlank { "Outlet" }))
                 } ?: emptyList()
             }
-            val warehouses = warehousesResult.getOrElse { emptyList() }
 
             if (outlets.isEmpty()) {
                 Log.w(TAG, "No outlets available after fetch/fallback; session outletId=${session.outletId}")
             }
-            if (warehouses.isNotEmpty()) {
-                Log.d(TAG, "Warehouses loaded: ${warehouses.size}")
-            }
 
             val preferredOutlet = session.outletId.takeIf { it.isNotBlank() } ?: outlets.firstOrNull()?.id
-            val filtered = warehouses
-            val selectedWarehouse = filtered.firstOrNull()?.id ?: warehouses.firstOrNull()?.id
+
+            val (filtered, whErr) = fetchWarehouses(preferredOutlet)
+            val selectedWarehouse = filtered.firstOrNull()?.id
+
+            whErr?.let { Log.e(TAG, "listWarehousesForOutlet failed", it) }
+            if (filtered.isNotEmpty()) {
+                Log.d(TAG, "Warehouses loaded for outlet=$preferredOutlet: ${filtered.size}")
+            }
 
             fun summarize(t: Throwable?): String? = t?.message?.take(140)
 
             val errorMessage = when {
-                warehousesResult.isFailure -> "Unable to load warehouses: ${summarize(warehousesResult.exceptionOrNull()) ?: "unknown error"}"
+                whErr != null -> "Unable to load warehouses: ${summarize(whErr) ?: "unknown error"}"
                 outletsResult.isFailure && outlets.isEmpty() -> "Unable to load outlets: ${summarize(outletsResult.exceptionOrNull()) ?: "unknown error"}"
                 outletsResult.isFailure -> "Outlets list unavailable; showing your assigned outlet"
                 filtered.isEmpty() -> "No warehouses available"
@@ -90,7 +94,7 @@ class StocktakeViewModel(
 
             _ui.value = _ui.value.copy(
                 outlets = outlets,
-                warehouses = warehouses,
+                warehouses = filtered,
                 filteredWarehouses = filtered,
                 selectedOutletId = preferredOutlet ?: outlets.firstOrNull()?.id,
                 selectedWarehouseId = selectedWarehouse,
@@ -106,19 +110,22 @@ class StocktakeViewModel(
     }
 
     fun selectOutlet(id: String) {
-        val current = _ui.value
-        val filtered = current.warehouses
-        val nextWarehouseId = current.selectedWarehouseId ?: filtered.firstOrNull()?.id
-        _ui.value = current.copy(
-            selectedOutletId = id,
-            filteredWarehouses = filtered,
-            selectedWarehouseId = nextWarehouseId,
-            openPeriod = null,
-            variance = emptyList(),
-            lastCount = null,
-            error = null
-        )
-        nextWarehouseId?.let { viewModelScope.launch { refreshOpenPeriod(it) } }
+        _ui.value = _ui.value.copy(loading = true, error = null, selectedOutletId = id, filteredWarehouses = emptyList(), selectedWarehouseId = null)
+        viewModelScope.launch {
+            val (filtered, whErr) = fetchWarehouses(id)
+            val nextWarehouseId = filtered.firstOrNull()?.id
+            _ui.value = _ui.value.copy(
+                warehouses = filtered,
+                filteredWarehouses = filtered,
+                selectedWarehouseId = nextWarehouseId,
+                openPeriod = null,
+                variance = emptyList(),
+                lastCount = null,
+                loading = false,
+                error = whErr?.message
+            )
+            nextWarehouseId?.let { refreshOpenPeriod(it) }
+        }
     }
 
     fun selectWarehouse(id: String) {
