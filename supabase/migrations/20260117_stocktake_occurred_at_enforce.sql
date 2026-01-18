@@ -321,6 +321,7 @@ declare
   v_route record;
   v_deduct_outlet uuid;
   v_deduct_wh uuid;
+  v_default_wh uuid;
   v_deduct_enabled boolean;
   v_variant_key text := public.normalize_variant_key(p_variant_key);
   v_consumption_per_base numeric := 1;
@@ -355,7 +356,17 @@ begin
   end if;
 
   v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);
-  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);
+
+  select ow.warehouse_id
+  into v_default_wh
+  from public.outlet_warehouses ow
+  join public.warehouses w on w.id = ow.warehouse_id
+  where ow.outlet_id = v_deduct_outlet
+    and coalesce(w.active, true)
+  order by coalesce(w.name, ''), ow.warehouse_id
+  limit 1;
+
+  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id, v_default_wh);
 
   if v_deduct_wh is null then
     raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;
@@ -452,6 +463,7 @@ declare
   v_route record;
   v_deduct_outlet uuid;
   v_deduct_wh uuid;
+  v_default_wh uuid;
   v_deduct_enabled boolean;
   v_variant_key text := public.normalize_variant_key(p_variant_key);
   v_consumption_per_base numeric := 1;
@@ -489,7 +501,17 @@ begin
   end if;
 
   v_deduct_outlet := coalesce(v_route.target_outlet_id, p_outlet_id);
-  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id);
+
+  select ow.warehouse_id
+  into v_default_wh
+  from public.outlet_warehouses ow
+  join public.warehouses w on w.id = ow.warehouse_id
+  where ow.outlet_id = v_deduct_outlet
+    and coalesce(w.active, true)
+  order by coalesce(w.name, ''), ow.warehouse_id
+  limit 1;
+
+  v_deduct_wh := coalesce(p_warehouse_id, v_route.warehouse_id, v_default_wh);
 
   if v_deduct_wh is null then
     raise exception 'no warehouse mapping for outlet %, item %, variant_key %', p_outlet_id, p_item_id, v_variant_key;
