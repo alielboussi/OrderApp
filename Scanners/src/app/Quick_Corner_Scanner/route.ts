@@ -1285,7 +1285,7 @@ function createHtml(config: {
                   <option value="">Choose destination</option>
                 </select>
               </label>
-              <p class="destination-pill-hint">Pick Main Prep, Pastry, or Secondary destination before scanning.</p>
+              <p class="destination-pill-hint">Pick Quick Corner before scanning.</p>
             </div>
           </div>
         </article>
@@ -1503,7 +1503,7 @@ function createHtml(config: {
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
           <div class="purchase-actions">
-            <a id="purchase-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
+            <a id="purchase-back" class="button button-outline" href="/Quick_Corner_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
           </div>
         </div>
@@ -1608,7 +1608,7 @@ function createHtml(config: {
             </div>
           </label>
           <div class="damage-actions">
-            <a id="damage-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
+            <a id="damage-back" class="button button-outline" href="/Quick_Corner_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
           </div>
         </div>
@@ -1626,8 +1626,8 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
-    const SESSION_STORAGE_KEY = 'beverage-kiosk-session-v2';
-    const PASSWORD_STORAGE_KEY = 'beverage-password-verifier-v2';
+    const SESSION_STORAGE_KEY = 'quick-corner-kiosk-session-v1';
+    const PASSWORD_STORAGE_KEY = 'quick-corner-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';
     const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
@@ -1636,11 +1636,11 @@ function createHtml(config: {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
-      if (window.__beverageAppInitialized) {
-        console.debug('Beverage scanner already initialized; skipping duplicate bootstrap');
+      if (window.__quickCornerAppInitialized) {
+        console.debug('Quick Corner scanner already initialized; skipping duplicate bootstrap');
         return;
       }
-      window.__beverageAppInitialized = true;
+      window.__quickCornerAppInitialized = true;
       const supabaseClients = (window.__supabaseClients = window.__supabaseClients || {});
       const supabaseClientCache = (window.__supabaseClientCache = window.__supabaseClientCache || {});
 
@@ -1666,16 +1666,16 @@ function createHtml(config: {
         return client;
       }
 
-      const supabase = supabaseClients.beverageSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
+      const supabase = supabaseClients.quickCornerSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: true,
           persistSession: true,
           storageKey: SESSION_STORAGE_KEY
         }
       });
-      supabaseClients.beverageSession = supabase;
+      supabaseClients.quickCornerSession = supabase;
 
-      const passwordVerifier = supabaseClients.beveragePassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
+      const passwordVerifier = supabaseClients.quickCornerPassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: false,
           persistSession: false,
@@ -1683,7 +1683,7 @@ function createHtml(config: {
           storageKey: PASSWORD_STORAGE_KEY
         }
       });
-      supabaseClients.beveragePassword = passwordVerifier;
+      supabaseClients.quickCornerPassword = passwordVerifier;
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
