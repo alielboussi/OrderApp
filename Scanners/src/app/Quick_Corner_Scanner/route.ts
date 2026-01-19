@@ -11,7 +11,9 @@ const DESTINATION_CHOICES = [
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
 const MULTIPLY_QTY_BY_PACKAGE = false;
-const OPERATOR_SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
+// Define TTL and also publish it on globalThis so older code paths can read it.
+const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
+(globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
 const OPERATOR_CONTEXT_LABELS = {
   transfer: 'Transfers',
   damage: 'Damages'
