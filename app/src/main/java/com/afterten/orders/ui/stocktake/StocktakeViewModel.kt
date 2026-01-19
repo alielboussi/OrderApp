@@ -150,6 +150,11 @@ class StocktakeViewModel(
         val warehouseId = _ui.value.selectedWarehouseId ?: return
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch {
+            val existing = runCatching { repo.fetchOpenPeriod(jwt, warehouseId) }.getOrNull()
+            if (existing != null) {
+                _ui.value = _ui.value.copy(openPeriod = existing, loading = false, error = null)
+                return@launch
+            }
             runCatching { repo.startPeriod(jwt, warehouseId, note) }
                 .onSuccess { period ->
                     _ui.value = _ui.value.copy(openPeriod = period, loading = false, error = null)

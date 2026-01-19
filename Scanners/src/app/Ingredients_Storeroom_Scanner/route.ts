@@ -13,6 +13,7 @@ const DESTINATION_CHOICES = [
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
 const MULTIPLY_QTY_BY_PACKAGE = true;
+const OPERATOR_SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
 const OPERATOR_CONTEXT_LABELS = {
   transfer: 'Transfers',
   purchase: 'Purchases',
