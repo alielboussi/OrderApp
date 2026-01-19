@@ -19,6 +19,13 @@ const qtyUnits = [
   "Jar",
 ] as const;
 
+const formatUnitLabel = (unit: string) => {
+  const trimmed = unit.trim();
+  if (!trimmed) return "";
+  const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+  return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
+};
+
 type Warehouse = { id: string; name: string };
 type Item = { id: string; name: string; sku?: string | null };
 
@@ -235,14 +242,14 @@ function VariantCreatePage() {
               hint="Unit used when deducting/consuming"
               value={form.consumption_uom}
               onChange={(v) => handleChange("consumption_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
+              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Select
               label="Supplier pack unit"
               hint="Unit written on supplier pack for this variant"
               value={form.purchase_pack_unit}
               onChange={(v) => handleChange("purchase_pack_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
+              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Field
               type="number"
@@ -267,14 +274,14 @@ function VariantCreatePage() {
               hint="Used only if weight/volume is set"
               value={form.purchase_unit_mass_uom}
               onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
+              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Select
               label="Transfer unit"
               hint="Unit used when moving this variant between warehouses"
               value={form.transfer_unit}
               onChange={(v) => handleChange("transfer_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: value }))}
+              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Field
               type="number"

@@ -23,6 +23,7 @@ class StocktakeViewModel(
         val outlets: List<SupabaseProvider.Outlet> = emptyList(),
         val warehouses: List<SupabaseProvider.Warehouse> = emptyList(),
         val filteredWarehouses: List<SupabaseProvider.Warehouse> = emptyList(),
+        val items: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
@@ -98,6 +99,7 @@ class StocktakeViewModel(
                 filteredWarehouses = filtered,
                 selectedOutletId = preferredOutlet ?: outlets.firstOrNull()?.id,
                 selectedWarehouseId = selectedWarehouse,
+                items = emptyList(),
                 openPeriod = null,
                 variance = emptyList(),
                 lastCount = null,
@@ -105,7 +107,10 @@ class StocktakeViewModel(
                 error = errorMessage
             )
 
-            selectedWarehouse?.let { refreshOpenPeriod(it) }
+            selectedWarehouse?.let {
+                refreshOpenPeriod(it)
+                loadItems(it)
+            }
         }
     }
 
@@ -118,19 +123,26 @@ class StocktakeViewModel(
                 warehouses = filtered,
                 filteredWarehouses = filtered,
                 selectedWarehouseId = nextWarehouseId,
+                items = emptyList(),
                 openPeriod = null,
                 variance = emptyList(),
                 lastCount = null,
                 loading = false,
                 error = whErr?.message
             )
-            nextWarehouseId?.let { refreshOpenPeriod(it) }
+            nextWarehouseId?.let {
+                refreshOpenPeriod(it)
+                loadItems(it)
+            }
         }
     }
 
     fun selectWarehouse(id: String) {
         _ui.value = _ui.value.copy(selectedWarehouseId = id, openPeriod = null, variance = emptyList(), error = null)
-        viewModelScope.launch { refreshOpenPeriod(id) }
+        viewModelScope.launch {
+            refreshOpenPeriod(id)
+            loadItems(id)
+        }
     }
 
     fun startStocktake(note: String?) {
@@ -227,6 +239,27 @@ class StocktakeViewModel(
         runCatching { repo.fetchOpenPeriod(jwt, warehouseId) }
             .onSuccess { period ->
                 _ui.value = _ui.value.copy(openPeriod = period, error = null)
+            }
+            .onFailure { err ->
+                _ui.value = _ui.value.copy(error = err.message)
+            }
+    }
+
+    private suspend fun loadItems(warehouseId: String) {
+        val jwt = session?.token ?: return
+        runCatching { repo.listWarehouseItems(jwt, warehouseId, null) }
+            .map { items ->
+                val grouped = items.groupBy { it.itemId }
+                items.filterNot { item ->
+                    val normalized = item.variantKey?.lowercase()?.ifBlank { "base" } ?: "base"
+                    normalized == "base" && (grouped[item.itemId]?.any { other ->
+                        val otherKey = other.variantKey?.lowercase()?.ifBlank { "base" } ?: "base"
+                        otherKey != "base"
+                    } == true)
+                }
+            }
+            .onSuccess { filtered ->
+                _ui.value = _ui.value.copy(items = filtered, error = null)
             }
             .onFailure { err ->
                 _ui.value = _ui.value.copy(error = err.message)

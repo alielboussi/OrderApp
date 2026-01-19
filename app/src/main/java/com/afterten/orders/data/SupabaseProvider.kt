@@ -828,6 +828,14 @@ class SupabaseProvider(context: Context) {
         val product: StockNameLabel? = null,
         val variation: StockNameLabel? = null
     )
+    
+    @Serializable
+    data class WarehouseStockItem(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("item_name") val itemName: String? = null,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        @SerialName("net_units") val netUnits: Double? = null
+    )
 
     enum class StockEntryKind(val apiValue: String, val label: String) {
         INITIAL("initial", "Initial Stock"),
@@ -1401,6 +1409,23 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) throw IllegalStateException("record_pos_sale failed: HTTP $code $txt")
         val parsed = relaxedJson.decodeFromString(ListSerializer(PosSale.serializer()), txt)
         return parsed.first()
+    }
+
+    suspend fun listWarehouseItems(
+        jwt: String,
+        warehouseId: String,
+        search: String? = null,
+        limit: Int = 200
+    ): List<WarehouseStockItem> {
+        val select = "item_id,item_name,variant_key,net_units"
+        val sb = StringBuilder("/rest/v1/warehouse_layer_stock?select=${select}&warehouse_id=eq.${warehouseId}&order=item_name.asc")
+        search?.takeIf { it.isNotBlank() }?.let { term ->
+            val escaped = term.replace("*", "%").trim()
+            sb.append("&item_name=ilike.*").append(escaped).append("*")
+        }
+        sb.append("&limit=").append(limit)
+        val body = getWithJwt(sb.toString(), jwt)
+        return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), body)
     }
 
     suspend fun listOutletStockPeriods(

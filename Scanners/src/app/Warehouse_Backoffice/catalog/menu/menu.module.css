@@ -290,6 +290,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .cardTitleBlock {
@@ -302,6 +303,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 720px) {

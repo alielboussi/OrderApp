@@ -416,3 +416,27 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unable to update item" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    let id = url.searchParams.get("id")?.trim() || "";
+    if (!id) {
+      const body = await request.json().catch(() => ({}));
+      id = typeof body.id === "string" ? body.id.trim() : "";
+    }
+
+    if (!id || !isUuid(id)) return NextResponse.json({ error: "Valid id is required for delete" }, { status: 400 });
+
+    const supabase = getServiceClient();
+    const { data, error } = await supabase.from("catalog_items").delete().eq("id", id).select("id").maybeSingle();
+    if (error) throw error;
+
+    if (!data) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+
+    return NextResponse.json({ id: data.id });
+  } catch (error) {
+    console.error("[catalog/items] DELETE failed", error);
+    return NextResponse.json({ error: "Unable to delete item" }, { status: 500 });
+  }
+}

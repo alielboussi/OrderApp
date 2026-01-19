@@ -25,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -327,6 +328,14 @@ fun StocktakeCountScreen(
     var variantKey by rememberSaveable { mutableStateOf("base") }
     var qtyText by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf("closing") }
+    var search by rememberSaveable { mutableStateOf("") }
+
+    val filteredItems = remember(ui.items, search) {
+        val term = search.trim().lowercase()
+        if (term.isBlank()) ui.items else ui.items.filter {
+            it.itemName?.lowercase()?.contains(term) == true || it.itemId.lowercase().contains(term)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -397,6 +406,36 @@ fun StocktakeCountScreen(
                         "Saved ${last.countedQty} on ${last.variantKey ?: "base"}",
                         style = MaterialTheme.typography.labelMedium
                     )
+                }
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    label = { Text("Search items in warehouse") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (filteredItems.isEmpty()) {
+                    Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    filteredItems.take(80).forEach { row ->
+                        ElevatedButton(
+                            onClick = {
+                                itemId = row.itemId
+                                variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(row.itemName ?: "Item", fontWeight = FontWeight.Bold)
+                                Text(row.itemId, style = MaterialTheme.typography.labelSmall)
+                                Text("Variant: ${row.variantKey ?: "base"} • Qty: ${row.netUnits ?: 0.0}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
                 }
             }
         }

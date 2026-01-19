@@ -339,3 +339,48 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unable to update variant" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    let id = url.searchParams.get("id")?.trim() || "";
+    let itemId = url.searchParams.get("item_id")?.trim() || "";
+    if (!id || !itemId) {
+      const body = await request.json().catch(() => ({}));
+      if (!id) id = typeof body.id === "string" ? body.id.trim() : "";
+      if (!itemId) itemId = typeof body.item_id === "string" ? body.item_id.trim() : "";
+    }
+
+    if (!id || !isUuid(id)) return NextResponse.json({ error: "Valid variant id is required" }, { status: 400 });
+    if (!itemId || !isUuid(itemId)) return NextResponse.json({ error: "Valid parent item_id is required" }, { status: 400 });
+
+    const supabase = getServiceClient();
+    const { data: itemRow, error: itemError } = (await supabase
+      .from("catalog_items")
+      .select("variants,has_variations")
+      .eq("id", itemId)
+      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
+
+    if (itemError) throw itemError;
+    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
+
+    const existing = asVariantArray(itemRow.variants);
+    const filtered = existing.filter((variant) => {
+      const key = (variant?.key ?? variant?.id ?? "").toString().trim();
+      return !key || key !== id;
+    });
+
+    if (filtered.length === existing.length) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
+
+    const { error: updateError } = await supabase
+      .from("catalog_items")
+      .update({ variants: filtered, has_variations: filtered.length > 0 })
+      .eq("id", itemId);
+    if (updateError) throw updateError;
+
+    return NextResponse.json({ id, item_id: itemId });
+  } catch (error) {
+    console.error("[catalog/variants] DELETE failed", error);
+    return NextResponse.json({ error: "Unable to delete variant" }, { status: 500 });
+  }
+}

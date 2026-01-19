@@ -57,6 +57,57 @@ export default function CatalogMenuPage() {
     }
   }, []);
 
+  const handleDeleteItem = useCallback(
+    async (itemId: string) => {
+      if (!itemId) return;
+      const confirmed = window.confirm("Delete this product? This cannot be undone.");
+      if (!confirmed) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/catalog/items?id=${encodeURIComponent(itemId)}`, { method: "DELETE" });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error || "Failed to delete product");
+        }
+        await load();
+      } catch (err) {
+        console.error(err);
+        setError(err instanceof Error ? err.message : "Failed to delete product");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [load]
+  );
+
+  const handleDeleteVariant = useCallback(
+    async (variantId: string, itemId: string) => {
+      if (!variantId || !itemId) return;
+      const confirmed = window.confirm("Delete this variant? This cannot be undone.");
+      if (!confirmed) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/catalog/variants?id=${encodeURIComponent(variantId)}&item_id=${encodeURIComponent(itemId)}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error || "Failed to delete variant");
+        }
+        await load();
+      } catch (err) {
+        console.error(err);
+        setError(err instanceof Error ? err.message : "Failed to delete variant");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [load]
+  );
+
   useEffect(() => {
     load();
   }, [load]);
@@ -150,6 +201,9 @@ export default function CatalogMenuPage() {
                             <button className={styles.linkButton} onClick={() => router.push(`/Warehouse_Backoffice/catalog/product?id=${item.id}`)}>
                               Edit product
                             </button>
+                            <button className={styles.linkButton} onClick={() => handleDeleteItem(item.id)}>
+                              Delete
+                            </button>
                           </div>
                           <h2 className={styles.itemName}>{item.name}</h2>
                           {item.sku && <p className={styles.sku}>SKU: {item.sku}</p>}
@@ -198,6 +252,9 @@ export default function CatalogMenuPage() {
                                     onClick={() => router.push(`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${item.id}`)}
                                   >
                                     Edit
+                                  </button>
+                                  <button className={styles.linkButton} onClick={() => handleDeleteVariant(variant.id, item.id)}>
+                                    Delete
                                   </button>
                                 </div>
                               </div>
