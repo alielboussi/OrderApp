@@ -7,7 +7,7 @@ import { useWarehouseAuth } from "../useWarehouseAuth";
 
 type Outlet = { id: string; name: string; code?: string | null; active?: boolean };
 type Warehouse = { id: string; name: string };
-type Item = { id: string; name: string };
+type Item = { id: string; name: string; item_kind?: string };
 
 type RouteRecord = Record<string, string>;
 
@@ -51,7 +51,9 @@ export default function OutletRoutingPage() {
         }
         if (itemRes.ok) {
           const json = await itemRes.json();
-          setItems(Array.isArray(json.items) ? json.items : []);
+          const list = Array.isArray(json.items) ? json.items : [];
+          // Hide ingredient-only items; keep finished/raw or anything without a kind value.
+          setItems(list.filter((it: Item) => (it.item_kind ?? "finished") !== "ingredient"));
         }
       } catch (error) {
         console.error("outlet routing preload failed", error);
