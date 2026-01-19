@@ -12,6 +12,7 @@ type Item = { id: string; name: string; item_kind?: string };
 type RouteRecord = Record<string, string>;
 
 const variantKey = "base";
+type ItemMode = "raw" | "ingredient" | "product";
 
 export default function OutletRoutingPage() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export default function OutletRoutingPage() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [itemMode, setItemMode] = useState<ItemMode>("product");
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [routes, setRoutes] = useState<RouteRecord>({});
   const [loading, setLoading] = useState(false);
@@ -27,7 +29,7 @@ export default function OutletRoutingPage() {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
-  const itemOptions = useMemo(() => [{ id: "", name: "Select product" }, ...items], [items]);
+  const itemOptions = useMemo(() => [{ id: "", name: `Select ${itemMode}` }, ...items], [items, itemMode]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -51,9 +53,21 @@ export default function OutletRoutingPage() {
         }
         if (itemRes.ok) {
           const json = await itemRes.json();
-          const list = Array.isArray(json.items) ? json.items : [];
-          // Hide ingredient-only items; keep finished/raw or anything without a kind value.
-          setItems(list.filter((it: Item) => (it.item_kind ?? "finished") !== "ingredient"));
+          const list: Item[] = Array.isArray(json.items) ? json.items : [];
+
+          const hasRaw = list.some((it) => it.item_kind === "raw");
+          const hasIngredient = list.some((it) => it.item_kind === "ingredient");
+          const mode: ItemMode = hasRaw ? "raw" : hasIngredient ? "ingredient" : "product";
+
+          const filtered = list.filter((it) => {
+            const kind = it.item_kind ?? "product";
+            if (mode === "raw") return kind === "raw";
+            if (mode === "ingredient") return kind === "ingredient";
+            return kind !== "ingredient" && kind !== "raw"; // finished/unknown products
+          });
+
+          setItemMode(mode);
+          setItems(filtered);
         }
       } catch (error) {
         console.error("outlet routing preload failed", error);
@@ -162,7 +176,9 @@ export default function OutletRoutingPage() {
         <section className={styles.panel}>
           <div className={styles.controlsRow}>
             <label className={styles.field}>
-              <span className={styles.label}>Product</span>
+              <span className={styles.label}>
+                {itemMode === "raw" ? "Raw material" : itemMode === "ingredient" ? "Ingredient" : "Product"}
+              </span>
               <select
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
