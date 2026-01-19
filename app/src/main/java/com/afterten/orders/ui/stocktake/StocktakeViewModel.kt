@@ -248,18 +248,9 @@ class StocktakeViewModel(
     private suspend fun loadItems(warehouseId: String) {
         val jwt = session?.token ?: return
         runCatching { repo.listWarehouseItems(jwt, warehouseId, null) }
-            .map { items ->
-                val grouped = items.groupBy { it.itemId }
-                items.filterNot { item ->
-                    val normalized = item.variantKey?.lowercase()?.ifBlank { "base" } ?: "base"
-                    normalized == "base" && (grouped[item.itemId]?.any { other ->
-                        val otherKey = other.variantKey?.lowercase()?.ifBlank { "base" } ?: "base"
-                        otherKey != "base"
-                    } == true)
-                }
-            }
-            .onSuccess { filtered ->
-                _ui.value = _ui.value.copy(items = filtered, error = null)
+            .onSuccess { fetched ->
+                // Show all variants and base entries for the warehouse.
+                _ui.value = _ui.value.copy(items = fetched, error = null)
             }
             .onFailure { err ->
                 _ui.value = _ui.value.copy(error = err.message)
