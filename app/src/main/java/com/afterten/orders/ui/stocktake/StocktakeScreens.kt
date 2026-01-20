@@ -210,6 +210,12 @@ fun StocktakeDashboardScreen(
                         }
                     }
 
+                    Text(
+                        "Warehouses come from Outlet setup → Stocktake mapping. Pick the outlet’s warehouse you count in.",
+                        color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
                     if (ui.selectedOutletId != null && ui.filteredWarehouses.isEmpty()) {
                         Text("No warehouses available for this outlet", color = Color.White)
                     }
@@ -374,6 +380,11 @@ fun StocktakeCountScreen(
                     label = { Text("Search items in warehouse") },
                     modifier = Modifier.fillMaxWidth(),
                     colors = outlinedFieldColors
+                )
+                Text(
+                    "Ingredients only: counts update ingredient stock; recipes handle finished items/variants automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.8f)
                 )
                 if (filteredItems.isEmpty()) {
                     Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)

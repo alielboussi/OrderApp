@@ -301,13 +301,6 @@ function VariantCreatePage() {
               step="0.01"
               min="0"
             />
-            <Select
-              label="Default warehouse"
-              hint="Where this variant normally lives"
-              value={form.default_warehouse_id}
-              onChange={(v) => handleChange("default_warehouse_id", v)}
-              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
-            />
             <Field
               label="Image URL (optional)"
               hint="Link to variant image"

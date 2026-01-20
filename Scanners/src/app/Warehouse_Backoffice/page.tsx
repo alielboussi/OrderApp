@@ -10,8 +10,7 @@ export default function WarehouseBackofficeDashboard() {
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
-  const goToOutletRouting = () => router.push("/Warehouse_Backoffice/outlet-routing");
-  const goToOutletWarehouses = () => router.push("/Warehouse_Backoffice/outlet-warehouses");
+  const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup");
 
   if (status !== "ok") {
     return null;
@@ -33,7 +32,7 @@ export default function WarehouseBackofficeDashboard() {
 
         <section className={styles.actionsGrid}>
           <button onClick={goToInventory} className={`${styles.actionCard} ${styles.inventoryCard}`}>
-            <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Inventory</p>
+            <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Scanner History</p>
             <p className={styles.cardBody}>Enter transfers, damages, and purchases.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
@@ -44,15 +43,9 @@ export default function WarehouseBackofficeDashboard() {
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToOutletRouting} className={`${styles.actionCard} ${styles.routingCard}`}>
-            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Warehouse Assign</p>
-            <p className={styles.cardBody}>Choose which warehouse each outlet deducts from.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToOutletWarehouses} className={`${styles.actionCard} ${styles.mappingCard}`}>
-            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>Outlet Warehouses</p>
-            <p className={styles.cardBody}>Map outlets to the warehouses they stocktake against.</p>
+          <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Outlet Setup</p>
+            <p className={styles.cardBody}>Assign products and warehouses for deduction and stocktake.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>

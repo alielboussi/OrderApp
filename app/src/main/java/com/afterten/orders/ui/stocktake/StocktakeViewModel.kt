@@ -189,6 +189,7 @@ class StocktakeViewModel(
     fun recordCount(itemId: String, qty: Double, variantKey: String, kind: String) {
         val jwt = session?.token ?: return
         val periodId = _ui.value.openPeriod?.id ?: return
+        val warehouseId = _ui.value.selectedWarehouseId ?: return
         pushDebug("recordCount period=$periodId item=$itemId qty=$qty variant=$variantKey kind=$kind")
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch {
@@ -196,6 +197,8 @@ class StocktakeViewModel(
                 .onSuccess { count ->
                     pushDebug("recordCount success id=${count.id} kind=${count.kind} qty=${count.countedQty}")
                     _ui.value = _ui.value.copy(lastCount = count, loading = false, error = null)
+                    // Refresh items so ingredient counts reflect immediately; recipe-based availability is derived from updated stock.
+                    loadItems(warehouseId)
                 }
                 .onFailure { err ->
                     pushDebug("recordCount failed: ${err.message}")
@@ -302,11 +305,10 @@ class StocktakeViewModel(
             .onSuccess { fetched ->
                 val allowed = fetched.filter { item ->
                     val kind = item.itemKind?.lowercase()
-                    val variant = item.variantKey?.lowercase()
-                    // Keep ingredients and any non-base variant; drop base items of unknown kind to avoid menu dishes.
-                    kind == "ingredient" || variant != "base"
+                    // Only ingredients are countable; raws and finished items are excluded.
+                    kind == "ingredient"
                 }
-                pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} for warehouse=$warehouseId")
+                pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} (ingredients only) for warehouse=$warehouseId")
                 _ui.value = _ui.value.copy(items = allowed, loading = false, error = null)
             }
             .onFailure { err ->

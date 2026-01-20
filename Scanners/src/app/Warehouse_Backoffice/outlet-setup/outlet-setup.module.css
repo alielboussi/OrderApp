@@ -1,0 +1,213 @@
+.page {
+  min-height: 100vh;
+  background: radial-gradient(circle at 10% 20%, rgba(255, 214, 102, 0.08), transparent 35%),
+              radial-gradient(circle at 90% 10%, rgba(120, 114, 255, 0.08), transparent 30%),
+              #0b0d17;
+  color: #e6e8f0;
+  font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 32px 20px 48px;
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.grow { flex: 1; }
+
+.kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: #facc15;
+  margin: 0 0 4px;
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: #cbd0dd;
+  line-height: 1.4;
+}
+
+.headerButtons {
+  display: flex;
+  gap: 10px;
+}
+
+.backButton {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6e8f0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.backButton:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel {
+  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.08), rgba(15, 23, 42, 0.75));
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sectionBody { margin: 0; color: #cbd0dd; }
+
+.subHeading {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e0f2fe;
+  margin: 4px 0;
+}
+
+.selectGroup { display: flex; flex-direction: column; gap: 8px; }
+
+.inlineHint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(125, 211, 252, 0.4);
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.06);
+  color: #cbd0dd;
+  max-width: 360px;
+}
+
+.inlineTitle {
+  font-weight: 700;
+  color: #e0f2fe;
+  font-size: 13px;
+}
+
+.inlineBody {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #cbd0dd;
+}
+
+.controlsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.select,
+.input,
+.button {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6e8f0;
+  padding: 10px 12px;
+  min-width: 160px;
+  color-scheme: dark;
+}
+
+.select:disabled { opacity: 0.5; }
+
+.select option {
+  background: #0f172a;
+  color: #e6e8f0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.primaryButton {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  border: none;
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.secondaryButton {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e8f0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.callout {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.calloutSuccess { background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); }
+.calloutError { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+.tableWrapper { overflow: auto; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08); }
+.tableWrapper { overflow-x: hidden; }
+
+.routesTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.routesTable thead { background: rgba(255, 255, 255, 0.05); }
+.routesTable th, .routesTable td { padding: 10px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.routesTable th { font-weight: 700; color: #e6e8f0; }
+.routesTable td { color: #d6d9e4; }
+.routesTable select { width: 100%; }
+
+.outletName { font-weight: 600; }
+.outletCode { color: #a5acc5; font-size: 12px; }
+.outletInactive { color: #f87171; font-size: 12px; }
+
+.note { font-size: 12px; color: #9ca3af; margin: 0; }
+
+.disclaimer {
+  font-size: 13px;
+  color: #cbd0dd;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 10px 12px;
+  line-height: 1.45;
+}
