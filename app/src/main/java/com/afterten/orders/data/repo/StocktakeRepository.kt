@@ -37,12 +37,15 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         @SerialName("warehouse_id") val warehouseId: String,
         @SerialName("outlet_id") val outletId: String,
         @SerialName("item_id") val itemId: String,
+        @SerialName("item_name") val itemName: String? = null,
         @SerialName("variant_key") val variantKey: String? = "base",
         @SerialName("opening_qty") val openingQty: Double = 0.0,
         @SerialName("movement_qty") val movementQty: Double = 0.0,
         @SerialName("closing_qty") val closingQty: Double = 0.0,
         @SerialName("expected_qty") val expectedQty: Double = 0.0,
-        @SerialName("variance_qty") val varianceQty: Double = 0.0
+        @SerialName("variance_qty") val varianceQty: Double = 0.0,
+        @SerialName("unit_cost") val unitCost: Double = 0.0,
+        @SerialName("variance_cost") val varianceCost: Double = 0.0
     )
 
     private val json = relaxedJson
@@ -123,7 +126,7 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     }
 
     suspend fun fetchVariances(jwt: String, periodId: String): List<VarianceRow> {
-        val select = encode("period_id,warehouse_id,outlet_id,item_id,variant_key,opening_qty,movement_qty,closing_qty,expected_qty,variance_qty")
+        val select = encode("period_id,warehouse_id,outlet_id,item_id,item_name,variant_key,opening_qty,movement_qty,closing_qty,expected_qty,variance_qty,unit_cost,variance_cost")
         val path = "/rest/v1/warehouse_stock_variances?select=${select}&period_id=eq.${periodId}&order=item_id.asc"
         val text = supabase.getWithJwt(path, jwt)
         return json.decodeFromString(ListSerializer(VarianceRow.serializer()), text)

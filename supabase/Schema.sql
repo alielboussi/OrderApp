@@ -9,8 +9,12 @@
             "definition": " SELECT w.id AS warehouse_id,\n    w.stock_layer,\n    sl.item_id,\n    ci.name AS item_name,\n    sl.variant_key,\n    sum(sl.delta_units) AS net_units\n   FROM stock_ledger sl\n     JOIN warehouses w ON w.id = sl.warehouse_id\n     LEFT JOIN catalog_items ci ON ci.id = sl.item_id\n  WHERE sl.location_type = 'warehouse'::text\n  GROUP BY w.id, w.stock_layer, sl.item_id, ci.name, sl.variant_key;"
         },
         {
+            "view_name": "warehouse_stock_items",
+            "definition": " WITH ingredients AS (\n         SELECT w.id AS warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            'base'::text AS variant_key,\n            COALESCE(sum(sl.delta_units), 0::numeric) AS net_units,\n            ci.cost AS unit_cost\n           FROM warehouses w\n             JOIN catalog_items ci ON ci.item_kind = 'ingredient'::item_kind AND ci.active\n             LEFT JOIN stock_ledger sl ON sl.warehouse_id = w.id AND sl.location_type = 'warehouse'::text AND sl.item_id = ci.id\n          GROUP BY w.id, ci.id, ci.name, ci.cost\n        ), variant_fallback AS (\n         SELECT sl.warehouse_id,\n            sl.item_id,\n            ci.name AS item_name,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) AS net_units,\n            ci.cost AS unit_cost\n           FROM stock_ledger sl\n             JOIN warehouses w ON w.id = sl.warehouse_id\n             JOIN catalog_items ci ON ci.id = sl.item_id\n          WHERE sl.location_type = 'warehouse'::text AND ci.item_kind <> 'ingredient'::item_kind AND normalize_variant_key(sl.variant_key) <> 'base'::text AND NOT (EXISTS ( SELECT 1\n                   FROM recipes r\n                  WHERE r.active AND r.finished_item_id = ci.id))\n          GROUP BY sl.warehouse_id, sl.item_id, ci.name, (normalize_variant_key(sl.variant_key)), ci.cost\n        )\n SELECT ingredients.warehouse_id,\n    ingredients.item_id,\n    ingredients.item_name,\n    ingredients.variant_key,\n    ingredients.net_units,\n    ingredients.unit_cost\n   FROM ingredients\nUNION ALL\n SELECT variant_fallback.warehouse_id,\n    variant_fallback.item_id,\n    variant_fallback.item_name,\n    variant_fallback.variant_key,\n    variant_fallback.net_units,\n    variant_fallback.unit_cost\n   FROM variant_fallback;"
+        },
+        {
             "view_name": "warehouse_stock_variances",
-            "definition": " SELECT wsp.id AS period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    COALESCE(close_counts.item_id, open_counts.item_id, mov.item_id) AS item_id,\n    COALESCE(close_counts.variant_key, open_counts.variant_key, mov.variant_key, 'base'::text) AS variant_key,\n    COALESCE(open_counts.opening_qty, 0::numeric) AS opening_qty,\n    COALESCE(mov.delta_units, 0::numeric) AS movement_qty,\n    COALESCE(close_counts.closing_qty, 0::numeric) AS closing_qty,\n    COALESCE(open_counts.opening_qty, 0::numeric) + COALESCE(mov.delta_units, 0::numeric) AS expected_qty,\n    COALESCE(close_counts.closing_qty, 0::numeric) - (COALESCE(open_counts.opening_qty, 0::numeric) + COALESCE(mov.delta_units, 0::numeric)) AS variance_qty\n   FROM warehouse_stock_periods wsp\n     LEFT JOIN LATERAL ( SELECT c.item_id,\n            c.variant_key,\n            c.counted_qty AS opening_qty\n           FROM warehouse_stock_counts c\n          WHERE c.period_id = wsp.id AND c.kind = 'opening'::text) open_counts ON true\n     LEFT JOIN LATERAL ( SELECT c.item_id,\n            c.variant_key,\n            c.counted_qty AS closing_qty\n           FROM warehouse_stock_counts c\n          WHERE c.period_id = wsp.id AND c.kind = 'closing'::text) close_counts ON true\n     LEFT JOIN LATERAL ( SELECT sl.item_id,\n            sl.variant_key,\n            sum(sl.delta_units) AS delta_units\n           FROM stock_ledger sl\n          WHERE sl.warehouse_id = wsp.warehouse_id AND sl.occurred_at >= wsp.opened_at AND (wsp.closed_at IS NULL AND sl.occurred_at <= now() OR wsp.closed_at IS NOT NULL AND sl.occurred_at <= wsp.closed_at)\n          GROUP BY sl.item_id, sl.variant_key) mov ON true;"
+            "definition": " WITH opening AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS opening_qty\n           FROM warehouse_stock_counts\n          WHERE warehouse_stock_counts.kind = 'opening'::text\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), closing AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS closing_qty\n           FROM warehouse_stock_counts\n          WHERE warehouse_stock_counts.kind = 'closing'::text\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), movement AS (\n         SELECT wsp_1.id AS period_id,\n            sl.item_id,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) AS movement_qty\n           FROM warehouse_stock_periods wsp_1\n             LEFT JOIN stock_ledger sl ON sl.warehouse_id = wsp_1.warehouse_id AND sl.location_type = 'warehouse'::text AND sl.item_id IS NOT NULL AND sl.occurred_at >= wsp_1.opened_at AND (wsp_1.closed_at IS NULL OR sl.occurred_at <= COALESCE(wsp_1.closed_at, now()))\n          GROUP BY wsp_1.id, sl.item_id, (normalize_variant_key(sl.variant_key))\n        ), keys AS (\n         SELECT opening.period_id,\n            opening.item_id,\n            opening.variant_key\n           FROM opening\n        UNION\n         SELECT closing.period_id,\n            closing.item_id,\n            closing.variant_key\n           FROM closing\n        UNION\n         SELECT movement.period_id,\n            movement.item_id,\n            movement.variant_key\n           FROM movement\n        )\n SELECT k.period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    k.item_id,\n    k.variant_key,\n    COALESCE(o.opening_qty, 0::numeric) AS opening_qty,\n    COALESCE(m.movement_qty, 0::numeric) AS movement_qty,\n    COALESCE(c.closing_qty, 0::numeric) AS closing_qty,\n    COALESCE(o.opening_qty, 0::numeric) + COALESCE(m.movement_qty, 0::numeric) AS expected_qty,\n    COALESCE(c.closing_qty, 0::numeric) - (COALESCE(o.opening_qty, 0::numeric) + COALESCE(m.movement_qty, 0::numeric)) AS variance_qty,\n    ci.name AS item_name,\n    COALESCE(ci.cost, 0::numeric) AS unit_cost,\n    (COALESCE(c.closing_qty, 0::numeric) - (COALESCE(o.opening_qty, 0::numeric) + COALESCE(m.movement_qty, 0::numeric))) * COALESCE(ci.cost, 0::numeric) AS variance_cost\n   FROM keys k\n     JOIN warehouse_stock_periods wsp ON wsp.id = k.period_id\n     LEFT JOIN opening o ON o.period_id = k.period_id AND o.item_id = k.item_id AND o.variant_key = k.variant_key\n     LEFT JOIN closing c ON c.period_id = k.period_id AND c.item_id = k.item_id AND c.variant_key = k.variant_key\n     LEFT JOIN movement m ON m.period_id = k.period_id AND m.item_id = k.item_id AND m.variant_key = k.variant_key\n     LEFT JOIN catalog_items ci ON ci.id = k.item_id;"
         }
     ],
     "tables": [
@@ -1466,6 +1470,10 @@
                 {
                     "definition": "CREATE UNIQUE INDEX outlet_warehouses_pkey ON public.outlet_warehouses USING btree (outlet_id, warehouse_id)",
                     "index_name": "outlet_warehouses_pkey"
+                },
+                {
+                    "definition": "CREATE UNIQUE INDEX outlet_warehouses_unique ON public.outlet_warehouses USING btree (outlet_id, warehouse_id)",
+                    "index_name": "outlet_warehouses_unique"
                 }
             ],
             "table_name": "outlet_warehouses",
@@ -2739,6 +2747,10 @@
             ],
             "indexes": [
                 {
+                    "definition": "CREATE UNIQUE INDEX idx_wsc_unique_kind ON public.warehouse_stock_counts USING btree (period_id, item_id, variant_key, kind)",
+                    "index_name": "idx_wsc_unique_kind"
+                },
+                {
                     "definition": "CREATE UNIQUE INDEX warehouse_stock_counts_pkey ON public.warehouse_stock_counts USING btree (id)",
                     "index_name": "warehouse_stock_counts_pkey"
                 }
@@ -3171,6 +3183,16 @@
         },
         {
             "cmd": "SELECT",
+            "qual": "(active = true)",
+            "roles": [
+                "anon"
+            ],
+            "table_name": "catalog_items",
+            "with_check": null,
+            "policy_name": "catalog_items_read_kiosk_anon"
+        },
+        {
+            "cmd": "SELECT",
             "qual": "((auth.uid() IS NOT NULL) AND active)",
             "roles": [
                 "authenticated"
@@ -3498,6 +3520,46 @@
             "table_name": "recipes",
             "with_check": null,
             "policy_name": "recipes_read_admin_or_transfer_mgr"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "(active = true)",
+            "roles": [
+                "authenticated"
+            ],
+            "table_name": "recipes",
+            "with_check": null,
+            "policy_name": "recipes_read_kiosk"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "(active = true)",
+            "roles": [
+                "anon"
+            ],
+            "table_name": "recipes",
+            "with_check": null,
+            "policy_name": "recipes_read_kiosk_anon"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "((active = true) AND ((source_warehouse_id IS NULL) OR (source_warehouse_id = '587fcdb9-c998-42d6-b88e-bbcd1a66b088'::uuid)))",
+            "roles": [
+                "anon"
+            ],
+            "table_name": "recipes",
+            "with_check": null,
+            "policy_name": "recipes_read_kiosk_anon_wh"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "((active = true) AND ((source_warehouse_id IS NULL) OR (source_warehouse_id = '587fcdb9-c998-42d6-b88e-bbcd1a66b088'::uuid)))",
+            "roles": [
+                "authenticated"
+            ],
+            "table_name": "recipes",
+            "with_check": null,
+            "policy_name": "recipes_read_kiosk_wh"
         },
         {
             "cmd": "ALL",
@@ -3903,7 +3965,7 @@
         },
         {
             "arguments": "p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT 'closing'::text, p_context jsonb DEFAULT '{}'::jsonb",
-            "definition": "CREATE OR REPLACE FUNCTION public.record_stock_count(p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT 'closing'::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS warehouse_stock_counts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_period public.warehouse_stock_periods%rowtype;\r\n  v_row public.warehouse_stock_counts%rowtype;\r\n  v_has_opening boolean;\r\n  v_item_kind item_kind;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_qty is null or p_qty < 0 then\r\n    raise exception 'qty must be >= 0';\r\n  end if;\r\n\r\n  select ci.item_kind into v_item_kind\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  if v_item_kind is null then\r\n    raise exception 'catalog item % not found for stock count', p_item_id;\r\n  end if;\r\n\r\n  if v_item_kind <> 'ingredient' then\r\n    raise exception 'stock counts are restricted to ingredient items (got %)', v_item_kind;\r\n  end if;\r\n\r\n  select * into v_period from public.warehouse_stock_periods where id = p_period_id;\r\n  if not found then\r\n    raise exception 'stock period not found';\r\n  end if;\r\n  if v_period.status <> 'open' then\r\n    raise exception 'stock period is not open';\r\n  end if;\r\n\r\n  select exists (\r\n    select 1 from public.warehouse_stock_counts c\r\n    where c.period_id = p_period_id and c.kind = 'opening'\r\n  ) into v_has_opening;\r\n\r\n  if not v_has_opening then\r\n    insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n    values (\r\n      p_period_id,\r\n      p_item_id,\r\n      public.normalize_variant_key(p_variant_key),\r\n      p_qty,\r\n      'opening',\r\n      auth.uid(),\r\n      p_context || jsonb_build_object('seeded_opening', true)\r\n    );\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n  values (\r\n    p_period_id,\r\n    p_item_id,\r\n    public.normalize_variant_key(p_variant_key),\r\n    p_qty,\r\n    p_kind,\r\n    auth.uid(),\r\n    p_context\r\n  )\r\n  returning * into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+            "definition": "CREATE OR REPLACE FUNCTION public.record_stock_count(p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT 'closing'::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS warehouse_stock_counts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_period public.warehouse_stock_periods%rowtype;\r\n  v_row public.warehouse_stock_counts%rowtype;\r\n  v_item_kind item_kind;\r\n  v_variant text := public.normalize_variant_key(p_variant_key);\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_qty is null or p_qty < 0 then\r\n    raise exception 'qty must be >= 0';\r\n  end if;\r\n\r\n  select ci.item_kind into v_item_kind\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  if v_item_kind is null then\r\n    raise exception 'catalog item % not found for stock count', p_item_id;\r\n  end if;\r\n\r\n  if v_item_kind <> 'ingredient' then\r\n    raise exception 'stock counts are restricted to ingredient items (got %)', v_item_kind;\r\n  end if;\r\n\r\n  select * into v_period from public.warehouse_stock_periods where id = p_period_id;\r\n  if not found then\r\n    raise exception 'stock period not found';\r\n  end if;\r\n  if v_period.status <> 'open' then\r\n    raise exception 'stock period is not open';\r\n  end if;\r\n\r\n  if lower(coalesce(p_kind, '')) = 'opening' then\r\n    insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n    values (p_period_id, p_item_id, v_variant, p_qty, 'opening', auth.uid(), coalesce(p_context, '{}'))\r\n    on conflict (period_id, item_id, variant_key, kind)\r\n    do update set\r\n      counted_qty = excluded.counted_qty,\r\n      counted_by = excluded.counted_by,\r\n      counted_at = now(),\r\n      context = excluded.context\r\n    returning * into v_row;\r\n    return v_row;\r\n  end if;\r\n\r\n  -- Seed opening once if missing so expected_qty has a baseline\r\n  insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n  values (p_period_id, p_item_id, v_variant, p_qty, 'opening', auth.uid(), coalesce(p_context, '{}') || jsonb_build_object('seeded_opening', true))\r\n  on conflict (period_id, item_id, variant_key, kind) do nothing;\r\n\r\n  insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n  values (p_period_id, p_item_id, v_variant, p_qty, p_kind, auth.uid(), coalesce(p_context, '{}'))\r\n  on conflict (period_id, item_id, variant_key, kind)\r\n  do update set\r\n    counted_qty = excluded.counted_qty,\r\n    counted_by = excluded.counted_by,\r\n    counted_at = now(),\r\n    context = excluded.context\r\n  returning * into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
             "return_type": "warehouse_stock_counts",
             "function_name": "record_stock_count"
         },

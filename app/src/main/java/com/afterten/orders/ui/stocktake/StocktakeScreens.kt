@@ -231,6 +231,21 @@ fun StocktakeDashboardScreen(
             }
         }
 
+        if (ui.debug.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                border = BorderStroke(1.dp, Color.Gray)
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Debug log", fontWeight = FontWeight.Bold, color = Color.White)
+                    ui.debug.takeLast(12).reversed().forEach { line ->
+                        Text(line, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
+                    }
+                }
+            }
+        }
+
         ui.openPeriod?.let { period ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -298,6 +313,8 @@ fun StocktakeCountScreen(
     var variantKey by rememberSaveable { mutableStateOf("base") }
     var qtyText by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
+    var selectedName by rememberSaveable { mutableStateOf("") }
+    var inputError by rememberSaveable { mutableStateOf<String?>(null) }
 
     val primaryRed = Color(0xFFD50000)
     val outlinedFieldColors = TextFieldDefaults.colors(
@@ -371,6 +388,9 @@ fun StocktakeCountScreen(
                             onClick = {
                                 itemId = row.itemId
                                 variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                                selectedName = row.itemName ?: row.itemId
+                                qtyText = ((row.netUnits ?: 0.0)).toString()
+                                inputError = null
                             },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
@@ -381,6 +401,63 @@ fun StocktakeCountScreen(
                                 Text(row.itemId, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
                                 Text("Variant: ${row.variantKey ?: "base"}  Qty: ${row.netUnits ?: 0.0}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
                             }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    if (itemId.isNotBlank()) {
+                        Text("Selected item", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(selectedName.ifBlank { itemId }, color = Color.White)
+                        OutlinedTextField(
+                            value = qtyText,
+                            onValueChange = { qtyText = it },
+                            label = { Text("Quantity (units)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = outlinedFieldColors
+                        )
+                        inputError?.let { Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = {
+                                    val parsed = qtyText.trim().toDoubleOrNull()
+                                    if (parsed == null || parsed < 0) {
+                                        inputError = "Enter a non-negative number"
+                                        return@Button
+                                    }
+                                    inputError = null
+                                    vm.recordCount(itemId, parsed, variantKey, "opening")
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Save opening")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    val parsed = qtyText.trim().toDoubleOrNull()
+                                    if (parsed == null || parsed < 0) {
+                                        inputError = "Enter a non-negative number"
+                                        return@OutlinedButton
+                                    }
+                                    inputError = null
+                                    vm.recordCount(itemId, parsed, variantKey, "closing")
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                border = BorderStroke(1.dp, primaryRed)
+                            ) {
+                                Text("Save closing")
+                            }
+                        }
+                        ui.lastCount?.takeIf { it.itemId == itemId }?.let { last ->
+                            val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
+                            Text(
+                                "$kindLabel saved: ${last.countedQty}",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                     }
                 }
@@ -445,11 +522,32 @@ fun StocktakeVarianceScreen(
             ui.variance.forEach { row ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(row.itemId, fontWeight = FontWeight.Bold)
+                        val varianceColor = if (row.varianceQty < 0) primaryRed else Color(0xFF2E7D32)
+                        Text(row.itemName ?: row.itemId, fontWeight = FontWeight.Bold)
+                        Text(row.itemId, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.labelSmall)
+                        Text("Opening: ${row.openingQty}  Movement: ${row.movementQty}", style = MaterialTheme.typography.bodySmall)
                         Text("Expected: ${row.expectedQty}", style = MaterialTheme.typography.bodySmall)
                         Text("Counted: ${row.closingQty}", style = MaterialTheme.typography.bodySmall)
-                        Text("Variance: ${row.varianceQty}", style = MaterialTheme.typography.bodySmall)
+                        Text("Variance: ${row.varianceQty}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                        if (row.unitCost > 0.0) {
+                            Text("Variance value: ${row.varianceCost}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (ui.debug.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Debug log", fontWeight = FontWeight.Bold)
+                    ui.debug.takeLast(12).reversed().forEach { line ->
+                        Text(line, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
