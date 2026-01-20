@@ -835,7 +835,9 @@ class SupabaseProvider(context: Context) {
         @SerialName("item_name") val itemName: String? = null,
         @SerialName("variant_key") val variantKey: String? = "base",
         @SerialName("net_units") val netUnits: Double? = null,
-        @SerialName("unit_cost") val unitCost: Double? = null
+        @SerialName("unit_cost") val unitCost: Double? = null,
+        @SerialName("item_kind") val itemKind: String? = null,
+        @SerialName("image_url") val imageUrl: String? = null
     )
 
     enum class StockEntryKind(val apiValue: String, val label: String) {
@@ -1418,7 +1420,7 @@ class SupabaseProvider(context: Context) {
         search: String? = null,
         limit: Int = 200
     ): List<WarehouseStockItem> {
-        val select = "item_id,item_name,variant_key,net_units,unit_cost"
+        val select = "item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url"
         val sb = StringBuilder("/rest/v1/warehouse_stock_items?select=${select}&warehouse_id=eq.${warehouseId}&order=item_name.asc")
         search?.takeIf { it.isNotBlank() }?.let { term ->
             val escaped = term.replace("*", "%").trim()

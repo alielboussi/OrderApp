@@ -86,7 +86,7 @@ class StocktakeViewModel(
             val preferredOutlet = session.outletId.takeIf { it.isNotBlank() } ?: outlets.firstOrNull()?.id
 
             val (filtered, whErr) = fetchWarehouses(preferredOutlet)
-            val selectedWarehouse = filtered.firstOrNull()?.id
+            val selectedWarehouse: String? = null
 
             whErr?.let { Log.e(TAG, "listWarehousesForOutlet failed", it) }
             if (filtered.isNotEmpty()) {
@@ -120,12 +120,6 @@ class StocktakeViewModel(
                 loading = false,
                 error = errorMessage
             )
-
-            selectedWarehouse?.let {
-                pushDebug("Auto-select warehouse $it and load items")
-                refreshOpenPeriod(it)
-                loadItems(it)
-            }
         }
     }
 
@@ -134,7 +128,7 @@ class StocktakeViewModel(
         _ui.value = _ui.value.copy(loading = true, error = null, selectedOutletId = id, filteredWarehouses = emptyList(), selectedWarehouseId = null)
         viewModelScope.launch {
             val (filtered, whErr) = fetchWarehouses(id)
-            val nextWarehouseId = filtered.firstOrNull()?.id
+            val nextWarehouseId: String? = null
             whErr?.let { pushDebug("listWarehousesForOutlet failed: ${it.message}") }
             if (filtered.isEmpty()) pushDebug("No warehouses returned for outlet=$id")
             _ui.value = _ui.value.copy(
@@ -148,11 +142,6 @@ class StocktakeViewModel(
                 loading = false,
                 error = whErr?.message
             )
-            nextWarehouseId?.let {
-                pushDebug("After outlet select, auto-load warehouse $it")
-                refreshOpenPeriod(it)
-                loadItems(it)
-            }
         }
     }
 
@@ -297,9 +286,13 @@ class StocktakeViewModel(
         pushDebug("loadItems warehouse=$warehouseId")
         runCatching { repo.listWarehouseItems(jwt, warehouseId, null) }
             .onSuccess { fetched ->
-                pushDebug("loadItems fetched=${fetched.size} for warehouse=$warehouseId")
-                // Show all variants and base entries for the warehouse.
-                _ui.value = _ui.value.copy(items = fetched, error = null)
+                val allowed = fetched.filter { item ->
+                    val kind = item.itemKind?.lowercase()
+                    val variant = item.variantKey?.lowercase()
+                    kind == null || kind == "ingredient" || variant != "base"
+                }
+                pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} for warehouse=$warehouseId")
+                _ui.value = _ui.value.copy(items = allowed, error = null)
             }
             .onFailure { err ->
                 pushDebug("loadItems failed: ${err.message}")

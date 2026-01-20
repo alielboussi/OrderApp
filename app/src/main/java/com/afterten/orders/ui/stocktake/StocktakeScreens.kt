@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,11 +51,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
@@ -107,10 +111,8 @@ fun StocktakeDashboardScreen(
     var warehouseMenu by remember { mutableStateOf(false) }
 
     val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name
-        ?: ui.outlets.firstOrNull()?.name
         ?: "Select outlet"
     val warehouseLabel = ui.filteredWarehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name
-        ?: ui.filteredWarehouses.firstOrNull()?.name
         ?: "Select warehouse"
     val canSelectOutlet = ui.outlets.isNotEmpty()
     val warehouseEnabled = ui.filteredWarehouses.isNotEmpty()
@@ -316,6 +318,9 @@ fun StocktakeCountScreen(
     var selectedName by rememberSaveable { mutableStateOf("") }
     var inputError by rememberSaveable { mutableStateOf<String?>(null) }
 
+    fun formatQty(value: Double?): String = String.format("%.2f", value ?: 0.0)
+    val imageSize = 96.dp
+
     val primaryRed = Color(0xFFD50000)
     val outlinedFieldColors = TextFieldDefaults.colors(
         focusedIndicatorColor = primaryRed,
@@ -383,23 +388,44 @@ fun StocktakeCountScreen(
                 if (filteredItems.isEmpty()) {
                     Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)
                 } else {
-                    filteredItems.take(80).forEach { row ->
-                        Button(
-                            onClick = {
-                                itemId = row.itemId
-                                variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
-                                selectedName = row.itemName ?: row.itemId
-                                qtyText = ((row.netUnits ?: 0.0)).toString()
-                                inputError = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
-                            border = BorderStroke(1.dp, primaryRed)
-                        ) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(row.itemName ?: "Item", fontWeight = FontWeight.Bold, color = Color.White)
-                                Text(row.itemId, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
-                                Text("Variant: ${row.variantKey ?: "base"}  Qty: ${row.netUnits ?: 0.0}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
+                    FlowRow(
+                        maxItemsInEachRow = 2,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        filteredItems.take(80).forEach { row ->
+                            Button(
+                                onClick = {
+                                    itemId = row.itemId
+                                    variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                                    selectedName = row.itemName ?: row.itemId
+                                    qtyText = formatQty(row.netUnits)
+                                    inputError = null
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
+                                border = BorderStroke(1.dp, primaryRed),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(
+                                        model = row.imageUrl,
+                                        contentDescription = "Product photo",
+                                        modifier = Modifier
+                                            .size(imageSize)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        alignment = Alignment.Center
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(row.itemName ?: "Item", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
+                                        Text("Qty: ${formatQty(row.netUnits)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
+                                    }
+                                }
                             }
                         }
                     }
@@ -454,7 +480,7 @@ fun StocktakeCountScreen(
                         ui.lastCount?.takeIf { it.itemId == itemId }?.let { last ->
                             val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
                             Text(
-                                "$kindLabel saved: ${last.countedQty}",
+                                "$kindLabel saved: ${formatQty(last.countedQty)}",
                                 color = Color.White,
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -480,6 +506,8 @@ fun StocktakeVarianceScreen(
         vm.loadVarianceFor(periodId)
     }
     val ui by vm.ui.collectAsState()
+
+    fun fmt(value: Double): String = String.format("%.2f", value)
 
     if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
         AccessDeniedCard(
@@ -526,12 +554,12 @@ fun StocktakeVarianceScreen(
                         Text(row.itemName ?: row.itemId, fontWeight = FontWeight.Bold)
                         Text(row.itemId, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.labelSmall)
-                        Text("Opening: ${row.openingQty}  Movement: ${row.movementQty}", style = MaterialTheme.typography.bodySmall)
-                        Text("Expected: ${row.expectedQty}", style = MaterialTheme.typography.bodySmall)
-                        Text("Counted: ${row.closingQty}", style = MaterialTheme.typography.bodySmall)
-                        Text("Variance: ${row.varianceQty}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                        Text("Opening: ${fmt(row.openingQty)}  Movement: ${fmt(row.movementQty)}", style = MaterialTheme.typography.bodySmall)
+                        Text("Expected: ${fmt(row.expectedQty)}", style = MaterialTheme.typography.bodySmall)
+                        Text("Counted: ${fmt(row.closingQty)}", style = MaterialTheme.typography.bodySmall)
+                        Text("Variance: ${fmt(row.varianceQty)}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
                         if (row.unitCost > 0.0) {
-                            Text("Variance value: ${row.varianceCost}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                            Text("Variance value: ${fmt(row.varianceCost)}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
                         }
                     }
                 }
