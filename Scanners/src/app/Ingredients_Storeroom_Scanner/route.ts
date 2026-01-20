@@ -1631,6 +1631,8 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
+    const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
+    window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SESSION_STORAGE_KEY = 'beverage-kiosk-session-v2';
     const PASSWORD_STORAGE_KEY = 'beverage-password-verifier-v2';
     const REQUIRED_ROLE = 'supervisor';
@@ -2730,6 +2732,12 @@ function createHtml(config: {
         operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
           submitOperatorUnlock({ silentMissing: true });
         }, 200);
+      }
+
+      // Disable auto-submit while typing to avoid noisy 400s; only submit on explicit action.
+      function queueOperatorAutoUnlock() {
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
+        return;
       }
 
       function handleOperatorSelection(context, operatorId) {
@@ -4446,7 +4454,6 @@ function createHtml(config: {
 
       operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
-        queueOperatorAutoUnlock();
       });
 
       operatorPasswordInput?.addEventListener('keydown', (event) => {

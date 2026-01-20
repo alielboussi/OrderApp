@@ -19,8 +19,7 @@ const OPERATOR_CONTEXT_LABELS = {
   damage: 'Damages'
 };
 
-// IMPORTANT: Quick Corner scanner is transfer/damage only and mirrors the prior main warehouse patterns.
-// Please coordinate with the transfers team before changing any logic in this file.
+// IMPORTANT: Quick Corner scanner is transfer/damage only.
 
 type WarehouseRecord = {
   id: string;
@@ -75,7 +74,7 @@ function createHtml(config: {
   destPillLabel: string;
   sourceWarehouseName: string;
   initialWarehousesJson: string;
-  initialView: 'transfer' | 'purchase' | 'damage';
+  initialView: 'transfer' | 'damage';
 }) {
   const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
   const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
@@ -115,14 +114,9 @@ function createHtml(config: {
       overflow-y: auto;
       zoom: 0.78;
     }
-    body[data-view="purchase"],
     body[data-view="damage"] {
       display: block;
     }
-    body[data-view="purchase"] #auth-section,
-    body[data-view="purchase"] #app-section,
-    body[data-view="purchase"] .console-sticky,
-    body[data-view="purchase"] main,
     body[data-view="damage"] #auth-section,
     body[data-view="damage"] #app-section,
     body[data-view="damage"] .console-sticky,
@@ -136,7 +130,6 @@ function createHtml(config: {
       box-shadow: none !important;
       overflow: hidden !important;
     }
-    body[data-view="purchase"] #purchase-page,
     body[data-view="damage"] #damage-page {
       display: flex;
     }
@@ -168,197 +161,6 @@ function createHtml(config: {
     }
     button, input, select, textarea {
       font: inherit;
-    }
-    .panel {
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 16px;
-      border: 1px solid rgba(255, 43, 72, 0.25);
-      padding: clamp(12px, 2.2vw, 18px);
-      margin-top: 10px;
-    }
-    label {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #f7f7f7;
-    }
-    input, select, textarea {
-      background: rgba(0, 0, 0, 0.65);
-      color: #fff;
-      border-radius: 16px;
-      border: 3px solid rgba(255, 34, 67, 0.5);
-      padding: 14px 16px;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-    input:focus, select:focus, textarea:focus {
-      border-color: #ff1b2d;
-      box-shadow: 0 0 12px rgba(255, 27, 45, 0.45);
-      outline: none;
-    }
-    button,
-    .button {
-      font-weight: 700;
-      text-transform: uppercase;
-      border-radius: 999px;
-      border: none;
-      padding: 14px 24px;
-      letter-spacing: 0.08em;
-      background: linear-gradient(100deg, #ff1b2d, #f44336, #ff004d);
-      color: #fff;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      text-decoration: none;
-    }
-    button:hover:not(:disabled),
-    .button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 18px 30px rgba(255, 0, 77, 0.35);
-    }
-    button:disabled,
-    .button.disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .two-cols {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: clamp(12px, 2vw, 18px);
-    }
-    .message {
-      padding: 14px 18px;
-      border-radius: 16px;
-      font-size: 0.95rem;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      margin-top: 12px;
-    }
-    .message.success {
-      border-color: rgba(34, 197, 94, 0.4);
-      background: rgba(34, 197, 94, 0.08);
-      color: #c8ffd5;
-    }
-    .message.error {
-      border-color: rgba(255, 82, 82, 0.6);
-      background: rgba(255, 82, 82, 0.08);
-      color: #ffc7c7;
-    }
-    #auth-section,
-    #app-section {
-      width: 100%;
-    }
-    #app-section { display: none; }
-    body[data-auth="true"] #auth-section { display: none; }
-    body[data-auth="true"] #app-section {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .brand-header {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 12px;
-      flex-shrink: 0;
-    }
-    .brand-header img {
-      width: clamp(120px, 20vw, 160px);
-      height: auto;
-      max-height: 140px;
-      object-fit: contain;
-      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
-    }
-    .console-sticky {
-      position: static;
-      top: auto;
-      z-index: auto;
-      background: transparent;
-      border-radius: 0;
-      padding: 0 0 12px;
-      box-shadow: none;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .console-sticky .brand-header {
-      margin-bottom: 4px;
-    }
-    .login-submit {
-      display: block;
-      margin: 18px auto 0;
-      min-width: 180px;
-    }
-    .transfer-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    #transfer-form {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-    .locked-pill {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 14px;
-      padding: 10px 14px;
-      text-align: center;
-    }
-    .locked-pill h3 {
-      margin: 0 0 4px 0;
-      font-size: 0.95rem;
-      letter-spacing: 0.08em;
-      color: #ff6b81;
-      text-transform: uppercase;
-    }
-    .locked-pill p {
-      margin: 0;
-      font-size: clamp(1.35rem, 2.4vw, 1.9rem);
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: capitalize;
-      line-height: 1.2;
-    }
-    .locked-pill--destination #dest-label {
-      font-size: clamp(1.45rem, 2.6vw, 2.1rem);
-    }
-    .locked-pill--destination {
-      text-align: left;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .destination-pill-select {
-      display: block;
-    }
-    .destination-pill-select select {
-      width: 100%;
-      appearance: none;
-      background: #070707;
-      border: 2px solid rgba(255, 27, 45, 0.6);
-      border-radius: 18px;
-      padding: 12px 16px;
-      color: #ff5d73;
-      font-size: 1.35rem;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-    .destination-pill-select select:focus-visible {
-      outline: none;
-      border-color: #ff1b2d;
-      box-shadow: 0 0 0 3px rgba(255, 27, 45, 0.35);
-    }
-    .destination-pill-hint {
-      margin: 0;
-      font-size: 0.78rem;
-      color: #f7a8b7;
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
@@ -1336,7 +1138,6 @@ function createHtml(config: {
 
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
-            <a id="purchase-open" class="button button-outline" href="?view=purchase" role="button">Log Purchase Intake</a>
             <a id="damage-open" class="button button-green" href="?view=damage" role="button">Log Damages</a>
           </div>
         </form>
@@ -1629,6 +1430,8 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
+    const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
+    window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SESSION_STORAGE_KEY = 'quick-corner-kiosk-session-v1';
     const PASSWORD_STORAGE_KEY = 'quick-corner-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';
@@ -1831,33 +1634,31 @@ function createHtml(config: {
       const qtyHint = document.getElementById('qty-hint');
       const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const printRoot = document.getElementById('print-root');
-      const purchaseOpenButton = document.getElementById('purchase-open');
+      const purchaseOpenButton = null;
       const damageOpenButton = document.getElementById('damage-open');
-      const purchasePage = document.getElementById('purchase-page');
-      const purchaseForm = document.getElementById('purchase-form');
-      const purchaseSupplier = document.getElementById('purchase-supplier');
-      const purchaseReference = document.getElementById('purchase-reference');
-      const purchaseSummaryList = document.getElementById('purchase-summary-list');
-      const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
-      const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
-      const purchaseCartWarehouse = document.getElementById('purchase-cart-warehouse');
-      const purchaseBackButton = document.getElementById('purchase-back');
-      const purchaseSubmit = document.getElementById('purchase-submit');
-      const purchaseCartBody = document.getElementById('purchase-cart-body');
-      const purchaseCartEmpty = document.getElementById('purchase-cart-empty');
-      const purchaseCartCount = document.getElementById('purchase-cart-count');
+      const purchasePage = null;
+      const purchaseForm = null;
+      const purchaseSupplier = null;
+      const purchaseReference = null;
+      const purchaseSummaryList = null;
+      const purchaseSummaryEmpty = null;
+      const purchaseWarehouseLabel = null;
+      const purchaseCartWarehouse = null;
+      const purchaseBackButton = null;
+      const purchaseSubmit = null;
+      const purchaseCartBody = null;
+      const purchaseCartEmpty = null;
+      const purchaseCartCount = null;
       const referenceNumpad = document.getElementById('reference-numpad');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
       const operatorSelects = {
         transfer: document.getElementById('transfer-operator-select'),
-        purchase: document.getElementById('purchase-operator-select'),
         damage: document.getElementById('damage-operator-select')
       };
       const destinationSelect = document.getElementById('console-destination-select');
       const operatorStatusLabels = {
         transfer: document.getElementById('transfer-operator-status'),
-        purchase: document.getElementById('purchase-operator-status'),
         damage: document.getElementById('damage-operator-status')
       };
       const operatorModal = document.getElementById('operator-passcode-modal');
@@ -1868,7 +1669,7 @@ function createHtml(config: {
       const operatorModalError = document.getElementById('operator-modal-error');
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
 
-      const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
+      const VALID_VIEWS = ['transfer', 'damage'];
 
       function syncViewQuery(view) {
         if (typeof window === 'undefined' || !window.history?.replaceState) return;
@@ -1883,7 +1684,6 @@ function createHtml(config: {
       }
 
       function syncViewVisibility(view) {
-        const isPurchase = view === 'purchase';
         const isDamage = view === 'damage';
         const isTransfer = view === 'transfer';
         if (mainShell) {
@@ -1891,11 +1691,6 @@ function createHtml(config: {
         }
         if (appSection) {
           appSection.style.display = isTransfer ? '' : 'none';
-        }
-        if (purchasePage) {
-          purchasePage.hidden = !isPurchase;
-          purchasePage.style.display = isPurchase ? 'flex' : 'none';
-          purchasePage.setAttribute('aria-hidden', isPurchase ? 'false' : 'true');
         }
         if (damagePage) {
           damagePage.hidden = !isDamage;
@@ -1911,13 +1706,12 @@ function createHtml(config: {
         const view = VALID_VIEWS.includes(next) ? next : 'transfer';
         document.body.dataset.view = view;
         document.body.setAttribute('data-view', view);
-        document.body.classList.toggle('view-purchase', view === 'purchase');
         document.body.classList.toggle('view-damage', view === 'damage');
         syncViewVisibility(view);
         syncViewQuery(view);
       }
 
-      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
+      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : 'transfer');
 
       function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options = {}) {
         const {
@@ -1976,16 +1770,10 @@ function createHtml(config: {
           body: damageCartBody,
           empty: damageCartEmpty,
           count: damageCartCount
-        },
-        purchase: {
-          body: purchaseCartBody,
-          empty: purchaseCartEmpty,
-          count: purchaseCartCount
         }
       };
 
       updateQtyHint(null);
-      resetPurchaseForm();
       setMode('transfer');
 
       function normalizeKey(value) {
@@ -2728,6 +2516,12 @@ function createHtml(config: {
         operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
           submitOperatorUnlock({ silentMissing: true });
         }, 200);
+      }
+
+      // Disable auto-submit while typing to avoid noisy 400s; only submit on explicit action.
+      function queueOperatorAutoUnlock() {
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
+        return;
       }
 
       function handleOperatorSelection(context, operatorId) {
@@ -4178,19 +3972,6 @@ function createHtml(config: {
         }
       });
 
-      purchaseOpenButton?.addEventListener('click', async (event) => {
-        event.preventDefault();
-        try {
-          if (!state.suppliers.length) {
-            await fetchSuppliers();
-          }
-        } catch (error) {
-          console.warn('Supplier fetch failed before opening purchase page', error);
-          showResult('Unable to refresh supplier list. Try again or continue without selecting one.', true);
-        }
-        enterPurchaseMode();
-      });
-
       damageOpenButton?.addEventListener('click', (event) => {
         event.preventDefault();
         enterDamageMode();
@@ -4201,7 +3982,7 @@ function createHtml(config: {
       });
 
       transferForm?.addEventListener('pointerdown', () => {
-        if (document.body.dataset.view === 'purchase' || document.body.dataset.view === 'damage') return;
+        if (document.body.dataset.view === 'damage') return;
         if (state.mode !== 'transfer') setMode('transfer');
       });
 
@@ -4444,7 +4225,6 @@ function createHtml(config: {
 
       operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
-        queueOperatorAutoUnlock();
       });
 
       operatorPasswordInput?.addEventListener('keydown', (event) => {
@@ -4486,7 +4266,6 @@ function createHtml(config: {
       });
 
       loginForm?.addEventListener('submit', handleLogin);
-      purchaseForm?.addEventListener('submit', handlePurchaseSubmit);
       damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
     }
@@ -4503,7 +4282,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const viewParam = (url.searchParams.get('view') ?? '').toLowerCase();
-  const initialView = viewParam === 'purchase' ? 'purchase' : viewParam === 'damage' ? 'damage' : 'transfer';
+  const initialView = viewParam === 'damage' ? 'damage' : 'transfer';
 
   const initialWarehouses = await preloadLockedWarehouses();
   const sourceWarehouse = initialWarehouses.find((w) => w.id === LOCKED_SOURCE_ID);
