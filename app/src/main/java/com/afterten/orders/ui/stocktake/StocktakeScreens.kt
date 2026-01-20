@@ -3,6 +3,7 @@ package com.afterten.orders.ui.stocktake
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -377,38 +378,46 @@ fun StocktakeCountScreen(
                 if (filteredItems.isEmpty()) {
                     Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)
                 } else {
-                    FlowRow(
-                        maxItemsInEachRow = 2,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        filteredItems.take(80).forEach { row ->
-                            Button(
-                                onClick = {
-                                    itemId = row.itemId
-                                    variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
-                                    selectedName = row.itemName ?: row.itemId
-                                    qtyText = formatQty(row.netUnits)
-                                    inputError = null
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth(0.5f),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
-                                border = BorderStroke(1.dp, primaryRed),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    AsyncImage(
-                                        model = row.imageUrl,
-                                        contentDescription = "Product photo",
-                                        modifier = Modifier
-                                            .size(imageSize)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        alignment = Alignment.Center
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(Modifier.weight(1f)) {
+                    BoxWithConstraints {
+                        val columns = 2
+                        val targetSize = 440.dp // ~7cm square at 160dpi
+                        val horizontalSpacing = 12.dp
+                        val cardSize = minOf(targetSize, (maxWidth - horizontalSpacing) / columns)
+
+                        FlowRow(
+                            maxItemsInEachRow = columns,
+                            horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            filteredItems.take(80).forEach { row ->
+                                Button(
+                                    onClick = {
+                                        itemId = row.itemId
+                                        variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                                        selectedName = row.itemName ?: row.itemId
+                                        qtyText = formatQty(row.netUnits)
+                                        inputError = null
+                                    },
+                                    modifier = Modifier
+                                        .size(cardSize),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
+                                    border = BorderStroke(1.dp, primaryRed),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = row.imageUrl,
+                                            contentDescription = "Product photo",
+                                            modifier = Modifier
+                                                .size(imageSize)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            alignment = Alignment.Center
+                                        )
                                         Text(row.itemName ?: "Item", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                                         Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                                         Text("Qty: ${formatQty(row.netUnits)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))

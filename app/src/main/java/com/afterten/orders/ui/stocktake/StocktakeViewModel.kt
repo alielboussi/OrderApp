@@ -86,7 +86,13 @@ class StocktakeViewModel(
             val preferredOutlet = session.outletId.takeIf { it.isNotBlank() } ?: outlets.firstOrNull()?.id
 
             val (filtered, whErr) = fetchWarehouses(preferredOutlet)
-            val selectedWarehouse: String? = null
+            val current = _ui.value
+            val warehousesToUse = if (filtered.isNotEmpty()) filtered else current.warehouses
+            val filteredWarehousesToUse = if (filtered.isNotEmpty()) filtered else current.filteredWarehouses
+            val retainedWarehouse = current.selectedWarehouseId?.takeIf { id -> warehousesToUse.any { it.id == id } }
+            val selectedWarehouse: String? = retainedWarehouse
+            val itemsToKeep = if (retainedWarehouse != null && current.items.isNotEmpty()) current.items else emptyList()
+            val openPeriodToKeep = if (retainedWarehouse != null) current.openPeriod else null
 
             whErr?.let { Log.e(TAG, "listWarehousesForOutlet failed", it) }
             if (filtered.isNotEmpty()) {
@@ -109,17 +115,19 @@ class StocktakeViewModel(
 
             _ui.value = _ui.value.copy(
                 outlets = outlets,
-                warehouses = filtered,
-                filteredWarehouses = filtered,
+                warehouses = warehousesToUse,
+                filteredWarehouses = filteredWarehousesToUse,
                 selectedOutletId = preferredOutlet ?: outlets.firstOrNull()?.id,
                 selectedWarehouseId = selectedWarehouse,
-                items = emptyList(),
-                openPeriod = null,
+                items = itemsToKeep,
+                openPeriod = openPeriodToKeep,
                 variance = emptyList(),
                 lastCount = null,
                 loading = false,
                 error = errorMessage
             )
+
+            selectedWarehouse?.let { loadItems(it) }
         }
     }
 
@@ -258,7 +266,12 @@ class StocktakeViewModel(
             runCatching { repo.fetchPeriodById(jwt, periodId) }
                 .onSuccess { period ->
                     pushDebug("loadPeriod success status=${period?.status}")
-                    _ui.value = _ui.value.copy(openPeriod = period, error = null)
+                    _ui.value = _ui.value.copy(
+                        openPeriod = period,
+                        selectedWarehouseId = period?.warehouseId,
+                        error = null
+                    )
+                    period?.warehouseId?.let { loadItems(it) }
                 }
                 .onFailure { err ->
                     pushDebug("loadPeriod failed: ${err.message}")
@@ -284,19 +297,21 @@ class StocktakeViewModel(
     private suspend fun loadItems(warehouseId: String) {
         val jwt = session?.token ?: return
         pushDebug("loadItems warehouse=$warehouseId")
+        _ui.value = _ui.value.copy(items = emptyList(), loading = true, error = null)
         runCatching { repo.listWarehouseItems(jwt, warehouseId, null) }
             .onSuccess { fetched ->
                 val allowed = fetched.filter { item ->
                     val kind = item.itemKind?.lowercase()
                     val variant = item.variantKey?.lowercase()
-                    kind == null || kind == "ingredient" || variant != "base"
+                    // Keep ingredients and any non-base variant; drop base items of unknown kind to avoid menu dishes.
+                    kind == "ingredient" || variant != "base"
                 }
                 pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} for warehouse=$warehouseId")
-                _ui.value = _ui.value.copy(items = allowed, error = null)
+                _ui.value = _ui.value.copy(items = allowed, loading = false, error = null)
             }
             .onFailure { err ->
                 pushDebug("loadItems failed: ${err.message}")
-                _ui.value = _ui.value.copy(error = err.message)
+                _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
             }
     }
 
