@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -233,20 +234,7 @@ fun StocktakeDashboardScreen(
             }
         }
 
-        if (ui.debug.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
-                border = BorderStroke(1.dp, Color.Gray)
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Debug log", fontWeight = FontWeight.Bold, color = Color.White)
-                    ui.debug.takeLast(12).reversed().forEach { line ->
-                        Text(line, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
-                    }
-                }
-            }
-        }
+        // Debug log intentionally hidden from UI; logs remain in Logcat.
 
         ui.openPeriod?.let { period ->
             Card(
@@ -289,6 +277,7 @@ fun StocktakeDashboardScreen(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun StocktakeCountScreen(
     root: RootViewModel,
     periodId: String,
@@ -566,20 +555,7 @@ fun StocktakeVarianceScreen(
             }
         }
 
-        if (ui.debug.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Debug log", fontWeight = FontWeight.Bold)
-                    ui.debug.takeLast(12).reversed().forEach { line ->
-                        Text(line, style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        }
+        // Debug log intentionally hidden from UI; logs remain in Logcat.
     }
 }
 
