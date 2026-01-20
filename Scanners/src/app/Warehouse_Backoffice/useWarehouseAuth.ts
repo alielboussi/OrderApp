@@ -4,10 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 
-const allowedRoleId = "6b9e657a-6131-4a0b-8afa-0ce260f8ed0c";
-const allowedSlugLower = "administrator";
-const allowedUserIds = new Set(["8d4feee9-c61b-44e2-80e9-fa264075fca3"]);
-
 let browserClient: SupabaseClient | null = null;
 
 function getBrowserClient() {
@@ -27,14 +23,23 @@ function getBrowserClient() {
   return browserClient;
 }
 
-function isAllowed(session: Session | null): boolean {
-  const user = session?.user;
-  if (!user) return false;
-  if (allowedUserIds.has(user.id ?? "")) return true;
-  const meta = { ...(user.app_metadata || {}), ...(user.user_metadata || {}) } as Record<string, unknown>;
-  const roleId = String(meta.role_id ?? meta.roleId ?? meta.role ?? "").trim();
-  const roleSlug = String(meta.role_slug ?? meta.roleSlug ?? meta.role ?? "").trim().toLowerCase();
-  return roleId == allowedRoleId || roleSlug === allowedSlugLower;
+async function isPlatformAdmin(supabase: SupabaseClient, session: Session | null): Promise<boolean> {
+  const userId = session?.user?.id;
+  if (!userId) return false;
+
+  const { data, error } = await supabase
+    .from("platform_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .single();
+
+  if (error) {
+    // PGRST116 is the PostgREST code for no rows when using single()
+    if ((error as { code?: string }).code === "PGRST116") return false;
+    throw error;
+  }
+
+  return Boolean(data?.user_id);
 }
 
 export function useWarehouseAuth() {
@@ -47,7 +52,11 @@ export function useWarehouseAuth() {
     const verify = async () => {
       try {
         const { data, error } = await supabase.auth.getSession();
-        if (error || !data.session || !isAllowed(data.session)) {
+        const session = data?.session ?? null;
+
+        const allowed = !error && (await isPlatformAdmin(supabase, session));
+
+        if (!allowed) {
           await supabase.auth.signOut();
           if (active) {
             setStatus("redirecting");

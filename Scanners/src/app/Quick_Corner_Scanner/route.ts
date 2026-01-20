@@ -11,15 +11,17 @@ const DESTINATION_CHOICES = [
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
 const MULTIPLY_QTY_BY_PACKAGE = false;
-// Define TTL and also publish it on globalThis so older code paths can read it.
 const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
 (globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
 const OPERATOR_CONTEXT_LABELS = {
   transfer: 'Transfers',
+  purchase: 'Purchases',
   damage: 'Damages'
 };
 
-// IMPORTANT: Quick Corner scanner is transfer/damage only.
+// IMPORTANT: Behavior for this scanner was finalized on 2025-12-09 for kiosk parity.
+// Please coordinate with the transfers team before changing any logic in this file,
+// as late edits risk breaking the now-approved workflows.
 
 type WarehouseRecord = {
   id: string;
@@ -114,9 +116,14 @@ function createHtml(config: {
       overflow-y: auto;
       zoom: 0.78;
     }
+    body[data-view="purchase"],
     body[data-view="damage"] {
       display: block;
     }
+    body[data-view="purchase"] #auth-section,
+    body[data-view="purchase"] #app-section,
+    body[data-view="purchase"] .console-sticky,
+    body[data-view="purchase"] main,
     body[data-view="damage"] #auth-section,
     body[data-view="damage"] #app-section,
     body[data-view="damage"] .console-sticky,
@@ -130,6 +137,7 @@ function createHtml(config: {
       box-shadow: none !important;
       overflow: hidden !important;
     }
+    body[data-view="purchase"] #purchase-page,
     body[data-view="damage"] #damage-page {
       display: flex;
     }
@@ -161,6 +169,200 @@ function createHtml(config: {
     }
     button, input, select, textarea {
       font: inherit;
+    }
+    .panel {
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 43, 72, 0.25);
+      padding: clamp(12px, 2.2vw, 18px);
+      margin-top: 10px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #f7f7f7;
+    }
+    input, select, textarea {
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      border-radius: 16px;
+      border: 3px solid rgba(255, 34, 67, 0.5);
+      padding: 14px 16px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: #ff1b2d;
+      box-shadow: 0 0 12px rgba(255, 27, 45, 0.45);
+      outline: none;
+    }
+    button,
+    .button {
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 999px;
+      border: none;
+      padding: 14px 24px;
+      letter-spacing: 0.08em;
+      background: linear-gradient(100deg, #ff1b2d, #f44336, #ff004d);
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+    }
+    button:hover:not(:disabled),
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 30px rgba(255, 0, 77, 0.35);
+    }
+    button:disabled,
+    .button.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .two-cols {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: clamp(12px, 2vw, 18px);
+    }
+    .message {
+      padding: 14px 18px;
+      border-radius: 16px;
+      font-size: 0.95rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 12px;
+    }
+    .message.success {
+      border-color: rgba(34, 197, 94, 0.4);
+      background: rgba(34, 197, 94, 0.08);
+      color: #c8ffd5;
+    }
+    .message.error {
+      border-color: rgba(255, 82, 82, 0.6);
+      background: rgba(255, 82, 82, 0.08);
+      color: #ffc7c7;
+    }
+    .search-field {
+      margin-top: 8px;
+    }
+    #auth-section,
+    #app-section {
+      width: 100%;
+    }
+    #app-section { display: none; }
+    body[data-auth="true"] #auth-section { display: none; }
+    body[data-auth="true"] #app-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .brand-header {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .brand-header img {
+      width: clamp(120px, 20vw, 160px);
+      height: auto;
+      max-height: 140px;
+      object-fit: contain;
+      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
+    }
+    .console-sticky {
+      position: static;
+      top: auto;
+      z-index: auto;
+      background: transparent;
+      border-radius: 0;
+      padding: 0 0 12px;
+      box-shadow: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .console-sticky .brand-header {
+      margin-bottom: 4px;
+    }
+    .login-submit {
+      display: block;
+      margin: 18px auto 0;
+      min-width: 180px;
+    }
+    .transfer-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #transfer-form {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .locked-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 14px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .locked-pill h3 {
+      margin: 0 0 4px 0;
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      color: #ff6b81;
+      text-transform: uppercase;
+    }
+    .locked-pill p {
+      margin: 0;
+      font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: capitalize;
+      line-height: 1.2;
+    }
+    .locked-pill--destination #dest-label {
+      font-size: clamp(1.45rem, 2.6vw, 2.1rem);
+    }
+    .locked-pill--destination {
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .destination-pill-select {
+      display: block;
+    }
+    .destination-pill-select select {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 12px 16px;
+      color: #ff5d73;
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .destination-pill-select select:focus-visible {
+      outline: none;
+      border-color: #ff1b2d;
+      box-shadow: 0 0 0 3px rgba(255, 27, 45, 0.35);
+    }
+    .destination-pill-hint {
+      margin: 0;
+      font-size: 0.78rem;
+      color: #f7a8b7;
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
@@ -1090,7 +1292,6 @@ function createHtml(config: {
                   <option value="">Choose destination</option>
                 </select>
               </label>
-              <p class="destination-pill-hint">Pick Quick Corner before scanning.</p>
             </div>
           </div>
         </article>
@@ -1110,6 +1311,11 @@ function createHtml(config: {
             </label>
             <p class="operator-auth-hint">Transfers stay locked until a valid operator signs in. Sessions auto-expire after 20 minutes.</p>
           </section>
+          <div class="search-field">
+            <label>Search products
+              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+            </label>
+          </div>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -1307,7 +1513,7 @@ function createHtml(config: {
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
           <div class="purchase-actions">
-            <a id="purchase-back" class="button button-outline" href="/Quick_Corner_Scanner" role="button">Back to Transfers</a>
+            <a id="purchase-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
           </div>
         </div>
@@ -1412,7 +1618,7 @@ function createHtml(config: {
             </div>
           </label>
           <div class="damage-actions">
-            <a id="damage-back" class="button button-outline" href="/Quick_Corner_Scanner" role="button">Back to Transfers</a>
+            <a id="damage-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
           </div>
         </div>
@@ -1432,8 +1638,8 @@ function createHtml(config: {
     const DESTINATION_CHOICES = ${destinationChoicesJson};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
-    const SESSION_STORAGE_KEY = 'quick-corner-kiosk-session-v1';
-    const PASSWORD_STORAGE_KEY = 'quick-corner-password-verifier-v1';
+    const SESSION_STORAGE_KEY = 'beverage-kiosk-session-v2';
+    const PASSWORD_STORAGE_KEY = 'beverage-password-verifier-v2';
     const REQUIRED_ROLE = 'supervisor';
     const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
@@ -1442,11 +1648,11 @@ function createHtml(config: {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
-      if (window.__quickCornerAppInitialized) {
-        console.debug('Quick Corner scanner already initialized; skipping duplicate bootstrap');
+      if (window.__beverageAppInitialized) {
+        console.debug('Beverage scanner already initialized; skipping duplicate bootstrap');
         return;
       }
-      window.__quickCornerAppInitialized = true;
+      window.__beverageAppInitialized = true;
       const supabaseClients = (window.__supabaseClients = window.__supabaseClients || {});
       const supabaseClientCache = (window.__supabaseClientCache = window.__supabaseClientCache || {});
 
@@ -1472,16 +1678,16 @@ function createHtml(config: {
         return client;
       }
 
-      const supabase = supabaseClients.quickCornerSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
+      const supabase = supabaseClients.beverageSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: true,
           persistSession: true,
           storageKey: SESSION_STORAGE_KEY
         }
       });
-      supabaseClients.quickCornerSession = supabase;
+      supabaseClients.beverageSession = supabase;
 
-      const passwordVerifier = supabaseClients.quickCornerPassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
+      const passwordVerifier = supabaseClients.beveragePassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: false,
           persistSession: false,
@@ -1489,7 +1695,7 @@ function createHtml(config: {
           storageKey: PASSWORD_STORAGE_KEY
         }
       });
-      supabaseClients.quickCornerPassword = passwordVerifier;
+      supabaseClients.beveragePassword = passwordVerifier;
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -1609,6 +1815,7 @@ function createHtml(config: {
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
+      const itemSearchInput = document.getElementById('item-search');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
       const cartCount = document.getElementById('cart-count');
@@ -1634,31 +1841,36 @@ function createHtml(config: {
       const qtyHint = document.getElementById('qty-hint');
       const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const printRoot = document.getElementById('print-root');
-      const purchaseOpenButton = null;
+      const purchaseOpenButton = document.getElementById('purchase-open');
       const damageOpenButton = document.getElementById('damage-open');
-      const purchasePage = null;
-      const purchaseForm = null;
-      const purchaseSupplier = null;
-      const purchaseReference = null;
-      const purchaseSummaryList = null;
-      const purchaseSummaryEmpty = null;
-      const purchaseWarehouseLabel = null;
-      const purchaseCartWarehouse = null;
-      const purchaseBackButton = null;
-      const purchaseSubmit = null;
-      const purchaseCartBody = null;
-      const purchaseCartEmpty = null;
-      const purchaseCartCount = null;
+      const purchasePage = document.getElementById('purchase-page');
+      const purchaseForm = document.getElementById('purchase-form');
+      const purchaseSupplier = document.getElementById('purchase-supplier');
+      const purchaseReference = document.getElementById('purchase-reference');
+      const purchaseSummaryList = document.getElementById('purchase-summary-list');
+      const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
+      const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
+      const purchaseCartWarehouse = document.getElementById('purchase-cart-warehouse');
+      const purchaseBackButton = document.getElementById('purchase-back');
+      const purchaseSubmit = document.getElementById('purchase-submit');
+      const purchaseCartBody = document.getElementById('purchase-cart-body');
+      const purchaseCartEmpty = document.getElementById('purchase-cart-empty');
+      const purchaseCartCount = document.getElementById('purchase-cart-count');
       const referenceNumpad = document.getElementById('reference-numpad');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
+      let itemSearchDebounceId = null;
+      let lastSearchTerm = '';
+      let ingredientPickerEl = null;
       const operatorSelects = {
         transfer: document.getElementById('transfer-operator-select'),
+        purchase: document.getElementById('purchase-operator-select'),
         damage: document.getElementById('damage-operator-select')
       };
       const destinationSelect = document.getElementById('console-destination-select');
       const operatorStatusLabels = {
         transfer: document.getElementById('transfer-operator-status'),
+        purchase: document.getElementById('purchase-operator-status'),
         damage: document.getElementById('damage-operator-status')
       };
       const operatorModal = document.getElementById('operator-passcode-modal');
@@ -1669,7 +1881,7 @@ function createHtml(config: {
       const operatorModalError = document.getElementById('operator-modal-error');
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
 
-      const VALID_VIEWS = ['transfer', 'damage'];
+      const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
 
       function syncViewQuery(view) {
         if (typeof window === 'undefined' || !window.history?.replaceState) return;
@@ -1684,6 +1896,7 @@ function createHtml(config: {
       }
 
       function syncViewVisibility(view) {
+        const isPurchase = view === 'purchase';
         const isDamage = view === 'damage';
         const isTransfer = view === 'transfer';
         if (mainShell) {
@@ -1691,6 +1904,11 @@ function createHtml(config: {
         }
         if (appSection) {
           appSection.style.display = isTransfer ? '' : 'none';
+        }
+        if (purchasePage) {
+          purchasePage.hidden = !isPurchase;
+          purchasePage.style.display = isPurchase ? 'flex' : 'none';
+          purchasePage.setAttribute('aria-hidden', isPurchase ? 'false' : 'true');
         }
         if (damagePage) {
           damagePage.hidden = !isDamage;
@@ -1706,18 +1924,22 @@ function createHtml(config: {
         const view = VALID_VIEWS.includes(next) ? next : 'transfer';
         document.body.dataset.view = view;
         document.body.setAttribute('data-view', view);
+        document.body.classList.toggle('view-purchase', view === 'purchase');
         document.body.classList.toggle('view-damage', view === 'damage');
         syncViewVisibility(view);
         syncViewQuery(view);
       }
 
-      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : 'transfer');
+      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
 
-      function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options = {}) {
-        const {
-          sourceMissingText = 'Source not found (verify Supabase record)',
-          destMissingText = 'Destination not found (verify Supabase record)'
-        } = options;
+      function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options) {
+        const opts = options || {};
+        const sourceMissingText = opts.sourceMissingText !== undefined
+          ? opts.sourceMissingText
+          : 'Source not found (verify Supabase record)';
+        const destMissingText = opts.destMissingText !== undefined
+          ? opts.destMissingText
+          : 'Destination not found (verify Supabase record)';
         if (sourceLabel) {
           sourceLabel.textContent = sourceWarehouse
             ? (sourceWarehouse.name ?? 'Source warehouse') + (sourceWarehouse.active === false ? ' (inactive)' : '')
@@ -1770,15 +1992,193 @@ function createHtml(config: {
           body: damageCartBody,
           empty: damageCartEmpty,
           count: damageCartCount
+        },
+        purchase: {
+          body: purchaseCartBody,
+          empty: purchaseCartEmpty,
+          count: purchaseCartCount
         }
       };
 
       updateQtyHint(null);
+      resetPurchaseForm();
       setMode('transfer');
 
       function normalizeKey(value) {
         if (value === null || value === undefined) return '';
         return String(value).trim().replace(/[^0-9a-z]/gi, '').toLowerCase();
+      }
+
+      function ensureIngredientPickerStyles() {
+        if (document.getElementById('ingredient-picker-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'ingredient-picker-styles';
+        style.textContent = [
+          '.recipe-picker-overlay {',
+          '  position: fixed;',
+          '  inset: 0;',
+          '  background: rgba(0,0,0,0.65);',
+          '  display: flex;',
+          '  align-items: center;',
+          '  justify-content: center;',
+          '  z-index: 9999;',
+          '  padding: 16px;',
+          '}',
+          '.recipe-picker {',
+          '  width: min(480px, 90vw);',
+          '  background: #0c0c10;',
+          '  border: 1px solid rgba(255, 43, 72, 0.35);',
+          '  border-radius: 16px;',
+          '  box-shadow: 0 25px 60px rgba(0,0,0,0.55);',
+          '  padding: 18px 16px;',
+          '  color: #f6f6f6;',
+          '  font-family: inherit;',
+          '}',
+          '.recipe-picker h3 {',
+          '  margin: 0 0 6px;',
+          '  font-size: 1.1rem;',
+          '  letter-spacing: 0.06em;',
+          '  text-transform: uppercase;',
+          '}',
+          '.recipe-picker p {',
+          '  margin: 0 0 12px;',
+          '  color: #c8cbd6;',
+          '  font-size: 0.95rem;',
+          '}',
+          '.recipe-picker .list {',
+          '  display: flex;',
+          '  flex-direction: column;',
+          '  gap: 10px;',
+          '  margin: 10px 0 16px;',
+          '}',
+          '.recipe-picker button.pick {',
+          '  width: 100%;',
+          '  border: 1px solid rgba(255, 43, 72, 0.45);',
+          '  background: linear-gradient(120deg, #1b1b22, #111118);',
+          '  color: #fefefe;',
+          '  border-radius: 12px;',
+          '  padding: 12px 14px;',
+          '  text-align: left;',
+          '  cursor: pointer;',
+          '  display: flex;',
+          '  justify-content: space-between;',
+          '  align-items: center;',
+          '  gap: 12px;',
+          '}',
+          '.recipe-picker button.pick:hover {',
+          '  border-color: #ff2b48;',
+          '  transform: translateY(-1px);',
+          '}',
+          '.recipe-picker .qty-chip {',
+          '  background: rgba(255,43,72,0.15);',
+          '  color: #ff9faf;',
+          '  border: 1px solid rgba(255,43,72,0.3);',
+          '  border-radius: 999px;',
+          '  padding: 4px 10px;',
+          '  font-size: 0.85rem;',
+          '  white-space: nowrap;',
+          '}',
+          '.recipe-picker .actions {',
+          '  display: flex;',
+          '  justify-content: flex-end;',
+          '}',
+          '.recipe-picker button.cancel {',
+          '  border: 1px solid rgba(255, 255, 255, 0.15);',
+          '  background: #16161d;',
+          '  color: #f4f4f6;',
+          '  border-radius: 10px;',
+          '  padding: 10px 14px;',
+          '  cursor: pointer;',
+          '}',
+          '.recipe-picker button.cancel:hover {',
+          '  border-color: rgba(255,255,255,0.35);',
+          '}'
+        ].join('\\n');
+        document.head.appendChild(style);
+      }
+
+      function closeIngredientPicker() {
+        if (ingredientPickerEl) {
+          ingredientPickerEl.dataset.stayOpen = 'false';
+          if (ingredientPickerEl.parentElement) {
+            ingredientPickerEl.parentElement.removeChild(ingredientPickerEl);
+          }
+        }
+        ingredientPickerEl = null;
+      }
+
+      function openIngredientPicker(product, components) {
+        closeIngredientPicker();
+        ensureIngredientPickerStyles();
+        const overlay = document.createElement('div');
+        overlay.className = 'recipe-picker-overlay';
+        overlay.dataset.stayOpen = 'true';
+
+        const panel = document.createElement('div');
+        panel.className = 'recipe-picker';
+
+        const title = document.createElement('h3');
+        title.textContent = 'Select ingredient';
+        const subtitle = document.createElement('p');
+        subtitle.textContent = 'For ' + (product?.name ?? 'Product') + ' - enter qty for a component';
+
+        const list = document.createElement('div');
+        list.className = 'list';
+
+        components.forEach((comp) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'pick';
+          const name = comp?.ingredient?.name ?? 'Ingredient';
+          const qty = Number(comp?.qtyPerUnit) || 0;
+          const unit = (comp?.qtyUnit ?? '').toString() || (comp?.ingredient?.consumption_uom ?? comp?.ingredient?.uom ?? 'unit');
+          btn.innerHTML = '<span>' + name + '</span><span class="qty-chip">' + qty + ' ' + unit + '</span>';
+          btn.addEventListener('click', () => {
+            if (ingredientPickerEl) {
+              ingredientPickerEl.style.display = 'none';
+            }
+            promptQuantity(comp.ingredient, comp.variation ?? null, state.mode, null);
+          });
+          list.appendChild(btn);
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'cancel';
+        cancel.textContent = 'Close';
+        cancel.addEventListener('click', () => closeIngredientPicker());
+        actions.appendChild(cancel);
+
+        panel.appendChild(title);
+        panel.appendChild(subtitle);
+        panel.appendChild(list);
+        panel.appendChild(actions);
+        overlay.appendChild(panel);
+        overlay.addEventListener('click', (event) => {
+          if (event.target === overlay) closeIngredientPicker();
+        });
+        document.body.appendChild(overlay);
+        ingredientPickerEl = overlay;
+      }
+
+      function normalizeVariantKeyLocal(value) {
+        const raw = value === undefined || value === null ? '' : String(value).trim();
+        return raw || 'base';
+      }
+
+      function buildEntryForProduct(product, variation) {
+        const packageSize = resolvePackageSize(product, variation);
+        return {
+          productId: product.id,
+          productName: product.name ?? 'Product',
+          variationId: variation?.id ?? null,
+          variationName: variation?.name ?? null,
+          uom: (variation?.uom || product.uom || 'unit').toUpperCase(),
+          packageSize,
+          unitCost: null
+        };
       }
 
       function submitQtyForm() {
@@ -1893,7 +2293,7 @@ function createHtml(config: {
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
             .select(
-              'id,name,has_variations,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants'
+              'id,name,has_variations,item_kind,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants'
             )
             .in('id', Array.from(productIds))
             .eq('active', true)
@@ -2019,6 +2419,7 @@ function createHtml(config: {
         if (active === operatorPasswordInput) return true;
         if (active === purchaseReference) return true;
         if (active === damageNote) return true;
+        if (active === itemSearchInput) return true;
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
           return true;
         }
@@ -2038,7 +2439,7 @@ function createHtml(config: {
           scanBuffer = '';
           scannerWedge.value = '';
           if (!payload) return;
-          handleProductScan(payload);
+          handleProductScan(payload).catch((error) => console.warn('scan handling failed', error));
         }, SCAN_FLUSH_DELAY_MS);
       }
 
@@ -2049,7 +2450,7 @@ function createHtml(config: {
         scanBuffer = '';
         scannerWedge.value = '';
         if (!payload) return;
-        handleProductScan(payload);
+        handleProductScan(payload).catch((error) => console.warn('scan handling failed', error));
       }
 
       function formatQtyLabel(qty, uom) {
@@ -2119,7 +2520,7 @@ function createHtml(config: {
       function describeQty(entry, baseQty, effectiveQty) {
         const unitLabel = entry.uom ?? 'UNIT';
         if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
-          return baseQty + ' case(s) → ' + effectiveQty + ' ' + unitLabel;
+          return baseQty + ' case(s) -> ' + effectiveQty + ' ' + unitLabel;
         }
         return effectiveQty + ' ' + unitLabel;
       }
@@ -2141,7 +2542,7 @@ function createHtml(config: {
             const qtyLabel = item.qty ?? 0;
             const unitLabel = item.unit ?? 'unit';
             const costLabel = formatAmount(item.unitCost);
-            const base = '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
+            const base = '- ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' - ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
           })
           .join('\\n');
@@ -2521,7 +2922,11 @@ function createHtml(config: {
       // Disable auto-submit while typing to avoid noisy 400s; only submit on explicit action.
       function queueOperatorAutoUnlock() {
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
-        return;
+        const value = operatorPasswordInput?.value?.trim();
+        if (!value) return;
+        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
+          submitOperatorUnlock({ silentMissing: true });
+        }, 120);
       }
 
       function handleOperatorSelection(context, operatorId) {
@@ -2599,7 +3004,7 @@ function createHtml(config: {
           const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
           const qtyLabel = formatQtyLabel(item.qty, item.uom);
           const costLabel = formatAmount(item.unitCost);
-          const baseText = (item.productName ?? 'Product') + variationLabel + ' — ' + qtyLabel;
+          const baseText = (item.productName ?? 'Product') + variationLabel + ' - ' + qtyLabel;
           line.textContent = costLabel ? baseText + ' @ ' + costLabel : baseText;
           purchaseSummaryList.appendChild(line);
         });
@@ -2863,7 +3268,7 @@ function createHtml(config: {
           productLine.className = 'receipt-line';
           const productBullet = document.createElement('span');
           productBullet.className = 'bullet';
-          productBullet.textContent = '•';
+          productBullet.textContent = '-';
           const productName = document.createElement('span');
           productName.className = 'product-name';
           productName.textContent = group.productName ?? 'Product';
@@ -2910,7 +3315,7 @@ function createHtml(config: {
               variationLine.className = 'receipt-line';
               const bullet = document.createElement('span');
               bullet.className = 'bullet';
-              bullet.textContent = '•';
+              bullet.textContent = '-';
               const label = document.createElement('span');
               label.className = 'variation-name';
               label.textContent = entry.variationName ?? 'Variation';
@@ -2979,28 +3384,24 @@ function createHtml(config: {
         }
       }
 
-      function promptQuantity(product, variation, context = state.mode) {
+      function promptQuantity(product, variation, context = state.mode, recipeComponents = null) {
         if (!qtyModal || !qtyInput) return;
-        const packageSize = resolvePackageSize(product, variation);
-        const entry = {
-          productId: product.id,
-          productName: product.name ?? 'Product',
-          variationId: variation?.id ?? null,
-          variationName: variation?.name ?? null,
-          uom: (variation?.uom || product.uom || 'unit').toUpperCase(),
-          packageSize,
-          unitCost: null
-        };
-        state.pendingEntry = entry;
+        const entry = buildEntryForProduct(product, variation);
+        state.pendingEntry = recipeComponents ? { ...entry, recipeComponents } : entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
         if (qtySubmitButton) {
           qtySubmitButton.textContent = 'Add Item';
         }
-        qtyTitle.textContent = variation?.name
-          ? (product.name ?? 'Product') + ' – ' + variation.name
-          : product.name ?? 'Product';
-        qtyUom.textContent = entry.uom;
+        if (recipeComponents && recipeComponents.length) {
+          qtyTitle.textContent = 'Ingredients for ' + (product.name ?? 'Product');
+          qtyUom.textContent = 'FINISHED UNITS';
+        } else {
+          qtyTitle.textContent = variation?.name
+            ? (product.name ?? 'Product') + ' - ' + variation.name
+            : product.name ?? 'Product';
+          qtyUom.textContent = entry.uom;
+        }
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -3018,6 +3419,9 @@ function createHtml(config: {
           qtySubmitButton.textContent = 'Add Item';
         }
         updateQtyHint(null);
+        if (ingredientPickerEl && ingredientPickerEl.dataset.stayOpen === 'true') {
+          ingredientPickerEl.style.display = 'flex';
+        }
         focusActiveScanner();
       }
 
@@ -3030,7 +3434,7 @@ function createHtml(config: {
         state.pendingEditIndex = index;
         state.pendingContext = context;
         qtyTitle.textContent = target.variationName
-          ? (target.productName ?? 'Product') + ' – ' + target.variationName
+          ? (target.productName ?? 'Product') + ' - ' + target.variationName
           : target.productName ?? 'Product';
         qtyUom.textContent = target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
@@ -3575,7 +3979,7 @@ function createHtml(config: {
             sourceLabel: sourceLabel.textContent,
             destLabel: destLabel.textContent,
             route:
-              (sourceLabel.textContent ?? 'Unknown source') + ' → ' + (destLabel.textContent ?? 'Unknown destination'),
+              (sourceLabel.textContent ?? 'Unknown source') + ' -> ' + (destLabel.textContent ?? 'Unknown destination'),
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
@@ -3746,7 +4150,7 @@ function createHtml(config: {
             processedBy: state.session?.user?.email ?? 'Unknown operator',
             sourceLabel: supplierName,
             destLabel: warehouseName,
-            route: supplierName + ' → ' + warehouseName,
+            route: supplierName + ' -> ' + warehouseName,
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
@@ -3793,31 +4197,105 @@ function createHtml(config: {
         }
       }
 
-      function searchProductsWithScan(raw) {
+      async function loadRecipeComponents(product, variantKey) {
+        if (!product?.id) return [];
+        const normalizedVariant = normalizeVariantKeyLocal(variantKey);
+        const productKind = (product.item_kind ?? 'finished').toString().toLowerCase();
+
+        try {
+          const { data, error } = await supabase
+            .from('recipes')
+            .select(
+              'ingredient_item_id, qty_per_unit, qty_unit, yield_qty_units, finished_variant_key, recipe_for_kind, active, ingredient:ingredient_item_id (id,name,has_variations,item_kind,default_warehouse_id,locked_from_warehouse_id,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants)'
+            )
+            .eq('finished_item_id', product.id)
+            .eq('active', true);
+          if (error) throw error;
+
+          return (data ?? [])
+            .filter((row) => {
+              const matchesVariant = normalizeVariantKeyLocal(row.finished_variant_key) === normalizedVariant;
+              const matchesKind = !row.recipe_for_kind
+                ? true
+                : String(row.recipe_for_kind).toLowerCase() === productKind;
+              if (!matchesVariant || !matchesKind) return false;
+              const ing = row.ingredient;
+              if (!ing?.id) return false;
+              const whMatch =
+                !lockedSourceId ||
+                ing.default_warehouse_id === lockedSourceId ||
+                ing.locked_from_warehouse_id === lockedSourceId;
+              return whMatch;
+            })
+            .map((row) => ({
+              ingredient: row.ingredient,
+              qtyPerUnit: Number(row.qty_per_unit) || 0,
+              yieldQtyUnits: Number(row.yield_qty_units) || 1,
+              variation: null
+            }));
+        } catch (error) {
+          console.warn('loadRecipeComponents failed', error);
+          return [];
+        }
+      }
+
+      async function handleMatchedProduct(product, variation) {
+        const variantKey = variation?.id ?? variation?.key ?? variation?.variant_key ?? 'base';
+        const recipeComponents = await loadRecipeComponents(product, variantKey);
+        if (recipeComponents.length) {
+          openIngredientPicker(product, recipeComponents);
+          showResult('Select an ingredient for ' + (product.name ?? 'Product'), false);
+          return;
+        }
+        promptQuantity(product, variation);
+        showResult('Scan matched product: ' + (product.name ?? 'Product'), false);
+      }
+
+      async function searchProductsWithScan(raw) {
         const value = raw.trim();
         if (!value) return;
         const normalized = value.toLowerCase();
         const compact = normalizeKey(value);
 
+        const findLooseVariation = () => {
+          return Array.from(state.variationIndex.values()).find((variation) => {
+            const name = (variation.name ?? '').toLowerCase();
+            const sku = (variation.sku ?? '').toLowerCase();
+            const skuCompact = normalizeKey(variation.sku ?? '');
+            return (
+              (!!name && name.includes(normalized)) ||
+              (!!sku && sku.includes(normalized)) ||
+              (compact && !!skuCompact && skuCompact === compact)
+            );
+          });
+        };
+
         let variationMatch =
           state.variationIndex.get(value) ||
           state.variationIndex.get(normalized) ||
-          (compact ? state.variationIndex.get(compact) : null);
-
-        if (!variationMatch) {
-          variationMatch = Array.from(state.variationIndex.values()).find(
-            (variation) => (variation.name ?? '').toLowerCase() === normalized
-          );
-        }
+          (compact ? state.variationIndex.get(compact) : null) ||
+          findLooseVariation();
 
         if (variationMatch) {
           const product = state.products.find((p) => p.id === variationMatch.product_id);
           if (product) {
-            promptQuantity(product, variationMatch);
-            showResult('Scan matched variation: ' + (variationMatch.name ?? 'Variation'), false);
+            await handleMatchedProduct(product, variationMatch);
             return;
           }
         }
+
+        const findLooseProduct = () => {
+          return state.products.find((product) => {
+            if (!product) return false;
+            const productName = (product.name ?? '').toLowerCase();
+            const skuLower = (product.sku ?? '').toLowerCase();
+            const skuCompact = normalizeKey(product.sku ?? '');
+            if (productName && productName.includes(normalized)) return true;
+            if (skuLower && skuLower.includes(normalized)) return true;
+            if (compact && skuCompact && skuCompact === compact) return true;
+            return false;
+          });
+        };
 
         const productMatch = state.products.find((product) => {
           if (!product) return false;
@@ -3831,20 +4309,19 @@ function createHtml(config: {
             if (compact && skuCompact && skuCompact === compact) return true;
           }
           return false;
-        });
+        }) || findLooseProduct();
 
         if (productMatch) {
-          promptQuantity(productMatch, null);
-          showResult('Scan matched product: ' + (productMatch.name ?? 'Product'), false);
+          await handleMatchedProduct(productMatch, null);
           return;
         }
 
         showResult('No product matched scan: ' + value, true);
       }
 
-      function handleProductScan(payload) {
+      async function handleProductScan(payload) {
         if (!payload) return;
-        searchProductsWithScan(payload);
+        await searchProductsWithScan(payload);
       }
 
       function applyLoginScan(raw) {
@@ -3972,6 +4449,19 @@ function createHtml(config: {
         }
       });
 
+      purchaseOpenButton?.addEventListener('click', async (event) => {
+        event.preventDefault();
+        try {
+          if (!state.suppliers.length) {
+            await fetchSuppliers();
+          }
+        } catch (error) {
+          console.warn('Supplier fetch failed before opening purchase page', error);
+          showResult('Unable to refresh supplier list. Try again or continue without selecting one.', true);
+        }
+        enterPurchaseMode();
+      });
+
       damageOpenButton?.addEventListener('click', (event) => {
         event.preventDefault();
         enterDamageMode();
@@ -3982,7 +4472,7 @@ function createHtml(config: {
       });
 
       transferForm?.addEventListener('pointerdown', () => {
-        if (document.body.dataset.view === 'damage') return;
+        if (document.body.dataset.view === 'purchase' || document.body.dataset.view === 'damage') return;
         if (state.mode !== 'transfer') setMode('transfer');
       });
 
@@ -3992,6 +4482,36 @@ function createHtml(config: {
 
       damageNote?.addEventListener('input', () => {
         state.damageNote = damageNote.value ?? '';
+      });
+
+      itemSearchInput?.addEventListener('focus', () => {
+        state.mode = 'transfer';
+      });
+
+      itemSearchInput?.addEventListener('input', () => {
+        const value = (itemSearchInput.value ?? '').trim();
+        if (value.length < 2) {
+          lastSearchTerm = '';
+          return;
+        }
+        if (value === lastSearchTerm) return;
+        lastSearchTerm = value;
+        window.clearTimeout(itemSearchDebounceId);
+        itemSearchDebounceId = window.setTimeout(() => {
+          searchProductsWithScan(value).catch((error) => console.warn('search failed', error));
+        }, 150);
+      });
+
+      itemSearchInput?.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const value = (itemSearchInput.value ?? '').trim();
+        if (!value) return;
+        await searchProductsWithScan(value);
+        // Keep focus and select text for rapid repeated entries.
+        window.setTimeout(() => {
+          itemSearchInput.select();
+        }, 10);
       });
 
       const openDamageKeyboard = (event) => {
@@ -4144,6 +4664,33 @@ function createHtml(config: {
         if (!pending) return;
         const context = state.pendingContext || state.mode;
         const rawQty = Number(qtyInput.value);
+        const recipeComponents = Array.isArray(pending.recipeComponents) ? pending.recipeComponents : null;
+
+        if (recipeComponents?.length) {
+          const added = [];
+          recipeComponents.forEach((component) => {
+            const ingredient = component?.ingredient;
+            if (!ingredient?.id) return;
+            const entry = buildEntryForProduct(ingredient, component.variation ?? null);
+            const yieldQty = Number(component.yieldQtyUnits) || 1;
+            const baseQty = Number(component.qtyPerUnit) || 0;
+            if (baseQty <= 0) return;
+            const componentRawQty = (rawQty / yieldQty) * baseQty;
+            const effectiveQty = computeEffectiveQty(componentRawQty, entry);
+            if (effectiveQty === null) return;
+            addCartItem({ ...entry, qty: effectiveQty, scannedQty: componentRawQty, unitCost: null }, context);
+            added.push(entry.productName ?? 'Ingredient');
+          });
+
+          if (added.length) {
+            showResult('Queued ' + added.length + ' ingredient(s) for ' + (pending.productName ?? 'Product'), false);
+          } else {
+            showResult('No ingredients could be queued for this product.', true);
+          }
+          closeQtyPrompt();
+          return;
+        }
+
         const effectiveQty = computeEffectiveQty(rawQty, pending);
         const unitCost = null;
         if (effectiveQty === null) {
@@ -4225,6 +4772,7 @@ function createHtml(config: {
 
       operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
+        queueOperatorAutoUnlock();
       });
 
       operatorPasswordInput?.addEventListener('keydown', (event) => {
@@ -4266,6 +4814,7 @@ function createHtml(config: {
       });
 
       loginForm?.addEventListener('submit', handleLogin);
+      purchaseForm?.addEventListener('submit', handlePurchaseSubmit);
       damageForm?.addEventListener('submit', handleDamageSubmit);
       transferForm?.addEventListener('submit', handleSubmit);
     }

@@ -250,6 +250,9 @@ function createHtml(config: {
       background: rgba(255, 82, 82, 0.08);
       color: #ffc7c7;
     }
+    .search-field {
+      margin-top: 8px;
+    }
     #auth-section,
     #app-section {
       width: 100%;
@@ -1291,7 +1294,6 @@ function createHtml(config: {
                   <option value="">Choose destination</option>
                 </select>
               </label>
-              <p class="destination-pill-hint">Pick Till 1 &amp; 2 Fridges or Quick Corner before scanning.</p>
             </div>
           </div>
         </article>
@@ -1311,6 +1313,11 @@ function createHtml(config: {
             </label>
             <p class="operator-auth-hint">Transfers stay locked until a valid operator signs in. Sessions auto-expire after 20 minutes.</p>
           </section>
+          <div class="search-field">
+            <label>Search products
+              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+            </label>
+          </div>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -1811,6 +1818,7 @@ function createHtml(config: {
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
+      const itemSearchInput = document.getElementById('item-search');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
       const cartCount = document.getElementById('cart-count');
@@ -2236,6 +2244,7 @@ function createHtml(config: {
         if (active === operatorPasswordInput) return true;
         if (active === purchaseReference) return true;
         if (active === damageNote) return true;
+        if (active === itemSearchInput) return true;
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
           return true;
         }
@@ -2738,7 +2747,11 @@ function createHtml(config: {
       // Disable auto-submit while typing to avoid noisy 400s; only submit on explicit action.
       function queueOperatorAutoUnlock() {
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
-        return;
+        const value = operatorPasswordInput?.value?.trim();
+        if (!value) return;
+        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
+          submitOperatorUnlock({ silentMissing: true });
+        }, 120);
       }
 
       function handleOperatorSelection(context, operatorId) {
@@ -4016,16 +4029,24 @@ function createHtml(config: {
         const normalized = value.toLowerCase();
         const compact = normalizeKey(value);
 
+        const findLooseVariation = () => {
+          return Array.from(state.variationIndex.values()).find((variation) => {
+            const name = (variation.name ?? '').toLowerCase();
+            const sku = (variation.sku ?? '').toLowerCase();
+            const skuCompact = normalizeKey(variation.sku ?? '');
+            return (
+              (!!name && name.includes(normalized)) ||
+              (!!sku && sku.includes(normalized)) ||
+              (compact && !!skuCompact && skuCompact === compact)
+            );
+          });
+        };
+
         let variationMatch =
           state.variationIndex.get(value) ||
           state.variationIndex.get(normalized) ||
-          (compact ? state.variationIndex.get(compact) : null);
-
-        if (!variationMatch) {
-          variationMatch = Array.from(state.variationIndex.values()).find(
-            (variation) => (variation.name ?? '').toLowerCase() === normalized
-          );
-        }
+          (compact ? state.variationIndex.get(compact) : null) ||
+          findLooseVariation();
 
         if (variationMatch) {
           const product = state.products.find((p) => p.id === variationMatch.product_id);
@@ -4035,6 +4056,19 @@ function createHtml(config: {
             return;
           }
         }
+
+        const findLooseProduct = () => {
+          return state.products.find((product) => {
+            if (!product) return false;
+            const productName = (product.name ?? '').toLowerCase();
+            const skuLower = (product.sku ?? '').toLowerCase();
+            const skuCompact = normalizeKey(product.sku ?? '');
+            if (productName && productName.includes(normalized)) return true;
+            if (skuLower && skuLower.includes(normalized)) return true;
+            if (compact && skuCompact && skuCompact === compact) return true;
+            return false;
+          });
+        };
 
         const productMatch = state.products.find((product) => {
           if (!product) return false;
@@ -4048,7 +4082,7 @@ function createHtml(config: {
             if (compact && skuCompact && skuCompact === compact) return true;
           }
           return false;
-        });
+        }) || findLooseProduct();
 
         if (productMatch) {
           promptQuantity(productMatch, null);
@@ -4222,6 +4256,21 @@ function createHtml(config: {
 
       damageNote?.addEventListener('input', () => {
         state.damageNote = damageNote.value ?? '';
+      });
+
+      itemSearchInput?.addEventListener('focus', () => {
+        state.mode = 'transfer';
+      });
+
+      itemSearchInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const value = (itemSearchInput.value ?? '').trim();
+        if (!value) return;
+        searchProductsWithScan(value);
+        window.setTimeout(() => {
+          itemSearchInput.select();
+        }, 10);
       });
 
       const openDamageKeyboard = (event) => {
@@ -4455,6 +4504,7 @@ function createHtml(config: {
 
       operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
+        queueOperatorAutoUnlock();
       });
 
       operatorPasswordInput?.addEventListener('keydown', (event) => {

@@ -2,12 +2,8 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import styles from "./login.module.css";
-
-const allowedRoleId = "6b9e657a-6131-4a0b-8afa-0ce260f8ed0c";
-const allowedSlug = "Administrator";
-const allowedUserIds = new Set(["8d4feee9-c61b-44e2-80e9-fa264075fca3"]);
 
 function buildClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,6 +17,21 @@ function buildClient() {
       storageKey: "sb-warehouse-backoffice",
     },
   });
+}
+
+async function isPlatformAdmin(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("platform_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .single();
+
+  if (error) {
+    if ((error as { code?: string }).code === "PGRST116") return false;
+    throw error;
+  }
+
+  return Boolean(data?.user_id);
 }
 
 export default function WarehouseBackofficeLogin() {
@@ -41,11 +52,7 @@ export default function WarehouseBackofficeLogin() {
 
       const user = data?.user ?? (await supabase.auth.getUser()).data.user;
       const userId = user?.id ?? "";
-      const meta = { ...(user?.app_metadata || {}), ...(user?.user_metadata || {}) } as Record<string, unknown>;
-      const roleId = String(meta.role_id ?? meta.roleId ?? meta.role ?? "").trim();
-      const roleSlug = String(meta.role_slug ?? meta.roleSlug ?? meta.role ?? "").trim();
-      const roleSlugLower = roleSlug.toLowerCase();
-      const allowed = allowedUserIds.has(userId) || roleId == allowedRoleId || (roleSlug && roleSlugLower == allowedSlug.toLowerCase());
+      const allowed = userId ? await isPlatformAdmin(supabase, userId) : false;
 
       if (!allowed) {
         await supabase.auth.signOut();
