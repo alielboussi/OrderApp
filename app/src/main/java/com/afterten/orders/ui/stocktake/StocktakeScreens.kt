@@ -393,8 +393,7 @@ fun StocktakeCountScreen(
                                     inputError = null
                                 },
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
+                                    .fillMaxWidth(0.5f),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
                                 border = BorderStroke(1.dp, primaryRed),
                                 shape = RoundedCornerShape(12.dp)
