@@ -54,8 +54,8 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
 
     suspend fun listWarehousesForOutlet(jwt: String, outletId: String?) = supabase.listWarehousesForOutlet(jwt, outletId)
 
-    suspend fun listWarehouseItems(jwt: String, warehouseId: String, search: String? = null) =
-        supabase.listWarehouseItems(jwt, warehouseId, search)
+    suspend fun listWarehouseItems(jwt: String, warehouseId: String, outletId: String?, search: String? = null) =
+        supabase.listWarehouseItems(jwt, warehouseId, outletId, search)
 
     suspend fun fetchOpenPeriod(jwt: String, warehouseId: String): StockPeriod? {
         val select = encode("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number")

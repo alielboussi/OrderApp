@@ -299,16 +299,17 @@ class StocktakeViewModel(
 
     private suspend fun loadItems(warehouseId: String) {
         val jwt = session?.token ?: return
+        val outletId = _ui.value.selectedOutletId
         pushDebug("loadItems warehouse=$warehouseId")
         _ui.value = _ui.value.copy(items = emptyList(), loading = true, error = null)
-        runCatching { repo.listWarehouseItems(jwt, warehouseId, null) }
+        // Strict: outlet-scoped + ingredients only. Do not relax to non-ingredients.
+        runCatching { repo.listWarehouseItems(jwt, warehouseId, outletId, null) }
             .onSuccess { fetched ->
                 val allowed = fetched.filter { item ->
                     val kind = item.itemKind?.lowercase()
-                    // Only ingredients are countable; raws and finished items are excluded.
                     kind == "ingredient"
                 }
-                pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} (ingredients only) for warehouse=$warehouseId")
+                pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} (ingredients only) for warehouse=$warehouseId outlet=$outletId")
                 _ui.value = _ui.value.copy(items = allowed, loading = false, error = null)
             }
             .onFailure { err ->

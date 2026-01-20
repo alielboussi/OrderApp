@@ -1417,18 +1417,26 @@ class SupabaseProvider(context: Context) {
     suspend fun listWarehouseItems(
         jwt: String,
         warehouseId: String,
-        search: String? = null,
-        limit: Int = 200
+        outletId: String?,
+        search: String? = null
     ): List<WarehouseStockItem> {
-        val select = "item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url"
-        val sb = StringBuilder("/rest/v1/warehouse_stock_items?select=${select}&warehouse_id=eq.${warehouseId}&order=item_name.asc")
-        search?.takeIf { it.isNotBlank() }?.let { term ->
-            val escaped = term.replace("*", "%").trim()
-            sb.append("&item_name=ilike.*").append(escaped).append("*")
+        val endpoint = "$supabaseUrl/rest/v1/rpc/list_warehouse_items"
+        val payload: Map<String, String?> = buildMap {
+            put("p_warehouse_id", warehouseId)
+            put("p_outlet_id", outletId)
+            search?.takeIf { it.isNotBlank() }?.let { put("p_search", it) }
         }
-        sb.append("&limit=").append(limit)
-        val body = getWithJwt(sb.toString(), jwt)
-        return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), body)
+
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("list_warehouse_items failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), txt)
     }
 
     suspend fun listOutletStockPeriods(
