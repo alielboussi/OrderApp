@@ -60,6 +60,15 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     suspend fun listWarehouseIngredientsDirect(jwt: String, warehouseId: String) =
         supabase.listWarehouseIngredientsDirect(jwt, warehouseId)
 
+    suspend fun listOutletProductsFallback(jwt: String, outletId: String) =
+        supabase.listOutletProductsFallback(jwt, outletId)
+
+    suspend fun listCatalogItemsForStocktake(jwt: String) =
+        supabase.listCatalogItemsForStocktake(jwt)
+
+    suspend fun listOutletWarehouseRoutesFallback(jwt: String, outletId: String, warehouseId: String) =
+        supabase.listOutletWarehouseRoutesFallback(jwt, outletId, warehouseId)
+
     suspend fun fetchOpenPeriod(jwt: String, warehouseId: String): StockPeriod? {
         val select = encode("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number")
         val path = "/rest/v1/warehouse_stock_periods?select=${select}&warehouse_id=eq.${warehouseId}&status=eq.open&order=opened_at.desc&limit=1"

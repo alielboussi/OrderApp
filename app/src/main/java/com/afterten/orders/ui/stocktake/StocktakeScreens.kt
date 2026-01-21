@@ -215,6 +215,11 @@ fun StocktakeDashboardScreen(
                         color = Color.White.copy(alpha = 0.8f),
                         style = MaterialTheme.typography.bodySmall
                     )
+                    Text(
+                        "Flow: enter opening counts, process transfers/damages, then enter closing counts and close the period.",
+                        color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
 
                     if (ui.selectedOutletId != null && ui.filteredWarehouses.isEmpty()) {
                         Text("No warehouses available for this outlet", color = Color.White)
@@ -313,6 +318,7 @@ fun StocktakeCountScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var selectedName by rememberSaveable { mutableStateOf("") }
     var inputError by rememberSaveable { mutableStateOf<String?>(null) }
+    var countMode by rememberSaveable { mutableStateOf("opening") }
 
     fun formatQty(value: Double?): String = String.format("%.2f", value ?: 0.0)
     val imageSize = 96.dp
@@ -387,6 +393,11 @@ fun StocktakeCountScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f)
                 )
+                Text(
+                    "Opening counts must be entered before closing counts for the same item.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
                 if (filteredItems.isEmpty()) {
                     Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)
                 } else {
@@ -435,6 +446,21 @@ fun StocktakeCountScreen(
                                         Text("Qty: ${formatQty(row.netUnits)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                                     }
                                 }
+
+                                if (ui.debug.isNotEmpty()) {
+                                    Card(
+                                        Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(containerColor = Color.Black),
+                                        border = BorderStroke(1.dp, primaryRed)
+                                    ) {
+                                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text("Debug (latest)", fontWeight = FontWeight.Bold, color = Color.White)
+                                            ui.debug.takeLast(12).forEach { line ->
+                                                Text(line, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -452,39 +478,43 @@ fun StocktakeCountScreen(
                         )
                         inputError?.let { Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall) }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                            Button(
-                                onClick = {
-                                    val parsed = qtyText.trim().toDoubleOrNull()
-                                    if (parsed == null || parsed < 0) {
-                                        inputError = "Enter a non-negative number"
-                                        return@Button
-                                    }
-                                    inputError = null
-                                    vm.recordCount(itemId, parsed, variantKey, "opening")
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
-                            ) {
-                                Icon(Icons.Default.Check, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("Save opening")
-                            }
+                            val openingSelected = countMode == "opening"
                             OutlinedButton(
-                                onClick = {
-                                    val parsed = qtyText.trim().toDoubleOrNull()
-                                    if (parsed == null || parsed < 0) {
-                                        inputError = "Enter a non-negative number"
-                                        return@OutlinedButton
-                                    }
-                                    inputError = null
-                                    vm.recordCount(itemId, parsed, variantKey, "closing")
-                                },
+                                onClick = { countMode = "opening" },
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (openingSelected) primaryRed else Color.Transparent,
+                                    contentColor = Color.White
+                                ),
                                 border = BorderStroke(1.dp, primaryRed)
-                            ) {
-                                Text("Save closing")
-                            }
+                            ) { Text("Opening") }
+                            val closingSelected = countMode == "closing"
+                            OutlinedButton(
+                                onClick = { countMode = "closing" },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (closingSelected) primaryRed else Color.Transparent,
+                                    contentColor = Color.White
+                                ),
+                                border = BorderStroke(1.dp, primaryRed)
+                            ) { Text("Closing") }
+                        }
+                        Button(
+                            onClick = {
+                                val parsed = qtyText.trim().toDoubleOrNull()
+                                if (parsed == null || parsed < 0) {
+                                    inputError = "Enter a non-negative number"
+                                    return@Button
+                                }
+                                inputError = null
+                                vm.recordCount(itemId, parsed, variantKey, countMode)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (countMode == "opening") "Save opening" else "Save closing")
                         }
                         ui.lastCount?.takeIf { it.itemId == itemId }?.let { last ->
                             val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }

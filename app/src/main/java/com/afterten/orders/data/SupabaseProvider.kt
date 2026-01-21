@@ -837,7 +837,32 @@ class SupabaseProvider(context: Context) {
         @SerialName("net_units") val netUnits: Double? = null,
         @SerialName("unit_cost") val unitCost: Double? = null,
         @SerialName("item_kind") val itemKind: String? = null,
-        @SerialName("image_url") val imageUrl: String? = null
+        @SerialName("image_url") val imageUrl: String? = null,
+        @SerialName("has_recipe") val hasRecipe: Boolean? = null
+    )
+
+    @Serializable
+    data class OutletProductRow(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        val enabled: Boolean = true
+    )
+
+    @Serializable
+    data class OutletItemRouteRow(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("normalized_variant_key") val variantKey: String? = "base",
+        @SerialName("warehouse_id") val warehouseId: String? = null
+    )
+
+    @Serializable
+    data class CatalogItemLite(
+        val id: String,
+        val name: String,
+        @SerialName("item_kind") val itemKind: String? = null,
+        @SerialName("image_url") val imageUrl: String? = null,
+        @SerialName("has_recipe") val hasRecipe: Boolean? = null,
+        val active: Boolean? = null
     )
 
     enum class StockEntryKind(val apiValue: String, val label: String) {
@@ -1459,6 +1484,152 @@ class SupabaseProvider(context: Context) {
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("warehouse_stock_items failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), txt)
+    }
+
+    suspend fun listOutletProductsFallback(
+        jwt: String,
+        outletId: String
+    ): List<WarehouseStockItem> {
+        val outletUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlet_products")
+            append("?select=item_id,variant_key,enabled")
+            append("&outlet_id=eq.").append(outletId)
+            append("&enabled=eq.true")
+        }
+        val outletResp = http.get(outletUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val outletCode = outletResp.status.value
+        val outletTxt = outletResp.bodyAsText()
+        if (outletCode !in 200..299) throw IllegalStateException("outlet_products failed: HTTP $outletCode $outletTxt")
+        val outletRows = relaxedJson.decodeFromString(ListSerializer(OutletProductRow.serializer()), outletTxt)
+        if (outletRows.isEmpty()) return emptyList()
+
+        val ids = outletRows.map { it.itemId }.distinct()
+        val idFilter = ids.joinToString(",") { it }
+        val itemsUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/catalog_items")
+            append("?select=id,name,item_kind,image_url,has_recipe,active")
+            append("&id=in.(").append(idFilter).append(")")
+        }
+        val itemsResp = http.get(itemsUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val itemsCode = itemsResp.status.value
+        val itemsTxt = itemsResp.bodyAsText()
+        if (itemsCode !in 200..299) throw IllegalStateException("catalog_items failed: HTTP $itemsCode $itemsTxt")
+        val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), itemsTxt)
+        val itemMap = items.associateBy { it.id }
+
+        return outletRows.mapNotNull { row ->
+            val item = itemMap[row.itemId] ?: return@mapNotNull null
+            WarehouseStockItem(
+                itemId = row.itemId,
+                itemName = item.name,
+                variantKey = row.variantKey?.ifBlank { "base" } ?: "base",
+                netUnits = null,
+                unitCost = null,
+                itemKind = item.itemKind,
+                imageUrl = item.imageUrl,
+                hasRecipe = item.hasRecipe
+            )
+        }
+    }
+
+    suspend fun listOutletWarehouseRoutesFallback(
+        jwt: String,
+        outletId: String,
+        warehouseId: String
+    ): List<WarehouseStockItem> {
+        val routesUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlet_item_routes")
+            append("?select=item_id,normalized_variant_key,warehouse_id")
+            append("&outlet_id=eq.").append(outletId)
+            append("&warehouse_id=eq.").append(warehouseId)
+        }
+        val routesResp = http.get(routesUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val routesCode = routesResp.status.value
+        val routesTxt = routesResp.bodyAsText()
+        if (routesCode !in 200..299) throw IllegalStateException("outlet_item_routes failed: HTTP $routesCode $routesTxt")
+        val routeRows = relaxedJson.decodeFromString(ListSerializer(OutletItemRouteRow.serializer()), routesTxt)
+        if (routeRows.isEmpty()) return emptyList()
+
+        val ids = routeRows.map { it.itemId }.distinct()
+        val idFilter = ids.joinToString(",") { it }
+        val itemsUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/catalog_items")
+            append("?select=id,name,item_kind,image_url,has_recipe,active")
+            append("&id=in.(").append(idFilter).append(")")
+        }
+        val itemsResp = http.get(itemsUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val itemsCode = itemsResp.status.value
+        val itemsTxt = itemsResp.bodyAsText()
+        if (itemsCode !in 200..299) throw IllegalStateException("catalog_items failed: HTTP $itemsCode $itemsTxt")
+        val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), itemsTxt)
+        val itemMap = items.associateBy { it.id }
+
+        return routeRows.mapNotNull { row ->
+            val item = itemMap[row.itemId] ?: return@mapNotNull null
+            WarehouseStockItem(
+                itemId = row.itemId,
+                itemName = item.name,
+                variantKey = row.variantKey?.ifBlank { "base" } ?: "base",
+                netUnits = null,
+                unitCost = null,
+                itemKind = item.itemKind,
+                imageUrl = item.imageUrl,
+                hasRecipe = item.hasRecipe
+            )
+        }
+    }
+
+    suspend fun listCatalogItemsForStocktake(jwt: String): List<WarehouseStockItem> {
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/catalog_items")
+            append("?select=id,name,item_kind,image_url,has_recipe,active")
+            append("&active=eq.true")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("catalog_items list failed: HTTP $code $txt")
+        val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), txt)
+
+        return items
+            .filter { it.active != false }
+            .filter { item ->
+                val kind = item.itemKind?.lowercase()
+                val hasRecipe = item.hasRecipe == true
+                kind == "ingredient" || (kind != "raw" && !hasRecipe)
+            }
+            .map { item ->
+                WarehouseStockItem(
+                    itemId = item.id,
+                    itemName = item.name,
+                    variantKey = "base",
+                    netUnits = null,
+                    unitCost = null,
+                    itemKind = item.itemKind,
+                    imageUrl = item.imageUrl,
+                    hasRecipe = item.hasRecipe
+                )
+            }
     }
 
     suspend fun listOutletStockPeriods(
