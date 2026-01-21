@@ -77,6 +77,8 @@ export default function RecipesPage() {
 
   const [finishedLines, setFinishedLines] = useState<PendingLine[]>([EMPTY_LINE]);
   const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([EMPTY_LINE]);
+  const [hasFinishedRecipe, setHasFinishedRecipe] = useState(false);
+  const [hasIngredientRecipe, setHasIngredientRecipe] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -150,6 +152,7 @@ export default function RecipesPage() {
         if (!active) return;
         if (error) throw error;
         if (data && data.length > 0) {
+          setHasFinishedRecipe(true);
           setFinishedLines(
             data.map((row) => ({
               ingredientId: row.ingredient_item_id || "",
@@ -158,6 +161,7 @@ export default function RecipesPage() {
             }))
           );
         } else {
+          setHasFinishedRecipe(false);
           setFinishedLines([EMPTY_LINE]);
         }
       } catch (error) {
@@ -198,6 +202,7 @@ export default function RecipesPage() {
         if (!active) return;
         if (error) throw error;
         if (data && data.length > 0) {
+          setHasIngredientRecipe(true);
           setIngredientLines(
             data.map((row) => ({
               ingredientId: row.ingredient_item_id || "",
@@ -206,6 +211,7 @@ export default function RecipesPage() {
             }))
           );
         } else {
+          setHasIngredientRecipe(false);
           setIngredientLines([EMPTY_LINE]);
         }
       } catch (error) {
@@ -227,6 +233,13 @@ export default function RecipesPage() {
 
   const addLine = (setter: Dispatch<SetStateAction<PendingLine[]>>) => {
     setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "g" }]);
+  };
+
+  const removeLine = (index: number, setter: Dispatch<SetStateAction<PendingLine[]>>) => {
+    setter((prev) => {
+      if (prev.length <= 1) return [EMPTY_LINE];
+      return prev.filter((_, idx) => idx !== index);
+    });
   };
 
   const updateLine = (
@@ -251,6 +264,17 @@ export default function RecipesPage() {
     setError(null);
     setSuccess(null);
     try {
+      if (hasFinishedRecipe) {
+        const { error: deactivateError } = await supabase
+          .from("recipes")
+          .update({ active: false })
+          .eq("finished_item_id", selectedFinished)
+          .eq("finished_variant_key", "base")
+          .eq("recipe_for_kind", "finished")
+          .eq("active", true);
+        if (deactivateError) throw deactivateError;
+      }
+
       const payload = validFinishedLines.map((line) => ({
         finished_item_id: selectedFinished,
         finished_variant_key: "base",
@@ -263,7 +287,8 @@ export default function RecipesPage() {
 
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
-      setSuccess("Finished product recipe saved.");
+      setHasFinishedRecipe(true);
+      setSuccess(hasFinishedRecipe ? "Finished product recipe updated." : "Finished product recipe saved.");
     } catch (error) {
       setError(toErrorMessage(error) || "Unable to save finished product recipe.");
     } finally {
@@ -281,6 +306,17 @@ export default function RecipesPage() {
     setError(null);
     setSuccess(null);
     try {
+      if (hasIngredientRecipe) {
+        const { error: deactivateError } = await supabase
+          .from("recipes")
+          .update({ active: false })
+          .eq("finished_item_id", selectedIngredientTarget)
+          .eq("finished_variant_key", "base")
+          .eq("recipe_for_kind", "ingredient")
+          .eq("active", true);
+        if (deactivateError) throw deactivateError;
+      }
+
       const payload = validIngredientLines.map((line) => ({
         finished_item_id: selectedIngredientTarget,
         finished_variant_key: "base",
@@ -293,7 +329,8 @@ export default function RecipesPage() {
 
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
-      setSuccess("Ingredient prep recipe saved.");
+      setHasIngredientRecipe(true);
+      setSuccess(hasIngredientRecipe ? "Ingredient prep recipe updated." : "Ingredient prep recipe saved.");
     } catch (error) {
       setError(toErrorMessage(error) || "Unable to save ingredient recipe.");
     } finally {
@@ -335,7 +372,7 @@ export default function RecipesPage() {
             </p>
           </div>
           <button className={styles.primaryButton} onClick={submitFinishedRecipe} disabled={loading}>
-            Save finished product recipe
+            {hasFinishedRecipe ? "Update finished product recipe" : "Save finished product recipe"}
           </button>
         </div>
 
@@ -409,6 +446,17 @@ export default function RecipesPage() {
                   ))}
                 </select>
               </div>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Remove</label>
+                <button
+                  type="button"
+                  className={styles.deleteButton}
+                  onClick={() => removeLine(idx, setFinishedLines)}
+                  aria-label="Remove ingredient line"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -424,7 +472,7 @@ export default function RecipesPage() {
             </p>
           </div>
           <button className={styles.primaryButton} onClick={submitIngredientRecipe} disabled={loading}>
-            Save ingredient recipe
+            {hasIngredientRecipe ? "Update ingredient recipe" : "Save ingredient recipe"}
           </button>
         </div>
 
@@ -497,6 +545,17 @@ export default function RecipesPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className={styles.lineField}>
+                <label className={styles.label}>Remove</label>
+                <button
+                  type="button"
+                  className={styles.deleteButton}
+                  onClick={() => removeLine(idx, setIngredientLines)}
+                  aria-label="Remove raw material line"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}

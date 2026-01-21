@@ -42,6 +42,16 @@ public sealed class SyncRunner
         {
             try
             {
+                var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
+                if (!validation.IsSuccess)
+                {
+                    var failure = new SyncFailure(order.PosOrderId, validation.ErrorMessage);
+                    failures.Add(failure);
+                    _logger.LogWarning("Validation failed for order {OrderId}: {Error}", order.PosOrderId, validation.ErrorMessage ?? "Unknown error");
+                    await _supabaseClient.LogFailureAsync(order, "validation", validation.ErrorMessage ?? "Validation failed", null, cancellationToken);
+                    continue;
+                }
+
                 var result = await _supabaseClient.SendOrderAsync(order, cancellationToken);
                 if (result.IsSuccess)
                 {
@@ -60,6 +70,7 @@ public sealed class SyncRunner
                     var failure = new SyncFailure(order.PosOrderId, result.ErrorMessage);
                     failures.Add(failure);
                     _logger.LogWarning("Failed to sync order {OrderId}: {Error}", order.PosOrderId, result.ErrorMessage ?? "Unknown error");
+                    await _supabaseClient.LogFailureAsync(order, "sync", result.ErrorMessage ?? "Sync failed", null, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -67,6 +78,7 @@ public sealed class SyncRunner
                 var failure = new SyncFailure(order.PosOrderId, ex.Message);
                 failures.Add(failure);
                 _logger.LogError(ex, "Unexpected error syncing order {OrderId}", order.PosOrderId);
+                await _supabaseClient.LogFailureAsync(order, "exception", ex.Message, new { ex.StackTrace }, cancellationToken);
             }
         }
 

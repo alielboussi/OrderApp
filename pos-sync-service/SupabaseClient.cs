@@ -26,6 +26,90 @@ public sealed class SupabaseClient
         _logger = logger;
     }
 
+    public async Task<SupabaseResult> ValidateOrderAsync(PosOrder order, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            _logger.LogError("Outlet Id is not configured; set Outlet:Id to the outlet UUID in Supabase");
+            return new SupabaseResult(false, "Outlet Id is not configured");
+        }
+
+        var client = CreateClient();
+        var payload = BuildPayload(order);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/validate_pos_order")
+        {
+            Content = JsonContent.Create(new { payload }, options: JsonOptions)
+        };
+
+        try
+        {
+            var response = await client.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Supabase validation RPC failed {Status}: {Body}", (int)response.StatusCode, body);
+                return new SupabaseResult(false, $"Validation RPC failed {(int)response.StatusCode}: {body}");
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var ok = root.TryGetProperty("ok", out var okProp) && okProp.GetBoolean();
+            if (ok)
+            {
+                return new SupabaseResult(true);
+            }
+
+            var errors = root.TryGetProperty("errors", out var errorsProp) ? errorsProp.ToString() : "Unknown validation error";
+            return new SupabaseResult(false, errors);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calling Supabase validation RPC");
+            return new SupabaseResult(false, ex.Message);
+        }
+    }
+
+    public async Task LogFailureAsync(PosOrder order, string stage, string errorMessage, object? details, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        var client = CreateClient();
+        var payload = new
+        {
+            outlet_id = _outlet.Id,
+            source_event_id = order.SourceEventId,
+            pos_order_id = order.PosOrderId,
+            sale_id = order.PosSaleId,
+            stage,
+            error_message = errorMessage,
+            details
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/log_pos_sync_failure")
+        {
+            Content = JsonContent.Create(new { payload }, options: JsonOptions)
+        };
+
+        try
+        {
+            var response = await client.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Supabase log failure RPC failed {Status}: {Body}", (int)response.StatusCode, body);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calling Supabase log failure RPC");
+        }
+    }
+
     public async Task<SupabaseResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)
@@ -34,6 +118,36 @@ public sealed class SupabaseClient
             return new SupabaseResult(false, "Outlet Id is not configured");
         }
 
+        var client = CreateClient();
+        var payload = BuildPayload(order);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/sync_pos_order")
+        {
+            // PostgREST expects RPC arguments by name; wrap the payload under the function parameter key
+            Content = JsonContent.Create(new { payload }, options: JsonOptions)
+        };
+
+        try
+        {
+            var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new SupabaseResult(true);
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Supabase RPC failed {Status}: {Body}", (int)response.StatusCode, body);
+            return new SupabaseResult(false, $"RPC failed {(int)response.StatusCode}: {body}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calling Supabase RPC");
+            return new SupabaseResult(false, ex.Message);
+        }
+    }
+
+    private HttpClient CreateClient()
+    {
         var client = _clientFactory.CreateClient("Supabase");
         client.BaseAddress = new Uri(_options.Url);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ServiceKey);
@@ -42,8 +156,12 @@ public sealed class SupabaseClient
             client.DefaultRequestHeaders.Add("apikey", _options.ServiceKey);
         }
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return client;
+    }
 
-        var payload = new
+    private object BuildPayload(PosOrder order)
+    {
+        return new
         {
             source_event_id = order.SourceEventId,
             sale_id = order.PosSaleId,
@@ -95,29 +213,5 @@ public sealed class SupabaseClient
                 branch_missing_note = ic.BranchMissingNote
             }).ToList()
         };
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/sync_pos_order")
-        {
-            // PostgREST expects RPC arguments by name; wrap the payload under the function parameter key
-            Content = JsonContent.Create(new { payload }, options: JsonOptions)
-        };
-
-        try
-        {
-            var response = await client.SendAsync(request, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                return new SupabaseResult(true);
-            }
-
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Supabase RPC failed {Status}: {Body}", (int)response.StatusCode, body);
-            return new SupabaseResult(false, $"RPC failed {(int)response.StatusCode}: {body}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error calling Supabase RPC");
-            return new SupabaseResult(false, ex.Message);
-        }
     }
 }

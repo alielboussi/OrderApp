@@ -8,10 +8,9 @@
 - Other tables changed in diffs (not marked): `Log`, `ReopenLog`, `Production`, `CompleteWaste`, `DineInTableDesign`, `DayBook`, `SubItems`, `ordersource`, `Threading`, `tabs`, `Reasons`, `SerivceCharges`, `ReceiptSettings`, `cashdrawer`, `selecttype`.
 
 ## Supabase tables receiving POS data
-- `orders` (with `source_event_id` for idempotency, `sale_id` optional in payload).
-- `pos_order_meta` (header details: bill/order type, discounts, taxes, charges, tip, pos_fee, price_type, customer, raw payload).
+- `orders` (with `source_event_id` for idempotency, `pos_sale_id`, customer fields, payments, and `raw_payload`).
 - `pos_inventory_consumed` (staged ingredient usage).
-- Stock movement via your mapping + `record_outlet_sale` into `stock_ledger` / `outlet_stock_balances`.
+- `outlet_sales` + `stock_ledger` + `outlet_stock_balances` via `record_outlet_sale`.
 
 ## Payload shape (middleware → Supabase RPC `sync_pos_order`)
 ```jsonc
@@ -36,9 +35,14 @@
       "name": "Plain Omlette",
       "quantity": 1,
       "unit_price": 30.17,
+      "sale_price": 30.17,
+      "vat_exc_price": 28.73,
+      "flavour_price": 28.73,
       "discount": 0,
       "tax": 0,
-      "variant_id": null
+      "flavour_id": null,
+      "variant_id": null,
+      "variant_key": null
     }
   ],
   "payments": [ { "method": "Cash", "amount": 30.17 } ],
@@ -59,31 +63,36 @@
 
 ## Mapping POS items to catalog items
 Table: `public.pos_item_map`
-- `pos_item_id` (text, PK) — POS MenuItem.Id
+- `pos_item_id` (text) — POS MenuItem.Id
+- `pos_flavour_id` (text, nullable) — POS flavour/variant id if used
+- `outlet_id` (uuid) — outlet scope for the mapping
 - `catalog_item_id` (uuid) — Supabase catalog_items.id
-- `catalog_variant_id` (uuid, nullable)
+- `catalog_variant_key` (text, nullable; defaults to `base`)
 - `warehouse_id` (uuid, nullable) — preferred deduction warehouse
+- `pos_item_name` / `pos_flavour_name` (optional display helpers)
+
+Mapping lookup uses `pos_item_id` + `pos_flavour_id` (if present) and returns `catalog_item_id`, `catalog_variant_key`, and `warehouse_id` for stock deduction.
 
 ### CSV import helper (psql)
 Prepare `pos_item_map.csv` (no header) with columns:
 ```
-pos_item_id,catalog_item_id,catalog_variant_id,warehouse_id
+pos_item_id,pos_flavour_id,outlet_id,catalog_item_id,catalog_variant_key,warehouse_id
 ```
 Example row:
 ```
-17,11111111-2222-3333-4444-555555555555,,aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+17,,aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,11111111-2222-3333-4444-555555555555,base,bbbbbbbb-cccc-dddd-eeee-ffffffffffff
 ```
 Import:
 ```sql
-\copy public.pos_item_map(pos_item_id, catalog_item_id, catalog_variant_id, warehouse_id)
+\copy public.pos_item_map(pos_item_id, pos_flavour_id, outlet_id, catalog_item_id, catalog_variant_key, warehouse_id)
   FROM '/path/to/pos_item_map.csv' DELIMITER ',' CSV;
 ```
 
 ### Direct SQL insert example
 ```sql
-insert into public.pos_item_map(pos_item_id, catalog_item_id, catalog_variant_id, warehouse_id)
+insert into public.pos_item_map(pos_item_id, pos_flavour_id, outlet_id, catalog_item_id, catalog_variant_key, warehouse_id)
 values
-  ('17', '11111111-2222-3333-4444-555555555555', null, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  ('17', null, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', '11111111-2222-3333-4444-555555555555', 'base', 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff');
 ```
 
 ## Marking processed (middleware)
@@ -96,8 +105,8 @@ values
 ## Supabase RPC (`sync_pos_order`) overview
 - Path: `/rest/v1/rpc/sync_pos_order`
 - Idempotency: `orders.source_event_id` unique.
-- Inserts `orders`, `pos_order_meta`, `pos_inventory_consumed`.
-- For each item: maps `pos_item_id` via `pos_item_map`, then calls `record_outlet_sale` (stock deducts via recipes and outlet/warehouse mappings).
+- Inserts `orders` (including `pos_sale_id`, customer fields, payments, and `raw_payload`) and `pos_inventory_consumed`.
+- For each item: maps `pos_item_id` (+ `pos_flavour_id` when present) via `pos_item_map`, then calls `record_outlet_sale` (stock deducts via recipes and outlet/warehouse mappings).
 
 ## Operational checklist
 1) Populate `pos_item_map` with all POS MenuItem.Id → catalog item/variant/warehouse.
@@ -105,8 +114,8 @@ values
 3) Publish & install Windows service; start it.
 4) Test a sale; verify:
    - POS rows marked Processed.
-   - Supabase `orders`, `pos_order_meta`, `pos_inventory_consumed` populated.
-   - Stock moves in `stock_ledger` / `outlet_stock_balances`.
+  - Supabase `orders` and `pos_inventory_consumed` populated.
+  - Stock moves in `outlet_sales`, `stock_ledger`, and `outlet_stock_balances`.
 5) Monitor logs; adjust polling if needed.
 
 ## Notes

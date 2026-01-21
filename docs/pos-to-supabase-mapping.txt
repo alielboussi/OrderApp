@@ -1,0 +1,94 @@
+POS → Supabase wiring confirmation (middleware + RPC)
+
+1) POS source tables/fields read by middleware (PosRepository)
+- BillType: id (BillId), saleid (SaleId), type (PaymentType), Amount (PaymentAmount), uploadStatus
+- Sale: Id, Date, time, OrderType, BillType, Discount, DiscountAmount, GST, servicecharges, DeliveryCharges, Tip, POSFee, PriceType, Customer, phone, branchid, uploadstatus
+- Saledetails: saleid, MenuItemId, Quantity, Price, Itemdiscount, ItemGst, FlavourId, uploadstatus
+- MenuItem: Id, Name
+- InventoryConsumed: Id, RawItemId, QuantityConsumed, RemainingQuantity, Date, kdsid, typec, uploadstatus, branchid
+
+2) Middleware payload fields sent to Supabase (SupabaseClient → sync_pos_order)
+- Header fields:
+  source_event_id = "<outlet_uuid>-<bill_id>"
+  sale_id = POS SaleId
+  outlet_id = Supabase outlet UUID (from config)
+  branch_id = POS Sale.branchid
+  occurred_at = Sale Date + Sale Time
+  order_type = Sale.OrderType
+  bill_type = Sale.BillType
+  total_discount = Sale.Discount
+  total_discount_amount = Sale.DiscountAmount
+  total_gst = Sale.GST
+  service_charges = Sale.servicecharges
+  delivery_charges = Sale.DeliveryCharges
+  tip = Sale.Tip
+  pos_fee = Sale.POSFee
+  price_type = Sale.PriceType
+- Items array:
+  pos_item_id = Saledetails.MenuItemId
+  name = MenuItem.Name
+  quantity = Saledetails.Quantity
+  unit_price = Saledetails.Price
+  sale_price = Saledetails.Price (tax-inclusive)
+  vat_exc_price = sale_price / 1.16
+  flavour_price = vat_exc_price
+  discount = Saledetails.Itemdiscount
+  tax = Saledetails.ItemGst
+  flavour_id = Saledetails.FlavourId
+  variant_id = null
+  variant_key = null
+- Customer:
+  name = Sale.Customer
+  phone = Sale.phone
+  email = null (POS has no email field)
+- Inventory consumed array:
+  pos_id = InventoryConsumed.Id
+  raw_item_id = InventoryConsumed.RawItemId
+  quantity_consumed = InventoryConsumed.QuantityConsumed
+  remaining_quantity = InventoryConsumed.RemainingQuantity
+  pos_date = InventoryConsumed.Date
+  kdsid = InventoryConsumed.kdsid
+  typec = InventoryConsumed.typec
+  branch_id = Sale.branchid
+  branch_missing_note = set when branchid missing
+
+3) Supabase tables receiving POS data (sync_pos_order)
+- orders
+  outlet_id, source_event_id, pos_sale_id, status, locked, branch_id, pos_branch_id,
+  order_type, bill_type, total_discount, total_discount_amount, total_gst,
+  service_charges, delivery_charges, tip, pos_fee, price_type,
+  customer_name, customer_phone, customer_email,
+  payments, raw_payload, created_at, updated_at
+- pos_inventory_consumed
+  source_event_id, outlet_id, order_id, raw_item_id, quantity_consumed, remaining_quantity,
+  occurred_at, pos_date, kdsid, typec, context, unassigned_branch_note
+
+4) Item mapping (POS → Supabase catalog)
+- Uses public.pos_item_map with outlet scope:
+  match on pos_item_id and (pos_flavour_id is null OR pos_flavour_id = payload.flavour_id)
+  returns catalog_item_id, catalog_variant_key, warehouse_id
+
+5) Stock subtraction path (Supabase)
+- sync_pos_order calls record_outlet_sale per item.
+- record_outlet_sale:
+  a) inserts outlet_sales row
+  b) updates outlet_stock_balances (consumed_units += qty * consumption_qty_per_base)
+  c) inserts stock_ledger row for the sold item using its variant_key (variant-first deduction)
+  d) calls apply_recipe_deductions (ingredients first, then raws)
+
+6) Error prevention requirements (must be true to avoid failures)
+- outlet_id and source_event_id present in payload
+- pos_item_map has a row for every pos_item_id (and flavour_id where applicable)
+- quantity > 0 for each item
+- outlet has an active warehouse mapping or an explicit warehouse_id in pos_item_map
+- open stock period exists for the warehouse used by record_outlet_sale
+
+7) Middleware validation (preflight)
+- Middleware calls Supabase RPC validate_pos_order before sync_pos_order.
+- If validation fails, the order is not sent and is retried on the next poll.
+
+8) Failure logging (Supabase)
+- Middleware logs failures to public.pos_sync_failures via log_pos_sync_failure.
+- Stages: validation, sync, exception.
+
+Result: The middleware field names match the Supabase RPC expectations and the stock deduction is handled inside record_outlet_sale via stock_ledger and apply_recipe_deductions.

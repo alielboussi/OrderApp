@@ -13,6 +13,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,7 +54,7 @@ fun HomeScreen(
         )
     }
 
-    if (session != null && !hasBranchRole) {
+    if (session != null && !(hasBranchRole || hasStocktakeRole)) {
         AccessDeniedCard(
             title = "Outlet access required",
             message = "This dashboard is only available to outlet users.",
@@ -66,14 +67,20 @@ fun HomeScreen(
         return
     }
 
+    val primaryRed = androidx.compose.ui.graphics.Color(0xFFD50000)
+    val backgroundBlack = androidx.compose.ui.graphics.Color.Black
+    val contentWhite = androidx.compose.ui.graphics.Color.White
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .let { base ->
+                if (hasStocktakeRole) base.background(backgroundBlack) else base
+            }
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Top-right logout pill
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Button(
                 onClick = {
@@ -81,39 +88,60 @@ fun HomeScreen(
                     onLogout()
                 },
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors()
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (hasStocktakeRole) primaryRed else ButtonDefaults.buttonColors().containerColor,
+                    contentColor = if (hasStocktakeRole) contentWhite else ButtonDefaults.buttonColors().contentColor
+                )
             ) {
                 Text("Log out")
             }
         }
+
         Spacer(Modifier.height(8.dp))
-        Text(text = session?.outletName ?: "", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            text = session?.outletName ?: "",
+            style = MaterialTheme.typography.headlineMedium,
+            color = if (hasStocktakeRole) contentWhite else MaterialTheme.colorScheme.onBackground
+        )
         Spacer(Modifier.height(16.dp))
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                logger.event("CreateOrderTapped")
-                onCreateOrder()
-            },
-            enabled = (session?.outletId?.isNotEmpty() == true)
-        ) { Text("Create New Order") }
-        Spacer(Modifier.height(12.dp))
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                logger.event("OrdersTapped")
-                onViewOrders()
-            },
-            enabled = (session?.outletId?.isNotEmpty() == true)
-        ) { Text("Orders") }
-        Spacer(Modifier.height(12.dp))
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                logger.event("OutletStocktakeTapped")
-                onOpenStocktake()
-            },
-            enabled = (session?.outletId?.isNotEmpty() == true) && hasStocktakeRole
-        ) { Text("Outlet Stocktake") }
+
+        if (hasStocktakeRole) {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    logger.event("OutletStocktakeTapped")
+                    onOpenStocktake()
+                },
+                enabled = true,
+                colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
+            ) { Text("Outlet Stocktake") }
+        } else {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    logger.event("CreateOrderTapped")
+                    onCreateOrder()
+                },
+                enabled = (session?.outletId?.isNotEmpty() == true)
+            ) { Text("Create New Order") }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    logger.event("OrdersTapped")
+                    onViewOrders()
+                },
+                enabled = (session?.outletId?.isNotEmpty() == true)
+            ) { Text("Orders") }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    logger.event("OutletStocktakeTapped")
+                    onOpenStocktake()
+                },
+                enabled = (session?.outletId?.isNotEmpty() == true) && hasStocktakeRole
+            ) { Text("Outlet Stocktake") }
+        }
     }
 }

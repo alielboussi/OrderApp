@@ -70,10 +70,8 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
     val session by appViewModel.session.collectAsState()
 
     fun routeFor(session: OutletSession): String = when {
-        // Stock operators should land on stocktake even if they also have Branch.
-        session.hasRole(RoleGuards.Stocktake) -> Routes.StocktakeDashboard.route
-        // Branch users land on the orders dashboard.
-        session.hasRole(RoleGuards.Branch) -> Routes.Home.route
+        // Outlet dashboard for branch + stocktake users.
+        session.hasRole(RoleGuards.Branch) || session.hasRole(RoleGuards.Stocktake) -> Routes.Home.route
         session.hasRole(RoleGuards.Backoffice) -> Routes.BackofficeHome.route
         session.hasRole(RoleGuards.Supervisor) -> Routes.SupervisorOrders.route
         else -> Routes.Login.route
@@ -174,12 +172,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         composable(Routes.StocktakeDashboard.route) {
             StocktakeDashboardScreen(
                 root = appViewModel,
-                onBack = {
-                    appViewModel.setSession(null)
-                    navController.navigate(Routes.Login.route) {
-                        popUpTo(Routes.Login.route) { inclusive = true }
-                    }
-                },
+                onBack = { navController.popBackStack() },
                 onOpenCounts = { periodId -> navController.navigate(Routes.StocktakeCount.route(periodId)) },
                 onOpenVariance = { periodId -> navController.navigate(Routes.StocktakeVariance.route(periodId)) }
             )

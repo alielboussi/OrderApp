@@ -289,19 +289,15 @@ class StocktakeViewModel(
             .filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == false && it.hasRecipe == true }
 
         val ingredients = filtered.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
-        if (ingredients.isNotEmpty()) return ingredients.sortedBy { it.itemName ?: it.itemId }
+        val nonIngredients = filtered.filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
 
-        val grouped = filtered.groupBy { it.itemId }
-
-        val selections = grouped.values.flatMap { group ->
-            val variants = group.filter { it.variantKey?.lowercase() != "base" }
-            when {
-                variants.isNotEmpty() -> variants
-                else -> listOfNotNull(group.firstOrNull { it.variantKey?.lowercase() == "base" } ?: group.firstOrNull())
-            }
+        val grouped = nonIngredients.groupBy { it.itemId }
+        val variantSelections = grouped.values.flatMap { group ->
+            group.filter { it.variantKey?.lowercase() != "base" }
         }
 
-        return selections.sortedBy { it.itemName ?: it.itemId }
+        return (ingredients + variantSelections).distinctBy { it.itemId to (it.variantKey ?: "base") }
+            .sortedBy { it.itemName ?: it.itemId }
     }
 
     private suspend fun refreshOpenPeriod(warehouseId: String) {
