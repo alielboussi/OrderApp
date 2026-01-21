@@ -382,7 +382,7 @@ fun StocktakeCountScreen(
                     colors = outlinedFieldColors
                 )
                 Text(
-                    "If a product has a recipe, we show its ingredients. Otherwise we show variants (or the base item if no variants). Raw items are hidden here.",
+                    "Stocktakes are ingredient-only for the selected outlet warehouse.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f)
                 )
@@ -517,6 +517,20 @@ fun StocktakeVarianceScreen(
 
     fun fmt(value: Double): String = String.format("%.2f", value)
 
+    val allowedVariance = remember(ui.items, ui.variance) {
+        if (ui.items.isEmpty()) return@remember ui.variance
+        val allowed = ui.items
+            .groupBy { it.itemId }
+            .mapValues { entry ->
+                entry.value.map { it.variantKey?.ifBlank { "base" } ?: "base" }.toSet()
+            }
+        ui.variance.filter { row ->
+            val keys = allowed[row.itemId] ?: return@filter false
+            val vKey = row.variantKey?.ifBlank { "base" } ?: "base"
+            keys.contains(vKey)
+        }
+    }
+
     if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
         AccessDeniedCard(
             title = "Stocktake role required",
@@ -552,10 +566,10 @@ fun StocktakeVarianceScreen(
             }
         }
 
-        if (ui.variance.isEmpty()) {
+        if (allowedVariance.isEmpty()) {
             Text("No variance rows for this period yet", style = MaterialTheme.typography.bodyMedium)
         } else {
-            ui.variance.forEach { row ->
+            allowedVariance.forEach { row ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         val varianceColor = if (row.varianceQty < 0) primaryRed else Color(0xFF2E7D32)

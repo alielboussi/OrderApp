@@ -272,6 +272,7 @@ class StocktakeViewModel(
                     _ui.value = _ui.value.copy(
                         openPeriod = period,
                         selectedWarehouseId = period?.warehouseId,
+                        selectedOutletId = period?.outletId ?: _ui.value.selectedOutletId,
                         error = null
                     )
                     period?.warehouseId?.let { loadItems(it) }
@@ -284,21 +285,9 @@ class StocktakeViewModel(
     }
 
     private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
-        val ingredients = items.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
-        if (ingredients.isNotEmpty()) return ingredients.sortedBy { it.itemName ?: it.itemId }
-
-        val nonRaw = items.filterNot { it.itemKind?.equals("raw", ignoreCase = true) == true }
-        val grouped = nonRaw.groupBy { it.itemId }
-
-        val selections = grouped.values.flatMap { group ->
-            val variants = group.filter { it.variantKey?.lowercase() != "base" }
-            when {
-                variants.isNotEmpty() -> variants
-                else -> listOfNotNull(group.firstOrNull { it.variantKey?.lowercase() == "base" } ?: group.firstOrNull())
-            }
-        }
-
-        return selections.sortedBy { it.itemName ?: it.itemId }
+        return items
+            .filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
+            .sortedBy { it.itemName ?: it.itemId }
     }
 
     private suspend fun refreshOpenPeriod(warehouseId: String) {
@@ -317,7 +306,7 @@ class StocktakeViewModel(
 
     private suspend fun loadItems(warehouseId: String) {
         val jwt = session?.token ?: return
-        val outletId = _ui.value.selectedOutletId
+        val outletId = _ui.value.selectedOutletId ?: session?.outletId
         pushDebug("loadItems warehouse=$warehouseId")
         _ui.value = _ui.value.copy(items = emptyList(), loading = true, error = null)
         runCatching { repo.listWarehouseItems(jwt, warehouseId, outletId, null) }
