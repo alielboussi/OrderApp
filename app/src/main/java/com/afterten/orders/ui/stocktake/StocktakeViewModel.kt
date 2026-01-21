@@ -285,9 +285,21 @@ class StocktakeViewModel(
     }
 
     private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
-        return items
-            .filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
-            .sortedBy { it.itemName ?: it.itemId }
+        val ingredients = items.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
+        if (ingredients.isNotEmpty()) return ingredients.sortedBy { it.itemName ?: it.itemId }
+
+        val nonRaw = items.filterNot { it.itemKind?.equals("raw", ignoreCase = true) == true }
+        val grouped = nonRaw.groupBy { it.itemId }
+
+        val selections = grouped.values.flatMap { group ->
+            val variants = group.filter { it.variantKey?.lowercase() != "base" }
+            when {
+                variants.isNotEmpty() -> variants
+                else -> listOfNotNull(group.firstOrNull { it.variantKey?.lowercase() == "base" } ?: group.firstOrNull())
+            }
+        }
+
+        return selections.sortedBy { it.itemName ?: it.itemId }
     }
 
     private suspend fun refreshOpenPeriod(warehouseId: String) {
