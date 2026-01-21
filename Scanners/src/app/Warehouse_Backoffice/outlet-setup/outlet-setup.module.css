@@ -211,3 +211,33 @@
   padding: 10px 12px;
   line-height: 1.45;
 }
+
+.variantChooser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.variantList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.variantOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.variantOption input {
+  margin: 0;
+}

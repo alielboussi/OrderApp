@@ -31,11 +31,13 @@ import com.afterten.orders.ui.components.AccessDeniedCard
 fun HomeScreen(
     onCreateOrder: () -> Unit,
     onViewOrders: () -> Unit,
+    onOpenStocktake: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
 ) {
     val session by viewModel.session.collectAsState()
     val hasBranchRole = session.hasRole(RoleGuards.Branch)
+    val hasStocktakeRole = session.hasRole(RoleGuards.Stocktake)
     val logger = rememberScreenLogger("Home")
 
     LaunchedEffect(Unit) {
@@ -104,5 +106,14 @@ fun HomeScreen(
             },
             enabled = (session?.outletId?.isNotEmpty() == true)
         ) { Text("Orders") }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                logger.event("OutletStocktakeTapped")
+                onOpenStocktake()
+            },
+            enabled = (session?.outletId?.isNotEmpty() == true) && hasStocktakeRole
+        ) { Text("Outlet Stocktake") }
     }
 }

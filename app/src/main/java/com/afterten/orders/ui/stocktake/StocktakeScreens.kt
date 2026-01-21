@@ -382,7 +382,7 @@ fun StocktakeCountScreen(
                     colors = outlinedFieldColors
                 )
                 Text(
-                    "Ingredients only: counts update ingredient stock; recipes handle finished items/variants automatically.",
+                    "If a product has a recipe, we show its ingredients. Otherwise we show variants (or the base item if no variants). Raw items are hidden here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f)
                 )

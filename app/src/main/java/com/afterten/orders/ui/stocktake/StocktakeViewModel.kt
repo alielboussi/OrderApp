@@ -283,6 +283,24 @@ class StocktakeViewModel(
         }
     }
 
+    private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
+        val ingredients = items.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
+        if (ingredients.isNotEmpty()) return ingredients.sortedBy { it.itemName ?: it.itemId }
+
+        val nonRaw = items.filterNot { it.itemKind?.equals("raw", ignoreCase = true) == true }
+        val grouped = nonRaw.groupBy { it.itemId }
+
+        val selections = grouped.values.flatMap { group ->
+            val variants = group.filter { it.variantKey?.lowercase() != "base" }
+            when {
+                variants.isNotEmpty() -> variants
+                else -> listOfNotNull(group.firstOrNull { it.variantKey?.lowercase() == "base" } ?: group.firstOrNull())
+            }
+        }
+
+        return selections.sortedBy { it.itemName ?: it.itemId }
+    }
+
     private suspend fun refreshOpenPeriod(warehouseId: String) {
         val jwt = session?.token ?: return
         pushDebug("refreshOpenPeriod warehouse=$warehouseId")
@@ -302,15 +320,11 @@ class StocktakeViewModel(
         val outletId = _ui.value.selectedOutletId
         pushDebug("loadItems warehouse=$warehouseId")
         _ui.value = _ui.value.copy(items = emptyList(), loading = true, error = null)
-        // Strict: outlet-scoped + ingredients only. Do not relax to non-ingredients.
         runCatching { repo.listWarehouseItems(jwt, warehouseId, outletId, null) }
             .onSuccess { fetched ->
-                val allowed = fetched.filter { item ->
-                    val kind = item.itemKind?.lowercase()
-                    kind == "ingredient"
-                }
-                pushDebug("loadItems fetched=${fetched.size} allowed=${allowed.size} (ingredients only) for warehouse=$warehouseId outlet=$outletId")
-                _ui.value = _ui.value.copy(items = allowed, loading = false, error = null)
+                val display = pickDisplayItems(fetched)
+                pushDebug("loadItems fetched=${fetched.size} display=${display.size} for warehouse=$warehouseId outlet=$outletId")
+                _ui.value = _ui.value.copy(items = display, loading = false, error = null)
             }
             .onFailure { err ->
                 pushDebug("loadItems failed: ${err.message}")

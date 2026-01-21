@@ -250,3 +250,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to create mapping" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const pos_item_id = searchParams.get("pos_item_id");
+    const catalog_item_id = searchParams.get("catalog_item_id");
+    const outlet_id = searchParams.get("outlet_id");
+    const pos_flavour_id = searchParams.get("pos_flavour_id");
+    const catalog_variant_key = searchParams.get("catalog_variant_key");
+    const warehouse_id = searchParams.get("warehouse_id");
+
+    if (!pos_item_id || !catalog_item_id || !outlet_id) {
+      return NextResponse.json({ error: "pos_item_id, catalog_item_id, and outlet_id are required" }, { status: 400 });
+    }
+
+    const supabase = getServiceClient();
+    const match: Record<string, any> = {
+      pos_item_id,
+      catalog_item_id,
+      outlet_id,
+    };
+    if (pos_flavour_id) match.pos_flavour_id = pos_flavour_id;
+    if (catalog_variant_key) match.catalog_variant_key = catalog_variant_key;
+    if (warehouse_id) match.warehouse_id = warehouse_id;
+
+    const { error } = await supabase.from("pos_item_map").delete().match(match);
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("[pos-item-map] DELETE failed", error);
+    return NextResponse.json({ error: "Unable to delete mapping" }, { status: 500 });
+  }
+}

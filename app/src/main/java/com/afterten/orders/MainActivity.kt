@@ -99,6 +99,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onViewOrders = { navController.navigate(Routes.Orders.route) },
+                onOpenStocktake = { navController.navigate(Routes.StocktakeDashboard.route) },
                 onLogout = {
                     appViewModel.setSession(null)
                     navController.navigate(Routes.Login.route) {

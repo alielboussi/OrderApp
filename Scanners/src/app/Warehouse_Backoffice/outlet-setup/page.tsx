@@ -20,6 +20,7 @@ interface PosMapping {
   outlet_id: string;
 }
 interface Item { id: string; name: string; item_kind?: string | null; default_warehouse_id?: string | null }
+interface Variant { id: string; item_id: string; name: string; sku?: string | null; active?: boolean | null }
 
 type RouteRecord = Record<string, string>;
 
@@ -34,8 +35,10 @@ export default function OutletSetupPage() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
 
   // Deduction routing state (product → warehouse per outlet)
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
   const [selectedRawId, setSelectedRawId] = useState<string>("");
@@ -43,6 +46,9 @@ export default function OutletSetupPage() {
   const [routingLoading, setRoutingLoading] = useState(false);
   const [routingSaving, setRoutingSaving] = useState(false);
   const [routingMessage, setRoutingMessage] = useState<Alert>(null);
+  const [productDefaultWarehouseId, setProductDefaultWarehouseId] = useState<string>("");
+  const [productDefaultWarehouseSaving, setProductDefaultWarehouseSaving] = useState(false);
+  const [productDefaultWarehouseMessage, setProductDefaultWarehouseMessage] = useState<Alert>(null);
   const [defaultWarehouseId, setDefaultWarehouseId] = useState<string>("");
   const [defaultWarehouseSaving, setDefaultWarehouseSaving] = useState(false);
   const [defaultWarehouseMessage, setDefaultWarehouseMessage] = useState<Alert>(null);
@@ -61,9 +67,12 @@ export default function OutletSetupPage() {
   // POS item ↔ catalog mapping (preview + quick add)
   const [posMappings, setPosMappings] = useState<PosMapping[]>([]);
   const [posSearch, setPosSearch] = useState("");
+  const [posLimit, setPosLimit] = useState<number | "all">(50);
   const [posLoading, setPosLoading] = useState(false);
   const [posError, setPosError] = useState<Alert>(null);
   const [posCreating, setPosCreating] = useState(false);
+  const [posDeletingKey, setPosDeletingKey] = useState<string | null>(null);
+  const [selectedVariantKeys, setSelectedVariantKeys] = useState<string[]>(["base"]);
   const [posForm, setPosForm] = useState({
     pos_item_id: "",
     pos_item_name: "",
@@ -88,7 +97,32 @@ export default function OutletSetupPage() {
     const filtered = items.filter((it) => (it.item_kind ?? "product") === "raw");
     return filtered.length ? [{ id: "", name: "Select raw" }, ...filtered] : [{ id: "", name: "No raws found" }];
   }, [items]);
+  const productOptions = useMemo(() => {
+    const filtered = items.filter((it) => {
+      const kind = it.item_kind ?? "product";
+      return kind !== "ingredient" && kind !== "raw";
+    });
+    return filtered.length ? [{ id: "", name: "Select product" }, ...filtered] : [{ id: "", name: "No products found" }];
+  }, [items]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select catalog item" }, ...items], [items]);
+  const posVariantOptions = useMemo(() => {
+    const base = { value: "base", label: "Use base product" };
+    if (!posForm.catalog_item_id) return [base];
+    const scoped = variants
+      .filter((variant) => variant.item_id === posForm.catalog_item_id)
+      .map((variant) => ({
+        value: variant.id,
+        label: variant.name || variant.id,
+      }));
+    return [base, ...scoped];
+  }, [posForm.catalog_item_id, variants]);
+  const variantLabels = useMemo(() => {
+    const map: Record<string, string> = { base: "base" };
+    variants.forEach((variant) => {
+      map[variant.id] = variant.name || variant.id;
+    });
+    return map;
+  }, [variants]);
 
   const outletSelectOptions = useMemo(
     () => outlets.map((o) => ({ value: o.id, label: `${o.name}${o.code ? ` (${o.code})` : ""}` })),
@@ -98,10 +132,23 @@ export default function OutletSetupPage() {
     () => warehouses.map((w) => ({ value: w.id, label: `${w.name}${w.code ? ` (${w.code})` : ""}` })),
     [warehouses]
   );
+  const selectedProduct = useMemo(
+    () => items.find((it) => it.id === selectedProductId),
+    [items, selectedProductId]
+  );
+  const disableIngredientAndRaw = useMemo(() => {
+    if (!selectedProductId) return false;
+    if (!selectedProduct) return false;
+    return selectedProduct.has_recipe !== true;
+  }, [selectedProductId, selectedProduct]);
+  const ingredientSelectOptions = disableIngredientAndRaw
+    ? [{ id: "", name: "Not applicable" }]
+    : ingredientOptions;
+  const rawSelectOptions = disableIngredientAndRaw ? [{ id: "", name: "Not applicable" }] : rawOptions;
 
   const filteredPosMappings = useMemo(() => {
     const term = posSearch.trim().toLowerCase();
-    const base = term
+    const filtered = term
       ? posMappings.filter((m) =>
           [
             m.pos_item_id,
@@ -116,8 +163,9 @@ export default function OutletSetupPage() {
           ].some((v) => v.toLowerCase().includes(term))
         )
       : posMappings;
-    return base.slice(0, 5);
-  }, [posMappings, posSearch]);
+    const limited = posLimit === "all" ? filtered : filtered.slice(0, posLimit);
+    return { list: limited, total: filtered.length };
+  }, [posMappings, posSearch, posLimit]);
 
   // Load base data (outlets, warehouses, items) once authenticated
   useEffect(() => {
@@ -128,10 +176,11 @@ export default function OutletSetupPage() {
       setRoutingMessage(null);
       setMappingAlert(null);
       try {
-        const [outletRes, warehouseRes, itemRes] = await Promise.all([
+        const [outletRes, warehouseRes, itemRes, variantRes] = await Promise.all([
           fetch("/api/outlets"),
           fetch("/api/warehouses"),
           fetch("/api/catalog/items"),
+          fetch("/api/catalog/variants"),
         ]);
 
         if (outletRes.ok) {
@@ -146,6 +195,11 @@ export default function OutletSetupPage() {
           const json = await itemRes.json();
           const list: Item[] = Array.isArray(json.items) ? json.items : [];
           setItems(list);
+        }
+        if (variantRes.ok) {
+          const json = await variantRes.json();
+          const list: Variant[] = Array.isArray(json.variants) ? json.variants : [];
+          setVariants(list);
         }
       } catch (error) {
         console.error("setup preload failed", error);
@@ -202,6 +256,25 @@ export default function OutletSetupPage() {
     const raw = items.find((it) => it.id === selectedRawId);
     setRawDefaultWarehouseId(raw?.default_warehouse_id ?? "");
   }, [selectedRawId, items]);
+
+  useEffect(() => {
+    if (disableIngredientAndRaw) {
+      setSelectedIngredientId("");
+      setSelectedRawId("");
+      setDefaultWarehouseId("");
+      setRawDefaultWarehouseId("");
+    }
+  }, [disableIngredientAndRaw]);
+
+  useEffect(() => {
+    if (!selectedProductId) {
+      setProductDefaultWarehouseId("");
+      setProductDefaultWarehouseMessage(null);
+      return;
+    }
+    const prod = items.find((it) => it.id === selectedProductId);
+    setProductDefaultWarehouseId(prod?.default_warehouse_id ?? "");
+  }, [selectedProductId, items]);
 
   const fetchMappings = useCallback(async () => {
     setMappingLoading(true);
@@ -386,6 +459,65 @@ export default function OutletSetupPage() {
     }
   };
 
+  const saveProductDefaultWarehouse = async () => {
+    if (!selectedProductId) {
+      setProductDefaultWarehouseMessage({ ok: false, text: "Choose a product first" });
+      return;
+    }
+    setProductDefaultWarehouseSaving(true);
+    setProductDefaultWarehouseMessage(null);
+    try {
+      const detailRes = await fetch(`/api/catalog/items?id=${selectedProductId}`);
+      if (!detailRes.ok) throw new Error("Could not load product details");
+      const detailJson = await detailRes.json();
+      const item = detailJson.item as Record<string, any> | undefined;
+      if (!item) throw new Error("Product not found");
+
+      const payload = {
+        id: selectedProductId,
+        name: item.name,
+        sku: item.sku ?? null,
+        item_kind: item.item_kind ?? "product",
+        base_unit: item.base_unit ?? "each",
+        consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
+        consumption_qty_per_base: item.consumption_qty_per_base ?? 1,
+        storage_unit: item.storage_unit ?? null,
+        storage_weight: item.storage_weight ?? null,
+        cost: item.cost ?? 0,
+        has_variations: item.has_variations ?? false,
+        has_recipe: item.has_recipe ?? false,
+        outlet_order_visible: item.outlet_order_visible ?? true,
+        image_url: item.image_url ?? null,
+        default_warehouse_id: productDefaultWarehouseId || null,
+        active: item.active ?? true,
+        purchase_pack_unit: item.purchase_pack_unit ?? item.base_unit ?? "each",
+        units_per_purchase_pack: item.units_per_purchase_pack ?? 1,
+        purchase_unit_mass: item.purchase_unit_mass ?? null,
+        purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? null,
+        consumption_unit_mass: item.consumption_unit_mass ?? null,
+        consumption_unit_mass_uom: item.consumption_unit_mass_uom ?? null,
+        transfer_unit: item.transfer_unit ?? item.base_unit ?? "each",
+        transfer_quantity: item.transfer_quantity ?? 1,
+      };
+
+      const res = await fetch("/api/catalog/items", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Failed to save product default warehouse");
+      }
+      setProductDefaultWarehouseMessage({ ok: true, text: "Product default warehouse saved" });
+    } catch (error) {
+      console.error(error);
+      setProductDefaultWarehouseMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save" });
+    } finally {
+      setProductDefaultWarehouseSaving(false);
+    }
+  };
+
   const saveRawDefaultWarehouse = async () => {
     if (!selectedRawId) {
       setRawDefaultWarehouseMessage({ ok: false, text: "Choose a raw first" });
@@ -476,30 +608,42 @@ export default function OutletSetupPage() {
   };
 
   const createPosMapping = async () => {
-    if (!posForm.pos_item_id.trim() || !posForm.catalog_item_id.trim() || !posForm.outlet_id.trim()) {
+    const catalogId = posForm.catalog_item_id.trim();
+    const outletId = posForm.outlet_id.trim();
+    const derivedPosItemId = posForm.pos_item_id.trim() || catalogId;
+    const selectedCatalog = items.find((it) => it.id === catalogId);
+    const derivedPosItemName = posForm.pos_item_name.trim() || selectedCatalog?.name || null;
+
+    const variantKeys = (selectedVariantKeys.length ? selectedVariantKeys : [posForm.catalog_variant_key || "base"]).map((v) =>
+      v.trim()
+    );
+
+    if (!derivedPosItemId || !catalogId || !outletId) {
       setPosError({ ok: false, text: "POS item id, catalog item id, and outlet are required" });
       return;
     }
     setPosCreating(true);
     setPosError(null);
     try {
-      const res = await fetch("/api/catalog/pos-item-map", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pos_item_id: posForm.pos_item_id.trim(),
-          pos_item_name: posForm.pos_item_name.trim() || null,
-          pos_flavour_id: posForm.pos_flavour_id.trim() || null,
-          pos_flavour_name: posForm.pos_flavour_name.trim() || null,
-          catalog_item_id: posForm.catalog_item_id.trim(),
-          catalog_variant_key: posForm.catalog_variant_key.trim() || "base",
-          warehouse_id: posForm.warehouse_id.trim() || null,
-          outlet_id: posForm.outlet_id.trim(),
-        }),
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Failed to create mapping");
+      for (const variantKey of variantKeys) {
+        const res = await fetch("/api/catalog/pos-item-map", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pos_item_id: derivedPosItemId,
+            pos_item_name: derivedPosItemName,
+            pos_flavour_id: posForm.pos_flavour_id.trim() || null,
+            pos_flavour_name: posForm.pos_flavour_name.trim() || null,
+            catalog_item_id: catalogId,
+            catalog_variant_key: variantKey || "base",
+            warehouse_id: posForm.warehouse_id.trim() || null,
+            outlet_id: outletId,
+          }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error || "Failed to create mapping");
+        }
       }
       setPosForm({
         pos_item_id: "",
@@ -511,6 +655,7 @@ export default function OutletSetupPage() {
         warehouse_id: "",
         outlet_id: "",
       });
+      setSelectedVariantKeys(["base"]);
       const refreshed = await fetch("/api/catalog/pos-item-map");
       if (refreshed.ok) {
         const json = await refreshed.json();
@@ -521,6 +666,38 @@ export default function OutletSetupPage() {
       setPosError({ ok: false, text: error instanceof Error ? error.message : "Failed to create mapping" });
     } finally {
       setPosCreating(false);
+    }
+  };
+
+  const deletePosMapping = async (mapping: PosMapping) => {
+    const params = new URLSearchParams({
+      pos_item_id: mapping.pos_item_id,
+      catalog_item_id: mapping.catalog_item_id,
+      outlet_id: mapping.outlet_id,
+    });
+    if (mapping.pos_flavour_id) params.append("pos_flavour_id", mapping.pos_flavour_id);
+    if (mapping.catalog_variant_key) params.append("catalog_variant_key", mapping.catalog_variant_key);
+    if (mapping.warehouse_id) params.append("warehouse_id", mapping.warehouse_id);
+
+    setPosError(null);
+    const deleteKey = `${mapping.pos_item_id}-${mapping.pos_flavour_id ?? "_"}-${mapping.catalog_item_id}-${mapping.catalog_variant_key ?? "base"}-${mapping.outlet_id}-${mapping.warehouse_id ?? "_"}`;
+    setPosDeletingKey(deleteKey);
+    try {
+      const res = await fetch(`/api/catalog/pos-item-map?${params.toString()}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Failed to delete mapping");
+      }
+      const refreshed = await fetch("/api/catalog/pos-item-map");
+      if (refreshed.ok) {
+        const json = await refreshed.json();
+        setPosMappings(Array.isArray(json.mappings) ? json.mappings : []);
+      }
+    } catch (error) {
+      console.error(error);
+      setPosError({ ok: false, text: error instanceof Error ? error.message : "Failed to delete mapping" });
+    } finally {
+      setPosDeletingKey(null);
     }
   };
 
@@ -574,6 +751,27 @@ export default function OutletSetupPage() {
             </div>
             <div className={styles.controlsRow}>
               <div className={styles.selectGroup}>
+                <div className={styles.subHeading}>Products</div>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedProductId(value);
+                    setSelectedItemId(value);
+                  }}
+                  className={styles.select}
+                  disabled={routingLoading || productOptions.length <= 1}
+                  aria-label="Select product for routing"
+                >
+                  {productOptions.map((item) => (
+                    <option key={`prod-${item.id || "placeholder"}`} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={styles.selectGroup}>
                 <div className={styles.subHeading}>Ingredients</div>
                 <select
                   value={selectedIngredientId}
@@ -583,10 +781,10 @@ export default function OutletSetupPage() {
                     setSelectedItemId(value);
                   }}
                   className={styles.select}
-                  disabled={routingLoading || ingredientOptions.length <= 1}
+                  disabled={routingLoading || ingredientSelectOptions.length <= 1 || disableIngredientAndRaw}
                   aria-label="Select ingredient for routing"
                 >
-                  {ingredientOptions.map((item) => (
+                  {ingredientSelectOptions.map((item) => (
                     <option key={`ing-${item.id || "placeholder"}`} value={item.id}>
                       {item.name}
                     </option>
@@ -600,10 +798,10 @@ export default function OutletSetupPage() {
                   value={selectedRawId}
                   onChange={(e) => setSelectedRawId(e.target.value)}
                   className={styles.select}
-                  disabled={routingLoading || rawOptions.length <= 1}
+                  disabled={routingLoading || rawSelectOptions.length <= 1 || disableIngredientAndRaw}
                   aria-label="Select raw"
                 >
-                  {rawOptions.map((item) => (
+                  {rawSelectOptions.map((item) => (
                     <option key={`raw-${item.id || "placeholder"}`} value={item.id}>
                       {item.name}
                     </option>
@@ -642,13 +840,51 @@ export default function OutletSetupPage() {
 
             <div className={styles.controlsRow}>
               <div className={styles.selectGroup}>
+                <div className={styles.subHeading}>Product default</div>
+                <select
+                  className={styles.select}
+                  value={productDefaultWarehouseId}
+                  onChange={(e) => setProductDefaultWarehouseId(e.target.value)}
+                  aria-label="Default warehouse for selected product"
+                  disabled={!selectedProductId || routingLoading || productDefaultWarehouseSaving}
+                >
+                  <option value="">Default warehouse (optional)</option>
+                  {warehouseOptions.map((wh) => (
+                    <option key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => setProductDefaultWarehouseId("")}
+                  disabled={!productDefaultWarehouseId || !selectedProductId || productDefaultWarehouseSaving}
+                >
+                  Clear product default
+                </button>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={saveProductDefaultWarehouse}
+                  disabled={!selectedProductId || productDefaultWarehouseSaving || routingLoading}
+                >
+                  {productDefaultWarehouseSaving ? "Saving..." : "Save product default"}
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.controlsRow}>
+              <div className={styles.selectGroup}>
                 <div className={styles.subHeading}>Ingredient default</div>
                 <select
                   className={styles.select}
                   value={defaultWarehouseId}
                   onChange={(e) => setDefaultWarehouseId(e.target.value)}
                   aria-label="Default warehouse for selected ingredient"
-                  disabled={!selectedIngredientId || routingLoading || defaultWarehouseSaving}
+                  disabled={!selectedIngredientId || routingLoading || defaultWarehouseSaving || disableIngredientAndRaw}
                 >
                   <option value="">Default warehouse (optional)</option>
                   {warehouseOptions.map((wh) => (
@@ -663,7 +899,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.secondaryButton}
                   onClick={() => setDefaultWarehouseId("")}
-                  disabled={!defaultWarehouseId || !selectedIngredientId || defaultWarehouseSaving}
+                  disabled={!defaultWarehouseId || !selectedIngredientId || defaultWarehouseSaving || disableIngredientAndRaw}
                 >
                   Clear ingredient default
                 </button>
@@ -671,7 +907,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.primaryButton}
                   onClick={saveDefaultWarehouse}
-                  disabled={!selectedIngredientId || defaultWarehouseSaving || routingLoading}
+                  disabled={!selectedIngredientId || defaultWarehouseSaving || routingLoading || disableIngredientAndRaw}
                 >
                   {defaultWarehouseSaving ? "Saving..." : "Save ingredient default"}
                 </button>
@@ -686,7 +922,7 @@ export default function OutletSetupPage() {
                   value={rawDefaultWarehouseId}
                   onChange={(e) => setRawDefaultWarehouseId(e.target.value)}
                   aria-label="Default warehouse for selected raw"
-                  disabled={!selectedRawId || routingLoading || rawDefaultWarehouseSaving}
+                  disabled={!selectedRawId || routingLoading || rawDefaultWarehouseSaving || disableIngredientAndRaw}
                 >
                   <option value="">Default warehouse (optional)</option>
                   {warehouseOptions.map((wh) => (
@@ -701,7 +937,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.secondaryButton}
                   onClick={() => setRawDefaultWarehouseId("")}
-                  disabled={!rawDefaultWarehouseId || !selectedRawId || rawDefaultWarehouseSaving}
+                  disabled={!rawDefaultWarehouseId || !selectedRawId || rawDefaultWarehouseSaving || disableIngredientAndRaw}
                 >
                   Clear raw default
                 </button>
@@ -709,7 +945,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.primaryButton}
                   onClick={saveRawDefaultWarehouse}
-                  disabled={!selectedRawId || rawDefaultWarehouseSaving || routingLoading}
+                  disabled={!selectedRawId || rawDefaultWarehouseSaving || routingLoading || disableIngredientAndRaw}
                 >
                   {rawDefaultWarehouseSaving ? "Saving..." : "Save raw default"}
                 </button>
@@ -721,6 +957,13 @@ export default function OutletSetupPage() {
                 className={`${styles.callout} ${defaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}
               >
                 {defaultWarehouseMessage.text}
+              </div>
+            )}
+            {productDefaultWarehouseMessage && (
+              <div
+                className={`${styles.callout} ${productDefaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}
+              >
+                {productDefaultWarehouseMessage.text}
               </div>
             )}
             {rawDefaultWarehouseMessage && (
@@ -891,6 +1134,9 @@ export default function OutletSetupPage() {
             <div>
               <h2 className={styles.sectionTitle}>POS item match</h2>
               <p className={styles.sectionBody}>Preview the first five mappings and add quick links without leaving setup.</p>
+              <div className={styles.disclaimer}>
+                POS item match = connect each POS item (and flavour) to the catalog product or variant that should lose stock when sold. Use variants for size/flavour-specific deductions so the right recipe hits inventory. Warehouse routing still comes from the product’s outlet mapping above.
+              </div>
               <p className={styles.note}>Full table lives in Catalog → POS match.</p>
             </div>
 
@@ -902,6 +1148,23 @@ export default function OutletSetupPage() {
                 onChange={(e) => setPosSearch(e.target.value)}
                 disabled={posLoading}
               />
+              <select
+                className={styles.select}
+                value={posLimit === "all" ? "all" : String(posLimit)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setPosLimit(value === "all" ? "all" : Number(value));
+                }}
+                aria-label="Number of mappings to show"
+                disabled={posLoading}
+              >
+                <option value="all">Show all</option>
+                {[50, 100, 150, 200, 300, 400, 500, 1000, 2000, 5000].map((count) => (
+                  <option key={count} value={count}>
+                    Show {count}
+                  </option>
+                ))}
+              </select>
               <div className={styles.actions}>
                 <button className={styles.secondaryButton} onClick={() => setPosSearch("")} disabled={!posSearch}>
                   Clear
@@ -931,6 +1194,7 @@ export default function OutletSetupPage() {
                     <th>Variant</th>
                     <th>Warehouse</th>
                     <th>Outlet</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -938,13 +1202,15 @@ export default function OutletSetupPage() {
                     <tr>
                       <td colSpan={6}>Loading…</td>
                     </tr>
-                  ) : filteredPosMappings.length === 0 ? (
+                  ) : filteredPosMappings.list.length === 0 ? (
                     <tr>
-                      <td colSpan={6}>No mappings found (preview shows first five).</td>
+                      <td colSpan={6}>No mappings found.</td>
                     </tr>
                   ) : (
-                    filteredPosMappings.map((m) => (
-                      <tr key={`${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}`}>
+                    filteredPosMappings.list.map((m, idx) => (
+                      <tr
+                        key={`${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}-${m.warehouse_id ?? "_"}-${idx}`}
+                      >
                         <td>
                           <div className={styles.outletName}>{m.pos_item_id}</div>
                           <div className={styles.outletCode}>{m.pos_item_name || ""}</div>
@@ -957,9 +1223,18 @@ export default function OutletSetupPage() {
                           <div className={styles.outletName}>{m.catalog_item_name || m.catalog_item_id}</div>
                           <div className={styles.outletCode}>{m.catalog_item_id}</div>
                         </td>
-                        <td>{m.catalog_variant_key || "base"}</td>
+                        <td>{variantLabels[m.catalog_variant_key || "base"] ?? m.catalog_variant_key ?? "base"}</td>
                         <td>{m.warehouse_id || "—"}</td>
                         <td>{m.outlet_id}</td>
+                        <td>
+                          <button
+                            className={styles.secondaryButton}
+                            onClick={() => deletePosMapping(m)}
+                            disabled={posDeletingKey === `${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}-${m.warehouse_id ?? "_"}`}
+                          >
+                            {posDeletingKey === `${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}-${m.warehouse_id ?? "_"}` ? "Deleting…" : "Delete"}
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -968,55 +1243,60 @@ export default function OutletSetupPage() {
             </div>
 
             <p className={styles.note}>
-              Showing {filteredPosMappings.length} of {posMappings.length}. Use View all for the complete list.
+              Showing {filteredPosMappings.list.length} of {filteredPosMappings.total}. Adjust the dropdown to load more or use View all for the complete list.
             </p>
-
-            <div className={styles.controlsRow}>
-              <input
-                className={styles.input}
-                placeholder="POS item id"
-                value={posForm.pos_item_id}
-                onChange={(e) => updatePosForm("pos_item_id", e.target.value)}
-              />
-              <input
-                className={styles.input}
-                placeholder="POS item name (optional)"
-                value={posForm.pos_item_name}
-                onChange={(e) => updatePosForm("pos_item_name", e.target.value)}
-              />
-              <input
-                className={styles.input}
-                placeholder="POS flavour id (optional)"
-                value={posForm.pos_flavour_id}
-                onChange={(e) => updatePosForm("pos_flavour_id", e.target.value)}
-              />
-              <input
-                className={styles.input}
-                placeholder="POS flavour name (optional)"
-                value={posForm.pos_flavour_name}
-                onChange={(e) => updatePosForm("pos_flavour_name", e.target.value)}
-              />
-            </div>
 
             <div className={styles.controlsRow}>
               <select
                 className={styles.select}
                 value={posForm.catalog_item_id}
-                onChange={(e) => updatePosForm("catalog_item_id", e.target.value)}
-                aria-label="Catalog item"
+                onChange={(e) => {
+                  const itemId = e.target.value;
+                  updatePosForm("catalog_item_id", itemId);
+                  updatePosForm("catalog_variant_key", "base");
+                  if (!posForm.pos_item_id) updatePosForm("pos_item_id", itemId);
+                  if (!posForm.pos_item_name) {
+                    const named = items.find((it) => it.id === itemId)?.name ?? "";
+                    updatePosForm("pos_item_name", named);
+                  }
+                  setSelectedVariantKeys(["base"]);
+                }}
+                aria-label="Catalog product"
               >
                 {itemOptions.map((item) => (
-                  <option key={item.id} value={item.id}>
+                  <option key={item.id || "placeholder"} value={item.id}>
                     {item.name}
                   </option>
                 ))}
               </select>
-              <input
-                className={styles.input}
-                placeholder="Variant key (base)"
-                value={posForm.catalog_variant_key}
-                onChange={(e) => updatePosForm("catalog_variant_key", e.target.value)}
-              />
+              <div className={styles.variantChooser} aria-label="Catalog variants" aria-disabled={!posForm.catalog_item_id}>
+                {!posForm.catalog_item_id ? (
+                  <div className={styles.variantHint}>Select a product to choose variants</div>
+                ) : (
+                  <div className={styles.variantList}>
+                    {posVariantOptions.map((option) => {
+                      const checked = selectedVariantKeys.includes(option.value);
+                      return (
+                        <label key={option.value} className={styles.variantOption}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setSelectedVariantKeys((prev) => {
+                                if (isChecked) return Array.from(new Set([...prev, option.value]));
+                                return prev.filter((v) => v !== option.value);
+                              });
+                              if (isChecked) updatePosForm("catalog_variant_key", option.value);
+                            }}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <select
                 className={styles.select}
                 value={posForm.warehouse_id}
