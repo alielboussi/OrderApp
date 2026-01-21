@@ -19,7 +19,13 @@ interface PosMapping {
   warehouse_id?: string | null;
   outlet_id: string;
 }
-interface Item { id: string; name: string; item_kind?: string | null; default_warehouse_id?: string | null }
+interface Item {
+  id: string;
+  name: string;
+  item_kind?: string | null;
+  default_warehouse_id?: string | null;
+  has_recipe?: boolean | null;
+}
 interface Variant { id: string; item_id: string; name: string; sku?: string | null; active?: boolean | null }
 
 type RouteRecord = Record<string, string>;
@@ -1269,7 +1275,7 @@ export default function OutletSetupPage() {
                   </option>
                 ))}
               </select>
-              <div className={styles.variantChooser} aria-label="Catalog variants" aria-disabled={!posForm.catalog_item_id}>
+              <div className={styles.variantChooser} aria-label="Catalog variants">
                 {!posForm.catalog_item_id ? (
                   <div className={styles.variantHint}>Select a product to choose variants</div>
                 ) : (
