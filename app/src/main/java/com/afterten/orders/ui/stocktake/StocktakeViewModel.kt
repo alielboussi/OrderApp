@@ -312,8 +312,21 @@ class StocktakeViewModel(
         runCatching { repo.listWarehouseItems(jwt, warehouseId, outletId, null) }
             .onSuccess { fetched ->
                 val display = pickDisplayItems(fetched)
-                pushDebug("loadItems fetched=${fetched.size} display=${display.size} for warehouse=$warehouseId outlet=$outletId")
-                _ui.value = _ui.value.copy(items = display, loading = false, error = null)
+                if (display.isNotEmpty()) {
+                    pushDebug("loadItems fetched=${fetched.size} display=${display.size} for warehouse=$warehouseId outlet=$outletId")
+                    _ui.value = _ui.value.copy(items = display, loading = false, error = null)
+                } else {
+                    runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
+                        .onSuccess { direct ->
+                            val directDisplay = pickDisplayItems(direct)
+                            pushDebug("loadItems fallback direct=${direct.size} display=${directDisplay.size} for warehouse=$warehouseId")
+                            _ui.value = _ui.value.copy(items = directDisplay, loading = false, error = null)
+                        }
+                        .onFailure { err ->
+                            pushDebug("loadItems fallback failed: ${err.message}")
+                            _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
+                        }
+                }
             }
             .onFailure { err ->
                 pushDebug("loadItems failed: ${err.message}")

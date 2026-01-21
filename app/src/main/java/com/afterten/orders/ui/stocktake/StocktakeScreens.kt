@@ -294,7 +294,10 @@ fun StocktakeCountScreen(
     val session by root.session.collectAsState()
     val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
     LaunchedEffect(session?.token) { vm.bindSession(session) }
-    LaunchedEffect(periodId, session?.token) { vm.loadPeriod(periodId) }
+    LaunchedEffect(periodId, session?.token) {
+        vm.loadPeriod(periodId)
+        vm.loadVarianceFor(periodId)
+    }
     val ui by vm.ui.collectAsState()
 
     if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
@@ -338,6 +341,20 @@ fun StocktakeCountScreen(
         val term = search.trim().lowercase()
         if (term.isBlank()) ui.items else ui.items.filter {
             it.itemName?.lowercase()?.contains(term) == true || it.itemId.lowercase().contains(term)
+        }
+    }
+
+    val allowedVariance = remember(ui.items, ui.variance) {
+        if (ui.items.isEmpty()) return@remember ui.variance
+        val allowed = ui.items
+            .groupBy { it.itemId }
+            .mapValues { entry ->
+                entry.value.map { it.variantKey?.ifBlank { "base" } ?: "base" }.toSet()
+            }
+        ui.variance.filter { row ->
+            val keys = allowed[row.itemId] ?: return@filter false
+            val vKey = row.variantKey?.ifBlank { "base" } ?: "base"
+            keys.contains(vKey)
         }
     }
 
@@ -493,6 +510,29 @@ fun StocktakeCountScreen(
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.Black),
+            border = BorderStroke(1.dp, primaryRed)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Variances", fontWeight = FontWeight.Bold, color = Color.White)
+                if (allowedVariance.isEmpty()) {
+                    Text("No variance rows for this period yet", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                } else {
+                    allowedVariance.forEach { row ->
+                        val varianceColor = if (row.varianceQty < 0) primaryRed else Color(0xFF2E7D32)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(row.itemName ?: row.itemId, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                            Text("Variance: ${String.format("%.2f", row.varianceQty)}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                        }
+                        Spacer(Modifier.height(8.dp))
                     }
                 }
             }
