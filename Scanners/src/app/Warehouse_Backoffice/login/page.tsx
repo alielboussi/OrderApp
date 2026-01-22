@@ -2,22 +2,10 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { type SupabaseClient } from "@supabase/supabase-js";
+import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import styles from "./login.module.css";
 
-function buildClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) {
-    throw new Error("Supabase URL and anon key are required");
-  }
-  return createClient(url, anon, {
-    auth: {
-      persistSession: true,
-      storageKey: "sb-warehouse-backoffice",
-    },
-  });
-}
 
 async function isPlatformAdmin(supabase: SupabaseClient, userId: string): Promise<boolean> {
   const { data, error } = await supabase
@@ -36,7 +24,7 @@ async function isPlatformAdmin(supabase: SupabaseClient, userId: string): Promis
 
 export default function WarehouseBackofficeLogin() {
   const router = useRouter();
-  const supabase = useMemo(() => buildClient(), []);
+  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

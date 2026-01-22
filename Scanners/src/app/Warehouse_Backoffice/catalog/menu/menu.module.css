@@ -2,18 +2,22 @@
 
 .page {
   min-height: 100vh;
-  background: radial-gradient(circle at 15% 20%, #111c34, #050912 65%);
-  color: #e7ecff;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(96, 165, 250, 0.12), transparent 35%),
+    radial-gradient(circle at 82% 8%, rgba(244, 114, 182, 0.12), transparent 38%),
+    radial-gradient(circle at 50% 70%, rgba(34, 197, 94, 0.08), transparent 42%),
+    #050a16;
+  color: #e8edff;
   font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
   display: flex;
   justify-content: center;
+  padding: 40px 24px 54px;
+}
 
 .badgeRecipe {
   background: rgba(34, 197, 94, 0.12);
   color: #7ef2a7;
   border-color: rgba(34, 197, 94, 0.35);
-}
-  padding: 36px 22px 48px;
 }
 
 .shell {
@@ -29,11 +33,13 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 18px;
-  padding: 22px;
+  padding: 24px;
   border-radius: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: linear-gradient(135deg, rgba(16, 25, 46, 0.9), rgba(9, 14, 28, 0.92));
-  box-shadow: 0 26px 50px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 18, 36, 0.92);
+  box-shadow: 0 28px 58px rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
 }
 
 .kicker {
@@ -53,8 +59,8 @@
 
 .subtitle {
   margin: 0;
-  color: #cbd7ff;
-  line-height: 1.45;
+  color: #97a7c6;
+  line-height: 1.5;
   max-width: 620px;
 }
 
@@ -81,7 +87,7 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #f8fbff;
   background: transparent;
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition: transform 150ms ease, box-shadow 160ms ease, border-color 150ms ease;
 }
 
 .primaryButton {
@@ -99,6 +105,7 @@
 .primaryButton:not(:disabled):hover,
 .secondaryButton:hover {
   transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .controls {
@@ -124,7 +131,7 @@
 
 .searchInput {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
   padding: 12px 14px;
   color: inherit;
@@ -135,7 +142,7 @@
 
 .searchInput:focus {
   border-color: #22c55e;
-  box-shadow: 0 10px 26px rgba(34, 197, 94, 0.15);
+  box-shadow: 0 12px 28px rgba(34, 197, 94, 0.18);
 }
 
 .error {
@@ -145,6 +152,7 @@
   border-radius: 14px;
   padding: 10px 14px;
   font-size: 14px;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
 }
 
 
@@ -155,14 +163,21 @@
 }
 
 .card {
-  background: rgba(12, 17, 32, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 12px;
+  background: linear-gradient(160deg, rgba(17, 24, 39, 0.92), rgba(10, 15, 28, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 22px 42px rgba(0, 0, 0, 0.45);
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-2px);
+  box-shadow: 0 28px 52px rgba(0, 0, 0, 0.5);
 }
 
 .cardHeader {

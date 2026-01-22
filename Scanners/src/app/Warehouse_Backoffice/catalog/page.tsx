@@ -21,7 +21,9 @@ export default function CatalogMenu() {
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Catalog Builder</h1>
-            <p className={styles.subtitle}>Manage products, variants, and supporting data for the stock app.</p>
+            <p className={styles.subtitle}>
+              Create items, variants, and recipes that back outlet_item_routes, storage homes, and POS matching.
+            </p>
           </div>
           <div className={styles.headerButtons}>
             <button onClick={backOne} className={styles.backButton}>

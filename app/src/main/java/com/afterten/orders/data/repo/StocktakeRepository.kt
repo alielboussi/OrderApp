@@ -66,6 +66,12 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     suspend fun listCatalogItemsForStocktake(jwt: String) =
         supabase.listCatalogItemsForStocktake(jwt)
 
+    suspend fun listAllVariations(jwt: String) =
+        supabase.listAllVariations(jwt)
+
+    suspend fun listActiveProducts(jwt: String) =
+        supabase.listActiveProducts(jwt)
+
     suspend fun listOutletWarehouseRoutesFallback(jwt: String, outletId: String, warehouseId: String) =
         supabase.listOutletWarehouseRoutesFallback(jwt, outletId, warehouseId)
 

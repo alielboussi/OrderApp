@@ -68,7 +68,7 @@ Table: `public.pos_item_map`
 - `outlet_id` (uuid) — outlet scope for the mapping
 - `catalog_item_id` (uuid) — Supabase catalog_items.id
 - `catalog_variant_key` (text, nullable; defaults to `base`)
-- `warehouse_id` (uuid, nullable) — preferred deduction warehouse
+- `warehouse_id` (uuid, nullable) — preferred deduction warehouse (overrides outlet routing when set)
 - `pos_item_name` / `pos_flavour_name` (optional display helpers)
 
 Mapping lookup uses `pos_item_id` + `pos_flavour_id` (if present) and returns `catalog_item_id`, `catalog_variant_key`, and `warehouse_id` for stock deduction.
@@ -106,7 +106,7 @@ values
 - Path: `/rest/v1/rpc/sync_pos_order`
 - Idempotency: `orders.source_event_id` unique.
 - Inserts `orders` (including `pos_sale_id`, customer fields, payments, and `raw_payload`) and `pos_inventory_consumed`.
-- For each item: maps `pos_item_id` (+ `pos_flavour_id` when present) via `pos_item_map`, then calls `record_outlet_sale` (stock deducts via recipes and outlet/warehouse mappings).
+- For each item: maps `pos_item_id` (+ `pos_flavour_id` when present) via `pos_item_map`, then calls `record_outlet_sale` (deduction warehouse resolved via `outlet_item_routes` unless `pos_item_map.warehouse_id` is set).
 
 ## Operational checklist
 1) Populate `pos_item_map` with all POS MenuItem.Id → catalog item/variant/warehouse.

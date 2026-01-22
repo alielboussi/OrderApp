@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import styles from "./recipes.module.css";
 
 type ItemKind = "raw" | "ingredient" | "finished";
@@ -47,23 +47,10 @@ function toErrorMessage(error: unknown): string {
   }
 }
 
-function buildClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) {
-    throw new Error("Supabase URL and anon key are required");
-  }
-  return createClient(url, anon, {
-    auth: {
-      persistSession: true,
-      storageKey: "sb-warehouse-backoffice",
-    },
-  });
-}
 
 export default function RecipesPage() {
   const router = useRouter();
-  const supabase = useMemo(() => buildClient(), []);
+  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);

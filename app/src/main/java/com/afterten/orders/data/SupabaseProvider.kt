@@ -949,27 +949,50 @@ class SupabaseProvider(context: Context) {
 
     suspend fun listWarehousesForOutlet(jwt: String, outletId: String?): List<Warehouse> {
         val targetOutlet = outletId?.trim().takeUnless { it.isNullOrEmpty() } ?: return emptyList()
-        val mapUrl = buildString {
-            append(supabaseUrl)
-            append("/rest/v1/outlet_warehouses")
-            append("?select=warehouse_id")
-            append("&outlet_id=eq.")
-            append(targetOutlet)
-        }
-        val mapResp = http.get(mapUrl) {
-            header("apikey", supabaseAnonKey)
-            header(HttpHeaders.Authorization, "Bearer $jwt")
-        }
-        val mapCode = mapResp.status.value
-        val mapTxt = mapResp.bodyAsText()
-        if (mapCode !in 200..299) throw IllegalStateException("listWarehousesForOutlet mapping failed: HTTP $mapCode $mapTxt")
+        val primaryIds = runCatching {
+            val mapUrl = buildString {
+                append(supabaseUrl)
+                append("/rest/v1/outlet_warehouses")
+                append("?select=warehouse_id")
+                append("&outlet_id=eq.")
+                append(targetOutlet)
+            }
+            val mapResp = http.get(mapUrl) {
+                header("apikey", supabaseAnonKey)
+                header(HttpHeaders.Authorization, "Bearer $jwt")
+            }
+            val mapCode = mapResp.status.value
+            val mapTxt = mapResp.bodyAsText()
+            if (mapCode !in 200..299) throw IllegalStateException("listWarehousesForOutlet mapping failed: HTTP $mapCode $mapTxt")
+            relaxedJson.decodeFromString(ListSerializer(OutletWarehouseLink.serializer()), mapTxt)
+                .mapNotNull { it.warehouseId.trim().takeIf(String::isNotEmpty) }
+                .distinct()
+        }.getOrElse { emptyList() }
 
-        val ids = relaxedJson.decodeFromString(ListSerializer(OutletWarehouseLink.serializer()), mapTxt)
-            .mapNotNull { it.warehouseId.trim().takeIf(String::isNotEmpty) }
-            .distinct()
+        val ids = if (primaryIds.isNotEmpty()) {
+            primaryIds
+        } else {
+            val routesUrl = buildString {
+                append(supabaseUrl)
+                append("/rest/v1/outlet_item_routes")
+                append("?select=warehouse_id")
+                append("&outlet_id=eq.")
+                append(targetOutlet)
+                append("&warehouse_id=is.not.null")
+            }
+            val routesResp = http.get(routesUrl) {
+                header("apikey", supabaseAnonKey)
+                header(HttpHeaders.Authorization, "Bearer $jwt")
+            }
+            val routesCode = routesResp.status.value
+            val routesTxt = routesResp.bodyAsText()
+            if (routesCode !in 200..299) return emptyList()
+            relaxedJson.decodeFromString(ListSerializer(OutletItemRouteRow.serializer()), routesTxt)
+                .mapNotNull { it.warehouseId?.trim()?.takeIf(String::isNotEmpty) }
+                .distinct()
+        }
+
         if (ids.isEmpty()) return emptyList()
-
-        // Reuse the existing helper to fetch warehouse details and filter to active only.
         return fetchWarehousesByIds(jwt, ids).filter { it.active }
     }
 
@@ -1627,7 +1650,7 @@ class SupabaseProvider(context: Context) {
         val url = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,item_kind,image_url,has_recipe,active")
+            append("?select=id,name,item_kind,image_url,has_recipe,active,variants")
             append("&active=eq.true")
         }
         val resp = http.get(url) {
@@ -1639,25 +1662,48 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) throw IllegalStateException("catalog_items list failed: HTTP $code $txt")
         val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), txt)
 
-        return items
+        val results = mutableListOf<WarehouseStockItem>()
+        items
             .filter { it.active != false }
-            .filter { item ->
+            .forEach { item ->
                 val kind = item.itemKind?.lowercase()
-                val hasRecipe = item.hasRecipe == true
-                kind == "ingredient" || (kind != "raw" && !hasRecipe)
+                if (kind == "ingredient") {
+                    results.add(
+                        WarehouseStockItem(
+                            itemId = item.id,
+                            itemName = item.name,
+                            variantKey = "base",
+                            netUnits = null,
+                            unitCost = null,
+                            itemKind = item.itemKind,
+                            imageUrl = item.imageUrl,
+                            hasRecipe = item.hasRecipe
+                        )
+                    )
+                }
+
+                item.variants.orEmpty().forEach { variant ->
+                    val key = variant.key?.trim().takeUnless { it.isNullOrEmpty() }
+                        ?: variant.id?.trim().takeUnless { it.isNullOrEmpty() }
+                    val normalized = key?.lowercase()
+                    if (key != null && normalized != "base") {
+                        results.add(
+                            WarehouseStockItem(
+                                itemId = item.id,
+                                itemName = item.name,
+                                variantKey = key,
+                                netUnits = null,
+                                unitCost = null,
+                                itemKind = variant.itemKind ?: item.itemKind,
+                                imageUrl = item.imageUrl,
+                                hasRecipe = item.hasRecipe
+                            )
+                        )
+                    }
+                }
             }
-            .map { item ->
-                WarehouseStockItem(
-                    itemId = item.id,
-                    itemName = item.name,
-                    variantKey = "base",
-                    netUnits = null,
-                    unitCost = null,
-                    itemKind = item.itemKind,
-                    imageUrl = item.imageUrl,
-                    hasRecipe = item.hasRecipe
-                )
-            }
+
+        return results
     }
 
     suspend fun listOutletStockPeriods(

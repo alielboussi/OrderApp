@@ -2,7 +2,6 @@ export type Warehouse = {
   id: string;
   name: string;
   parent_warehouse_id: string | null;
-  kind: string | null;
   active: boolean;
 };
 

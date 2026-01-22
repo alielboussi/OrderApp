@@ -2,26 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-
-let browserClient: SupabaseClient | null = null;
-
-function getBrowserClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) {
-    throw new Error("Supabase URL and anon key are required");
-  }
-  if (!browserClient) {
-    browserClient = createClient(url, anon, {
-      auth: {
-        persistSession: true,
-        storageKey: "sb-warehouse-backoffice",
-      },
-    });
-  }
-  return browserClient;
-}
+import { type Session, type SupabaseClient } from "@supabase/supabase-js";
+import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 
 async function isPlatformAdmin(supabase: SupabaseClient, session: Session | null): Promise<boolean> {
   const userId = session?.user?.id;
@@ -44,7 +26,7 @@ async function isPlatformAdmin(supabase: SupabaseClient, session: Session | null
 
 export function useWarehouseAuth() {
   const router = useRouter();
-  const supabase = useMemo(() => getBrowserClient(), []);
+  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [status, setStatus] = useState<"checking" | "ok" | "redirecting">("checking");
 
   useEffect(() => {

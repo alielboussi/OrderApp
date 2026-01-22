@@ -67,8 +67,9 @@ function cleanText(value: unknown): string | undefined {
 
 function cleanItemKind(value: unknown, fallback: ItemKind): ItemKind {
   if (typeof value === "string") {
-    const trimmed = value.trim() as ItemKind;
-    if (ITEM_KINDS.includes(trimmed)) return trimmed;
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "product") return "finished";
+    if (ITEM_KINDS.includes(trimmed as ItemKind)) return trimmed as ItemKind;
   }
   return fallback;
 }
@@ -99,6 +100,39 @@ type CatalogItemRow = {
 };
 
 const asVariantArray = (value: unknown): VariantRecord[] => (Array.isArray(value) ? (value as VariantRecord[]) : []);
+const normalizeVariantKey = (value?: string | null) => {
+  const normalized = value?.trim();
+  return normalized && normalized.length ? normalized : "base";
+};
+
+async function upsertVariantStorageHome(
+  supabase: ReturnType<typeof getServiceClient>,
+  itemId: string,
+  variantKey: string,
+  warehouseId: string | null
+) {
+  const normalizedVariantKey = normalizeVariantKey(variantKey);
+  if (!warehouseId) {
+    await supabase
+      .from("item_storage_homes")
+      .delete()
+      .eq("item_id", itemId)
+      .eq("normalized_variant_key", normalizedVariantKey);
+    return;
+  }
+
+  await supabase
+    .from("item_storage_homes")
+    .upsert(
+      {
+        item_id: itemId,
+        variant_key: variantKey,
+        normalized_variant_key: normalizedVariantKey,
+        storage_warehouse_id: warehouseId,
+      },
+      { onConflict: "item_id,normalized_variant_key" }
+    );
+}
 
 function toVariantResponse(itemId: string, variant: VariantRecord) {
   const key = (variant.key ?? variant.id ?? "").toString().trim();
@@ -168,19 +202,43 @@ export async function GET(request: Request) {
         .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> & { has_recipe: boolean } => Boolean(v));
     });
 
+    const variantIds = variants.map((v) => v.id);
+    const itemIds = Array.from(new Set(variants.map((v) => v.item_id)));
+    const storageHomeByKey: Record<string, string | null> = {};
+
+    if (itemIds.length) {
+      const { data: storageRows, error: storageErr } = await supabase
+        .from("item_storage_homes")
+        .select("item_id, normalized_variant_key, storage_warehouse_id")
+        .in("item_id", itemIds);
+      if (storageErr) throw storageErr;
+      (storageRows ?? []).forEach((row) => {
+        if (row?.item_id && row?.normalized_variant_key) {
+          storageHomeByKey[`${row.item_id}::${row.normalized_variant_key}`] = row.storage_warehouse_id;
+        }
+      });
+    }
+
+    const variantsWithStorage = variants.map((variant) => {
+      const normalizedKey = normalizeVariant(variant.id);
+      const storageKey = `${variant.item_id}::${normalizedKey}`;
+      const storageHomeId = storageHomeByKey[storageKey] ?? variant.default_warehouse_id ?? null;
+      return { ...variant, storage_home_id: storageHomeId };
+    });
+
     if (id) {
-      const found = variants.find((variant) => variant.id === id);
+      const found = variantsWithStorage.find((variant) => variant.id === id);
       if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ variant: found });
     }
 
     const filtered = search
-      ? variants.filter((variant) => {
+      ? variantsWithStorage.filter((variant) => {
           const name = variant.name?.toLowerCase?.() ?? "";
           const sku = variant.sku?.toLowerCase?.() ?? "";
           return name.includes(search) || sku.includes(search);
         })
-      : variants;
+      : variantsWithStorage;
 
     return NextResponse.json({ variants: filtered });
   } catch (error) {
@@ -260,7 +318,13 @@ export async function POST(request: Request) {
     const responseVariant = toVariantResponse(itemId, newVariant);
     if (!responseVariant) return NextResponse.json({ error: "Failed to save variant" }, { status: 500 });
 
-    return NextResponse.json({ variant: responseVariant });
+    try {
+      await upsertVariantStorageHome(supabase, itemId, responseVariant.id, responseVariant.default_warehouse_id ?? null);
+    } catch (storageError) {
+      console.error("[catalog/variants] storage home upsert failed", storageError);
+    }
+
+    return NextResponse.json({ variant: { ...responseVariant, storage_home_id: responseVariant.default_warehouse_id ?? null } });
   } catch (error) {
     console.error("[catalog/variants] POST failed", error);
     return NextResponse.json({ error: "Unable to create variant" }, { status: 500 });
@@ -348,7 +412,13 @@ export async function PUT(request: Request) {
     const responseVariant = toVariantResponse(itemId, found);
     if (!responseVariant) return NextResponse.json({ error: "Failed to update variant" }, { status: 500 });
 
-    return NextResponse.json({ variant: responseVariant });
+    try {
+      await upsertVariantStorageHome(supabase, itemId, responseVariant.id, responseVariant.default_warehouse_id ?? null);
+    } catch (storageError) {
+      console.error("[catalog/variants] storage home upsert failed", storageError);
+    }
+
+    return NextResponse.json({ variant: { ...responseVariant, storage_home_id: responseVariant.default_warehouse_id ?? null } });
   } catch (error) {
     console.error("[catalog/variants] PUT failed", error);
     return NextResponse.json({ error: "Unable to update variant" }, { status: 500 });

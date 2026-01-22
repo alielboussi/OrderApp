@@ -7,21 +7,21 @@ import styles from "./inventory.module.css";
 const actionCards = [
   {
     title: "Warehouse Transfers",
-    body: "View all internal transfers.",
+    body: "Move stock between warehouses with roles enforced.",
     cta: "Enter Transfers",
     path: "/Warehouse_Backoffice/transfers",
     className: "transfersCard",
   },
   {
     title: "Warehouse Damages",
-    body: "Audit all damage deductions.",
+    body: "Audit deductions recorded against warehouses.",
     cta: "View Damages",
     path: "/Warehouse_Backoffice/damages",
     className: "damagesCard",
   },
   {
     title: "Warehouse Purchases",
-    body: "Review received purchase receipts.",
+    body: "Review receipts landing into storage homes.",
     cta: "View Purchases",
     path: "/Warehouse_Backoffice/purchases",
     className: "purchasesCard",
@@ -46,7 +46,7 @@ export default function InventoryMenu() {
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Scanner History</h1>
-            <p className={styles.subtitle}>Choose a workspace to continue.</p>
+            <p className={styles.subtitle}>Choose a workspace for transfers, purchases, and damages against warehouses.</p>
           </div>
           <div className={styles.headerButtons}>
             <button onClick={handleBackOne} className={styles.backButton}>

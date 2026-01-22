@@ -66,15 +66,16 @@ POS → Supabase wiring confirmation (middleware + RPC)
 4) Item mapping (POS → Supabase catalog)
 - Uses public.pos_item_map with outlet scope:
   match on pos_item_id and (pos_flavour_id is null OR pos_flavour_id = payload.flavour_id)
-  returns catalog_item_id, catalog_variant_key, warehouse_id
+  returns catalog_item_id, catalog_variant_key, warehouse_id (optional override)
 
 5) Stock subtraction path (Supabase)
 - sync_pos_order calls record_outlet_sale per item.
 - record_outlet_sale:
-  a) inserts outlet_sales row
-  b) updates outlet_stock_balances (consumed_units += qty * consumption_qty_per_base)
-  c) inserts stock_ledger row for the sold item using its variant_key (variant-first deduction)
-  d) calls apply_recipe_deductions (ingredients first, then raws)
+  a) resolves deduction warehouse from outlet_item_routes (shared outlet warehouse) unless pos_item_map.warehouse_id is set
+  b) inserts outlet_sales row
+  c) updates outlet_stock_balances (consumed_units += qty * consumption_qty_per_base)
+  d) inserts stock_ledger row for the sold item using its variant_key (variant-first deduction)
+  e) calls apply_recipe_deductions (ingredients first, then raws)
 
 6) Error prevention requirements (must be true to avoid failures)
 - outlet_id and source_event_id present in payload

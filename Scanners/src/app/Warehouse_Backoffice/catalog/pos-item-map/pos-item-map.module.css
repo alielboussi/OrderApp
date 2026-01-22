@@ -1,8 +1,12 @@
 .page {
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 20%, #0f172a 0%, #0a1126 45%, #060c1c 100%);
-  color: #e2e8f0;
-  padding: 32px 16px 64px;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(96, 165, 250, 0.12), transparent 35%),
+    radial-gradient(circle at 82% 8%, rgba(244, 114, 182, 0.12), transparent 38%),
+    radial-gradient(circle at 50% 70%, rgba(34, 197, 94, 0.08), transparent 42%),
+    #050a16;
+  color: #e8edff;
+  padding: 40px 20px 68px;
 }
 
 .shell {
@@ -46,22 +50,35 @@
 }
 
 .primaryButton {
-  background: linear-gradient(135deg, #0ea5e9, #2563eb);
-  color: #fff;
-  border: none;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #0c152b;
+  border: 1px solid rgba(34, 197, 94, 0.8);
   padding: 10px 14px;
-  border-radius: 10px;
-  font-weight: 600;
+  border-radius: 12px;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 18px 34px rgba(34, 197, 94, 0.28);
+  transition: transform 140ms ease, box-shadow 160ms ease;
 }
 
 .secondaryButton {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8edff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+
+.primaryButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 42px rgba(34, 197, 94, 0.34);
+}
+
+.secondaryButton:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .controls {
@@ -91,11 +108,18 @@
 
 .searchInput {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
-  padding: 10px 12px;
-  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  padding: 11px 12px;
+  border-radius: 12px;
   min-width: 260px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.searchInput:focus {
+  border-color: rgba(34, 197, 94, 0.85);
+  box-shadow: 0 12px 28px rgba(34, 197, 94, 0.16);
+  outline: none;
 }
 
 .error {
@@ -104,10 +128,11 @@
 }
 
 .tableCard {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  background: linear-gradient(170deg, rgba(17, 24, 39, 0.92), rgba(10, 15, 28, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
   overflow: hidden;
+  box-shadow: 0 26px 54px rgba(0, 0, 0, 0.5);
 }
 
 .tableHead,
@@ -122,7 +147,7 @@
 .tableHead {
   background: rgba(255, 255, 255, 0.06);
   font-weight: 700;
-  color: #bfdbfe;
+  color: #cde3ff;
   letter-spacing: 0.01em;
 }
 

@@ -41,7 +41,7 @@ type FormState = {
   has_recipe: boolean;
   outlet_order_visible: boolean;
   image_url: string;
-  default_warehouse_id: string;
+  storage_home_id: string;
   active: boolean;
 };
 
@@ -59,7 +59,7 @@ const defaultForm: FormState = {
   has_recipe: false,
   outlet_order_visible: true,
   image_url: "",
-  default_warehouse_id: "",
+  storage_home_id: "",
   active: true,
 };
 
@@ -114,7 +114,7 @@ function ProductCreatePage() {
             has_recipe: Boolean(item.has_recipe),
             outlet_order_visible: item.outlet_order_visible ?? true,
             image_url: item.image_url ?? "",
-            default_warehouse_id: item.default_warehouse_id ?? "",
+            storage_home_id: item.storage_home_id ?? item.default_warehouse_id ?? "",
             active: item.active ?? true,
           });
         }
@@ -162,7 +162,7 @@ function ProductCreatePage() {
         has_recipe: form.has_recipe,
         outlet_order_visible: form.outlet_order_visible,
         image_url: form.image_url,
-        default_warehouse_id: form.default_warehouse_id || null,
+        default_warehouse_id: form.storage_home_id || null,
         active: form.active,
         ...(editingId ? { id: editingId } : {}),
       };
@@ -297,6 +297,13 @@ function ProductCreatePage() {
               hint="Link to product image"
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
+            />
+            <Select
+              label="Storage home"
+              hint="Warehouse where this item lives and receives stock"
+              value={form.storage_home_id}
+              onChange={(v) => handleChange("storage_home_id", v)}
+              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
           </div>
 

@@ -66,8 +66,14 @@ function pickQtyUnit(value: unknown, fallback: QtyUnit): QtyUnit {
 }
 
 function pickItemKind(value: unknown): CleanResult<ItemKind> {
-  if (typeof value === "string" && ITEM_KINDS.includes(value as ItemKind)) {
-    return { ok: true, value: value as ItemKind };
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "product") {
+      return { ok: true, value: "finished" };
+    }
+    if (ITEM_KINDS.includes(trimmed as ItemKind)) {
+      return { ok: true, value: trimmed as ItemKind };
+    }
   }
   return { ok: false, error: "item_kind must be 'finished', 'ingredient', or 'raw'" };
 }
@@ -104,6 +110,38 @@ function cleanBoolean(value: unknown, fallback: boolean): boolean {
 function cleanUuid(value: unknown): string | null {
   if (isUuid(value)) return value.trim();
   return null;
+}
+
+const normalizeVariantKey = (value?: string | null) => {
+  const normalized = value?.trim();
+  return normalized && normalized.length ? normalized : "base";
+};
+
+async function upsertBaseStorageHome(
+  supabase: ReturnType<typeof getServiceClient>,
+  itemId: string,
+  warehouseId: string | null
+) {
+  const normalizedVariantKey = "base";
+  if (!warehouseId) {
+    await supabase
+      .from("item_storage_homes")
+      .delete()
+      .eq("item_id", itemId)
+      .eq("normalized_variant_key", normalizedVariantKey);
+    return;
+  }
+
+  await supabase
+    .from("item_storage_homes")
+    .upsert(
+      {
+        item_id: itemId,
+        variant_key: normalizedVariantKey,
+        storage_warehouse_id: warehouseId,
+      },
+      { onConflict: "item_id,normalized_variant_key" }
+    );
 }
 
 export async function GET(request: Request) {
@@ -162,23 +200,46 @@ export async function GET(request: Request) {
       recipeCountByItemVariant[comboKey] = (recipeCountByItemVariant[comboKey] || 0) + 1;
     });
 
+    const itemsArray = single ? [data as Record<string, unknown>] : (data as Record<string, unknown>[]);
+    const itemIds = itemsArray.map((item) => item.id).filter((id): id is string => typeof id === "string");
+
+    let storageHomes: { item_id: string; normalized_variant_key: string; storage_warehouse_id: string }[] = [];
+    if (itemIds.length) {
+      const { data: storageRows, error: storageErr } = await supabase
+        .from("item_storage_homes")
+        .select("item_id, normalized_variant_key, storage_warehouse_id")
+        .eq("normalized_variant_key", "base")
+        .in("item_id", itemIds);
+      if (storageErr) throw storageErr;
+      storageHomes = Array.isArray(storageRows) ? storageRows : [];
+    }
+
+    const storageHomeByItem: Record<string, string | null> = {};
+    storageHomes.forEach((row) => {
+      if (row?.item_id) storageHomeByItem[row.item_id] = row.storage_warehouse_id;
+    });
+
     if (single) {
       if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
       const item = data as Record<string, unknown>;
       const baseCount = recipeCountByItemVariant[`${item.id as string}::base`] || 0;
+      const storageHomeId = storageHomeByItem[item.id as string] ?? (item as any).default_warehouse_id ?? null;
       return NextResponse.json({
         item: {
           ...item,
+          storage_home_id: storageHomeId,
           has_recipe: (item as any).has_recipe ?? recipeCountByItem[item.id as string] > 0,
           base_recipe_count: baseCount,
         },
       });
     }
 
-    const enriched = (data as Record<string, unknown>[]).map((item) => {
+    const enriched = itemsArray.map((item) => {
       const baseCount = recipeCountByItemVariant[`${item.id as string}::base`] || 0;
+      const storageHomeId = storageHomeByItem[item.id as string] ?? (item as any).default_warehouse_id ?? null;
       return {
         ...item,
+        storage_home_id: storageHomeId,
         has_recipe: (item as any).has_recipe ?? recipeCountByItem[item.id as string] > 0,
         base_recipe_count: baseCount,
       };
@@ -239,6 +300,8 @@ export async function POST(request: Request) {
       consumptionUnitMassValue = mass.value;
     }
 
+    const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
+
     const payload: ItemPayload = {
       name,
       sku: cleanText(body.sku) ?? null,
@@ -253,7 +316,7 @@ export async function POST(request: Request) {
       has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: cleanUuid(body.default_warehouse_id),
+      default_warehouse_id: requestedStorageHomeId,
       active: cleanBoolean(body.active, true),
       // legacy columns kept filled to satisfy constraints
       consumption_uom: consumptionUnit,
@@ -296,7 +359,17 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ item: data });
+    const storageHomeId = requestedStorageHomeId ?? null;
+    if (!data?.id) {
+      throw new Error("Item insert failed to return id");
+    }
+    try {
+      await upsertBaseStorageHome(supabase, data.id as string, storageHomeId);
+    } catch (storageError) {
+      console.error("[catalog/items] storage home upsert failed", storageError);
+    }
+
+    return NextResponse.json({ item: { ...data, storage_home_id: storageHomeId } });
   } catch (error) {
     console.error("[catalog/items] POST failed", error);
     return NextResponse.json({ error: "Unable to create item" }, { status: 500 });
@@ -353,6 +426,8 @@ export async function PUT(request: Request) {
       consumptionUnitMassValue = mass.value;
     }
 
+    const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
+
     const payload: ItemPayload = {
       name,
       sku: cleanText(body.sku) ?? null,
@@ -367,7 +442,7 @@ export async function PUT(request: Request) {
       has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: cleanUuid(body.default_warehouse_id),
+      default_warehouse_id: requestedStorageHomeId,
       active: cleanBoolean(body.active, true),
       consumption_uom: consumptionUnit,
       purchase_pack_unit: purchasePackUnit,
@@ -410,7 +485,17 @@ export async function PUT(request: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ item: data });
+    const storageHomeId = requestedStorageHomeId ?? null;
+    if (!data?.id) {
+      throw new Error("Item update failed to return id");
+    }
+    try {
+      await upsertBaseStorageHome(supabase, data.id as string, storageHomeId);
+    } catch (storageError) {
+      console.error("[catalog/items] storage home upsert failed", storageError);
+    }
+
+    return NextResponse.json({ item: { ...data, storage_home_id: storageHomeId } });
   } catch (error) {
     console.error("[catalog/items] PUT failed", error);
     return NextResponse.json({ error: "Unable to update item" }, { status: 500 });

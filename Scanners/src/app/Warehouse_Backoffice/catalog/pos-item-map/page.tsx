@@ -19,10 +19,19 @@ type Mapping = {
   outlet_id: string;
 };
 
+type Outlet = { id: string; name: string; code?: string | null };
+type Warehouse = { id: string; name: string; code?: string | null };
+type Item = { id: string; name: string };
+type Variant = { id: string; item_id: string; name?: string | null };
+
 export default function PosItemMapPage() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
   const [mappings, setMappings] = useState<Mapping[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,10 +53,34 @@ export default function PosItemMapPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/catalog/pos-item-map");
-      if (!res.ok) throw new Error("Unable to load mappings");
-      const json = await res.json();
-      setMappings(Array.isArray(json.mappings) ? json.mappings : []);
+      const [mapRes, outletRes, warehouseRes, itemRes, variantRes] = await Promise.all([
+        fetch("/api/catalog/pos-item-map"),
+        fetch("/api/outlets"),
+        fetch("/api/warehouses"),
+        fetch("/api/catalog/items"),
+        fetch("/api/catalog/variants"),
+      ]);
+
+      if (!mapRes.ok) throw new Error("Unable to load mappings");
+      const mapJson = await mapRes.json();
+      setMappings(Array.isArray(mapJson.mappings) ? mapJson.mappings : []);
+
+      if (outletRes.ok) {
+        const json = await outletRes.json();
+        setOutlets(Array.isArray(json.outlets) ? json.outlets : []);
+      }
+      if (warehouseRes.ok) {
+        const json = await warehouseRes.json();
+        setWarehouses(Array.isArray(json.warehouses) ? json.warehouses : []);
+      }
+      if (itemRes.ok) {
+        const json = await itemRes.json();
+        setItems(Array.isArray(json.items) ? json.items : []);
+      }
+      if (variantRes.ok) {
+        const json = await variantRes.json();
+        setVariants(Array.isArray(json.variants) ? json.variants : []);
+      }
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to load POS item mappings");
@@ -78,6 +111,36 @@ export default function PosItemMapPage() {
     });
   }, [mappings, search]);
 
+  const outletOptions = useMemo(
+    () => outlets.map((o) => ({ value: o.id, label: `${o.name}${o.code ? ` (${o.code})` : ""}` })),
+    [outlets]
+  );
+
+  const warehouseOptions = useMemo(
+    () => warehouses.map((w) => ({ value: w.id, label: `${w.name}${w.code ? ` (${w.code})` : ""}` })),
+    [warehouses]
+  );
+
+  const itemOptions = useMemo(() => [{ value: "", label: "Select catalog item" }, ...items.map((i) => ({ value: i.id, label: i.name }))], [items]);
+
+  const variantOptions = useMemo(() => {
+    if (!form.catalog_item_id) return [{ value: "base", label: "Base" }];
+    const scoped = variants.filter((v) => v.item_id === form.catalog_item_id);
+    const base = { value: "base", label: "Base" };
+    if (!scoped.length) return [base];
+    return [base, ...scoped.map((v) => ({ value: v.id, label: v.name || v.id }))];
+  }, [form.catalog_item_id, variants]);
+
+  const warehouseNameById = useMemo(() => Object.fromEntries(warehouses.map((w) => [w.id, w.name])), [warehouses]);
+  const outletNameById = useMemo(() => Object.fromEntries(outlets.map((o) => [o.id, o.name])), [outlets]);
+  const variantLabelById = useMemo(() => {
+    const map: Record<string, string> = { base: "base" };
+    variants.forEach((v) => {
+      map[v.id] = v.name || v.id;
+    });
+    return map;
+  }, [variants]);
+
   const isReady = status === "ok";
 
   return (
@@ -87,7 +150,9 @@ export default function PosItemMapPage() {
           <div>
             <p className={styles.kicker}>Catalog</p>
             <h1 className={styles.title}>Pos/App Match</h1>
-            <p className={styles.subtitle}>Mappings between POS item/flavour IDs and catalog items/variants.</p>
+            <p className={styles.subtitle}>
+              Map POS items/flavours to catalog item + variant + warehouse per outlet. Deductions use outlet_item_routes and outlet defaults; this table links the POS sale to the correct SKU.
+            </p>
             <p className={styles.metaLine}>Showing {filtered.length} rows (total {mappings.length}).</p>
           </div>
           <div className={styles.headerActions}>
@@ -130,24 +195,27 @@ export default function PosItemMapPage() {
                 <span>POS Flavour Name</span>
                 <span>Catalog Item</span>
                 <span>Variant</span>
-                <span>Warehouse ID</span>
-                <span>Outlet ID</span>
+                <span>Warehouse</span>
+                <span>Outlet</span>
               </div>
               {filtered.length === 0 ? (
                 <div className={styles.empty}>No mappings found.</div>
               ) : (
                 filtered.map((m) => (
-                  <div key={`${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}`} className={styles.tableRow}>
+                  <div
+                    key={`${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}`}
+                    className={styles.tableRow}
+                  >
                     <span>{m.pos_item_id}</span>
                     <span className={m.pos_item_name ? undefined : styles.muted}>{m.pos_item_name ?? "—"}</span>
                     <span className={m.pos_flavour_id ? undefined : styles.muted}>{m.pos_flavour_id ?? "—"}</span>
                     <span className={m.pos_flavour_name ? undefined : styles.muted}>{m.pos_flavour_name ?? "—"}</span>
                     <span>{m.catalog_item_name || m.catalog_item_id}</span>
                     <span className={styles.badge}>
-                      {m.catalog_variant_label || m.catalog_variant_key || m.normalized_variant_key || "base"}
+                      {m.catalog_variant_label || variantLabelById[m.catalog_variant_key || "base"] || m.catalog_variant_key || m.normalized_variant_key || "base"}
                     </span>
-                    <span className={m.warehouse_id ? undefined : styles.muted}>{m.warehouse_id ?? "—"}</span>
-                    <span>{m.outlet_id}</span>
+                    <span className={m.warehouse_id ? undefined : styles.muted}>{warehouseNameById[m.warehouse_id ?? ""] ?? m.warehouse_id ?? "—"}</span>
+                    <span>{outletNameById[m.outlet_id] ?? m.outlet_id}</span>
                   </div>
                 ))
               )}
@@ -159,10 +227,10 @@ export default function PosItemMapPage() {
                 <span>POS Item Name</span>
                 <span>POS Flavour ID</span>
                 <span>POS Flavour Name</span>
-                <span>Catalog Item ID</span>
-                <span>Variant Key</span>
-                <span>Warehouse ID</span>
-                <span>Outlet ID</span>
+                <span>Catalog Item</span>
+                <span>Variant</span>
+                <span>Warehouse</span>
+                <span>Outlet</span>
               </div>
               <div className={styles.tableRow}>
                 <input
@@ -189,37 +257,64 @@ export default function PosItemMapPage() {
                   value={form.pos_flavour_name}
                   onChange={(e) => setForm((f) => ({ ...f, pos_flavour_name: e.target.value }))}
                 />
-                <input
+                <select
                   className={styles.searchInput}
-                  placeholder="Catalog item id"
                   value={form.catalog_item_id}
-                  onChange={(e) => setForm((f) => ({ ...f, catalog_item_id: e.target.value }))}
-                />
-                <input
+                  onChange={(e) => setForm((f) => ({ ...f, catalog_item_id: e.target.value, catalog_variant_key: "base" }))}
+                  aria-label="Select catalog item"
+                >
+                  {itemOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
                   className={styles.searchInput}
-                  placeholder="Variant key (base if empty)"
                   value={form.catalog_variant_key}
                   onChange={(e) => setForm((f) => ({ ...f, catalog_variant_key: e.target.value }))}
-                />
-                <input
+                  disabled={!form.catalog_item_id}
+                  aria-label="Select catalog variant"
+                >
+                  {variantOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
                   className={styles.searchInput}
-                  placeholder="Warehouse id (optional)"
                   value={form.warehouse_id}
                   onChange={(e) => setForm((f) => ({ ...f, warehouse_id: e.target.value }))}
-                />
-                <input
+                  aria-label="Select warehouse"
+                >
+                  <option value="">Warehouse (optional)</option>
+                  {warehouseOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
                   className={styles.searchInput}
-                  placeholder="Outlet id"
                   value={form.outlet_id}
                   onChange={(e) => setForm((f) => ({ ...f, outlet_id: e.target.value }))}
-                />
+                  aria-label="Select outlet"
+                >
+                  <option value="">Select outlet</option>
+                  {outletOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className={`${styles.tableRow} ${styles.rowAction}`}>
                 <button
                   className={styles.primaryButton}
                   onClick={async () => {
                     if (!form.pos_item_id.trim() || !form.catalog_item_id.trim() || !form.outlet_id.trim()) {
-                      setError("POS item id, catalog item id, and outlet id are required");
+                      setError("POS item id, catalog item, and outlet are required");
                       return;
                     }
                     setCreating(true);

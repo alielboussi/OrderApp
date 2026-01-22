@@ -160,7 +160,7 @@ export default function OutletRoutingPage() {
             <p className={styles.kicker}>Routing</p>
             <h1 className={styles.title}>Warehouse Assign</h1>
             <p className={styles.subtitle}>
-              Pick a product, then assign which warehouse each outlet should deduct from when orders are allocated.
+              Set per-item outlet routes for deductions. Defaults come from each outlet’s sales warehouse; overrides here write to outlet_item_routes (normalized_variant_key = base).
             </p>
           </div>
           <div className={styles.headerButtons}>
@@ -207,6 +207,10 @@ export default function OutletRoutingPage() {
               {message.text}
             </div>
           )}
+
+          <div className={`${styles.callout} ${styles.calloutInfo}`}>
+            <strong>Reminder:</strong> If a route is left blank, the outlet falls back to its default sales warehouse. Use outlet setup to change defaults.
+          </div>
 
           <div className={styles.tableWrapper}>
             <table className={styles.routesTable}>

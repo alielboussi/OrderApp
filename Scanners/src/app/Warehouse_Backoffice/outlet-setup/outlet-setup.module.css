@@ -1,11 +1,13 @@
 .page {
   min-height: 100vh;
-  background: radial-gradient(circle at 10% 20%, rgba(255, 214, 102, 0.08), transparent 35%),
-              radial-gradient(circle at 90% 10%, rgba(120, 114, 255, 0.08), transparent 30%),
-              #0b0d17;
-  color: #e6e8f0;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(96, 165, 250, 0.12), transparent 35%),
+    radial-gradient(circle at 82% 8%, rgba(244, 114, 182, 0.12), transparent 38%),
+    radial-gradient(circle at 50% 70%, rgba(34, 197, 94, 0.08), transparent 42%),
+    #050a16;
+  color: #e8edff;
   font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  padding: 32px 20px 48px;
+  padding: 38px 22px 54px;
 }
 
 .shell {
@@ -21,6 +23,13 @@
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  padding: 22px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 18, 36, 0.92);
+  box-shadow: 0 26px 54px rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 
 .grow { flex: 1; }
@@ -41,8 +50,8 @@
 
 .subtitle {
   margin: 6px 0 0;
-  color: #cbd0dd;
-  line-height: 1.4;
+  color: #97a7c6;
+  line-height: 1.5;
 }
 
 .headerButtons {
@@ -50,18 +59,19 @@
   gap: 10px;
 }
 
+
 .backButton {
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.04);
-  color: #e6e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8edff;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition: border-color 140ms ease, transform 140ms ease;
 }
 
 .backButton:hover {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.28);
   transform: translateY(-1px);
 }
 
@@ -72,13 +82,14 @@
 }
 
 .panel {
-  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.08), rgba(15, 23, 42, 0.75));
-  border: 1px solid rgba(125, 211, 252, 0.25);
-  border-radius: 14px;
+  background: linear-gradient(170deg, rgba(17, 24, 39, 0.9), rgba(10, 15, 28, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.48);
 }
 
 .sectionTitle {
@@ -104,8 +115,8 @@
   gap: 4px;
   padding: 8px 10px;
   border: 1px dashed rgba(125, 211, 252, 0.4);
-  border-radius: 10px;
-  background: rgba(59, 130, 246, 0.06);
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.08);
   color: #cbd0dd;
   max-width: 360px;
 }
@@ -132,13 +143,22 @@
 .select,
 .input,
 .button {
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.04);
-  color: #e6e8f0;
-  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e8edff;
+  padding: 11px 12px;
   min-width: 160px;
   color-scheme: dark;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.select:focus,
+.input:focus,
+.button:focus {
+  outline: none;
+  border-color: rgba(34, 197, 94, 0.85);
+  box-shadow: 0 12px 28px rgba(34, 197, 94, 0.18);
 }
 
 .select:disabled { opacity: 0.5; }
@@ -150,40 +170,94 @@
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-left: auto;
 }
 
+.minimalActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .primaryButton {
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
-  border: none;
-  color: #fff;
-  padding: 10px 14px;
-  border-radius: 10px;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  border: 1px solid rgba(34, 197, 94, 0.85);
+  color: #0c152b;
+  padding: 11px 14px;
+  border-radius: 12px;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: 0 18px 36px rgba(34, 197, 94, 0.28);
+  transition: transform 150ms ease, box-shadow 160ms ease;
 }
 
 .secondaryButton {
   border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e6e8f0;
-  padding: 10px 14px;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #e8edff;
+  padding: 11px 14px;
+  border-radius: 12px;
   cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease;
+}
+
+.primaryButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 44px rgba(34, 197, 94, 0.34);
+}
+
+.secondaryButton:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.minimalButton {
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e8edff;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.minimalButton:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.minimalPrimary {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #bbf7d0;
+}
+
+.minimalPrimary:hover {
+  border-color: rgba(34, 197, 94, 0.65);
+}
+
+.minimalSecondary {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.smallLabel {
+  color: #9ca3af;
+  font-size: 12px;
 }
 
 .callout {
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   font-weight: 600;
 }
 
-.calloutSuccess { background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); }
-.calloutError { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); }
+.calloutSuccess { background: rgba(34, 197, 94, 0.16); border: 1px solid rgba(34, 197, 94, 0.35); }
+.calloutError { background: rgba(239, 68, 68, 0.16); border: 1px solid rgba(239, 68, 68, 0.35); }
 
-.tableWrapper { overflow: auto; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08); }
-.tableWrapper { overflow-x: hidden; }
+.tableWrapper { overflow: auto; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.12); }
 
 .routesTable {
   width: 100%;
@@ -245,4 +319,72 @@
 
 .variantOption input {
   margin: 0;
+}
+
+.controlGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.storageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.storageCard {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cardHeading {
+  font-weight: 700;
+  font-size: 14px;
+  margin: 0;
+}
+
+.cardBody {
+  margin: 0;
+  color: #cbd0dd;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.messageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.columnActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.columnCard {
+  border: 1px dashed rgba(125, 211, 252, 0.45);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(59, 130, 246, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.columnTitle {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.columnSubtitle {
+  color: #a5acc5;
+  font-size: 13px;
 }

@@ -6,7 +6,13 @@ import styles from "./outlet-setup.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 
 // Types shared across panels
-interface Outlet { id: string; name: string; code?: string | null; active?: boolean | null }
+interface Outlet {
+  id: string;
+  name: string;
+  code?: string | null;
+  active?: boolean | null;
+  default_sales_warehouse_id?: string | null;
+}
 interface Warehouse { id: string; name: string; code?: string | null; active?: boolean | null }
 interface PosMapping {
   pos_item_id: string;
@@ -23,6 +29,7 @@ interface Item {
   id: string;
   name: string;
   item_kind?: string | null;
+  storage_home_id?: string | null;
   default_warehouse_id?: string | null;
   has_recipe?: boolean | null;
 }
@@ -62,17 +69,32 @@ export default function OutletSetupPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
 
-  // Deduction routing state (product → warehouse per outlet)
+  // Deduction routing state (product/variant/ingredient/raw → warehouse per outlet)
   const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [selectedVariantKey, setSelectedVariantKey] = useState<string>("base");
   const [selectedProductVariant, setSelectedProductVariant] = useState<string>("base");
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
   const [selectedRawId, setSelectedRawId] = useState<string>("");
-  const [routes, setRoutes] = useState<RouteRecord>({});
-  const [routingLoading, setRoutingLoading] = useState(false);
-  const [routingSaving, setRoutingSaving] = useState(false);
-  const [routingMessage, setRoutingMessage] = useState<Alert>(null);
+
+  type RoutingGroup = "product" | "ingredient" | "raw";
+
+  const [productRoutes, setProductRoutes] = useState<RouteRecord>({});
+  const [ingredientRoutes, setIngredientRoutes] = useState<RouteRecord>({});
+  const [rawRoutes, setRawRoutes] = useState<RouteRecord>({});
+  const [routingLoading, setRoutingLoading] = useState<Record<RoutingGroup, boolean>>({
+    product: false,
+    ingredient: false,
+    raw: false,
+  });
+  const [routingSavingKind, setRoutingSavingKind] = useState<RoutingGroup | null>(null);
+  const [routingMessage, setRoutingMessage] = useState<Record<RoutingGroup, Alert>>({
+    product: null,
+    ingredient: null,
+    raw: null,
+  });
+  const [saveAllMessage, setSaveAllMessage] = useState<Alert>(null);
+  const [combinedSaveMessage, setCombinedSaveMessage] = useState<Alert>(null);
+  const [mappingsSaving, setMappingsSaving] = useState(false);
   const [recipeIngredientIds, setRecipeIngredientIds] = useState<string[]>([]);
   const [recipeIngredientsLoading, setRecipeIngredientsLoading] = useState(false);
   const [productDefaultWarehouseId, setProductDefaultWarehouseId] = useState<string>("");
@@ -84,14 +106,9 @@ export default function OutletSetupPage() {
   const [rawDefaultWarehouseId, setRawDefaultWarehouseId] = useState<string>("");
   const [rawDefaultWarehouseSaving, setRawDefaultWarehouseSaving] = useState(false);
   const [rawDefaultWarehouseMessage, setRawDefaultWarehouseMessage] = useState<Alert>(null);
-
-  // Stocktake warehouse mappings (outlet → allowed warehouse)
-  const [rows, setRows] = useState<{ outlet_id: string; warehouse_id: string; outlet: Outlet; warehouse: Warehouse }[]>([]);
-  const [selectedOutlet, setSelectedOutlet] = useState<string>("");
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("");
-  const [mappingLoading, setMappingLoading] = useState(true);
-  const [mappingMutating, setMappingMutating] = useState(false);
-  const [mappingAlert, setMappingAlert] = useState<Alert>(null);
+  const [storageHomesSaving, setStorageHomesSaving] = useState(false);
+  const [storageAllMessage, setStorageAllMessage] = useState<Alert>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   // POS item ↔ catalog mapping (preview + quick add)
   const [posMappings, setPosMappings] = useState<PosMapping[]>([]);
@@ -117,7 +134,8 @@ export default function OutletSetupPage() {
     setPosForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
+  const warehouseOptions = useMemo(() => [...warehouses], [warehouses]);
+  const storageHomeOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const baseIngredientOptions = useMemo<RouteOption[]>(() => {
     const filtered = items
@@ -150,7 +168,9 @@ export default function OutletSetupPage() {
   const ingredientOptions = useMemo<RouteOption[]>(() => {
     const hasProductFilter = Boolean(selectedProductId);
     const ingredientSet = new Set(recipeIngredientIds);
-    if (!hasProductFilter) return baseIngredientOptions;
+    if (!hasProductFilter) {
+      return [{ value: "", label: "Select a product first", itemId: "", variantKey: "base", kind: "ingredient" }];
+    }
     if (recipeIngredientsLoading) {
       return [{ value: "", label: "Loading recipe ingredients...", itemId: "", variantKey: "base", kind: "ingredient" }];
     }
@@ -219,6 +239,7 @@ export default function OutletSetupPage() {
   const selectedProduct = useMemo(() => items.find((it) => it.id === selectedProductId), [items, selectedProductId]);
   const ingredientSelectOptions: RouteOption[] = ingredientOptions;
   const rawSelectOptions: RouteOption[] = rawOptions;
+  const anyRoutingLoading = routingLoading.product;
 
   const filteredPosMappings = useMemo(() => {
     const term = posSearch.trim().toLowerCase();
@@ -245,10 +266,6 @@ export default function OutletSetupPage() {
   useEffect(() => {
     if (status !== "ok") return;
     async function loadBasics() {
-      setRoutingLoading(true);
-      setMappingLoading(true);
-      setRoutingMessage(null);
-      setMappingAlert(null);
       try {
         const [outletRes, warehouseRes, itemRes, variantRes] = await Promise.all([
           fetch("/api/outlets"),
@@ -259,7 +276,8 @@ export default function OutletSetupPage() {
 
         if (outletRes.ok) {
           const json = await outletRes.json();
-          setOutlets(Array.isArray(json.outlets) ? json.outlets : []);
+          const list: Outlet[] = Array.isArray(json.outlets) ? json.outlets : [];
+          setOutlets(list);
         }
         if (warehouseRes.ok) {
           const json = await warehouseRes.json();
@@ -277,32 +295,27 @@ export default function OutletSetupPage() {
         }
       } catch (error) {
         console.error("setup preload failed", error);
-        setRoutingMessage({ ok: false, text: "Failed to load basics" });
-        setMappingAlert({ ok: false, text: "Failed to load basics" });
-      } finally {
-        setRoutingLoading(false);
-        // keep mappingLoading until mappings fetched
+        setRoutingMessage((prev) => ({ ...prev, product: { ok: false, text: "Failed to load basics" } }));
       }
     }
     loadBasics();
   }, [status]);
 
-  // Load routes for selected item
+  // Load routes for selected product (base)
   useEffect(() => {
-    if (!selectedItemId || status !== "ok") {
-      setRoutes({});
-      setDefaultWarehouseId("");
-      setDefaultWarehouseMessage(null);
-      if (!selectedItemId) setSelectedVariantKey("base");
+    if (status !== "ok") return;
+    if (!selectedProductId) {
+      setSelectedVariantKey("base");
+      setProductRoutes({});
+      setRoutingMessage((prev) => ({ ...prev, product: null }));
+      setRoutingLoading((prev) => ({ ...prev, product: false }));
       return;
     }
-    const selected = items.find((it) => it.id === selectedItemId);
-    setDefaultWarehouseId(selected?.default_warehouse_id ?? "");
-    async function loadRoutes() {
-      setRoutingLoading(true);
-      setRoutingMessage(null);
+    const loadRoutes = async () => {
+      setRoutingLoading((prev) => ({ ...prev, product: true }));
+      setRoutingMessage((prev) => ({ ...prev, product: null }));
       try {
-        const res = await fetch(`/api/outlet-routes?item_id=${selectedItemId}&variant_key=${selectedVariantKey}`);
+        const res = await fetch(`/api/outlet-routes?item_id=${selectedProductId}&variant_key=base`);
         if (!res.ok) throw new Error("Could not load routes");
         const json = await res.json();
         const routeMap: RouteRecord = {};
@@ -311,16 +324,82 @@ export default function OutletSetupPage() {
             routeMap[route.outlet_id] = route.warehouse_id ?? "";
           }
         });
-        setRoutes(routeMap);
+        setProductRoutes(routeMap);
       } catch (error) {
-        console.error("outlet routes load failed", error);
-        setRoutingMessage({ ok: false, text: "Unable to load outlet routes" });
+        console.error("product outlet routes load failed", error);
+        setRoutingMessage((prev) => ({ ...prev, product: { ok: false, text: "Unable to load product routes" } }));
       } finally {
-        setRoutingLoading(false);
+        setRoutingLoading((prev) => ({ ...prev, product: false }));
       }
-    }
+    };
     loadRoutes();
-  }, [selectedItemId, selectedVariantKey, status, items]);
+  }, [selectedProductId, status]);
+
+  // Load routes for selected ingredient (scoped to recipe ingredients)
+  useEffect(() => {
+    if (status !== "ok") return;
+    if (!selectedIngredientId) {
+      setIngredientRoutes({});
+      setRoutingMessage((prev) => ({ ...prev, ingredient: null }));
+      setRoutingLoading((prev) => ({ ...prev, ingredient: false }));
+      return;
+    }
+    const loadRoutes = async () => {
+      setRoutingLoading((prev) => ({ ...prev, ingredient: true }));
+      setRoutingMessage((prev) => ({ ...prev, ingredient: null }));
+      try {
+        const res = await fetch(`/api/outlet-routes?item_id=${selectedIngredientId}&variant_key=base`);
+        if (!res.ok) throw new Error("Could not load ingredient routes");
+        const json = await res.json();
+        const routeMap: RouteRecord = {};
+        (Array.isArray(json.routes) ? json.routes : []).forEach((route: { outlet_id?: string; warehouse_id?: string | null }) => {
+          if (route.outlet_id) {
+            routeMap[route.outlet_id] = route.warehouse_id ?? "";
+          }
+        });
+        setIngredientRoutes(routeMap);
+      } catch (error) {
+        console.error("ingredient outlet routes load failed", error);
+        setRoutingMessage((prev) => ({ ...prev, ingredient: { ok: false, text: "Unable to load ingredient routes" } }));
+      } finally {
+        setRoutingLoading((prev) => ({ ...prev, ingredient: false }));
+      }
+    };
+    loadRoutes();
+  }, [selectedIngredientId, status]);
+
+  // Load routes for selected raw
+  useEffect(() => {
+    if (status !== "ok") return;
+    if (!selectedRawId) {
+      setRawRoutes({});
+      setRoutingMessage((prev) => ({ ...prev, raw: null }));
+      setRoutingLoading((prev) => ({ ...prev, raw: false }));
+      return;
+    }
+    const loadRoutes = async () => {
+      setRoutingLoading((prev) => ({ ...prev, raw: true }));
+      setRoutingMessage((prev) => ({ ...prev, raw: null }));
+      try {
+        const res = await fetch(`/api/outlet-routes?item_id=${selectedRawId}&variant_key=base`);
+        if (!res.ok) throw new Error("Could not load raw routes");
+        const json = await res.json();
+        const routeMap: RouteRecord = {};
+        (Array.isArray(json.routes) ? json.routes : []).forEach((route: { outlet_id?: string; warehouse_id?: string | null }) => {
+          if (route.outlet_id) {
+            routeMap[route.outlet_id] = route.warehouse_id ?? "";
+          }
+        });
+        setRawRoutes(routeMap);
+      } catch (error) {
+        console.error("raw outlet routes load failed", error);
+        setRoutingMessage((prev) => ({ ...prev, raw: { ok: false, text: "Unable to load raw routes" } }));
+      } finally {
+        setRoutingLoading((prev) => ({ ...prev, raw: false }));
+      }
+    };
+    loadRoutes();
+  }, [selectedRawId, status]);
 
   useEffect(() => {
     if (!selectedRawId) {
@@ -329,8 +408,18 @@ export default function OutletSetupPage() {
       return;
     }
     const raw = items.find((it) => it.id === resolveItemId(selectedRawId));
-    setRawDefaultWarehouseId(raw?.default_warehouse_id ?? "");
+    setRawDefaultWarehouseId(raw?.storage_home_id ?? raw?.default_warehouse_id ?? "");
   }, [selectedRawId, items]);
+
+  useEffect(() => {
+    if (!selectedIngredientId) {
+      setDefaultWarehouseId("");
+      setDefaultWarehouseMessage(null);
+      return;
+    }
+    const ingredient = items.find((it) => it.id === resolveItemId(selectedIngredientId));
+    setDefaultWarehouseId(ingredient?.storage_home_id ?? ingredient?.default_warehouse_id ?? "");
+  }, [selectedIngredientId, items]);
 
   useEffect(() => {
     if (!selectedIngredientId) return;
@@ -348,7 +437,7 @@ export default function OutletSetupPage() {
       return;
     }
     const prod = items.find((it) => it.id === selectedProductId);
-    setProductDefaultWarehouseId(prod?.default_warehouse_id ?? "");
+    setProductDefaultWarehouseId(prod?.storage_home_id ?? prod?.default_warehouse_id ?? "");
   }, [selectedProductId, items]);
 
   useEffect(() => {
@@ -381,55 +470,6 @@ export default function OutletSetupPage() {
     };
   }, [selectedProductId]);
 
-  const fetchMappings = useCallback(async () => {
-    setMappingLoading(true);
-    setMappingAlert(null);
-    try {
-      const [outletsRes, warehousesRes, mappingsRes] = await Promise.all([
-        fetch("/api/outlets"),
-        fetch("/api/warehouses"),
-        fetch("/api/outlet-warehouses"),
-      ]);
-
-      if (!outletsRes.ok) throw new Error("Failed to load outlets");
-      if (!warehousesRes.ok) throw new Error("Failed to load warehouses");
-      if (!mappingsRes.ok) throw new Error("Failed to load mappings");
-
-      const outletsJson = await outletsRes.json();
-      const warehousesJson = await warehousesRes.json();
-      const mappingsJson = await mappingsRes.json();
-
-      const outletList = Array.isArray(outletsJson?.outlets) ? outletsJson.outlets : [];
-      const warehouseList = Array.isArray(warehousesJson?.warehouses) ? warehousesJson.warehouses : [];
-      const mappingsPayload: { outlet_id?: string; warehouse_id?: string; outlet?: Outlet; warehouse?: Warehouse }[] =
-        Array.isArray(mappingsJson?.mappings) ? mappingsJson.mappings : Array.isArray(mappingsJson) ? mappingsJson : [];
-
-      setOutlets(outletList);
-      setWarehouses(warehouseList);
-      setRows(
-        mappingsPayload
-          .filter((entry) => entry?.outlet_id && entry?.warehouse_id)
-          .map((entry) => ({
-            outlet_id: String(entry.outlet_id),
-            warehouse_id: String(entry.warehouse_id),
-            outlet: normalizeOutlet(entry.outlet),
-            warehouse: normalizeWarehouse(entry.warehouse),
-          }))
-      );
-    } catch (error) {
-      console.error(error);
-      setMappingAlert({ ok: false, text: (error as Error).message });
-    } finally {
-      setMappingLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (status === "ok") {
-      fetchMappings();
-    }
-  }, [status, fetchMappings]);
-
   useEffect(() => {
     if (status !== "ok") return;
     const loadPos = async () => {
@@ -450,34 +490,72 @@ export default function OutletSetupPage() {
     loadPos();
   }, [status]);
 
-  useEffect(() => {
-    if (selectedOutlet && !posForm.outlet_id) {
-      setPosForm((prev) => ({ ...prev, outlet_id: selectedOutlet }));
-    }
-  }, [selectedOutlet, posForm.outlet_id]);
-
-  useEffect(() => {
-    if (selectedWarehouse && !posForm.warehouse_id) {
-      setPosForm((prev) => ({ ...prev, warehouse_id: selectedWarehouse }));
-    }
-  }, [selectedWarehouse, posForm.warehouse_id]);
-
-  const setRoute = (outletId: string, warehouseId: string) => {
-    setRoutes((prev) => ({ ...prev, [outletId]: warehouseId }));
+  const routesFor = (group: RoutingGroup) => {
+    if (group === "ingredient") return ingredientRoutes;
+    if (group === "raw") return rawRoutes;
+    return productRoutes;
   };
 
-  const saveRoutes = async () => {
-    if (!selectedItemId) {
-      setRoutingMessage({ ok: false, text: "Choose a product first" });
+  const setRoute = (group: RoutingGroup, outletId: string, warehouseId: string) => {
+    if (group === "ingredient") {
+      setIngredientRoutes((prev) => ({ ...prev, [outletId]: warehouseId }));
       return;
     }
-    setRoutingSaving(true);
-    setRoutingMessage(null);
+    if (group === "raw") {
+      setRawRoutes((prev) => ({ ...prev, [outletId]: warehouseId }));
+      return;
+    }
+    setProductRoutes((prev) => ({ ...prev, [outletId]: warehouseId }));
+  };
+
+  const clearRoutes = (group: RoutingGroup) => {
+    if (group === "ingredient") {
+      setIngredientRoutes({});
+      return;
+    }
+    if (group === "raw") {
+      setRawRoutes({});
+      return;
+    }
+    setProductRoutes({});
+  };
+
+  const clearAllRoutes = () => {
+    setProductRoutes({});
+    setIngredientRoutes({});
+    setRawRoutes({});
+  };
+
+  const saveRoutes = async (group: RoutingGroup) => {
+    const selection =
+      group === "ingredient"
+        ? { itemId: selectedIngredientId, variantKey: "base" }
+        : group === "raw"
+          ? { itemId: selectedRawId, variantKey: "base" }
+          : { itemId: selectedProductId, variantKey: "base" };
+
+    const label =
+      group === "ingredient" ? "ingredient" : group === "raw" ? "raw" : "product";
+
+    if (!selection.itemId) {
+      setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: `Choose a ${label} first` } }));
+      return;
+    }
+
+    const currentRoutes = routesFor(group);
+    const hasAnyRoute = outlets.some((outlet) => Boolean(currentRoutes[outlet.id]));
+    if (!hasAnyRoute) {
+      setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Select a warehouse for at least one outlet" } }));
+      return;
+    }
+
+    setRoutingSavingKind(group);
+    setRoutingMessage((prev) => ({ ...prev, [group]: null }));
     try {
       const payload = {
-        item_id: selectedItemId,
-          variant_key: selectedVariantKey,
-        routes: outlets.map((outlet) => ({ outlet_id: outlet.id, warehouse_id: routes[outlet.id] || null })),
+        item_id: selection.itemId,
+        variant_key: selection.variantKey,
+        routes: outlets.map((outlet) => ({ outlet_id: outlet.id, warehouse_id: currentRoutes[outlet.id] || null })),
       };
 
       const res = await fetch("/api/outlet-routes", {
@@ -491,22 +569,45 @@ export default function OutletSetupPage() {
         throw new Error(json.error || "Could not save routes");
       }
 
-      setRoutingMessage({ ok: true, text: "Routes saved" });
+      setRoutingMessage((prev) => ({ ...prev, [group]: { ok: true, text: "Mappings saved" } }));
     } catch (error) {
       console.error(error);
-      setRoutingMessage({ ok: false, text: error instanceof Error ? error.message : "Failed to save" });
+      setRoutingMessage((prev) => ({
+        ...prev,
+        [group]: { ok: false, text: error instanceof Error ? error.message : "Failed to save" },
+      }));
     } finally {
-      setRoutingSaving(false);
+      setRoutingSavingKind(null);
     }
   };
 
-  const resetMappingForm = () => {
-    setSelectedOutlet("");
-    setSelectedWarehouse("");
+  const saveAllRoutes = async (): Promise<boolean> => {
+    if (!selectedProductId) {
+      setSaveAllMessage({ ok: false, text: "Select a product first" });
+      return false;
+    }
+    const hasAnyRoute = Object.values(productRoutes).some(Boolean);
+    if (!hasAnyRoute) {
+      setSaveAllMessage({ ok: false, text: "Set at least one warehouse before saving" });
+      return false;
+    }
+    setMappingsSaving(true);
+    setSaveAllMessage(null);
+    try {
+      await saveRoutes("product");
+      setSaveAllMessage({ ok: true, text: "Mappings saved" });
+      return true;
+    } catch (error) {
+      setSaveAllMessage({ ok: false, text: error instanceof Error ? error.message : "Failed to save mappings" });
+      return false;
+    } finally {
+      setMappingsSaving(false);
+    }
   };
 
+
   const saveDefaultWarehouse = async () => {
-    if (!selectedItemId) {
+    if (!selectedIngredientId) {
       setDefaultWarehouseMessage({ ok: false, text: "Choose an ingredient first" });
       return;
     }
@@ -517,49 +618,23 @@ export default function OutletSetupPage() {
     setDefaultWarehouseSaving(true);
     setDefaultWarehouseMessage(null);
     try {
-      const detailRes = await fetch(`/api/catalog/items?id=${selectedItemId}`);
-      if (!detailRes.ok) throw new Error("Could not load product details");
-      const detailJson = await detailRes.json();
-      const item = detailJson.item as Record<string, any> | undefined;
-      if (!item) throw new Error("Product not found");
-
-      const payload = {
-        id: selectedItemId,
-        name: item.name,
-        sku: item.sku ?? null,
-        item_kind: item.item_kind ?? "finished",
-        base_unit: item.base_unit ?? "each",
-        consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
-        consumption_qty_per_base: item.consumption_qty_per_base ?? 1,
-        storage_unit: item.storage_unit ?? null,
-        storage_weight: item.storage_weight ?? null,
-        cost: item.cost ?? 0,
-        has_variations: item.has_variations ?? false,
-        has_recipe: item.has_recipe ?? false,
-        outlet_order_visible: item.outlet_order_visible ?? true,
-        image_url: item.image_url ?? null,
-        default_warehouse_id: defaultWarehouseId || null,
-        active: item.active ?? true,
-        purchase_pack_unit: item.purchase_pack_unit ?? item.base_unit ?? "each",
-        units_per_purchase_pack: item.units_per_purchase_pack ?? 1,
-        purchase_unit_mass: item.purchase_unit_mass ?? null,
-        purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? null,
-        consumption_unit_mass: item.consumption_unit_mass ?? null,
-        consumption_unit_mass_uom: item.consumption_unit_mass_uom ?? null,
-        transfer_unit: item.transfer_unit ?? item.base_unit ?? "each",
-        transfer_quantity: item.transfer_quantity ?? 1,
-      };
-
-      const res = await fetch("/api/catalog/items", {
+      const res = await fetch("/api/item-storage-homes", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ item_id: selectedIngredientId, storage_warehouse_id: defaultWarehouseId || null }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || "Failed to save default warehouse");
       }
-      setDefaultWarehouseMessage({ ok: true, text: "Ingredient default warehouse saved" });
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === selectedIngredientId
+            ? { ...it, storage_home_id: defaultWarehouseId || null, default_warehouse_id: defaultWarehouseId || null }
+            : it
+        )
+      );
+      setDefaultWarehouseMessage({ ok: true, text: "Ingredient storage home saved" });
     } catch (error) {
       console.error(error);
       setDefaultWarehouseMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save" });
@@ -575,6 +650,10 @@ export default function OutletSetupPage() {
     }
     if (selectedProductVariant !== "base") {
       setProductDefaultWarehouseMessage({ ok: false, text: "Default warehouse applies to base items only" });
+      return;
+    }
+    if (!productDefaultWarehouseId) {
+      setProductDefaultWarehouseMessage({ ok: false, text: "Select a storage home" });
       return;
     }
     setProductDefaultWarehouseSaving(true);
@@ -601,6 +680,7 @@ export default function OutletSetupPage() {
         has_recipe: item.has_recipe ?? false,
         outlet_order_visible: item.outlet_order_visible ?? true,
         image_url: item.image_url ?? null,
+        storage_home_id: productDefaultWarehouseId || null,
         default_warehouse_id: productDefaultWarehouseId || null,
         active: item.active ?? true,
         purchase_pack_unit: item.purchase_pack_unit ?? item.base_unit ?? "each",
@@ -622,12 +702,44 @@ export default function OutletSetupPage() {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || "Failed to save product default warehouse");
       }
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === selectedProductId
+            ? { ...it, storage_home_id: productDefaultWarehouseId || null, default_warehouse_id: productDefaultWarehouseId || null }
+            : it
+        )
+      );
       setProductDefaultWarehouseMessage({ ok: true, text: "Product default warehouse saved" });
     } catch (error) {
       console.error(error);
       setProductDefaultWarehouseMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save" });
     } finally {
       setProductDefaultWarehouseSaving(false);
+    }
+  };
+
+  const saveStorageHomesAll = async (): Promise<boolean> => {
+    const hasAnySelection = selectedProductId || selectedIngredientId || selectedRawId;
+    if (!hasAnySelection) {
+      setStorageAllMessage({ ok: false, text: "Select a product, ingredient, or raw first" });
+      return false;
+    }
+    setStorageHomesSaving(true);
+    setStorageAllMessage(null);
+    try {
+      if (selectedIngredientId && defaultWarehouseId) {
+        await saveDefaultWarehouse();
+      }
+      if (selectedRawId && rawDefaultWarehouseId) {
+        await saveRawDefaultWarehouse();
+      }
+      setStorageAllMessage({ ok: true, text: "Storage homes saved" });
+      return true;
+    } catch (error) {
+      setStorageAllMessage({ ok: false, text: error instanceof Error ? error.message : "Failed to save storage homes" });
+      return false;
+    } finally {
+      setStorageHomesSaving(false);
     }
   };
 
@@ -643,48 +755,22 @@ export default function OutletSetupPage() {
     setRawDefaultWarehouseSaving(true);
     setRawDefaultWarehouseMessage(null);
     try {
-      const detailRes = await fetch(`/api/catalog/items?id=${selectedRawId}`);
-      if (!detailRes.ok) throw new Error("Could not load raw details");
-      const detailJson = await detailRes.json();
-      const item = detailJson.item as Record<string, any> | undefined;
-      if (!item) throw new Error("Raw not found");
-
-      const payload = {
-        id: selectedRawId,
-        name: item.name,
-        sku: item.sku ?? null,
-        item_kind: item.item_kind ?? "raw",
-        base_unit: item.base_unit ?? "each",
-        consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
-        consumption_qty_per_base: item.consumption_qty_per_base ?? 1,
-        storage_unit: item.storage_unit ?? null,
-        storage_weight: item.storage_weight ?? null,
-        cost: item.cost ?? 0,
-        has_variations: item.has_variations ?? false,
-        has_recipe: item.has_recipe ?? false,
-        outlet_order_visible: item.outlet_order_visible ?? true,
-        image_url: item.image_url ?? null,
-        default_warehouse_id: rawDefaultWarehouseId || null,
-        active: item.active ?? true,
-        purchase_pack_unit: item.purchase_pack_unit ?? item.base_unit ?? "each",
-        units_per_purchase_pack: item.units_per_purchase_pack ?? 1,
-        purchase_unit_mass: item.purchase_unit_mass ?? null,
-        purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? null,
-        consumption_unit_mass: item.consumption_unit_mass ?? null,
-        consumption_unit_mass_uom: item.consumption_unit_mass_uom ?? null,
-        transfer_unit: item.transfer_unit ?? item.base_unit ?? "each",
-        transfer_quantity: item.transfer_quantity ?? 1,
-      };
-
-      const res = await fetch("/api/catalog/items", {
+      const res = await fetch("/api/item-storage-homes", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ item_id: selectedRawId, storage_warehouse_id: rawDefaultWarehouseId || null }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error || "Failed to save raw default warehouse");
       }
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === selectedRawId
+            ? { ...it, storage_home_id: rawDefaultWarehouseId || null, default_warehouse_id: rawDefaultWarehouseId || null }
+            : it
+        )
+      );
       setRawDefaultWarehouseMessage({ ok: true, text: "Raw default warehouse saved" });
     } catch (error) {
       console.error(error);
@@ -694,33 +780,23 @@ export default function OutletSetupPage() {
     }
   };
 
-  const addMapping = async () => {
-    if (!selectedOutlet || !selectedWarehouse) return;
-    if (rows.some((row) => row.outlet_id === selectedOutlet && row.warehouse_id === selectedWarehouse)) {
-      setMappingAlert({ ok: false, text: "Mapping already exists." });
-      return;
-    }
-
-    setMappingMutating(true);
-    setMappingAlert(null);
+  const saveEverything = async () => {
+    setSavingAll(true);
+    setCombinedSaveMessage(null);
     try {
-      const res = await fetch("/api/outlet-warehouses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outlet_id: selectedOutlet, warehouse_id: selectedWarehouse }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Failed to create mapping");
+      const storageOk = await saveStorageHomesAll();
+      if (storageOk === false) {
+        throw new Error("Storage homes incomplete");
       }
-      resetMappingForm();
-      await fetchMappings();
-      setMappingAlert({ ok: true, text: "Mapping added." });
+      const routesOk = await saveAllRoutes();
+      if (routesOk === false) {
+        throw new Error("Outlet mappings incomplete");
+      }
+      setCombinedSaveMessage({ ok: true, text: "Storage homes and mappings saved" });
     } catch (error) {
-      console.error(error);
-      setMappingAlert({ ok: false, text: (error as Error).message });
+      setCombinedSaveMessage({ ok: false, text: error instanceof Error ? error.message : "Save failed" });
     } finally {
-      setMappingMutating(false);
+      setSavingAll(false);
     }
   };
 
@@ -818,26 +894,6 @@ export default function OutletSetupPage() {
     }
   };
 
-  const deleteMapping = async (outletId: string, warehouseId: string) => {
-    setMappingMutating(true);
-    setMappingAlert(null);
-    try {
-      const params = new URLSearchParams({ outlet_id: outletId, warehouse_id: warehouseId });
-      const res = await fetch(`/api/outlet-warehouses?${params.toString()}`, { method: "DELETE" });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Failed to delete mapping");
-      }
-      await fetchMappings();
-      setMappingAlert({ ok: true, text: "Mapping removed." });
-    } catch (error) {
-      console.error(error);
-      setMappingAlert({ ok: false, text: (error as Error).message });
-    } finally {
-      setMappingMutating(false);
-    }
-  };
-
   if (status !== "ok") return null;
 
   return (
@@ -861,12 +917,14 @@ export default function OutletSetupPage() {
           <section className={styles.panel}>
             <div>
               <h2 className={styles.sectionTitle}>Warehouse assign (deduct)</h2>
-              <p className={styles.sectionBody}>Pick a product, then map each outlet to the warehouse that deducts stock for it.</p>
+              <p className={styles.sectionBody}>
+                Pick a product, then map each outlet to the warehouses that deduct stock for the product/variant, its ingredients, and raws.
+              </p>
             </div>
             <div className={styles.disclaimer}>
-              Deduct = where sales and outlet orders pull stock for this product. Example: if Till 1 sells “Chicken Shawarma”, pick the warehouse that should lose stock for that sale. Ensure transfers/purchases move stock into that warehouse first.
+              Deduct = where sales and outlet orders pull stock. Storage home = where stock is received and lives. Outlet deductions now share one warehouse per outlet; variants/ingredients/raws use the same selection.
             </div>
-            <div className={styles.controlsRow}>
+            <div className={styles.controlGrid}>
               <div className={styles.selectGroup}>
                 <div className={styles.subHeading}>Products</div>
                 <select
@@ -874,14 +932,13 @@ export default function OutletSetupPage() {
                   onChange={(e) => {
                     const value = e.target.value;
                     setSelectedProductId(value);
-                    setSelectedItemId(value);
                     setSelectedVariantKey("base");
                     setSelectedProductVariant("base");
                     setSelectedIngredientId("");
                     setSelectedRawId("");
                   }}
                   className={styles.select}
-                  disabled={routingLoading || productOptions.length <= 1}
+                  disabled={routingLoading.product}
                   aria-label="Select product for routing"
                 >
                   {productOptions.map((item) => (
@@ -893,21 +950,18 @@ export default function OutletSetupPage() {
               </div>
 
               <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Variants</div>
+                <div className={styles.subHeading}>Variants (deduct)</div>
                 <select
                   value={selectedProductVariant}
                   onChange={(e) => {
                     const value = e.target.value || "base";
                     setSelectedProductVariant(value);
                     setSelectedVariantKey(value);
-                    if (selectedProductId) {
-                      setSelectedItemId(selectedProductId);
-                    }
                     setSelectedIngredientId("");
                     setSelectedRawId("");
                   }}
                   className={styles.select}
-                  disabled={!selectedProductId || routingLoading || productVariantOptions.length <= 1}
+                  disabled={!selectedProductId || routingLoading.product || productVariantOptions.length <= 1}
                   aria-label="Select product variant for routing"
                 >
                   {productVariantOptions.map((variant) => (
@@ -919,379 +973,173 @@ export default function OutletSetupPage() {
               </div>
 
               <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Ingredients</div>
+                <div className={styles.subHeading}>Ingredients (from recipe)</div>
                 <select
                   value={selectedIngredientId}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const parsed = parseRouteValue(value);
-                    setSelectedIngredientId(value);
-                    setSelectedItemId(parsed.itemId);
-                    setSelectedVariantKey(parsed.variantKey);
-                  }}
+                  onChange={(e) => setSelectedIngredientId(e.target.value)}
                   className={styles.select}
-                  disabled={routingLoading || ingredientSelectOptions.length <= 1}
+                  disabled={!selectedProductId || routingLoading.ingredient || recipeIngredientsLoading || ingredientOptions.length <= 1}
                   aria-label="Select ingredient for routing"
                 >
-                  {ingredientSelectOptions.map((item) => (
-                    <option key={`ing-${item.value || "placeholder"}`} value={item.value}>
-                      {item.label}
+                  {ingredientOptions.map((opt) => (
+                    <option key={`ing-${opt.value || "placeholder"}`} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Raws</div>
+                <div className={styles.subHeading}>Raws (deduct)</div>
                 <select
                   value={selectedRawId}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const parsed = parseRouteValue(value);
-                    setSelectedRawId(value);
-                    setSelectedItemId(parsed.itemId);
-                    setSelectedVariantKey(parsed.variantKey);
-                  }}
+                  onChange={(e) => setSelectedRawId(e.target.value)}
                   className={styles.select}
-                  disabled={routingLoading || rawSelectOptions.length <= 1}
-                  aria-label="Select raw"
+                  disabled={!selectedProductId || routingLoading.raw || rawSelectOptions.length <= 1}
+                  aria-label="Select raw for routing"
                 >
-                  {rawSelectOptions.map((item) => (
-                    <option key={`raw-${item.value || "placeholder"}`} value={item.value}>
-                      {item.label}
+                  {rawSelectOptions.map((opt) => (
+                    <option key={`raw-${opt.value || "placeholder"}`} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={() => setRoutes({})}
-                  disabled={routingLoading || !selectedItemId}
-                >
-                  Clear routes
-                </button>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={saveRoutes}
-                  disabled={routingSaving || routingLoading || !selectedItemId}
-                >
-                  {routingSaving ? "Saving..." : "Save mappings"}
-                </button>
+            <div className={styles.inlineHint}>
+              <div className={styles.inlineTitle}>Linked dropdowns</div>
+              <div className={styles.inlineBody}>
+                Variants only unlock when the product has variants. Ingredients show only the ones used by the selected product’s recipe. Raws stay locked until a product is chosen.
               </div>
             </div>
 
-            <div className={styles.controlsRow}>
-              <div className={styles.inlineHint}>
-                <div className={styles.inlineTitle}>Default warehouses</div>
-                <div className={styles.inlineBody}>
-                  Set where each item lives by default (storage & purchase receipts). Above, choose the warehouse that deducts when an outlet sells it. They can be the same or different.
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.controlsRow}>
-              <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Product default</div>
-                <select
-                  className={styles.select}
-                  value={productDefaultWarehouseId}
-                  onChange={(e) => setProductDefaultWarehouseId(e.target.value)}
-                  aria-label="Default warehouse for selected product"
-                  disabled={!selectedProductId || routingLoading || productDefaultWarehouseSaving || selectedProductVariant !== "base"}
-                >
-                  <option value="">Default warehouse (optional)</option>
-                  {warehouseOptions.map((wh) => (
-                    <option key={wh.id} value={wh.id}>
-                      {wh.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={() => setProductDefaultWarehouseId("")}
-                  disabled={!productDefaultWarehouseId || !selectedProductId || productDefaultWarehouseSaving}
-                >
-                  Clear product default
-                </button>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={saveProductDefaultWarehouse}
-                  disabled={!selectedProductId || productDefaultWarehouseSaving || routingLoading}
-                >
-                  {productDefaultWarehouseSaving ? "Saving..." : "Save product default"}
-                </button>
-              </div>
-            </div>
-
-            <div className={styles.controlsRow}>
-              <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Ingredient default</div>
+            <div className={styles.storageGrid}>
+              <div className={styles.storageCard}>
+                <div className={styles.cardHeading}>Ingredient storage/receiving</div>
+                <p className={styles.cardBody}>Storage home for the selected ingredient from the recipe.</p>
                 <select
                   className={styles.select}
                   value={defaultWarehouseId}
                   onChange={(e) => setDefaultWarehouseId(e.target.value)}
-                  aria-label="Default warehouse for selected ingredient"
-                  disabled={
-                    !selectedIngredientId ||
-                    routingLoading ||
-                    defaultWarehouseSaving ||
-                    isVariantSelection(selectedIngredientId)
-                  }
+                  aria-label="Storage home for selected ingredient"
+                  disabled={!selectedIngredientId || routingLoading.ingredient}
                 >
-                  <option value="">Default warehouse (optional)</option>
-                  {warehouseOptions.map((wh) => (
+                  <option value="">Select storage home</option>
+                  {storageHomeOptions.map((wh) => (
                     <option key={wh.id} value={wh.id}>
                       {wh.name}
                     </option>
                   ))}
                 </select>
+                {defaultWarehouseMessage && (
+                  <div className={`${styles.callout} ${defaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
+                    {defaultWarehouseMessage.text}
+                  </div>
+                )}
               </div>
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={() => setDefaultWarehouseId("")}
-                  disabled={!defaultWarehouseId || !selectedIngredientId || defaultWarehouseSaving}
-                >
-                  Clear ingredient default
-                </button>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={saveDefaultWarehouse}
-                  disabled={!selectedIngredientId || defaultWarehouseSaving || routingLoading}
-                >
-                  {defaultWarehouseSaving ? "Saving..." : "Save ingredient default"}
-                </button>
-              </div>
-            </div>
 
-            <div className={styles.controlsRow}>
-              <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Raw default</div>
+              <div className={styles.storageCard}>
+                <div className={styles.cardHeading}>Raw storage/receiving</div>
+                <p className={styles.cardBody}>Storage home for the selected raw item.</p>
                 <select
                   className={styles.select}
                   value={rawDefaultWarehouseId}
                   onChange={(e) => setRawDefaultWarehouseId(e.target.value)}
-                  aria-label="Default warehouse for selected raw"
-                  disabled={
-                    !selectedRawId ||
-                    routingLoading ||
-                    rawDefaultWarehouseSaving ||
-                    isVariantSelection(selectedRawId)
-                  }
+                  aria-label="Storage home for selected raw"
+                  disabled={!selectedRawId || routingLoading.raw}
                 >
-                  <option value="">Default warehouse (optional)</option>
-                  {warehouseOptions.map((wh) => (
+                  <option value="">Select storage home</option>
+                  {storageHomeOptions.map((wh) => (
                     <option key={wh.id} value={wh.id}>
                       {wh.name}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={() => setRawDefaultWarehouseId("")}
-                  disabled={!rawDefaultWarehouseId || !selectedRawId || rawDefaultWarehouseSaving}
-                >
-                  Clear raw default
-                </button>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={saveRawDefaultWarehouse}
-                  disabled={!selectedRawId || rawDefaultWarehouseSaving || routingLoading}
-                >
-                  {rawDefaultWarehouseSaving ? "Saving..." : "Save raw default"}
-                </button>
+                {rawDefaultWarehouseMessage && (
+                  <div className={`${styles.callout} ${rawDefaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
+                    {rawDefaultWarehouseMessage.text}
+                  </div>
+                )}
               </div>
             </div>
 
-            {defaultWarehouseMessage && (
-              <div
-                className={`${styles.callout} ${defaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}
-              >
-                {defaultWarehouseMessage.text}
-              </div>
-            )}
-            {productDefaultWarehouseMessage && (
-              <div
-                className={`${styles.callout} ${productDefaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}
-              >
-                {productDefaultWarehouseMessage.text}
-              </div>
-            )}
-            {rawDefaultWarehouseMessage && (
-              <div className={`${styles.callout} ${rawDefaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
-                {rawDefaultWarehouseMessage.text}
-              </div>
-            )}
-
-            {routingMessage && (
-              <div className={`${styles.callout} ${routingMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
-                {routingMessage.text}
-              </div>
-            )}
+            <div className={styles.inlineHint}>
+              Each outlet row uses one warehouse for variants, ingredients, and raws. Storage/receiving can differ per item type above.
+            </div>
 
             <div className={styles.tableWrapper}>
               <table className={styles.routesTable}>
                 <thead>
                   <tr>
                     <th>Outlet</th>
-                    <th>Warehouse</th>
+                    <th>Outlet warehouse (shared)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {outlets.map((outlet) => (
-                    <tr key={outlet.id}>
-                      <td>
-                        <div className={styles.outletName}>{outlet.name}</div>
-                        {outlet.code && <div className={styles.outletCode}>{outlet.code}</div>}
-                        {outlet.active === false && <div className={styles.outletInactive}>Inactive</div>}
-                      </td>
-                      <td>
-                        <select
-                          value={routes[outlet.id] ?? ""}
-                          onChange={(e) => setRoute(outlet.id, e.target.value)}
-                          className={styles.select}
-                          disabled={routingLoading || !selectedItemId}
-                          aria-label={`Warehouse for outlet ${outlet.name}`}
-                        >
-                          {warehouseOptions.map((wh) => (
-                            <option key={wh.id} value={wh.id}>
-                              {wh.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className={styles.panel}>
-            <div>
-              <h2 className={styles.sectionTitle}>Stocktake warehouses</h2>
-              <p className={styles.sectionBody}>Link outlets to the warehouses they can stocktake against.</p>
-            </div>
-
-            <div className={styles.disclaimer}>
-              Stocktake = where the outlet counts inventory. It can differ from deduct routing. Example: Outlet “Quick Corner” might deduct sales from “Main Prep Kitchen” but do physical counts in “Quick Corner Warehouse” if that is where the stock sits.
-            </div>
-            <p className={styles.note}>
-              If the outlet physically holds stock, set both deduct and stocktake to the outlet warehouse and use transfers from Main Kitchen to keep it supplied.
-            </p>
-            <div className={styles.controlsRow}>
-              <select
-                className={styles.select}
-                value={selectedOutlet}
-                onChange={(e) => setSelectedOutlet(e.target.value)}
-                disabled={mappingLoading || mappingMutating}
-                aria-label="Select outlet"
-              >
-                <option value="">Select outlet…</option>
-                {outletSelectOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className={styles.select}
-                value={selectedWarehouse}
-                onChange={(e) => setSelectedWarehouse(e.target.value)}
-                disabled={mappingLoading || mappingMutating}
-                aria-label="Select warehouse"
-              >
-                <option value="">Select warehouse…</option>
-                {warehouseSelectOptions.map((w) => (
-                  <option key={w.value} value={w.value}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
-
-              <div className={styles.actions}>
-                <button className={styles.secondaryButton} onClick={resetMappingForm} disabled={mappingLoading || mappingMutating}>
-                  Clear
-                </button>
-                <button
-                  className={styles.primaryButton}
-                  onClick={addMapping}
-                  disabled={mappingLoading || mappingMutating || !selectedOutlet || !selectedWarehouse}
-                >
-                  Add mapping
-                </button>
-              </div>
-            </div>
-
-            {mappingAlert && (
-              <div className={`${styles.callout} ${mappingAlert.ok ? styles.calloutSuccess : styles.calloutError}`}>
-                {mappingAlert.text}
-              </div>
-            )}
-
-            <div className={styles.tableWrapper}>
-              <table className={styles.routesTable}>
-                <thead>
-                  <tr>
-                    <th>Outlet</th>
-                    <th>Warehouse</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mappingLoading ? (
+                  {outlets.length === 0 ? (
                     <tr>
-                      <td colSpan={3}>Loading…</td>
-                    </tr>
-                  ) : rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={3}>No mappings yet.</td>
+                      <td colSpan={2}>No outlets found.</td>
                     </tr>
                   ) : (
-                    rows.map((row) => {
-                      const key = `${row.outlet_id}-${row.warehouse_id}`;
-                      return (
-                        <tr key={key}>
-                          <td>
-                            <div className={styles.outletName}>{row.outlet.name}</div>
-                            {row.outlet.code ? <div className={styles.outletCode}>{row.outlet.code}</div> : null}
-                            {row.outlet.active === false ? <div className={styles.outletInactive}>Inactive</div> : null}
-                          </td>
-                          <td>
-                            <div className={styles.outletName}>{row.warehouse.name}</div>
-                            {row.warehouse.code ? <div className={styles.outletCode}>{row.warehouse.code}</div> : null}
-                            {row.warehouse.active === false ? <div className={styles.outletInactive}>Inactive</div> : null}
-                          </td>
-                          <td>
-                            <button
-                              className={styles.secondaryButton}
-                              onClick={() => deleteMapping(row.outlet_id, row.warehouse_id)}
-                              disabled={mappingMutating || mappingLoading}
-                            >
-                              Remove
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
+                    outlets.map((outlet) => (
+                      <tr key={outlet.id}>
+                        <td>
+                          <div className={styles.outletName}>{outlet.name}</div>
+                          {outlet.code ? <div className={styles.outletCode}>{outlet.code}</div> : null}
+                          {outlet.active === false ? <div className={styles.outletInactive}>Inactive</div> : null}
+                        </td>
+                        <td>
+                          <select
+                            value={productRoutes[outlet.id] ?? ""}
+                            onChange={(e) => setRoute("product", outlet.id, e.target.value)}
+                            className={styles.select}
+                            disabled={routingLoading.product || !selectedProductId}
+                            aria-label={`Outlet warehouse for ${outlet.name}`}
+                          >
+                            <option value="">Select warehouse</option>
+                            {warehouseOptions.map((wh) => (
+                              <option key={`prod-route-${wh.id}`} value={wh.id}>
+                                {wh.name}
+                              </option>
+                            ))}
+                          </select>
+                          {!selectedProductId && (
+                            <div className={styles.inlineHintSmall}>Select a product to assign a warehouse.</div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
+            </div>
+
+            <div className={styles.minimalActions}>
+              <button
+                type="button"
+                className={`${styles.minimalButton} ${styles.minimalSecondary}`}
+                onClick={clearAllRoutes}
+                disabled={savingAll || mappingsSaving || storageHomesSaving}
+              >
+                Clear mappings
+              </button>
+              <button
+                type="button"
+                className={`${styles.minimalButton} ${styles.minimalPrimary}`}
+                onClick={saveEverything}
+                disabled={savingAll || mappingsSaving || storageHomesSaving}
+              >
+                {savingAll ? "Saving..." : "Save all"}
+              </button>
+            </div>
+
+            <div className={styles.messageGrid}>
+              {combinedSaveMessage && (
+                <div className={`${styles.callout} ${combinedSaveMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
+                  {combinedSaveMessage.text}
+                </div>
+              )}
             </div>
           </section>
 
@@ -1459,6 +1307,7 @@ export default function OutletSetupPage() {
                         </label>
                       );
                     })}
+                    <div className={styles.variantHint}>Leave “Use base product” ticked only when the item has no variants or always deducts the base recipe.</div>
                   </div>
                 )}
               </div>

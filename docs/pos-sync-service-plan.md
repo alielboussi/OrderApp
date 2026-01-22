@@ -15,17 +15,17 @@ A Windows Service executable (installed via `services.msc`) that reads the local
   - `Logging.level`: Info by default.
 - **Data flow** (per poll):
   1) Read POS rows with `uploadstatus` in (Pending, NULL) from sales header/lines; join customer/payment info; build an event payload with `source_event_id` (e.g., POS sale id + outlet code).
-  2) Map POS IDs to Supabase IDs using an in-service map table (e.g., `item_map`, `outlet_map`, `user_map`). Map load can be cached and refreshed periodically.
-  3) Call Supabase RPC (to be added) `sync_pos_order(event jsonb)` which wraps `place_order`/`record_outlet_sale` and deducts stock via existing functions.
+  2) Call Supabase RPC `validate_pos_order(payload jsonb)` to confirm mappings exist.
+  3) Call Supabase RPC `sync_pos_order(payload jsonb)` which maps items using `pos_item_map`, resolves deduction warehouse via `outlet_item_routes` (unless overridden), and deducts stock.
   4) On success, mark POS rows processed (set `uploadstatus = 'Processed'` or store last synced id).
   5) On failure, log and retry with backoff; keep a dead-letter queue table/file.
 - **Idempotency**: Supabase side enforces unique `source_event_id` per order (unique index) so retries don’t duplicate.
 - **Stock**: Service sends item/variant quantities; RPC uses existing `record_outlet_sale` to hit `stock_ledger` and `warehouse_layer_stock` view.
 
-## Supabase-side additions (needed)
-- RPC: `sync_pos_order(payload jsonb)` that accepts `{ source_event_id, outlet_id, items:[{item_id, variant_id, qty, price, discount, tax}], payments:[...], customer:{...}, occurred_at }`, calls `place_order`/`record_outlet_sale`, commits idempotently.
+## Supabase-side requirements (current)
+- RPCs: `validate_pos_order(payload jsonb)` and `sync_pos_order(payload jsonb)`.
 - Constraint: unique index on `orders.source_event_id` (nullable) to prevent duplicates.
-- Optional: table `pos_item_map(pos_item_id text primary key, catalog_item uuid, catalog_variant uuid, outlet_id uuid)` to help mapping if you choose to keep it inside Supabase.
+- Table: `pos_item_map` (required) to map POS items/flavours to catalog item + variant key + optional warehouse override.
 
 ## Windows Service packaging
 - Build the Worker Service into a self-contained exe (win-x64) or framework-dependent if .NET 8 runtime is installed.

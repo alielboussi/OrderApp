@@ -24,6 +24,8 @@ class StocktakeViewModel(
         val warehouses: List<SupabaseProvider.Warehouse> = emptyList(),
         val filteredWarehouses: List<SupabaseProvider.Warehouse> = emptyList(),
         val items: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
+        val variations: List<SupabaseProvider.SimpleVariation> = emptyList(),
+        val productUoms: Map<String, String> = emptyMap(),
         val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
@@ -60,6 +62,10 @@ class StocktakeViewModel(
         viewModelScope.launch {
             pushDebug("bindSession: start for outletId=${session.outletId}")
             _ui.value = _ui.value.copy(loading = true, error = null)
+
+            viewModelScope.launch {
+                loadReferenceData(session.token)
+            }
 
             Log.d(TAG, "bindSession: fetching outlets for outletId=${session.outletId}")
 
@@ -129,6 +135,25 @@ class StocktakeViewModel(
 
             selectedWarehouse?.let { loadItems(it) }
         }
+    }
+
+    private suspend fun loadReferenceData(jwt: String) {
+        val variations = runCatching { repo.listAllVariations(jwt) }
+            .onFailure { pushDebug("listAllVariations failed: ${it.message}") }
+            .getOrElse { emptyList() }
+        val products = runCatching { repo.listActiveProducts(jwt) }
+            .onFailure { pushDebug("listActiveProducts failed: ${it.message}") }
+            .getOrElse { emptyList() }
+
+        val productUoms = products.associate { product ->
+            val uom = product.consumptionUom.ifBlank { product.uom.ifBlank { "each" } }
+            product.id to uom
+        }
+
+        _ui.value = _ui.value.copy(
+            variations = variations,
+            productUoms = productUoms
+        )
     }
 
     fun selectOutlet(id: String) {
@@ -286,24 +311,17 @@ class StocktakeViewModel(
 
     private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
         val total = items.size
-        val rawFiltered = items.count { it.itemKind?.equals("raw", ignoreCase = true) == true }
-        val baseRecipeFiltered = items.count {
-            val isIngredient = it.itemKind?.equals("ingredient", ignoreCase = true) == true
-            val hasRecipe = it.hasRecipe == true
-            val isBaseVariant = (it.variantKey ?: "base").lowercase() == "base"
-            !isIngredient && hasRecipe && isBaseVariant
+
+        val filtered = items.filter { row ->
+            val kind = row.itemKind?.lowercase()
+            val variantKey = (row.variantKey ?: "base").lowercase()
+            kind == "ingredient" || variantKey != "base"
         }
 
-        val filtered = items.filterNot { it.itemKind?.equals("raw", ignoreCase = true) == true }
-            .filterNot {
-                val isIngredient = it.itemKind?.equals("ingredient", ignoreCase = true) == true
-                val hasRecipe = it.hasRecipe == true
-                val isBaseVariant = (it.variantKey ?: "base").lowercase() == "base"
-                !isIngredient && hasRecipe && isBaseVariant
-            }
-
         val ingredients = filtered.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
-        val nonIngredients = filtered.filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
+        val nonIngredients = filtered.filterNot {
+            it.itemKind?.equals("ingredient", ignoreCase = true) == true
+        }
 
         val grouped = nonIngredients.groupBy { it.itemId }
         val variantSelections = grouped.values.flatMap { group ->
@@ -320,18 +338,15 @@ class StocktakeViewModel(
 
         fun exclusionReason(item: SupabaseProvider.WarehouseStockItem): String {
             val isIngredient = item.itemKind?.equals("ingredient", ignoreCase = true) == true
-            val isRaw = item.itemKind?.equals("raw", ignoreCase = true) == true
-            val hasRecipe = item.hasRecipe == true
             val isBaseVariant = (item.variantKey ?: "base").lowercase() == "base"
             return when {
-                isRaw -> "raw"
-                !isIngredient && hasRecipe && isBaseVariant -> "base-recipe"
-                !isIngredient && isBaseVariant -> "base-finished"
+                isIngredient -> "kept"
+                isBaseVariant -> "base-finished"
                 else -> "deduped-or-unexpected"
             }
         }
 
-        pushDebug("pickDisplayItems total=$total rawFiltered=$rawFiltered baseRecipeFiltered=$baseRecipeFiltered filtered=${filtered.size} ingredients=${ingredients.size} variants=${variantSelections.size} result=${result.size} excluded=${excluded.size}")
+        pushDebug("pickDisplayItems total=$total filtered=${filtered.size} ingredients=${ingredients.size} variants=${variantSelections.size} result=${result.size} excluded=${excluded.size}")
         excluded.take(6).forEach { row ->
             pushDebug("excluded id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe} reason=${exclusionReason(row)}")
         }
@@ -364,7 +379,12 @@ class StocktakeViewModel(
                 fetched.take(5).forEach { row ->
                     pushDebug("item sample id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe}")
                 }
-                val display = pickDisplayItems(fetched)
+                val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
+                    .onFailure { pushDebug("warehouse_stock_items failed: ${it.message}") }
+                    .getOrElse { emptyList() }
+                val combined = (fetched + direct)
+                    .distinctBy { it.itemId to (it.variantKey ?: "base") }
+                val display = pickDisplayItems(combined)
                 if (display.isNotEmpty()) {
                     pushDebug("list_warehouse_items display=${display.size}")
                     _ui.value = _ui.value.copy(items = display, loading = false, error = null)

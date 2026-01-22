@@ -20,8 +20,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +62,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.afterten.orders.RootViewModel
@@ -211,7 +215,7 @@ fun StocktakeDashboardScreen(
                     }
 
                     Text(
-                        "Warehouses come from Outlet setup → Stocktake mapping. Pick the outlet’s warehouse you count in.",
+                        "Warehouses come from Outlet setup → Deduct warehouses. Pick the outlet’s warehouse you count in.",
                         color = Color.White.copy(alpha = 0.8f),
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -312,12 +316,13 @@ fun StocktakeCountScreen(
         return
     }
 
-    var itemId by rememberSaveable { mutableStateOf("") }
-    var variantKey by rememberSaveable { mutableStateOf("base") }
-    var qtyText by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
-    var selectedName by rememberSaveable { mutableStateOf("") }
     var inputError by rememberSaveable { mutableStateOf<String?>(null) }
+    var variantDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var dialogItemId by rememberSaveable { mutableStateOf("") }
+    var dialogItemName by rememberSaveable { mutableStateOf("") }
+    var dialogItemKind by rememberSaveable { mutableStateOf<String?>(null) }
+    val dialogQty = remember { mutableStateMapOf<String, String>() }
 
     fun formatQty(value: Double?): String = String.format("%.2f", value ?: 0.0)
     val imageSize = 96.dp
@@ -339,10 +344,49 @@ fun StocktakeCountScreen(
         disabledContainerColor = Color.Black
     )
 
-    val filteredItems = remember(ui.items, search) {
+    val variantLabelMap = remember(ui.variations) {
+        val map = mutableMapOf("base" to "Base")
+        ui.variations.forEach { variation ->
+            map[variation.id] = variation.name.ifBlank { variation.id }
+        }
+        map
+    }
+    val variantUomMap = remember(ui.variations) {
+        ui.variations.associate { variation ->
+            variation.id to variation.consumptionUom.ifBlank { variation.uom.ifBlank { "each" } }
+        }
+    }
+
+    val itemsByItemId = remember(ui.items) {
+        ui.items.groupBy { it.itemId }
+    }
+
+    val filteredBaseItems = remember(ui.items, ui.variations, search) {
         val term = search.trim().lowercase()
-        if (term.isBlank()) ui.items else ui.items.filter {
-            it.itemName?.lowercase()?.contains(term) == true || it.itemId.lowercase().contains(term)
+        val matchesTerm: (String, List<com.afterten.orders.data.SupabaseProvider.WarehouseStockItem>) -> Boolean = { itemId, rows ->
+            if (term.isBlank()) {
+                true
+            } else {
+                val nameMatch = rows.firstOrNull()?.itemName?.lowercase()?.contains(term) == true
+                if (nameMatch || itemId.lowercase().contains(term)) {
+                    true
+                } else {
+                    rows.any { row ->
+                        val key = row.variantKey?.ifBlank { "base" } ?: "base"
+                        val label = variantLabelMap[key]?.lowercase() ?: ""
+                        label.contains(term)
+                    }
+                }
+            }
+        }
+
+        itemsByItemId.mapNotNull { (itemId, rows) ->
+            val baseRow = rows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: rows.firstOrNull()
+            when {
+                baseRow == null -> null
+                !matchesTerm(itemId, rows) -> null
+                else -> baseRow
+            }
         }
     }
 
@@ -388,7 +432,7 @@ fun StocktakeCountScreen(
                     colors = outlinedFieldColors
                 )
                 Text(
-                    "We list ingredients and product variants (base if no variants).",
+                    "Tap an ingredient or variant group to enter counts.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f)
                 )
@@ -397,7 +441,7 @@ fun StocktakeCountScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f)
                 )
-                if (filteredItems.isEmpty()) {
+                if (filteredBaseItems.isEmpty()) {
                     Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)
                 } else {
                     BoxWithConstraints {
@@ -412,14 +456,15 @@ fun StocktakeCountScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            filteredItems.take(80).forEach { row ->
+                            filteredBaseItems.take(80).forEach { row ->
                                 Button(
                                     onClick = {
-                                        itemId = row.itemId
-                                        variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
-                                        selectedName = row.itemName ?: row.itemId
-                                        qtyText = formatQty(row.netUnits)
                                         inputError = null
+                                        dialogQty.clear()
+                                        dialogItemId = row.itemId
+                                        dialogItemName = row.itemName ?: row.itemId
+                                        dialogItemKind = row.itemKind
+                                        variantDialogOpen = true
                                     },
                                     modifier = Modifier
                                         .size(cardSize),
@@ -441,7 +486,16 @@ fun StocktakeCountScreen(
                                             alignment = Alignment.Center
                                         )
                                         Text(row.itemName ?: "Item", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                                        Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
+                                        val rows = itemsByItemId[row.itemId].orEmpty()
+                                        val variantCount = rows.count { (it.variantKey ?: "base") != "base" }
+                                        val badge = if ((row.itemKind ?: "").lowercase() == "ingredient") {
+                                            "Ingredient"
+                                        } else if (variantCount > 0) {
+                                            "${variantCount} variant${if (variantCount == 1) "" else "s"}"
+                                        } else {
+                                            "Base item"
+                                        }
+                                        Text(badge, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                                         Text("Qty: ${formatQty(row.netUnits)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                                     }
                                 }
@@ -450,51 +504,135 @@ fun StocktakeCountScreen(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    if (itemId.isNotBlank()) {
-                        Text("Selected item", fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(selectedName.ifBlank { itemId }, color = Color.White)
-                        val selectedItem = ui.items.firstOrNull { it.itemId == itemId && (it.variantKey ?: "base") == variantKey }
-                        val hasStock = (selectedItem?.netUnits ?: 0.0) > 0.0
-                        OutlinedTextField(
-                            value = qtyText,
-                            onValueChange = { qtyText = it },
-                            label = { Text("Quantity (units)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = outlinedFieldColors
+                    ui.lastCount?.let { last ->
+                        val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
+                        Text(
+                            "$kindLabel saved: ${formatQty(last.countedQty)}",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall
                         )
-                        inputError?.let { Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = {
-                                val parsed = qtyText.trim().toDoubleOrNull()
-                                if (parsed == null || parsed < 0) {
-                                    inputError = "Enter a non-negative number"
-                                    return@Button
-                                }
-                                inputError = null
-                                val mode = if (hasStock) "closing" else "opening"
-                                vm.recordCount(itemId, parsed, variantKey, mode)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (hasStock) "Save closing" else "Save opening")
-                        }
-                        ui.lastCount?.takeIf { it.itemId == itemId }?.let { last ->
-                            val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
-                            Text(
-                                "$kindLabel saved: ${formatQty(last.countedQty)}",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
                     }
                 }
             }
         }
 
+    }
+
+    if (variantDialogOpen) {
+        val dialogRows = itemsByItemId[dialogItemId].orEmpty()
+        val baseRow = dialogRows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: dialogRows.firstOrNull()
+        val kindLabel = (dialogItemKind ?: baseRow?.itemKind ?: "").lowercase()
+        val isIngredient = kindLabel == "ingredient"
+        val variantRows = dialogRows.filter { (it.variantKey ?: "base") != "base" }
+        val displayRows = when {
+            isIngredient -> listOfNotNull(baseRow)
+            variantRows.isNotEmpty() -> variantRows
+            else -> listOfNotNull(baseRow)
+        }
+
+        LaunchedEffect(dialogItemId, dialogRows.size) {
+            dialogRows.forEach { row ->
+                val key = row.variantKey?.ifBlank { "base" } ?: "base"
+                if (!dialogQty.containsKey(key)) {
+                    dialogQty[key] = formatQty(row.netUnits)
+                }
+            }
+        }
+
+        Dialog(onDismissRequest = { variantDialogOpen = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.Black),
+                border = BorderStroke(1.dp, primaryRed),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(dialogItemName.ifBlank { dialogItemId }, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(
+                        if (isIngredient) "Enter ingredient count" else "Enter variant counts",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+
+                    displayRows.forEach { row ->
+                        val key = row.variantKey?.ifBlank { "base" } ?: "base"
+                        val label = if (key == "base") {
+                            "Base"
+                        } else {
+                            variantLabelMap[key] ?: key.take(8)
+                        }
+                        val uom = variantUomMap[key]
+                            ?: ui.productUoms[dialogItemId]
+                            ?: "each"
+                        val currentQty = dialogQty[key] ?: formatQty(row.netUnits)
+                        val hasStock = (row.netUnits ?: 0.0) > 0.0
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.Black),
+                            border = BorderStroke(1.dp, primaryRed)
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(label, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text(uom.uppercase(), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.75f))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            val parsed = currentQty.toDoubleOrNull() ?: 0.0
+                                            dialogQty[key] = formatQty(parsed - 1)
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = primaryRed)
+                                    }
+                                    OutlinedTextField(
+                                        value = currentQty,
+                                        onValueChange = { dialogQty[key] = it },
+                                        label = { Text("Qty") },
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        colors = outlinedFieldColors
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val parsed = currentQty.toDoubleOrNull() ?: 0.0
+                                            dialogQty[key] = formatQty(parsed + 1)
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = "Increase", tint = primaryRed)
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        val parsed = (dialogQty[key] ?: "").trim().toDoubleOrNull()
+                                        if (parsed == null || parsed < 0) {
+                                            inputError = "Enter a non-negative number"
+                                            return@Button
+                                        }
+                                        inputError = null
+                                        val mode = if (hasStock) "closing" else "opening"
+                                        vm.recordCount(dialogItemId, parsed, key, mode)
+                                        variantDialogOpen = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                                ) {
+                                    Icon(Icons.Default.Check, contentDescription = null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (hasStock) "Save closing" else "Save opening")
+                                }
+                            }
+                        }
+                    }
+
+                    inputError?.let { Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall) }
+                    Button(
+                        onClick = { variantDialogOpen = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray, contentColor = Color.White)
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
     }
 }
 

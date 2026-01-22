@@ -6,7 +6,6 @@ type WarehouseRecord = {
   id: string;
   name: string | null;
   parent_warehouse_id: string | null;
-  kind: string | null;
   active: boolean | null;
 };
 
@@ -15,13 +14,12 @@ function mapWarehouse(record: WarehouseRecord): Warehouse {
     id: record.id,
     name: record.name ?? 'Warehouse',
     parent_warehouse_id: record.parent_warehouse_id,
-    kind: record.kind,
     active: record.active ?? false,
   };
 }
 
 async function fetchWarehousesViaTable(supabase: ReturnType<typeof getServiceClient>, lockedIds: string[]) {
-  const selectColumns = 'id,name,parent_warehouse_id,kind';
+  const selectColumns = 'id,name,parent_warehouse_id,active';
   const { data, error } = await supabase
     .from('warehouses')
     .select(selectColumns)
@@ -47,7 +45,7 @@ async function fetchWarehousesViaTable(supabase: ReturnType<typeof getServiceCli
 
   return rows.map((row) => ({
     ...row,
-    active: true,
+    active: row?.active ?? true,
   }));
 }
 

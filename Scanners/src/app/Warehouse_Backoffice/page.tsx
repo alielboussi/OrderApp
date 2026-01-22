@@ -11,6 +11,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
   const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup");
+  const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
 
   if (status !== "ok") {
     return null;
@@ -24,28 +25,34 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Warehouse Backoffice</h1>
             <p className={styles.subtitle}>
-              Choose where to work today. Transfers are live now; additional control rooms will plug in here soon.
+              Configure outlet defaults, per-item routing, and POS match against the new warehouse schema. Operate inventory without legacy outlet-warehouse tables.
             </p>
-            <p className={styles.notice}>Live metrics will return once final dashboards are signed off.</p>
+            <p className={styles.notice}>Schema live: outlets.default_sales_warehouse_id, outlet_item_routes, item_storage_homes.</p>
           </div>
         </header>
 
         <section className={styles.actionsGrid}>
-          <button onClick={goToInventory} className={`${styles.actionCard} ${styles.inventoryCard}`}>
-            <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Scanner History</p>
-            <p className={styles.cardBody}>Enter transfers, damages, and purchases.</p>
+          <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Outlet Setup</p>
+            <p className={styles.cardBody}>Set outlet sales defaults, per-item routing, and product storage homes in one flow.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
           <button onClick={goToCatalog} className={`${styles.actionCard} ${styles.catalogCard}`}>
-            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Catalog</p>
-            <p className={styles.cardBody}>Create products and variants for the warehouse catalog.</p>
+            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Catalog & Recipes</p>
+            <p className={styles.cardBody}>Manage items, variants, and recipes that drive outlet_item_routes and storage homes.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
-            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Outlet Setup</p>
-            <p className={styles.cardBody}>Assign products and warehouses for deduction and stocktake.</p>
+          <button onClick={goToPosMatch} className={`${styles.actionCard} ${styles.mappingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>POS Match</p>
+            <p className={styles.cardBody}>Map POS items/flavours to catalog item + variant + warehouse for deductions.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToInventory} className={`${styles.actionCard} ${styles.inventoryCard}`}>
+            <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Inventory Ops</p>
+            <p className={styles.cardBody}>Process transfers, purchases, and damages with the new warehouse roles.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>

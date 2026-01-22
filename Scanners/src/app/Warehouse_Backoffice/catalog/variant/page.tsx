@@ -50,7 +50,7 @@ type FormState = {
   cost: string;
   outlet_order_visible: boolean;
   image_url: string;
-  default_warehouse_id: string;
+  storage_home_id: string;
   active: boolean;
 };
 
@@ -69,7 +69,7 @@ const defaultForm: FormState = {
   cost: "0",
   outlet_order_visible: true,
   image_url: "",
-  default_warehouse_id: "",
+  storage_home_id: "",
   active: true,
 };
 
@@ -131,7 +131,7 @@ function VariantCreatePage() {
             cost: (variant.cost ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,
             image_url: variant.image_url ?? "",
-            default_warehouse_id: variant.default_warehouse_id ?? "",
+              storage_home_id: variant.storage_home_id ?? variant.default_warehouse_id ?? "",
             active: variant.active ?? true,
           });
         }
@@ -172,7 +172,7 @@ function VariantCreatePage() {
         purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0, 0),
         transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
         cost: toNumber(form.cost, 0, -0.0001),
-        default_warehouse_id: form.default_warehouse_id || null,
+          default_warehouse_id: form.storage_home_id || null,
         ...(editingId ? { id: editingId } : {}),
       };
 
@@ -322,6 +322,13 @@ function VariantCreatePage() {
               hint="Link to variant image"
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
+            />
+            <Select
+              label="Storage home"
+              hint="Warehouse where this variant lives and receives stock"
+              value={form.storage_home_id}
+              onChange={(v) => handleChange("storage_home_id", v)}
+              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
           </div>
 
