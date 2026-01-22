@@ -6,6 +6,7 @@ type RouteRow = {
   item_id: string;
   warehouse_id: string | null;
   normalized_variant_key: string;
+  variant_key?: string | null;
   deduct_enabled?: boolean | null;
   target_outlet_id?: string | null;
 };
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
     const supabase = getServiceClient();
     const { data, error } = await supabase
       .from("outlet_item_routes")
-      .select("outlet_id,item_id,warehouse_id,normalized_variant_key,deduct_enabled,target_outlet_id")
+      .select("outlet_id,item_id,warehouse_id,normalized_variant_key,variant_key,deduct_enabled,target_outlet_id")
       .eq("item_id", itemId)
       .eq("normalized_variant_key", variantKey);
 
@@ -86,6 +87,7 @@ export async function PUT(request: Request) {
         outlet_id: outletId,
         item_id: itemId,
         warehouse_id: warehouseId,
+        variant_key: variantKey,
         normalized_variant_key: variantKey,
         deduct_enabled: cleanBoolean(entry.deduct_enabled, true),
         target_outlet_id: cleanUuid(entry.target_outlet_id),
@@ -109,6 +111,19 @@ export async function PUT(request: Request) {
         .from("outlet_item_routes")
         .upsert(upserts, { onConflict: "outlet_id,item_id,normalized_variant_key" });
       if (upsertError) throw upsertError;
+
+      const outletProductUpserts = upserts.map((row) => ({
+        outlet_id: row.outlet_id,
+        item_id: row.item_id,
+        variant_key: variantKey,
+        enabled: true,
+      }));
+
+      const { error: outletProductError } = await supabase
+        .from("outlet_products")
+        .upsert(outletProductUpserts, { onConflict: "outlet_id,item_id,variant_key" });
+
+      if (outletProductError) throw outletProductError;
     }
 
     return NextResponse.json({ ok: true });

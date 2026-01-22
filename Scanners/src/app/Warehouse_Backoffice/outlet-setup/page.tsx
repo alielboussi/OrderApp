@@ -26,11 +26,30 @@ interface Item {
   default_warehouse_id?: string | null;
   has_recipe?: boolean | null;
 }
-interface Variant { id: string; item_id: string; name: string; sku?: string | null; active?: boolean | null }
+interface Variant { id: string; item_id: string; name: string; sku?: string | null; active?: boolean | null; item_kind?: string | null }
+interface RouteOption {
+  value: string;
+  label: string;
+  itemId: string;
+  variantKey: string;
+  kind: string;
+}
 
 type RouteRecord = Record<string, string>;
 
-const variantKey = "base";
+const parseRouteValue = (value: string) => {
+  if (!value) return { itemId: "", variantKey: "base" };
+  const [itemId, variantKey] = value.split("::");
+  return { itemId, variantKey: variantKey || "base" };
+};
+
+const isVariantSelection = (value: string) => value.includes("::");
+
+const resolveItemId = (value: string) => {
+  if (!value) return "";
+  if (!value.includes("::")) return value;
+  return value.split("::")[0];
+};
 
 type Alert = { ok: boolean; text: string } | null;
 
@@ -46,12 +65,16 @@ export default function OutletSetupPage() {
   // Deduction routing state (product → warehouse per outlet)
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedItemId, setSelectedItemId] = useState<string>("");
+  const [selectedVariantKey, setSelectedVariantKey] = useState<string>("base");
+  const [selectedProductVariant, setSelectedProductVariant] = useState<string>("base");
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
   const [selectedRawId, setSelectedRawId] = useState<string>("");
   const [routes, setRoutes] = useState<RouteRecord>({});
   const [routingLoading, setRoutingLoading] = useState(false);
   const [routingSaving, setRoutingSaving] = useState(false);
   const [routingMessage, setRoutingMessage] = useState<Alert>(null);
+  const [recipeIngredientIds, setRecipeIngredientIds] = useState<string[]>([]);
+  const [recipeIngredientsLoading, setRecipeIngredientsLoading] = useState(false);
   const [productDefaultWarehouseId, setProductDefaultWarehouseId] = useState<string>("");
   const [productDefaultWarehouseSaving, setProductDefaultWarehouseSaving] = useState(false);
   const [productDefaultWarehouseMessage, setProductDefaultWarehouseMessage] = useState<Alert>(null);
@@ -95,21 +118,76 @@ export default function OutletSetupPage() {
   };
 
   const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
-  const ingredientOptions = useMemo(() => {
-    const filtered = items.filter((it) => (it.item_kind ?? "product") === "ingredient");
-    return filtered.length ? [{ id: "", name: "Select ingredient" }, ...filtered] : [{ id: "", name: "No ingredients found" }];
+  const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const baseIngredientOptions = useMemo<RouteOption[]>(() => {
+    const filtered = items
+      .filter((it) => (it.item_kind ?? "product") === "ingredient")
+      .map((it) => ({
+        value: it.id,
+        label: it.name,
+        itemId: it.id,
+        variantKey: "base",
+        kind: "ingredient",
+      }));
+    return filtered.length
+      ? [{ value: "", label: "Select ingredient", itemId: "", variantKey: "base", kind: "ingredient" }, ...filtered]
+      : [{ value: "", label: "No ingredients found", itemId: "", variantKey: "base", kind: "ingredient" }];
   }, [items]);
-  const rawOptions = useMemo(() => {
-    const filtered = items.filter((it) => (it.item_kind ?? "product") === "raw");
-    return filtered.length ? [{ id: "", name: "Select raw" }, ...filtered] : [{ id: "", name: "No raws found" }];
+  const baseRawOptions = useMemo<RouteOption[]>(() => {
+    const filtered = items
+      .filter((it) => (it.item_kind ?? "product") === "raw")
+      .map((it) => ({
+        value: it.id,
+        label: it.name,
+        itemId: it.id,
+        variantKey: "base",
+        kind: "raw",
+      }));
+    return filtered.length
+      ? [{ value: "", label: "Select raw", itemId: "", variantKey: "base", kind: "raw" }, ...filtered]
+      : [{ value: "", label: "No raws found", itemId: "", variantKey: "base", kind: "raw" }];
   }, [items]);
-  const productOptions = useMemo(() => {
-    const filtered = items.filter((it) => {
-      const kind = it.item_kind ?? "product";
-      return kind !== "ingredient" && kind !== "raw";
-    });
-    return filtered.length ? [{ id: "", name: "Select product" }, ...filtered] : [{ id: "", name: "No products found" }];
+  const ingredientOptions = useMemo<RouteOption[]>(() => {
+    const hasProductFilter = Boolean(selectedProductId);
+    const ingredientSet = new Set(recipeIngredientIds);
+    if (!hasProductFilter) return baseIngredientOptions;
+    if (recipeIngredientsLoading) {
+      return [{ value: "", label: "Loading recipe ingredients...", itemId: "", variantKey: "base", kind: "ingredient" }];
+    }
+    const filtered = baseIngredientOptions.filter((opt) => opt.itemId && ingredientSet.has(opt.itemId));
+    return filtered.length
+      ? [{ value: "", label: "Select ingredient", itemId: "", variantKey: "base", kind: "ingredient" }, ...filtered]
+      : [{ value: "", label: "No ingredients for selected product", itemId: "", variantKey: "base", kind: "ingredient" }];
+  }, [baseIngredientOptions, selectedProductId, recipeIngredientIds, recipeIngredientsLoading]);
+  const rawOptions = useMemo<RouteOption[]>(() => baseRawOptions, [baseRawOptions]);
+  const productOptions = useMemo<RouteOption[]>(() => {
+    const filtered = items
+      .filter((it) => {
+        const kind = it.item_kind ?? "product";
+        return kind !== "ingredient" && kind !== "raw";
+      })
+      .map((it) => ({
+        value: it.id,
+        label: it.name,
+        itemId: it.id,
+        variantKey: "base",
+        kind: it.item_kind ?? "product",
+      }));
+    return filtered.length
+      ? [{ value: "", label: "Select product", itemId: "", variantKey: "base", kind: "product" }, ...filtered]
+      : [{ value: "", label: "No products found", itemId: "", variantKey: "base", kind: "product" }];
   }, [items]);
+  const productVariantOptions = useMemo(() => {
+    const base = { value: "base", label: "Base product" };
+    if (!selectedProductId) return [base];
+    const scoped = variants
+      .filter((variant) => variant.item_id === selectedProductId)
+      .map((variant) => ({
+        value: variant.id,
+        label: variant.name || variant.id,
+      }));
+    return [base, ...scoped];
+  }, [selectedProductId, variants]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select catalog item" }, ...items], [items]);
   const posVariantOptions = useMemo(() => {
     const base = { value: "base", label: "Use base product" };
@@ -138,19 +216,9 @@ export default function OutletSetupPage() {
     () => warehouses.map((w) => ({ value: w.id, label: `${w.name}${w.code ? ` (${w.code})` : ""}` })),
     [warehouses]
   );
-  const selectedProduct = useMemo(
-    () => items.find((it) => it.id === selectedProductId),
-    [items, selectedProductId]
-  );
-  const disableIngredientAndRaw = useMemo(() => {
-    if (!selectedProductId) return false;
-    if (!selectedProduct) return false;
-    return selectedProduct.has_recipe !== true;
-  }, [selectedProductId, selectedProduct]);
-  const ingredientSelectOptions = disableIngredientAndRaw
-    ? [{ id: "", name: "Not applicable" }]
-    : ingredientOptions;
-  const rawSelectOptions = disableIngredientAndRaw ? [{ id: "", name: "Not applicable" }] : rawOptions;
+  const selectedProduct = useMemo(() => items.find((it) => it.id === selectedProductId), [items, selectedProductId]);
+  const ingredientSelectOptions: RouteOption[] = ingredientOptions;
+  const rawSelectOptions: RouteOption[] = rawOptions;
 
   const filteredPosMappings = useMemo(() => {
     const term = posSearch.trim().toLowerCase();
@@ -225,6 +293,7 @@ export default function OutletSetupPage() {
       setRoutes({});
       setDefaultWarehouseId("");
       setDefaultWarehouseMessage(null);
+      if (!selectedItemId) setSelectedVariantKey("base");
       return;
     }
     const selected = items.find((it) => it.id === selectedItemId);
@@ -233,7 +302,7 @@ export default function OutletSetupPage() {
       setRoutingLoading(true);
       setRoutingMessage(null);
       try {
-        const res = await fetch(`/api/outlet-routes?item_id=${selectedItemId}&variant_key=${variantKey}`);
+        const res = await fetch(`/api/outlet-routes?item_id=${selectedItemId}&variant_key=${selectedVariantKey}`);
         if (!res.ok) throw new Error("Could not load routes");
         const json = await res.json();
         const routeMap: RouteRecord = {};
@@ -251,7 +320,7 @@ export default function OutletSetupPage() {
       }
     }
     loadRoutes();
-  }, [selectedItemId, status, items]);
+  }, [selectedItemId, selectedVariantKey, status, items]);
 
   useEffect(() => {
     if (!selectedRawId) {
@@ -259,18 +328,18 @@ export default function OutletSetupPage() {
       setRawDefaultWarehouseMessage(null);
       return;
     }
-    const raw = items.find((it) => it.id === selectedRawId);
+    const raw = items.find((it) => it.id === resolveItemId(selectedRawId));
     setRawDefaultWarehouseId(raw?.default_warehouse_id ?? "");
   }, [selectedRawId, items]);
 
   useEffect(() => {
-    if (disableIngredientAndRaw) {
+    if (!selectedIngredientId) return;
+    const valid = ingredientSelectOptions.some((opt) => opt.value === selectedIngredientId);
+    if (!valid) {
       setSelectedIngredientId("");
-      setSelectedRawId("");
       setDefaultWarehouseId("");
-      setRawDefaultWarehouseId("");
     }
-  }, [disableIngredientAndRaw]);
+  }, [selectedIngredientId, ingredientSelectOptions]);
 
   useEffect(() => {
     if (!selectedProductId) {
@@ -281,6 +350,36 @@ export default function OutletSetupPage() {
     const prod = items.find((it) => it.id === selectedProductId);
     setProductDefaultWarehouseId(prod?.default_warehouse_id ?? "");
   }, [selectedProductId, items]);
+
+  useEffect(() => {
+    if (!selectedProductId) {
+      setRecipeIngredientIds([]);
+      return;
+    }
+    let active = true;
+    const loadRecipeIngredients = async () => {
+      setRecipeIngredientsLoading(true);
+      try {
+        const res = await fetch(
+            `/api/recipe-ingredients?finished_item_id=${selectedProductId}&finished_variant_key=base`
+        );
+        if (!res.ok) throw new Error("Unable to load recipe ingredients");
+        const json = await res.json();
+        if (!active) return;
+        const list = Array.isArray(json.ingredient_item_ids) ? json.ingredient_item_ids : [];
+        setRecipeIngredientIds(list);
+      } catch (error) {
+        console.error("recipe ingredients load failed", error);
+        if (active) setRecipeIngredientIds([]);
+      } finally {
+        if (active) setRecipeIngredientsLoading(false);
+      }
+    };
+    loadRecipeIngredients();
+    return () => {
+      active = false;
+    };
+  }, [selectedProductId]);
 
   const fetchMappings = useCallback(async () => {
     setMappingLoading(true);
@@ -377,7 +476,7 @@ export default function OutletSetupPage() {
     try {
       const payload = {
         item_id: selectedItemId,
-        variant_key: variantKey,
+          variant_key: selectedVariantKey,
         routes: outlets.map((outlet) => ({ outlet_id: outlet.id, warehouse_id: routes[outlet.id] || null })),
       };
 
@@ -409,6 +508,10 @@ export default function OutletSetupPage() {
   const saveDefaultWarehouse = async () => {
     if (!selectedItemId) {
       setDefaultWarehouseMessage({ ok: false, text: "Choose an ingredient first" });
+      return;
+    }
+    if (isVariantSelection(selectedIngredientId)) {
+      setDefaultWarehouseMessage({ ok: false, text: "Default warehouse applies to base items only" });
       return;
     }
     setDefaultWarehouseSaving(true);
@@ -470,6 +573,10 @@ export default function OutletSetupPage() {
       setProductDefaultWarehouseMessage({ ok: false, text: "Choose a product first" });
       return;
     }
+    if (selectedProductVariant !== "base") {
+      setProductDefaultWarehouseMessage({ ok: false, text: "Default warehouse applies to base items only" });
+      return;
+    }
     setProductDefaultWarehouseSaving(true);
     setProductDefaultWarehouseMessage(null);
     try {
@@ -527,6 +634,10 @@ export default function OutletSetupPage() {
   const saveRawDefaultWarehouse = async () => {
     if (!selectedRawId) {
       setRawDefaultWarehouseMessage({ ok: false, text: "Choose a raw first" });
+      return;
+    }
+    if (isVariantSelection(selectedRawId)) {
+      setRawDefaultWarehouseMessage({ ok: false, text: "Default warehouse applies to base items only" });
       return;
     }
     setRawDefaultWarehouseSaving(true);
@@ -764,14 +875,44 @@ export default function OutletSetupPage() {
                     const value = e.target.value;
                     setSelectedProductId(value);
                     setSelectedItemId(value);
+                    setSelectedVariantKey("base");
+                    setSelectedProductVariant("base");
+                    setSelectedIngredientId("");
+                    setSelectedRawId("");
                   }}
                   className={styles.select}
                   disabled={routingLoading || productOptions.length <= 1}
                   aria-label="Select product for routing"
                 >
                   {productOptions.map((item) => (
-                    <option key={`prod-${item.id || "placeholder"}`} value={item.id}>
-                      {item.name}
+                    <option key={`prod-${item.value || "placeholder"}`} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={styles.selectGroup}>
+                <div className={styles.subHeading}>Variants</div>
+                <select
+                  value={selectedProductVariant}
+                  onChange={(e) => {
+                    const value = e.target.value || "base";
+                    setSelectedProductVariant(value);
+                    setSelectedVariantKey(value);
+                    if (selectedProductId) {
+                      setSelectedItemId(selectedProductId);
+                    }
+                    setSelectedIngredientId("");
+                    setSelectedRawId("");
+                  }}
+                  className={styles.select}
+                  disabled={!selectedProductId || routingLoading || productVariantOptions.length <= 1}
+                  aria-label="Select product variant for routing"
+                >
+                  {productVariantOptions.map((variant) => (
+                    <option key={`variant-${variant.value}`} value={variant.value}>
+                      {variant.label}
                     </option>
                   ))}
                 </select>
@@ -783,16 +924,18 @@ export default function OutletSetupPage() {
                   value={selectedIngredientId}
                   onChange={(e) => {
                     const value = e.target.value;
+                    const parsed = parseRouteValue(value);
                     setSelectedIngredientId(value);
-                    setSelectedItemId(value);
+                    setSelectedItemId(parsed.itemId);
+                    setSelectedVariantKey(parsed.variantKey);
                   }}
                   className={styles.select}
-                  disabled={routingLoading || ingredientSelectOptions.length <= 1 || disableIngredientAndRaw}
+                  disabled={routingLoading || ingredientSelectOptions.length <= 1}
                   aria-label="Select ingredient for routing"
                 >
                   {ingredientSelectOptions.map((item) => (
-                    <option key={`ing-${item.id || "placeholder"}`} value={item.id}>
-                      {item.name}
+                    <option key={`ing-${item.value || "placeholder"}`} value={item.value}>
+                      {item.label}
                     </option>
                   ))}
                 </select>
@@ -802,14 +945,20 @@ export default function OutletSetupPage() {
                 <div className={styles.subHeading}>Raws</div>
                 <select
                   value={selectedRawId}
-                  onChange={(e) => setSelectedRawId(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const parsed = parseRouteValue(value);
+                    setSelectedRawId(value);
+                    setSelectedItemId(parsed.itemId);
+                    setSelectedVariantKey(parsed.variantKey);
+                  }}
                   className={styles.select}
-                  disabled={routingLoading || rawSelectOptions.length <= 1 || disableIngredientAndRaw}
+                  disabled={routingLoading || rawSelectOptions.length <= 1}
                   aria-label="Select raw"
                 >
                   {rawSelectOptions.map((item) => (
-                    <option key={`raw-${item.id || "placeholder"}`} value={item.id}>
-                      {item.name}
+                    <option key={`raw-${item.value || "placeholder"}`} value={item.value}>
+                      {item.label}
                     </option>
                   ))}
                 </select>
@@ -852,7 +1001,7 @@ export default function OutletSetupPage() {
                   value={productDefaultWarehouseId}
                   onChange={(e) => setProductDefaultWarehouseId(e.target.value)}
                   aria-label="Default warehouse for selected product"
-                  disabled={!selectedProductId || routingLoading || productDefaultWarehouseSaving}
+                  disabled={!selectedProductId || routingLoading || productDefaultWarehouseSaving || selectedProductVariant !== "base"}
                 >
                   <option value="">Default warehouse (optional)</option>
                   {warehouseOptions.map((wh) => (
@@ -890,7 +1039,12 @@ export default function OutletSetupPage() {
                   value={defaultWarehouseId}
                   onChange={(e) => setDefaultWarehouseId(e.target.value)}
                   aria-label="Default warehouse for selected ingredient"
-                  disabled={!selectedIngredientId || routingLoading || defaultWarehouseSaving || disableIngredientAndRaw}
+                  disabled={
+                    !selectedIngredientId ||
+                    routingLoading ||
+                    defaultWarehouseSaving ||
+                    isVariantSelection(selectedIngredientId)
+                  }
                 >
                   <option value="">Default warehouse (optional)</option>
                   {warehouseOptions.map((wh) => (
@@ -905,7 +1059,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.secondaryButton}
                   onClick={() => setDefaultWarehouseId("")}
-                  disabled={!defaultWarehouseId || !selectedIngredientId || defaultWarehouseSaving || disableIngredientAndRaw}
+                  disabled={!defaultWarehouseId || !selectedIngredientId || defaultWarehouseSaving}
                 >
                   Clear ingredient default
                 </button>
@@ -913,7 +1067,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.primaryButton}
                   onClick={saveDefaultWarehouse}
-                  disabled={!selectedIngredientId || defaultWarehouseSaving || routingLoading || disableIngredientAndRaw}
+                  disabled={!selectedIngredientId || defaultWarehouseSaving || routingLoading}
                 >
                   {defaultWarehouseSaving ? "Saving..." : "Save ingredient default"}
                 </button>
@@ -928,7 +1082,12 @@ export default function OutletSetupPage() {
                   value={rawDefaultWarehouseId}
                   onChange={(e) => setRawDefaultWarehouseId(e.target.value)}
                   aria-label="Default warehouse for selected raw"
-                  disabled={!selectedRawId || routingLoading || rawDefaultWarehouseSaving || disableIngredientAndRaw}
+                  disabled={
+                    !selectedRawId ||
+                    routingLoading ||
+                    rawDefaultWarehouseSaving ||
+                    isVariantSelection(selectedRawId)
+                  }
                 >
                   <option value="">Default warehouse (optional)</option>
                   {warehouseOptions.map((wh) => (
@@ -943,7 +1102,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.secondaryButton}
                   onClick={() => setRawDefaultWarehouseId("")}
-                  disabled={!rawDefaultWarehouseId || !selectedRawId || rawDefaultWarehouseSaving || disableIngredientAndRaw}
+                  disabled={!rawDefaultWarehouseId || !selectedRawId || rawDefaultWarehouseSaving}
                 >
                   Clear raw default
                 </button>
@@ -951,7 +1110,7 @@ export default function OutletSetupPage() {
                   type="button"
                   className={styles.primaryButton}
                   onClick={saveRawDefaultWarehouse}
-                  disabled={!selectedRawId || rawDefaultWarehouseSaving || routingLoading || disableIngredientAndRaw}
+                  disabled={!selectedRawId || rawDefaultWarehouseSaving || routingLoading}
                 >
                   {rawDefaultWarehouseSaving ? "Saving..." : "Save raw default"}
                 </button>

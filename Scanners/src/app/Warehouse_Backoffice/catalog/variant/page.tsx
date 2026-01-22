@@ -19,6 +19,12 @@ const qtyUnits = [
   "Jar",
 ] as const;
 
+const itemKinds = [
+  { value: "finished", label: "Finished (ready to sell)" },
+  { value: "ingredient", label: "Ingredient (used in production)" },
+  { value: "raw", label: "Raw (unprocessed material)" },
+];
+
 const formatUnitLabel = (unit: string) => {
   const trimmed = unit.trim();
   if (!trimmed) return "";
@@ -33,6 +39,7 @@ type FormState = {
   item_id: string;
   name: string;
   sku: string;
+  item_kind: string;
   consumption_uom: string;
   purchase_pack_unit: string;
   units_per_purchase_pack: string;
@@ -51,6 +58,7 @@ const defaultForm: FormState = {
   item_id: "",
   name: "",
   sku: "",
+  item_kind: "finished",
   consumption_uom: "each",
   purchase_pack_unit: "each",
   units_per_purchase_pack: "1",
@@ -112,6 +120,7 @@ function VariantCreatePage() {
             item_id: variant.item_id ?? incomingItemId ?? "",
             name: variant.name ?? "",
             sku: variant.sku ?? "",
+            item_kind: variant.item_kind ?? "finished",
             consumption_uom: variant.consumption_uom ?? "each",
             purchase_pack_unit: variant.purchase_pack_unit ?? "each",
             units_per_purchase_pack: (variant.units_per_purchase_pack ?? 1).toString(),
@@ -236,6 +245,13 @@ function VariantCreatePage() {
               hint="Optional code used for scans/search"
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}
+            />
+            <Select
+              label="Stock kind"
+              hint="Finished = sellable; Ingredient = used inside recipes; Raw = unprocessed input"
+              value={form.item_kind}
+              onChange={(v) => handleChange("item_kind", v)}
+              options={itemKinds}
             />
             <Select
               label="Consumption unit"

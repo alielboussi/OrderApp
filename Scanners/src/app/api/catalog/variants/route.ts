@@ -3,12 +3,15 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
 const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l"] as const;
+const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
 type QtyUnit = (typeof QTY_UNITS)[number];
+type ItemKind = (typeof ITEM_KINDS)[number];
 
 type VariantPayload = {
   item_id: string;
   name: string;
   sku?: string | null;
+  item_kind: ItemKind;
   consumption_uom: string;
   purchase_pack_unit: string;
   units_per_purchase_pack: number;
@@ -62,6 +65,14 @@ function cleanText(value: unknown): string | undefined {
   return undefined;
 }
 
+function cleanItemKind(value: unknown, fallback: ItemKind): ItemKind {
+  if (typeof value === "string") {
+    const trimmed = value.trim() as ItemKind;
+    if (ITEM_KINDS.includes(trimmed)) return trimmed;
+  }
+  return fallback;
+}
+
 function cleanBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -84,6 +95,7 @@ type CatalogItemRow = {
   name?: string | null;
   variants?: VariantRecord[] | null;
   active?: boolean | null;
+  item_kind?: ItemKind | null;
 };
 
 const asVariantArray = (value: unknown): VariantRecord[] => (Array.isArray(value) ? (value as VariantRecord[]) : []);
@@ -96,6 +108,7 @@ function toVariantResponse(itemId: string, variant: VariantRecord) {
     item_id: itemId,
     name: variant.name ?? "Variant",
     sku: variant.sku ?? null,
+    item_kind: variant.item_kind ?? "finished",
     consumption_uom: variant.consumption_uom ?? "each",
     purchase_pack_unit: variant.purchase_pack_unit ?? "each",
     units_per_purchase_pack: variant.units_per_purchase_pack ?? 1,
@@ -205,10 +218,20 @@ export async function POST(request: Request) {
       purchaseUnitMass = mass.value;
     }
 
+    const supabase = getServiceClient();
+    const { data: itemRow, error: itemError } = (await supabase
+      .from("catalog_items")
+      .select("variants,item_kind")
+      .eq("id", itemId)
+      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
+    if (itemError) throw itemError;
+    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
+
     const payload: VariantPayload = {
       item_id: itemId,
       name,
       sku: cleanText(body.sku) ?? null,
+      item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
       purchase_pack_unit: purchasePackUnit,
       units_per_purchase_pack: unitsPerPack.value,
@@ -223,15 +246,6 @@ export async function POST(request: Request) {
       default_warehouse_id: cleanUuid(body.default_warehouse_id),
       active: cleanBoolean(body.active, true),
     };
-
-    const supabase = getServiceClient();
-    const { data: itemRow, error: itemError } = (await supabase
-      .from("catalog_items")
-      .select("variants")
-      .eq("id", itemId)
-      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
-    if (itemError) throw itemError;
-    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
     const existing = asVariantArray(itemRow.variants);
     const newVariant: VariantRecord = { ...payload, key: randomUUID() };
@@ -285,10 +299,20 @@ export async function PUT(request: Request) {
       purchaseUnitMass = mass.value;
     }
 
+    const supabase = getServiceClient();
+    const { data: itemRow, error: itemError } = (await supabase
+      .from("catalog_items")
+      .select("variants,item_kind")
+      .eq("id", itemId)
+      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
+    if (itemError) throw itemError;
+    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
+
     const payload: VariantPayload = {
       item_id: itemId,
       name,
       sku: cleanText(body.sku) ?? null,
+      item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
       purchase_pack_unit: purchasePackUnit,
       units_per_purchase_pack: unitsPerPack.value,
@@ -302,15 +326,6 @@ export async function PUT(request: Request) {
       default_warehouse_id: cleanUuid(body.default_warehouse_id),
       active: cleanBoolean(body.active, true),
     };
-
-    const supabase = getServiceClient();
-    const { data: itemRow, error: itemError } = (await supabase
-      .from("catalog_items")
-      .select("variants")
-      .eq("id", itemId)
-      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
-    if (itemError) throw itemError;
-    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
     const existing = asVariantArray(itemRow.variants);
     const updated = existing.map((variant) => {

@@ -14,7 +14,7 @@
         },
         {
           "view_name": "warehouse_stock_items",
-          "definition": " WITH base AS (\n         SELECT w.id AS warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            COALESCE(normalize_variant_key(sl.variant_key), 'base'::text) AS variant_key,\n            sum(sl.delta_units) AS net_units,\n            ci.cost AS unit_cost,\n            ci.item_kind,\n            ci.image_url\n           FROM ((stock_ledger sl\n             JOIN warehouses w ON ((w.id = sl.warehouse_id)))\n             JOIN catalog_items ci ON ((ci.id = sl.item_id)))\n          WHERE (sl.location_type = 'warehouse'::text)\n          GROUP BY w.id, ci.id, ci.name, ci.cost, ci.item_kind, ci.image_url, (normalize_variant_key(sl.variant_key))\n        )\n SELECT warehouse_id,\n    item_id,\n    item_name,\n    variant_key,\n    net_units,\n    unit_cost,\n    item_kind,\n    image_url\n   FROM base b;",
+          "definition": " WITH base AS (\n         SELECT w.id AS warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            COALESCE(normalize_variant_key(sl.variant_key), 'base'::text) AS variant_key,\n            sum(sl.delta_units) AS net_units,\n            ci.cost AS unit_cost,\n            ci.item_kind AS base_item_kind,\n            ci.image_url,\n            ci.variants\n           FROM ((stock_ledger sl\n             JOIN warehouses w ON ((w.id = sl.warehouse_id)))\n             JOIN catalog_items ci ON ((ci.id = sl.item_id)))\n          WHERE (sl.location_type = 'warehouse'::text)\n          GROUP BY w.id, ci.id, ci.name, ci.cost, ci.item_kind, ci.image_url, (normalize_variant_key(sl.variant_key)), ci.variants\n        ), enriched AS (\n         SELECT b.warehouse_id,\n            b.item_id,\n            b.item_name,\n            b.variant_key,\n            b.net_units,\n            b.unit_cost,\n            b.base_item_kind,\n            b.image_url,\n            b.variants,\n            ( SELECT (v.value ->> 'item_kind'::text)\n                   FROM jsonb_array_elements(COALESCE(b.variants, '[]'::jsonb)) v(value)\n                  WHERE (normalize_variant_key(COALESCE((v.value ->> 'key'::text), (v.value ->> 'id'::text), 'base'::text)) = b.variant_key)\n                 LIMIT 1) AS variant_item_kind,\n            (EXISTS ( SELECT 1\n                   FROM recipes r\n                  WHERE (r.active AND (r.finished_item_id = b.item_id) AND (normalize_variant_key(COALESCE(r.finished_variant_key, 'base'::text)) = b.variant_key)))) AS has_recipe\n           FROM base b\n        )\n SELECT warehouse_id,\n    item_id,\n    item_name,\n    variant_key,\n    net_units,\n    unit_cost,\n        CASE\n            WHEN (variant_item_kind = ANY (ARRAY['finished'::text, 'ingredient'::text, 'raw'::text])) THEN (variant_item_kind)::item_kind\n            ELSE base_item_kind\n        END AS item_kind,\n    image_url,\n    has_recipe\n   FROM enriched;",
           "view_schema": "public"
         },
         {
@@ -3120,6 +3120,15 @@
           "ordinal_position": 8
         },
         {
+          "data_type": "boolean",
+          "table_name": "warehouse_stock_items",
+          "column_name": "has_recipe",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
           "data_type": "uuid",
           "table_name": "warehouse_stock_periods",
           "column_name": "id",
@@ -4922,7 +4931,7 @@
         },
         {
           "arguments": "p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.list_warehouse_items(p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text)\n RETURNS SETOF warehouse_stock_items\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select *\r\n  from warehouse_stock_items b\r\n  where b.warehouse_id = p_warehouse_id\r\n    and exists (\r\n      select 1\r\n      from outlet_products op\r\n      where op.outlet_id = p_outlet_id\r\n        and op.item_id = b.item_id\r\n        and op.variant_key = coalesce(b.variant_key, 'base')\r\n        and op.enabled\r\n    )\r\n    and (\r\n      p_search is null\r\n      or b.item_name ilike '%' || replace(p_search, '*', '%') || '%'\r\n      or b.item_id::text ilike '%' || replace(p_search, '*', '%') || '%'\r\n    );\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.list_warehouse_items(p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text)\n RETURNS SETOF warehouse_stock_items\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  with base_items as (\r\n    select *\r\n    from public.warehouse_stock_items b\r\n    where b.warehouse_id = p_warehouse_id\r\n      and exists (\r\n        select 1\r\n        from public.outlet_products op\r\n        where op.outlet_id = p_outlet_id\r\n          and op.item_id = b.item_id\r\n          and op.variant_key = coalesce(b.variant_key, 'base')\r\n          and op.enabled\r\n      )\r\n      and (\r\n        coalesce(b.variant_key, 'base') <> 'base'\r\n        or b.item_kind = 'ingredient'\r\n      )\r\n      and (\r\n        p_search is null\r\n        or b.item_name ilike '%' || replace(p_search, '*', '%') || '%'\r\n        or b.item_id::text ilike '%' || replace(p_search, '*', '%') || '%'\r\n      )\r\n  ),\r\n  variant_catalog as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      ci.id as item_id,\r\n      ci.name as item_name,\r\n      vv.variant_key,\r\n      null::numeric as net_units,\r\n      ci.cost as unit_cost,\r\n      case\r\n        when vv.variant_item_kind in ('finished', 'ingredient', 'raw') then vv.variant_item_kind::public.item_kind\r\n        else ci.item_kind\r\n      end as item_kind,\r\n      ci.image_url,\r\n      exists (\r\n        select 1\r\n        from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = ci.id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = vv.variant_key\r\n      ) as has_recipe\r\n    from public.catalog_items ci\r\n    cross join lateral (\r\n      select\r\n        public.normalize_variant_key(coalesce(v->>'key', v->>'id', 'base')) as variant_key,\r\n        v->>'item_kind' as variant_item_kind\r\n      from jsonb_array_elements(coalesce(ci.variants, '[]'::jsonb)) v\r\n    ) vv\r\n    where vv.variant_key <> 'base'\r\n      and exists (\r\n        select 1\r\n        from public.outlet_products op\r\n        where op.outlet_id = p_outlet_id\r\n          and op.item_id = ci.id\r\n          and op.variant_key = vv.variant_key\r\n          and op.enabled\r\n      )\r\n      and (\r\n        p_search is null\r\n        or ci.name ilike '%' || replace(p_search, '*', '%') || '%'\r\n        or ci.id::text ilike '%' || replace(p_search, '*', '%') || '%'\r\n      )\r\n  ),\r\n  ingredient_base as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      ci.id as item_id,\r\n      ci.name as item_name,\r\n      'base'::text as variant_key,\r\n      null::numeric as net_units,\r\n      ci.cost as unit_cost,\r\n      ci.item_kind,\r\n      ci.image_url,\r\n      exists (\r\n        select 1\r\n        from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = ci.id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = 'base'\r\n      ) as has_recipe\r\n    from public.catalog_items ci\r\n    where ci.item_kind = 'ingredient'\r\n      and exists (\r\n        select 1\r\n        from public.outlet_products op\r\n        where op.outlet_id = p_outlet_id\r\n          and op.item_id = ci.id\r\n          and op.variant_key = 'base'\r\n          and op.enabled\r\n      )\r\n      and (\r\n        p_search is null\r\n        or ci.name ilike '%' || replace(p_search, '*', '%') || '%'\r\n        or ci.id::text ilike '%' || replace(p_search, '*', '%') || '%'\r\n      )\r\n  )\r\n  select * from base_items\r\n  union\r\n  select * from variant_catalog\r\n  union\r\n  select * from ingredient_base;\r\n$function$\n",
           "function_name": "list_warehouse_items",
           "function_schema": "public"
         },
@@ -4951,14 +4960,14 @@
           "function_schema": "public"
         },
         {
-          "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
+          "arguments": "p_user_id uuid",
+          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
           "function_name": "member_outlet_ids",
           "function_schema": "public"
         },
         {
-          "arguments": "p_user_id uuid",
-          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
           "function_name": "member_outlet_ids",
           "function_schema": "public"
         },

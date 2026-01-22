@@ -862,7 +862,15 @@ class SupabaseProvider(context: Context) {
         @SerialName("item_kind") val itemKind: String? = null,
         @SerialName("image_url") val imageUrl: String? = null,
         @SerialName("has_recipe") val hasRecipe: Boolean? = null,
-        val active: Boolean? = null
+        val active: Boolean? = null,
+        val variants: List<CatalogVariantLite>? = null
+    )
+
+    @Serializable
+    data class CatalogVariantLite(
+        val key: String? = null,
+        val id: String? = null,
+        @SerialName("item_kind") val itemKind: String? = null
     )
 
     enum class StockEntryKind(val apiValue: String, val label: String) {
@@ -1512,7 +1520,7 @@ class SupabaseProvider(context: Context) {
         val itemsUrl = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,item_kind,image_url,has_recipe,active")
+            append("?select=id,name,item_kind,image_url,has_recipe,active,variants")
             append("&id=in.(").append(idFilter).append(")")
         }
         val itemsResp = http.get(itemsUrl) {
@@ -1525,15 +1533,25 @@ class SupabaseProvider(context: Context) {
         val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), itemsTxt)
         val itemMap = items.associateBy { it.id }
 
+        fun variantKind(item: CatalogItemLite, variantKey: String?): String? {
+            val key = variantKey?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: "base"
+            val variant = item.variants?.firstOrNull { v ->
+                val vKey = v.key?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: v.id?.trim()?.lowercase()
+                vKey == key
+            }
+            return variant?.itemKind
+        }
+
         return outletRows.mapNotNull { row ->
             val item = itemMap[row.itemId] ?: return@mapNotNull null
+            val effectiveKind = variantKind(item, row.variantKey) ?: item.itemKind
             WarehouseStockItem(
                 itemId = row.itemId,
                 itemName = item.name,
                 variantKey = row.variantKey?.ifBlank { "base" } ?: "base",
                 netUnits = null,
                 unitCost = null,
-                itemKind = item.itemKind,
+                itemKind = effectiveKind,
                 imageUrl = item.imageUrl,
                 hasRecipe = item.hasRecipe
             )
@@ -1567,7 +1585,7 @@ class SupabaseProvider(context: Context) {
         val itemsUrl = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,item_kind,image_url,has_recipe,active")
+            append("?select=id,name,item_kind,image_url,has_recipe,active,variants")
             append("&id=in.(").append(idFilter).append(")")
         }
         val itemsResp = http.get(itemsUrl) {
@@ -1580,15 +1598,25 @@ class SupabaseProvider(context: Context) {
         val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), itemsTxt)
         val itemMap = items.associateBy { it.id }
 
+        fun variantKind(item: CatalogItemLite, variantKey: String?): String? {
+            val key = variantKey?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: "base"
+            val variant = item.variants?.firstOrNull { v ->
+                val vKey = v.key?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: v.id?.trim()?.lowercase()
+                vKey == key
+            }
+            return variant?.itemKind
+        }
+
         return routeRows.mapNotNull { row ->
             val item = itemMap[row.itemId] ?: return@mapNotNull null
+            val effectiveKind = variantKind(item, row.variantKey) ?: item.itemKind
             WarehouseStockItem(
                 itemId = row.itemId,
                 itemName = item.name,
                 variantKey = row.variantKey?.ifBlank { "base" } ?: "base",
                 netUnits = null,
                 unitCost = null,
-                itemKind = item.itemKind,
+                itemKind = effectiveKind,
                 imageUrl = item.imageUrl,
                 hasRecipe = item.hasRecipe
             )

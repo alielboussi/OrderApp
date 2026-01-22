@@ -218,6 +218,11 @@
   gap: 8px;
 }
 
+.variantHint {
+  font-size: 12px;
+  color: #a5acc5;
+}
+
 .variantList {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

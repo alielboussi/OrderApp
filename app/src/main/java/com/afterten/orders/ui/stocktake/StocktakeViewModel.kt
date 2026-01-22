@@ -285,8 +285,22 @@ class StocktakeViewModel(
     }
 
     private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
+        val total = items.size
+        val rawFiltered = items.count { it.itemKind?.equals("raw", ignoreCase = true) == true }
+        val baseRecipeFiltered = items.count {
+            val isIngredient = it.itemKind?.equals("ingredient", ignoreCase = true) == true
+            val hasRecipe = it.hasRecipe == true
+            val isBaseVariant = (it.variantKey ?: "base").lowercase() == "base"
+            !isIngredient && hasRecipe && isBaseVariant
+        }
+
         val filtered = items.filterNot { it.itemKind?.equals("raw", ignoreCase = true) == true }
-            .filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == false && it.hasRecipe == true }
+            .filterNot {
+                val isIngredient = it.itemKind?.equals("ingredient", ignoreCase = true) == true
+                val hasRecipe = it.hasRecipe == true
+                val isBaseVariant = (it.variantKey ?: "base").lowercase() == "base"
+                !isIngredient && hasRecipe && isBaseVariant
+            }
 
         val ingredients = filtered.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
         val nonIngredients = filtered.filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
@@ -296,8 +310,33 @@ class StocktakeViewModel(
             group.filter { it.variantKey?.lowercase() != "base" }
         }
 
-        return (ingredients + variantSelections).distinctBy { it.itemId to (it.variantKey ?: "base") }
+        val result = (ingredients + variantSelections)
+            .distinctBy { it.itemId to (it.variantKey ?: "base") }
             .sortedBy { it.itemName ?: it.itemId }
+
+        val excluded = items.filterNot { candidate ->
+            result.any { it.itemId == candidate.itemId && (it.variantKey ?: "base") == (candidate.variantKey ?: "base") }
+        }
+
+        fun exclusionReason(item: SupabaseProvider.WarehouseStockItem): String {
+            val isIngredient = item.itemKind?.equals("ingredient", ignoreCase = true) == true
+            val isRaw = item.itemKind?.equals("raw", ignoreCase = true) == true
+            val hasRecipe = item.hasRecipe == true
+            val isBaseVariant = (item.variantKey ?: "base").lowercase() == "base"
+            return when {
+                isRaw -> "raw"
+                !isIngredient && hasRecipe && isBaseVariant -> "base-recipe"
+                !isIngredient && isBaseVariant -> "base-finished"
+                else -> "deduped-or-unexpected"
+            }
+        }
+
+        pushDebug("pickDisplayItems total=$total rawFiltered=$rawFiltered baseRecipeFiltered=$baseRecipeFiltered filtered=${filtered.size} ingredients=${ingredients.size} variants=${variantSelections.size} result=${result.size} excluded=${excluded.size}")
+        excluded.take(6).forEach { row ->
+            pushDebug("excluded id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe} reason=${exclusionReason(row)}")
+        }
+
+        return result
     }
 
     private suspend fun refreshOpenPeriod(warehouseId: String) {
@@ -321,9 +360,13 @@ class StocktakeViewModel(
         _ui.value = _ui.value.copy(items = emptyList(), loading = true, error = null)
         runCatching { repo.listWarehouseItems(jwt, warehouseId, outletId, null) }
             .onSuccess { fetched ->
+                pushDebug("list_warehouse_items fetched=${fetched.size}")
+                fetched.take(5).forEach { row ->
+                    pushDebug("item sample id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe}")
+                }
                 val display = pickDisplayItems(fetched)
                 if (display.isNotEmpty()) {
-                    pushDebug("list_warehouse_items fetched=${fetched.size} display=${display.size}")
+                    pushDebug("list_warehouse_items display=${display.size}")
                     _ui.value = _ui.value.copy(items = display, loading = false, error = null)
                 } else {
                     pushDebug("list_warehouse_items empty; trying direct warehouse_stock_items")
