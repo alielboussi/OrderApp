@@ -348,17 +348,29 @@ fun StocktakeCountScreen(
         val map = mutableMapOf("base" to "Base")
         ui.variations.forEach { variation ->
             map[variation.id] = variation.name.ifBlank { variation.id }
+            map[variation.id.lowercase()] = variation.name.ifBlank { variation.id }
+            variation.key?.let { key ->
+                map[key] = variation.name.ifBlank { key }
+                map[key.lowercase()] = variation.name.ifBlank { key }
+            }
         }
         map
     }
     val variantUomMap = remember(ui.variations) {
-        ui.variations.associate { variation ->
-            variation.id to variation.consumptionUom.ifBlank { variation.uom.ifBlank { "each" } }
+        val map = mutableMapOf<String, String>()
+        ui.variations.forEach { variation ->
+            val uom = variation.consumptionUom.ifBlank { variation.uom.ifBlank { "each" } }
+            map[variation.id] = uom
+            map[variation.id.lowercase()] = uom
+            variation.key?.let { key -> map[key] = uom }
+            variation.key?.let { key -> map[key.lowercase()] = uom }
         }
+        map
     }
 
-    val itemsByItemId = remember(ui.items) {
-        ui.items.groupBy { it.itemId }
+    val itemsByItemId = remember(ui.allItems, ui.items) {
+        val source = if (ui.allItems.isNotEmpty()) ui.allItems else ui.items
+        source.groupBy { it.itemId }
     }
 
     val filteredBaseItems = remember(ui.items, ui.variations, search) {
@@ -432,7 +444,7 @@ fun StocktakeCountScreen(
                     colors = outlinedFieldColors
                 )
                 Text(
-                    "Tap an ingredient or variant group to enter counts.",
+                    "Tap an ingredient, variant group, or recipe item to enter counts.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.8f)
                 )
@@ -488,8 +500,11 @@ fun StocktakeCountScreen(
                                         Text(row.itemName ?: "Item", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                                         val rows = itemsByItemId[row.itemId].orEmpty()
                                         val variantCount = rows.count { (it.variantKey ?: "base") != "base" }
+                                        val hasRecipe = rows.any { it.hasRecipe == true } && (row.itemKind ?: "").lowercase() != "ingredient"
                                         val badge = if ((row.itemKind ?: "").lowercase() == "ingredient") {
                                             "Ingredient"
+                                        } else if (hasRecipe) {
+                                            "Ingredients"
                                         } else if (variantCount > 0) {
                                             "${variantCount} variant${if (variantCount == 1) "" else "s"}"
                                         } else {
@@ -523,16 +538,36 @@ fun StocktakeCountScreen(
         val baseRow = dialogRows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: dialogRows.firstOrNull()
         val kindLabel = (dialogItemKind ?: baseRow?.itemKind ?: "").lowercase()
         val isIngredient = kindLabel == "ingredient"
+        val hasRecipe = !isIngredient && (baseRow?.hasRecipe == true)
+        val dialogVariantKey = baseRow?.variantKey?.ifBlank { "base" } ?: "base"
+        val recipeKey = "$dialogItemId|$dialogVariantKey"
+        val ingredientIds = ui.recipeIngredients[recipeKey].orEmpty()
+        val ingredientRows = if (hasRecipe) {
+            ingredientIds.mapNotNull { id ->
+                val rows = itemsByItemId[id].orEmpty()
+                rows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: rows.firstOrNull()
+            }
+        } else {
+            emptyList()
+        }
+        val recipeLoading = hasRecipe && ui.recipeIngredientsLoading.contains(recipeKey)
         val variantRows = dialogRows.filter { (it.variantKey ?: "base") != "base" }
         val displayRows = when {
+            hasRecipe -> ingredientRows
             isIngredient -> listOfNotNull(baseRow)
             variantRows.isNotEmpty() -> variantRows
             else -> listOfNotNull(baseRow)
         }
 
-        LaunchedEffect(dialogItemId, dialogRows.size) {
-            dialogRows.forEach { row ->
-                val key = row.variantKey?.ifBlank { "base" } ?: "base"
+        LaunchedEffect(dialogItemId, dialogVariantKey, hasRecipe) {
+            if (hasRecipe) {
+                vm.loadRecipeIngredients(dialogItemId, dialogVariantKey)
+            }
+        }
+
+        LaunchedEffect(dialogItemId, displayRows.size) {
+            displayRows.forEach { row ->
+                val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}"
                 if (!dialogQty.containsKey(key)) {
                     dialogQty[key] = formatQty(row.netUnits)
                 }
@@ -548,22 +583,33 @@ fun StocktakeCountScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(dialogItemName.ifBlank { dialogItemId }, fontWeight = FontWeight.Bold, color = Color.White)
                     Text(
-                        if (isIngredient) "Enter ingredient count" else "Enter variant counts",
+                        if (hasRecipe) "Enter ingredient counts" else if (isIngredient) "Enter ingredient count" else "Enter variant counts",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.8f)
                     )
 
+                    if (hasRecipe && recipeLoading) {
+                        Text("Loading ingredients...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
+                    }
+
+                    if (hasRecipe && !recipeLoading && ingredientRows.isEmpty()) {
+                        Text("No ingredients found for this recipe.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
+                    }
+
                     displayRows.forEach { row ->
                         val key = row.variantKey?.ifBlank { "base" } ?: "base"
-                        val label = if (key == "base") {
+                        val label = if (hasRecipe) {
+                            row.itemName ?: row.itemId
+                        } else if (key == "base") {
                             "Base"
                         } else {
-                            variantLabelMap[key] ?: key.take(8)
+                            variantLabelMap[key] ?: variantLabelMap[key.lowercase()] ?: key.take(8)
                         }
-                        val uom = variantUomMap[key]
-                            ?: ui.productUoms[dialogItemId]
+                        val uom = variantUomMap[key] ?: variantUomMap[key.lowercase()]
+                            ?: ui.productUoms[row.itemId]
                             ?: "each"
-                        val currentQty = dialogQty[key] ?: formatQty(row.netUnits)
+                        val qtyKey = "${row.itemId}|$key"
+                        val currentQty = dialogQty[qtyKey] ?: formatQty(row.netUnits)
                         val hasStock = (row.netUnits ?: 0.0) > 0.0
 
                         Card(
@@ -577,14 +623,14 @@ fun StocktakeCountScreen(
                                     IconButton(
                                         onClick = {
                                             val parsed = currentQty.toDoubleOrNull() ?: 0.0
-                                            dialogQty[key] = formatQty(parsed - 1)
+                                            dialogQty[qtyKey] = formatQty(parsed - 1)
                                         }
                                     ) {
                                         Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = primaryRed)
                                     }
                                     OutlinedTextField(
                                         value = currentQty,
-                                        onValueChange = { dialogQty[key] = it },
+                                        onValueChange = { dialogQty[qtyKey] = it },
                                         label = { Text("Qty") },
                                         modifier = Modifier.weight(1f),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -593,7 +639,7 @@ fun StocktakeCountScreen(
                                     IconButton(
                                         onClick = {
                                             val parsed = currentQty.toDoubleOrNull() ?: 0.0
-                                            dialogQty[key] = formatQty(parsed + 1)
+                                            dialogQty[qtyKey] = formatQty(parsed + 1)
                                         }
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = "Increase", tint = primaryRed)
@@ -601,14 +647,14 @@ fun StocktakeCountScreen(
                                 }
                                 Button(
                                     onClick = {
-                                        val parsed = (dialogQty[key] ?: "").trim().toDoubleOrNull()
+                                        val parsed = (dialogQty[qtyKey] ?: "").trim().toDoubleOrNull()
                                         if (parsed == null || parsed < 0) {
                                             inputError = "Enter a non-negative number"
                                             return@Button
                                         }
                                         inputError = null
                                         val mode = if (hasStock) "closing" else "opening"
-                                        vm.recordCount(dialogItemId, parsed, key, mode)
+                                        vm.recordCount(row.itemId, parsed, key, mode)
                                         variantDialogOpen = false
                                     },
                                     modifier = Modifier.fillMaxWidth(),

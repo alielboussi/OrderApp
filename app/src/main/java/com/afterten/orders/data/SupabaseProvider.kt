@@ -754,6 +754,7 @@ class SupabaseProvider(context: Context) {
     @Serializable
     data class SimpleVariation(
         val id: String,
+        val key: String? = null,
         @SerialName("item_id") val productId: String,
         val name: String,
         @SerialName("purchase_pack_unit") val uom: String,
@@ -767,6 +768,7 @@ class SupabaseProvider(context: Context) {
     @Serializable
     private data class VariantJson(
         val key: String? = null,
+        val id: String? = null,
         val name: String = "",
         val sku: String? = null,
         val cost: Double? = null,
@@ -779,7 +781,7 @@ class SupabaseProvider(context: Context) {
     @Serializable
     private data class CatalogItemVariantsDto(
         val id: String,
-        val variants: List<VariantJson> = emptyList()
+        val variants: List<VariantJson>? = null
     )
 
     @Serializable
@@ -862,6 +864,15 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    private data class RecipeIngredientRow(
+        @SerialName("ingredient_item_id") val ingredientItemId: String? = null,
+        @SerialName("finished_item_id") val finishedItemId: String? = null,
+        @SerialName("finished_variant_key") val finishedVariantKey: String? = null,
+        @SerialName("recipe_for_kind") val recipeForKind: String? = null,
+        val active: Boolean? = null
+    )
+
+    @Serializable
     data class CatalogItemLite(
         val id: String,
         val name: String,
@@ -940,7 +951,7 @@ class SupabaseProvider(context: Context) {
         val url = buildString {
             append(supabaseUrl)
             append("/rest/v1/warehouses")
-            append("?select=id,name,code,parent_warehouse_id,stock_layer,active,created_at,updated_at")
+            append("?select=id,name,code,parent_warehouse_id,active,created_at,updated_at")
             append("&order=name.asc")
         }
         val resp = http.get(url) {
@@ -1025,12 +1036,38 @@ class SupabaseProvider(context: Context) {
         return fetchWarehousesByIds(jwt, ids).filter { it.active }
     }
 
+    suspend fun listRecipeIngredientIds(jwt: String, finishedItemId: String, variantKey: String = "base"): List<String> {
+        val normalizedVariant = variantKey.trim().ifBlank { "base" }
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/recipes")
+            append("?select=ingredient_item_id,finished_item_id,finished_variant_key,recipe_for_kind,active")
+            append("&finished_item_id=eq.")
+            append(finishedItemId)
+            append("&active=eq.true")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("listRecipeIngredientIds failed: HTTP $code $txt")
+        val rows = relaxedJson.decodeFromString(ListSerializer(RecipeIngredientRow.serializer()), txt)
+        val exact = rows
+            .filter { (it.finishedVariantKey?.trim()?.ifBlank { "base" } ?: "base") == normalizedVariant }
+            .mapNotNull { it.ingredientItemId?.trim()?.takeIf(String::isNotEmpty) }
+        val fallback = rows
+            .mapNotNull { it.ingredientItemId?.trim()?.takeIf(String::isNotEmpty) }
+        return (if (exact.isNotEmpty()) exact else fallback).distinct()
+    }
+
     suspend fun fetchWarehousesByIds(jwt: String, ids: Collection<String>): List<Warehouse> {
         val unique = ids.mapNotNull { it?.trim() }.filter { it.isNotEmpty() }.distinct()
         if (unique.isEmpty()) return emptyList()
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,code,parent_warehouse_id,stock_layer,active,created_at,updated_at&id=in.$encoded"
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,code,parent_warehouse_id,active,created_at,updated_at&id=in.$encoded"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
@@ -1254,7 +1291,7 @@ class SupabaseProvider(context: Context) {
         val items = relaxedJson
             .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
         val item = items.firstOrNull() ?: return emptyList()
-        return item.variants.mapNotNull { toSimpleVariation(productId, it) }
+        return item.variants.orEmpty().mapNotNull { toSimpleVariation(productId, it) }
     }
 
     suspend fun listAllVariations(jwt: String): List<SimpleVariation> {
@@ -1267,18 +1304,20 @@ class SupabaseProvider(context: Context) {
         val items = relaxedJson
             .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
         return items.flatMap { item ->
-            item.variants.mapNotNull { variant -> toSimpleVariation(item.id, variant) }
+            item.variants.orEmpty().mapNotNull { variant -> toSimpleVariation(item.id, variant) }
         }
     }
 
     private fun toSimpleVariation(productId: String, variant: VariantJson): SimpleVariation? {
-        val key = variant.key?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
-        if (!variant.outletOrderVisible) return null
+        val keyValue = variant.key?.trim().takeUnless { it.isNullOrEmpty() }
+        val idValue = variant.id?.trim().takeUnless { it.isNullOrEmpty() }
+        val identifier = idValue ?: keyValue ?: return null
         val uom = variant.uom ?: "unit"
         val consumption = variant.consumptionUom ?: variant.uom ?: "each"
         val name = variant.name.ifBlank { "Base" }
         return SimpleVariation(
-            id = key,
+            id = identifier,
+            key = keyValue ?: idValue,
             productId = productId,
             name = name,
             uom = uom,
@@ -1697,6 +1736,21 @@ class SupabaseProvider(context: Context) {
             .forEach { item ->
                 val kind = item.itemKind?.lowercase()
                 if (kind == "ingredient") {
+                    results.add(
+                        WarehouseStockItem(
+                            itemId = item.id,
+                            itemName = item.name,
+                            variantKey = "base",
+                            netUnits = null,
+                            unitCost = null,
+                            itemKind = item.itemKind,
+                            imageUrl = item.imageUrl,
+                            hasRecipe = item.hasRecipe
+                        )
+                    )
+                }
+
+                if (kind != "ingredient" && item.hasRecipe == true) {
                     results.add(
                         WarehouseStockItem(
                             itemId = item.id,

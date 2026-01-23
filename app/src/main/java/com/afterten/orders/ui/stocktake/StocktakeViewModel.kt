@@ -23,8 +23,12 @@ class StocktakeViewModel(
         val outlets: List<SupabaseProvider.Outlet> = emptyList(),
         val warehouses: List<SupabaseProvider.Warehouse> = emptyList(),
         val filteredWarehouses: List<SupabaseProvider.Warehouse> = emptyList(),
+        val allItems: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val items: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val variations: List<SupabaseProvider.SimpleVariation> = emptyList(),
+        val recipeIngredients: Map<String, List<String>> = emptyMap(),
+        val recipeIngredientsLoading: Set<String> = emptySet(),
+        val recipeIngredientsError: String? = null,
         val productUoms: Map<String, String> = emptyMap(),
         val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
@@ -312,23 +316,18 @@ class StocktakeViewModel(
     private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
         val total = items.size
 
-        val filtered = items.filter { row ->
-            val kind = row.itemKind?.lowercase()
-            val variantKey = (row.variantKey ?: "base").lowercase()
-            kind == "ingredient" || variantKey != "base"
-        }
-
-        val ingredients = filtered.filter { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
-        val nonIngredients = filtered.filterNot {
-            it.itemKind?.equals("ingredient", ignoreCase = true) == true
-        }
-
+        val nonIngredients = items.filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
         val grouped = nonIngredients.groupBy { it.itemId }
         val variantSelections = grouped.values.flatMap { group ->
-            group.filter { it.variantKey?.lowercase() != "base" }
+            group.filter { (it.variantKey ?: "base").lowercase() != "base" }
+        }
+        val recipeBases = grouped.values.mapNotNull { group ->
+            val hasRecipe = group.any { it.hasRecipe == true }
+            if (!hasRecipe) return@mapNotNull null
+            group.firstOrNull { (it.variantKey ?: "base").lowercase() == "base" } ?: group.firstOrNull()
         }
 
-        val result = (ingredients + variantSelections)
+        val result = (recipeBases + variantSelections)
             .distinctBy { it.itemId to (it.variantKey ?: "base") }
             .sortedBy { it.itemName ?: it.itemId }
 
@@ -340,13 +339,13 @@ class StocktakeViewModel(
             val isIngredient = item.itemKind?.equals("ingredient", ignoreCase = true) == true
             val isBaseVariant = (item.variantKey ?: "base").lowercase() == "base"
             return when {
-                isIngredient -> "kept"
+                isIngredient -> "ingredient"
                 isBaseVariant -> "base-finished"
                 else -> "deduped-or-unexpected"
             }
         }
 
-        pushDebug("pickDisplayItems total=$total filtered=${filtered.size} ingredients=${ingredients.size} variants=${variantSelections.size} result=${result.size} excluded=${excluded.size}")
+        pushDebug("pickDisplayItems total=$total recipeBases=${recipeBases.size} variants=${variantSelections.size} result=${result.size} excluded=${excluded.size}")
         excluded.take(6).forEach { row ->
             pushDebug("excluded id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe} reason=${exclusionReason(row)}")
         }
@@ -382,12 +381,19 @@ class StocktakeViewModel(
                 val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
                     .onFailure { pushDebug("warehouse_stock_items failed: ${it.message}") }
                     .getOrElse { emptyList() }
-                val combined = (fetched + direct)
+                val outletFallback = if (!outletId.isNullOrBlank()) {
+                    runCatching { repo.listOutletProductsFallback(jwt, outletId) }
+                        .onFailure { pushDebug("outlet_products fallback failed: ${it.message}") }
+                        .getOrElse { emptyList() }
+                } else {
+                    emptyList()
+                }
+                val combined = (fetched + direct + outletFallback)
                     .distinctBy { it.itemId to (it.variantKey ?: "base") }
                 val display = pickDisplayItems(combined)
                 if (display.isNotEmpty()) {
                     pushDebug("list_warehouse_items display=${display.size}")
-                    _ui.value = _ui.value.copy(items = display, loading = false, error = null)
+                    _ui.value = _ui.value.copy(allItems = combined, items = display, loading = false, error = null)
                 } else {
                     pushDebug("list_warehouse_items empty; trying direct warehouse_stock_items")
                     runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
@@ -395,7 +401,7 @@ class StocktakeViewModel(
                             val directDisplay = pickDisplayItems(direct)
                             if (directDisplay.isNotEmpty()) {
                                 pushDebug("warehouse_stock_items fetched=${direct.size} display=${directDisplay.size}")
-                                _ui.value = _ui.value.copy(items = directDisplay, loading = false, error = null)
+                                _ui.value = _ui.value.copy(allItems = direct, items = directDisplay, loading = false, error = null)
                             } else {
                                 pushDebug("warehouse_stock_items empty; trying outlet_item_routes fallback")
                                 val outletKey = outletId
@@ -473,6 +479,40 @@ class StocktakeViewModel(
                 pushDebug("list_warehouse_items failed: ${err.message}")
                 _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
             }
+    }
+
+    fun loadRecipeIngredients(itemId: String, variantKey: String = "base") {
+        val jwt = session?.token ?: return
+        val normalized = variantKey.ifBlank { "base" }
+        val key = "$itemId|$normalized"
+        val current = _ui.value
+        if (current.recipeIngredientsLoading.contains(key)) return
+        if (current.recipeIngredients.containsKey(key)) return
+
+        _ui.value = current.copy(
+            recipeIngredientsLoading = current.recipeIngredientsLoading + key,
+            recipeIngredientsError = null
+        )
+
+        viewModelScope.launch {
+            runCatching { repo.listRecipeIngredientIds(jwt, itemId, normalized) }
+                .onSuccess { ids ->
+                    val updated = _ui.value
+                    _ui.value = updated.copy(
+                        recipeIngredients = updated.recipeIngredients + (key to ids),
+                        recipeIngredientsLoading = updated.recipeIngredientsLoading - key,
+                        recipeIngredientsError = null
+                    )
+                }
+                .onFailure { err ->
+                    val updated = _ui.value
+                    _ui.value = updated.copy(
+                        recipeIngredientsLoading = updated.recipeIngredientsLoading - key,
+                        recipeIngredientsError = err.message
+                    )
+                    pushDebug("listRecipeIngredientIds failed: ${err.message}")
+                }
+        }
     }
 
     class Factory(
