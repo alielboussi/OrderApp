@@ -417,6 +417,15 @@
         },
         {
           "data_type": "text",
+          "table_name": "catalog_items",
+          "column_name": "stocktake_uom",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 31
+        },
+        {
+          "data_type": "text",
           "table_name": "counter_values",
           "column_name": "counter_key",
           "is_nullable": "NO",
