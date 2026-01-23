@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -37,6 +38,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.MenuDefaults
@@ -58,6 +60,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,6 +73,9 @@ import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
 import com.afterten.orders.ui.components.AccessDeniedCard
+import java.util.Locale
+import kotlin.math.pow
+import kotlin.math.round
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -324,7 +331,56 @@ fun StocktakeCountScreen(
     var dialogItemKind by rememberSaveable { mutableStateOf<String?>(null) }
     val dialogQty = remember { mutableStateMapOf<String, String>() }
 
-    fun formatQty(value: Double?): String = String.format("%.2f", value ?: 0.0)
+    fun formatQty(value: Double?, decimals: Int): String {
+        val safe = decimals.coerceIn(0, 6)
+        return String.format(Locale.US, "%.${safe}f", value ?: 0.0)
+    }
+    fun defaultDecimalsForUom(raw: String?): Int {
+        val key = raw?.trim()?.lowercase().orEmpty()
+        return when (key) {
+            "g", "kg", "mg", "ml", "l" -> 2
+            "each", "case", "crate", "bottle", "tin can", "jar", "plastic" -> 0
+            else -> 2
+        }
+    }
+    fun resolveDecimals(itemId: String, variantKey: String?, uom: String): Int {
+        val key = "${itemId}|${variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+        val baseKey = "${itemId}|base".lowercase()
+        return ui.qtyDecimals[key] ?: ui.qtyDecimals[baseKey] ?: defaultDecimalsForUom(uom)
+    }
+    fun stepForDecimals(decimals: Int): Double {
+        val safe = decimals.coerceIn(0, 6)
+        return if (safe == 0) 1.0 else 1.0 / 10.0.pow(safe.toDouble())
+    }
+    fun sanitizeQtyInput(raw: String, decimals: Int): String {
+        val cleaned = raw.filter { it.isDigit() || it == '.' }
+        if (decimals <= 0) return cleaned.filter { it.isDigit() }
+        val parts = cleaned.split('.', limit = 2)
+        val whole = parts.getOrNull(0).orEmpty()
+        val frac = parts.getOrNull(1).orEmpty().take(decimals.coerceIn(0, 6))
+        val normalizedWhole = if (whole.isBlank() && cleaned.startsWith(".")) "0" else whole
+        return if (cleaned.contains('.')) "$normalizedWhole.$frac" else normalizedWhole
+    }
+    fun formatUomLabel(raw: String?): String {
+        val key = raw?.trim()?.lowercase().orEmpty()
+        return when (key) {
+            "g", "gram", "grams", "g(s)" -> "Gram(s)"
+            "kg", "kilogram", "kilograms", "kg(s)" -> "Kilogram(s)"
+            "mg", "milligram", "milligrams", "mg(s)" -> "Milligram(s)"
+            "ml", "millilitre", "millilitres", "ml(s)" -> "Millilitre(s)"
+            "l", "litre", "litres", "l(s)" -> "Litre(s)"
+            "each" -> "Each"
+            "case" -> "Case(s)"
+            "crate" -> "Crate(s)"
+            "bottle" -> "Bottle(s)"
+            "tin can", "tin can(s)" -> "Tin Can(s)"
+            "jar", "jar(s)" -> "Jar(s)"
+            "plastic", "plastic(s)" -> "Plastic(s)"
+            else -> {
+                if (key.isBlank()) "Each" else key.replaceFirstChar { it.titlecase() }
+            }
+        }
+    }
     val imageSize = 96.dp
 
     val primaryRed = Color(0xFFD50000)
@@ -367,10 +423,25 @@ fun StocktakeCountScreen(
         }
         map
     }
+    val variantStocktakeUomMap = remember(ui.variations) {
+        val map = mutableMapOf<String, String>()
+        ui.variations.forEach { variation ->
+            val uom = variation.stocktakeUom?.ifBlank { null }
+                ?: variation.consumptionUom.ifBlank { variation.uom.ifBlank { "each" } }
+            map[variation.id] = uom
+            map[variation.id.lowercase()] = uom
+            variation.key?.let { key -> map[key] = uom }
+            variation.key?.let { key -> map[key.lowercase()] = uom }
+        }
+        map
+    }
 
-    val itemsByItemId = remember(ui.allItems, ui.items) {
+    val allItemsByItemId = remember(ui.allItems, ui.items) {
         val source = if (ui.allItems.isNotEmpty()) ui.allItems else ui.items
         source.groupBy { it.itemId }
+    }
+    val displayItemsByItemId = remember(ui.items) {
+        ui.items.groupBy { it.itemId }
     }
 
     val filteredBaseItems = remember(ui.items, ui.variations, search) {
@@ -392,7 +463,7 @@ fun StocktakeCountScreen(
             }
         }
 
-        itemsByItemId.mapNotNull { (itemId, rows) ->
+        displayItemsByItemId.mapNotNull { (itemId, rows) ->
             val baseRow = rows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: rows.firstOrNull()
             when {
                 baseRow == null -> null
@@ -417,7 +488,15 @@ fun StocktakeCountScreen(
                 Text(stocktakeNumber ?: ui.openPeriod?.stocktakeNumber ?: "Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
                 Text(periodId.take(8) + "…", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
             }
-            if (ui.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryRed) else Spacer(Modifier.size(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { vm.refreshItems() },
+                    enabled = !ui.loading && !ui.selectedWarehouseId.isNullOrBlank()
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                }
+                if (ui.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryRed) else Spacer(Modifier.size(24.dp))
+            }
         }
 
         ui.error?.let {
@@ -498,7 +577,7 @@ fun StocktakeCountScreen(
                                             alignment = Alignment.Center
                                         )
                                         Text(row.itemName ?: "Item", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                                        val rows = itemsByItemId[row.itemId].orEmpty()
+                                        val rows = allItemsByItemId[row.itemId].orEmpty()
                                         val variantCount = rows.count { (it.variantKey ?: "base") != "base" }
                                         val hasRecipe = rows.any { it.hasRecipe == true } && (row.itemKind ?: "").lowercase() != "ingredient"
                                         val badge = if ((row.itemKind ?: "").lowercase() == "ingredient") {
@@ -511,7 +590,9 @@ fun StocktakeCountScreen(
                                             "Base item"
                                         }
                                         Text(badge, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
-                                        Text("Qty: ${formatQty(row.netUnits)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
+                                        val listUom = ui.stocktakeUoms[row.itemId] ?: ui.productUoms[row.itemId] ?: "each"
+                                        val listDecimals = resolveDecimals(row.itemId, row.variantKey, listUom)
+                                        Text("Qty: ${formatQty(row.netUnits, listDecimals)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                                     }
                                 }
 
@@ -522,7 +603,7 @@ fun StocktakeCountScreen(
                     ui.lastCount?.let { last ->
                         val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
                         Text(
-                            "$kindLabel saved: ${formatQty(last.countedQty)}",
+                            "$kindLabel saved: ${formatQty(last.countedQty, 2)}",
                             color = Color.White,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -534,7 +615,7 @@ fun StocktakeCountScreen(
     }
 
     if (variantDialogOpen) {
-        val dialogRows = itemsByItemId[dialogItemId].orEmpty()
+        val dialogRows = allItemsByItemId[dialogItemId].orEmpty()
         val baseRow = dialogRows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: dialogRows.firstOrNull()
         val kindLabel = (dialogItemKind ?: baseRow?.itemKind ?: "").lowercase()
         val isIngredient = kindLabel == "ingredient"
@@ -544,7 +625,7 @@ fun StocktakeCountScreen(
         val ingredientIds = ui.recipeIngredients[recipeKey].orEmpty()
         val ingredientRows = if (hasRecipe) {
             ingredientIds.mapNotNull { id ->
-                val rows = itemsByItemId[id].orEmpty()
+                val rows = allItemsByItemId[id].orEmpty()
                 rows.firstOrNull { (it.variantKey ?: "base") == "base" } ?: rows.firstOrNull()
             }
         } else {
@@ -569,7 +650,9 @@ fun StocktakeCountScreen(
             displayRows.forEach { row ->
                 val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}"
                 if (!dialogQty.containsKey(key)) {
-                    dialogQty[key] = formatQty(row.netUnits)
+                    val initUom = ui.stocktakeUoms[row.itemId] ?: ui.productUoms[row.itemId] ?: "each"
+                    val initDecimals = resolveDecimals(row.itemId, row.variantKey, initUom)
+                    dialogQty[key] = formatQty(row.netUnits, initDecimals)
                 }
             }
         }
@@ -605,11 +688,15 @@ fun StocktakeCountScreen(
                         } else {
                             variantLabelMap[key] ?: variantLabelMap[key.lowercase()] ?: key.take(8)
                         }
-                        val uom = variantUomMap[key] ?: variantUomMap[key.lowercase()]
+                        val uom = variantStocktakeUomMap[key] ?: variantStocktakeUomMap[key.lowercase()]
+                            ?: ui.stocktakeUoms[row.itemId]
+                            ?: variantUomMap[key] ?: variantUomMap[key.lowercase()]
                             ?: ui.productUoms[row.itemId]
                             ?: "each"
                         val qtyKey = "${row.itemId}|$key"
-                        val currentQty = dialogQty[qtyKey] ?: formatQty(row.netUnits)
+                        val rowDecimals = resolveDecimals(row.itemId, key, uom)
+                        val step = stepForDecimals(rowDecimals)
+                        val currentQty = dialogQty[qtyKey] ?: formatQty(row.netUnits, rowDecimals)
                         val hasStock = (row.netUnits ?: 0.0) > 0.0
 
                         Card(
@@ -617,29 +704,56 @@ fun StocktakeCountScreen(
                             border = BorderStroke(1.dp, primaryRed)
                         ) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(label, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                Text(uom.uppercase(), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.75f))
+                                Text(
+                                    label,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    formatUomLabel(uom),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     IconButton(
                                         onClick = {
                                             val parsed = currentQty.toDoubleOrNull() ?: 0.0
-                                            dialogQty[qtyKey] = formatQty(parsed - 1)
+                                            val next = (parsed - step).coerceAtLeast(0.0)
+                                            dialogQty[qtyKey] = formatQty(next, rowDecimals)
                                         }
                                     ) {
                                         Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = primaryRed)
                                     }
                                     OutlinedTextField(
                                         value = currentQty,
-                                        onValueChange = { dialogQty[qtyKey] = it },
+                                        onValueChange = { dialogQty[qtyKey] = sanitizeQtyInput(it, rowDecimals) },
                                         label = { Text("Qty") },
                                         modifier = Modifier.weight(1f),
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        keyboardOptions = KeyboardOptions(keyboardType = if (rowDecimals > 0) KeyboardType.Decimal else KeyboardType.Number),
+                                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
+                                        placeholder = {
+                                            Text(
+                                                formatQty(0.0, rowDecimals),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = TextAlign.Center
+                                            )
+                                        },
                                         colors = outlinedFieldColors
                                     )
                                     IconButton(
                                         onClick = {
                                             val parsed = currentQty.toDoubleOrNull() ?: 0.0
-                                            dialogQty[qtyKey] = formatQty(parsed + 1)
+                                            val next = parsed + step
+                                            dialogQty[qtyKey] = formatQty(next, rowDecimals)
                                         }
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = "Increase", tint = primaryRed)
@@ -654,7 +768,9 @@ fun StocktakeCountScreen(
                                         }
                                         inputError = null
                                         val mode = if (hasStock) "closing" else "opening"
-                                        vm.recordCount(row.itemId, parsed, key, mode)
+                                        val factor = 10.0.pow(rowDecimals.coerceIn(0, 6).toDouble())
+                                        val rounded = round(parsed * factor) / factor
+                                        vm.recordCount(row.itemId, rounded, key, mode)
                                         variantDialogOpen = false
                                     },
                                     modifier = Modifier.fillMaxWidth(),

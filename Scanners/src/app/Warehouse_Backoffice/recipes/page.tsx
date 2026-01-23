@@ -22,11 +22,11 @@ type PendingLine = {
 
 const UOMS = [
   { value: "each", label: "Each" },
-  { value: "g", label: "Grams" },
-  { value: "kg", label: "Kilograms" },
-  { value: "mg", label: "Miligrams" },
-  { value: "ml", label: "Mililitres" },
-  { value: "l", label: "Litres" },
+  { value: "g", label: "Gram(s)" },
+  { value: "kg", label: "Kilogram(s)" },
+  { value: "mg", label: "Milligram(s)" },
+  { value: "ml", label: "Millilitre(s)" },
+  { value: "l", label: "Litre(s)" },
   { value: "case", label: "Case(s)" },
   { value: "crate", label: "Crate(s)" },
   { value: "bottle", label: "Bottle(s)" },

@@ -30,6 +30,8 @@ class StocktakeViewModel(
         val recipeIngredientsLoading: Set<String> = emptySet(),
         val recipeIngredientsError: String? = null,
         val productUoms: Map<String, String> = emptyMap(),
+        val stocktakeUoms: Map<String, String> = emptyMap(),
+        val qtyDecimals: Map<String, Int> = emptyMap(),
         val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
@@ -153,10 +155,26 @@ class StocktakeViewModel(
             val uom = product.consumptionUom.ifBlank { product.uom.ifBlank { "each" } }
             product.id to uom
         }
+        val stocktakeUoms = products.mapNotNull { product ->
+            val uom = product.stocktakeUom?.ifBlank { null }
+                ?: product.consumptionUom.ifBlank { product.uom.ifBlank { "each" } }
+            product.id to uom
+        }.toMap()
+        fun decimalKey(itemId: String, variantKey: String?) = "${itemId}|${variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+        val qtyDecimals = mutableMapOf<String, Int>()
+        products.forEach { product ->
+            product.qtyDecimalPlaces?.let { qtyDecimals[decimalKey(product.id, "base")] = it }
+        }
+        variations.forEach { variation ->
+            val vKey = variation.key ?: variation.id
+            variation.qtyDecimalPlaces?.let { qtyDecimals[decimalKey(variation.productId, vKey)] = it }
+        }
 
         _ui.value = _ui.value.copy(
             variations = variations,
-            productUoms = productUoms
+            productUoms = productUoms,
+            stocktakeUoms = stocktakeUoms,
+            qtyDecimals = qtyDecimals
         )
     }
 
@@ -188,6 +206,18 @@ class StocktakeViewModel(
         viewModelScope.launch {
             refreshOpenPeriod(id)
             loadItems(id)
+        }
+    }
+
+    fun refreshItems() {
+        val jwt = session?.token ?: return
+        val warehouseId = _ui.value.selectedWarehouseId ?: return
+        pushDebug("refreshItems warehouse=$warehouseId")
+        _ui.value = _ui.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            loadReferenceData(jwt)
+            refreshOpenPeriod(warehouseId)
+            loadItems(warehouseId)
         }
     }
 

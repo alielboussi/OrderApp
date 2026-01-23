@@ -14,6 +14,8 @@ type ItemPayload = {
   base_unit: QtyUnit;
   consumption_unit: string;
   consumption_qty_per_base: number;
+  stocktake_uom?: string | null;
+  qty_decimal_places?: number | null;
   storage_unit?: string | null;
   storage_weight?: number | null;
   cost: number;
@@ -44,9 +46,16 @@ type RecipeRow = {
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const BASE_FIELDS =
-  "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active";
+  "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,stocktake_uom,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active";
 
-const OPTIONAL_COLUMNS = ["has_recipe", "consumption_unit_mass", "consumption_unit_mass_uom", "storage_unit", "storage_weight"] as const;
+const OPTIONAL_COLUMNS = [
+  "has_recipe",
+  "consumption_unit_mass",
+  "consumption_unit_mass_uom",
+  "storage_unit",
+  "storage_weight",
+  "qty_decimal_places",
+] as const;
 
 function selectFields(optional: string[]) {
   const optionalPart = optional.length ? `,${optional.join(",")}` : "";
@@ -300,6 +309,13 @@ export async function POST(request: Request) {
       consumptionUnitMassValue = mass.value;
     }
 
+    let qtyDecimalPlacesValue: number | null = null;
+    if (body.qty_decimal_places !== undefined && body.qty_decimal_places !== null && `${body.qty_decimal_places}`.trim() !== "") {
+      const places = toNumber(body.qty_decimal_places, 0, -1);
+      if (!places.ok) return NextResponse.json({ error: places.error }, { status: 400 });
+      qtyDecimalPlacesValue = Math.max(0, Math.min(6, Math.round(places.value)));
+    }
+
     const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
 
     const payload: ItemPayload = {
@@ -309,6 +325,8 @@ export async function POST(request: Request) {
       base_unit: baseUnit,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
+      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
+      qty_decimal_places: qtyDecimalPlacesValue,
       storage_unit: storageUnit,
       storage_weight: storageWeight,
       cost: cost.value,
@@ -426,6 +444,13 @@ export async function PUT(request: Request) {
       consumptionUnitMassValue = mass.value;
     }
 
+    let qtyDecimalPlacesValue: number | null = null;
+    if (body.qty_decimal_places !== undefined && body.qty_decimal_places !== null && `${body.qty_decimal_places}`.trim() !== "") {
+      const places = toNumber(body.qty_decimal_places, 0, -1);
+      if (!places.ok) return NextResponse.json({ error: places.error }, { status: 400 });
+      qtyDecimalPlacesValue = Math.max(0, Math.min(6, Math.round(places.value)));
+    }
+
     const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
 
     const payload: ItemPayload = {
@@ -435,6 +460,8 @@ export async function PUT(request: Request) {
       base_unit: baseUnit,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
+      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
+      qty_decimal_places: qtyDecimalPlacesValue,
       storage_unit: storageUnit,
       storage_weight: storageWeight,
       cost: cost.value,

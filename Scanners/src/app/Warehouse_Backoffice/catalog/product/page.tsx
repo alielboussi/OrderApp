@@ -7,11 +7,11 @@ import styles from "./product.module.css";
 
 const qtyUnitOptions = [
   { value: "each", label: "Each" },
-  { value: "g", label: "Grams" },
-  { value: "kg", label: "Kilograms" },
-  { value: "mg", label: "Miligrams" },
-  { value: "ml", label: "Mililitres" },
-  { value: "l", label: "Litres" },
+  { value: "g", label: "Gram(s)" },
+  { value: "kg", label: "Kilogram(s)" },
+  { value: "mg", label: "Milligram(s)" },
+  { value: "ml", label: "Millilitre(s)" },
+  { value: "l", label: "Litre(s)" },
   { value: "case", label: "Case(s)" },
   { value: "crate", label: "Crate(s)" },
   { value: "bottle", label: "Bottle(s)" },
@@ -34,6 +34,8 @@ type FormState = {
   base_unit: string;
   consumption_unit: string;
   consumption_qty_per_base: string;
+  qty_decimal_places: string;
+  stocktake_uom: string;
   storage_unit: string;
   storage_weight: string;
   cost: string;
@@ -52,6 +54,8 @@ const defaultForm: FormState = {
   base_unit: "each",
   consumption_unit: "each",
   consumption_qty_per_base: "1",
+  qty_decimal_places: "0",
+  stocktake_uom: "",
   storage_unit: "",
   storage_weight: "",
   cost: "0",
@@ -107,6 +111,8 @@ function ProductCreatePage() {
             base_unit: item.base_unit ?? "each",
             consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
+            qty_decimal_places: (item.qty_decimal_places ?? 0).toString(),
+            stocktake_uom: item.stocktake_uom ?? "",
             storage_unit: item.storage_unit ?? "",
             storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
             cost: (item.cost ?? 0).toString(),
@@ -155,6 +161,8 @@ function ProductCreatePage() {
         base_unit: form.base_unit,
         consumption_unit: form.consumption_unit,
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
+        qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0)))),
+        stocktake_uom: form.stocktake_uom || null,
         storage_unit: form.storage_unit || null,
         storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
         cost: toNumber(form.cost, 0),
@@ -253,6 +261,13 @@ function ProductCreatePage() {
                   onChange={(v) => handleChange("consumption_unit", v)}
                   options={qtyUnitOptions as unknown as { value: string; label: string }[]}
                 />
+                <Select
+                  label="Stocktake unit (warehouse counts)"
+                  hint="Optional override for counting stock (e.g., kg instead of grams)"
+                  value={form.stocktake_uom}
+                  onChange={(v) => handleChange("stocktake_uom", v)}
+                  options={[{ value: "", label: "Use consumption unit" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
+                />
                 <Field
                   type="number"
                   label="Consumption qty"
@@ -262,6 +277,15 @@ function ProductCreatePage() {
                   step="0.0001"
                   min="0.0001"
                   required
+                />
+                <Field
+                  type="number"
+                  label="Quantity decimal places"
+                  hint="0 = whole numbers, 1 or 2 = allow decimals (e.g., kg)"
+                  value={form.qty_decimal_places}
+                  onChange={(v) => handleChange("qty_decimal_places", v)}
+                  step="1"
+                  min="0"
                 />
                 <Select
                   label="Storage unit"

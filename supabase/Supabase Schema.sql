@@ -407,6 +407,15 @@
           "ordinal_position": 29
         },
         {
+          "data_type": "integer",
+          "table_name": "catalog_items",
+          "column_name": "qty_decimal_places",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": "0",
+          "ordinal_position": 30
+        },
+        {
           "data_type": "text",
           "table_name": "counter_values",
           "column_name": "counter_key",
@@ -5187,6 +5196,16 @@
           "table_name": "catalog_items",
           "column_name": null,
           "table_schema": "public",
+          "constraint_name": "catalog_items_qty_decimal_places_chk",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "catalog_items",
+          "foreign_column_name": "qty_decimal_places",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_items",
+          "column_name": null,
+          "table_schema": "public",
           "constraint_name": "catalog_items_transfer_quantity_check",
           "constraint_type": "CHECK",
           "foreign_table_name": "catalog_items",
@@ -5270,7 +5289,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -5280,17 +5299,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "counter_values",
-          "column_name": "scope_id",
-          "table_schema": "public",
-          "constraint_name": "counter_values_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5301,6 +5310,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
           "foreign_column_name": "scope_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "counter_values",
+          "column_name": "scope_id",
+          "table_schema": "public",
+          "constraint_name": "counter_values_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "counter_values",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -5410,7 +5429,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -5420,17 +5439,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5441,6 +5450,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {

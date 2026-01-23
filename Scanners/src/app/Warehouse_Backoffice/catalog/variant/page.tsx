@@ -28,6 +28,22 @@ const itemKinds = [
 const formatUnitLabel = (unit: string) => {
   const trimmed = unit.trim();
   if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  const mapped =
+    lower === "each"
+      ? "Each"
+      : lower === "g"
+      ? "Gram(s)"
+      : lower === "kg"
+        ? "Kilogram(s)"
+        : lower === "mg"
+          ? "Milligram(s)"
+          : lower === "ml"
+            ? "Millilitre(s)"
+            : lower === "l"
+              ? "Litre(s)"
+              : null;
+  if (mapped) return mapped;
   const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
   return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
 };
@@ -47,6 +63,8 @@ type FormState = {
   purchase_unit_mass_uom: string;
   transfer_unit: string;
   transfer_quantity: string;
+  qty_decimal_places: string;
+  stocktake_uom: string;
   cost: string;
   outlet_order_visible: boolean;
   image_url: string;
@@ -66,6 +84,8 @@ const defaultForm: FormState = {
   purchase_unit_mass_uom: "kg",
   transfer_unit: "each",
   transfer_quantity: "1",
+  qty_decimal_places: "0",
+  stocktake_uom: "",
   cost: "0",
   outlet_order_visible: true,
   image_url: "",
@@ -128,6 +148,8 @@ function VariantCreatePage() {
             purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? "kg",
             transfer_unit: variant.transfer_unit ?? "each",
             transfer_quantity: (variant.transfer_quantity ?? 1).toString(),
+            qty_decimal_places: (variant.qty_decimal_places ?? 0).toString(),
+            stocktake_uom: variant.stocktake_uom ?? "",
             cost: (variant.cost ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,
             image_url: variant.image_url ?? "",
@@ -171,6 +193,7 @@ function VariantCreatePage() {
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1, 0),
         purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0, 0),
         transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
+        qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0, -1)))),
         cost: toNumber(form.cost, 0, -0.0001),
           default_warehouse_id: form.storage_home_id || null,
         ...(editingId ? { id: editingId } : {}),
@@ -259,6 +282,22 @@ function VariantCreatePage() {
               value={form.consumption_uom}
               onChange={(v) => handleChange("consumption_uom", v)}
               options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
+            />
+            <Select
+              label="Stocktake unit (warehouse counts)"
+              hint="Optional override for counting stock (e.g., kg instead of grams)"
+              value={form.stocktake_uom}
+              onChange={(v) => handleChange("stocktake_uom", v)}
+              options={[{ value: "", label: "Use consumption unit" }, ...qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))]}
+            />
+            <Field
+              type="number"
+              label="Quantity decimal places"
+              hint="0 = whole numbers, 1 or 2 = allow decimals (e.g., kg)"
+              value={form.qty_decimal_places}
+              onChange={(v) => handleChange("qty_decimal_places", v)}
+              step="1"
+              min="0"
             />
             <Select
               label="Supplier pack unit"

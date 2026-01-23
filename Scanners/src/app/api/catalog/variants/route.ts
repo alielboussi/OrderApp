@@ -13,12 +13,14 @@ type VariantPayload = {
   sku?: string | null;
   item_kind: ItemKind;
   consumption_uom: string;
+  stocktake_uom?: string | null;
   purchase_pack_unit: string;
   units_per_purchase_pack: number;
   purchase_unit_mass?: number | null;
   purchase_unit_mass_uom?: QtyUnit | null;
   transfer_unit: string;
   transfer_quantity: number;
+  qty_decimal_places?: number | null;
   cost: number;
   locked_from_warehouse_id?: string | null;
   outlet_order_visible: boolean;
@@ -144,12 +146,14 @@ function toVariantResponse(itemId: string, variant: VariantRecord) {
     sku: variant.sku ?? null,
     item_kind: variant.item_kind ?? "finished",
     consumption_uom: variant.consumption_uom ?? "each",
+    stocktake_uom: variant.stocktake_uom ?? null,
     purchase_pack_unit: variant.purchase_pack_unit ?? "each",
     units_per_purchase_pack: variant.units_per_purchase_pack ?? 1,
     purchase_unit_mass: variant.purchase_unit_mass ?? null,
     purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? null,
     transfer_unit: variant.transfer_unit ?? variant.purchase_pack_unit ?? "each",
     transfer_quantity: variant.transfer_quantity ?? 1,
+    qty_decimal_places: variant.qty_decimal_places ?? null,
     cost: variant.cost ?? 0,
     locked_from_warehouse_id: variant.locked_from_warehouse_id ?? null,
     outlet_order_visible: variant.outlet_order_visible ?? true,
@@ -275,6 +279,12 @@ export async function POST(request: Request) {
       if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
       purchaseUnitMass = mass.value;
     }
+    let qtyDecimalPlaces: number | null = null;
+    if (body.qty_decimal_places !== undefined && body.qty_decimal_places !== null && `${body.qty_decimal_places}`.trim() !== "") {
+      const places = toNumber(body.qty_decimal_places, 0, -1);
+      if (!places.ok) return NextResponse.json({ error: places.error }, { status: 400 });
+      qtyDecimalPlaces = Math.max(0, Math.min(6, Math.round(places.value)));
+    }
 
     const supabase = getServiceClient();
     const { data: itemRow, error: itemError } = (await supabase
@@ -291,12 +301,14 @@ export async function POST(request: Request) {
       sku: cleanText(body.sku) ?? null,
       item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
+      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
       purchase_pack_unit: purchasePackUnit,
       units_per_purchase_pack: unitsPerPack.value,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
       transfer_unit: transferUnit,
       transfer_quantity: transferQuantity.value,
+      qty_decimal_places: qtyDecimalPlaces,
       cost: cost.value,
       locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
@@ -362,6 +374,12 @@ export async function PUT(request: Request) {
       if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
       purchaseUnitMass = mass.value;
     }
+    let qtyDecimalPlaces: number | null = null;
+    if (body.qty_decimal_places !== undefined && body.qty_decimal_places !== null && `${body.qty_decimal_places}`.trim() !== "") {
+      const places = toNumber(body.qty_decimal_places, 0, -1);
+      if (!places.ok) return NextResponse.json({ error: places.error }, { status: 400 });
+      qtyDecimalPlaces = Math.max(0, Math.min(6, Math.round(places.value)));
+    }
 
     const supabase = getServiceClient();
     const { data: itemRow, error: itemError } = (await supabase
@@ -378,12 +396,14 @@ export async function PUT(request: Request) {
       sku: cleanText(body.sku) ?? null,
       item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
+      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
       purchase_pack_unit: purchasePackUnit,
       units_per_purchase_pack: unitsPerPack.value,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
       transfer_unit: transferUnit,
       transfer_quantity: transferQuantity.value,
+      qty_decimal_places: qtyDecimalPlaces,
       cost: cost.value,
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,

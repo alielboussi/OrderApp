@@ -745,6 +745,8 @@ class SupabaseProvider(context: Context) {
         val name: String,
         @SerialName("purchase_pack_unit") val uom: String,
         @SerialName("consumption_uom") val consumptionUom: String = "each",
+        @SerialName("stocktake_uom") val stocktakeUom: String? = null,
+        @SerialName("qty_decimal_places") val qtyDecimalPlaces: Int? = null,
         val sku: String? = null,
         @SerialName("has_variations") val hasVariations: Boolean = false,
         @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
@@ -759,6 +761,8 @@ class SupabaseProvider(context: Context) {
         val name: String,
         @SerialName("purchase_pack_unit") val uom: String,
         @SerialName("consumption_uom") val consumptionUom: String = "each",
+        @SerialName("stocktake_uom") val stocktakeUom: String? = null,
+        @SerialName("qty_decimal_places") val qtyDecimalPlaces: Int? = null,
         val cost: Double? = null,
         @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
         val sku: String? = null,
@@ -775,7 +779,9 @@ class SupabaseProvider(context: Context) {
         @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true,
         @SerialName("purchase_pack_unit") val uom: String? = null,
         @SerialName("consumption_uom") val consumptionUom: String? = null,
-        @SerialName("units_per_purchase_pack") val packageContains: Double? = null
+        @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
+        @SerialName("stocktake_uom") val stocktakeUom: String? = null,
+        @SerialName("qty_decimal_places") val qtyDecimalPlaces: Int? = null
     )
 
     @Serializable
@@ -1272,13 +1278,30 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val url = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&outlet_order_visible=eq.true&select=id,name,purchase_pack_unit,consumption_uom,sku,has_variations,units_per_purchase_pack,outlet_order_visible&order=name.asc"
-        val resp = http.get(url) {
-            header("apikey", supabaseAnonKey)
-            header(HttpHeaders.Authorization, "Bearer $jwt")
+        val urlWithDecimals = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,purchase_pack_unit,consumption_uom,stocktake_uom,qty_decimal_places,sku,has_variations,units_per_purchase_pack,outlet_order_visible&order=name.asc"
+        val urlFallback = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,purchase_pack_unit,consumption_uom,sku,has_variations,units_per_purchase_pack,outlet_order_visible&order=name.asc"
+
+        suspend fun fetch(url: String): List<SimpleProduct> {
+            val resp = http.get(url) {
+                header("apikey", supabaseAnonKey)
+                header(HttpHeaders.Authorization, "Bearer $jwt")
+            }
+            val code = resp.status.value
+            val txt = resp.bodyAsText()
+            if (code !in 200..299) throw IllegalStateException("listActiveProducts failed: HTTP $code $txt")
+            return relaxedJson.decodeFromString(ListSerializer(SimpleProduct.serializer()), txt)
         }
-        val txt = resp.bodyAsText()
-        return relaxedJson.decodeFromString(ListSerializer(SimpleProduct.serializer()), txt)
+
+        return runCatching { fetch(urlWithDecimals) }
+            .recoverCatching { err ->
+                val msg = err.message.orEmpty()
+                if (msg.contains("qty_decimal_places", ignoreCase = true) || msg.contains("42703")) {
+                    fetch(urlFallback)
+                } else {
+                    throw err
+                }
+            }
+            .getOrElse { throw it }
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
@@ -1322,6 +1345,8 @@ class SupabaseProvider(context: Context) {
             name = name,
             uom = uom,
             consumptionUom = consumption,
+            stocktakeUom = variant.stocktakeUom,
+            qtyDecimalPlaces = variant.qtyDecimalPlaces,
             cost = variant.cost,
             packageContains = variant.packageContains,
             sku = variant.sku,
