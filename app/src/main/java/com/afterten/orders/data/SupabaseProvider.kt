@@ -609,6 +609,12 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    private data class OutletDefaultsRow(
+        @SerialName("default_sales_warehouse_id") val defaultSalesWarehouseId: String? = null,
+        @SerialName("default_receiving_warehouse_id") val defaultReceivingWarehouseId: String? = null
+    )
+
+    @Serializable
     data class StockMovementReferenceName(
         val name: String? = null,
         val uom: String? = null,
@@ -934,7 +940,7 @@ class SupabaseProvider(context: Context) {
         val url = buildString {
             append(supabaseUrl)
             append("/rest/v1/warehouses")
-            append("?select=id,name,code,kind,parent_warehouse_id,stock_layer,active,created_at,updated_at")
+            append("?select=id,name,code,parent_warehouse_id,stock_layer,active,created_at,updated_at")
             append("&order=name.asc")
         }
         val resp = http.get(url) {
@@ -949,7 +955,9 @@ class SupabaseProvider(context: Context) {
 
     suspend fun listWarehousesForOutlet(jwt: String, outletId: String?): List<Warehouse> {
         val targetOutlet = outletId?.trim().takeUnless { it.isNullOrEmpty() } ?: return emptyList()
-        val primaryIds = runCatching {
+        val ids = linkedSetOf<String>()
+
+        runCatching {
             val mapUrl = buildString {
                 append(supabaseUrl)
                 append("/rest/v1/outlet_warehouses")
@@ -967,11 +975,32 @@ class SupabaseProvider(context: Context) {
             relaxedJson.decodeFromString(ListSerializer(OutletWarehouseLink.serializer()), mapTxt)
                 .mapNotNull { it.warehouseId.trim().takeIf(String::isNotEmpty) }
                 .distinct()
-        }.getOrElse { emptyList() }
+        }.getOrElse { emptyList() }.forEach { ids.add(it) }
 
-        val ids = if (primaryIds.isNotEmpty()) {
-            primaryIds
-        } else {
+        runCatching {
+            val outletUrl = buildString {
+                append(supabaseUrl)
+                append("/rest/v1/outlets")
+                append("?select=default_sales_warehouse_id,default_receiving_warehouse_id")
+                append("&id=eq.")
+                append(targetOutlet)
+                append("&limit=1")
+            }
+            val outletResp = http.get(outletUrl) {
+                header("apikey", supabaseAnonKey)
+                header(HttpHeaders.Authorization, "Bearer $jwt")
+            }
+            val outletCode = outletResp.status.value
+            val outletTxt = outletResp.bodyAsText()
+            if (outletCode !in 200..299) throw IllegalStateException("listWarehousesForOutlet outlet defaults failed: HTTP $outletCode $outletTxt")
+            val rows = relaxedJson.decodeFromString(ListSerializer(OutletDefaultsRow.serializer()), outletTxt)
+            rows.firstOrNull()
+        }.getOrNull()?.let { row ->
+            row.defaultSalesWarehouseId?.trim()?.takeIf(String::isNotEmpty)?.let { ids.add(it) }
+            row.defaultReceivingWarehouseId?.trim()?.takeIf(String::isNotEmpty)?.let { ids.add(it) }
+        }
+
+        runCatching {
             val routesUrl = buildString {
                 append(supabaseUrl)
                 append("/rest/v1/outlet_item_routes")
@@ -986,11 +1015,11 @@ class SupabaseProvider(context: Context) {
             }
             val routesCode = routesResp.status.value
             val routesTxt = routesResp.bodyAsText()
-            if (routesCode !in 200..299) return emptyList()
+            if (routesCode !in 200..299) return@runCatching emptyList()
             relaxedJson.decodeFromString(ListSerializer(OutletItemRouteRow.serializer()), routesTxt)
                 .mapNotNull { it.warehouseId?.trim()?.takeIf(String::isNotEmpty) }
                 .distinct()
-        }
+        }.getOrElse { emptyList() }.forEach { ids.add(it) }
 
         if (ids.isEmpty()) return emptyList()
         return fetchWarehousesByIds(jwt, ids).filter { it.active }
@@ -1001,7 +1030,7 @@ class SupabaseProvider(context: Context) {
         if (unique.isEmpty()) return emptyList()
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
-        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,code,kind,parent_warehouse_id,stock_layer,active,created_at,updated_at&id=in.$encoded"
+        val url = "$supabaseUrl/rest/v1/warehouses?select=id,name,code,parent_warehouse_id,stock_layer,active,created_at,updated_at&id=in.$encoded"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
