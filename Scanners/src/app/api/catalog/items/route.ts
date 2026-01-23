@@ -11,7 +11,6 @@ type ItemPayload = {
   name: string;
   sku?: string | null;
   item_kind: ItemKind;
-  base_unit: QtyUnit;
   consumption_unit: string;
   consumption_qty_per_base: number;
   stocktake_uom?: string | null;
@@ -46,7 +45,7 @@ type RecipeRow = {
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const BASE_FIELDS =
-  "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,stocktake_uom,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,base_unit,active";
+  "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,stocktake_uom,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,active";
 
 const OPTIONAL_COLUMNS = [
   "has_recipe",
@@ -270,7 +269,6 @@ export async function POST(request: Request) {
     const itemKind = pickItemKind(body.item_kind);
     if (!itemKind.ok) return NextResponse.json({ error: itemKind.error }, { status: 400 });
 
-    const baseUnit = pickQtyUnit(body.base_unit, "each");
     const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
 
     const consumptionQtyPerBase = toNumber(body.consumption_qty_per_base, 0, 0);
@@ -290,9 +288,9 @@ export async function POST(request: Request) {
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
 
     // Legacy-required fields: provide safe defaults to satisfy existing constraints until columns are removed
-    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit ?? baseUnit;
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit;
     const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0); // fallback default 1
-    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? baseUnit;
+    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? consumptionUnit;
     const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
 
     let purchaseUnitMass: number | null = null;
@@ -322,7 +320,6 @@ export async function POST(request: Request) {
       name,
       sku: cleanText(body.sku) ?? null,
       item_kind: itemKind.value,
-      base_unit: baseUnit,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
       stocktake_uom: cleanText(body.stocktake_uom) ?? null,
@@ -406,7 +403,6 @@ export async function PUT(request: Request) {
     const itemKind = pickItemKind(body.item_kind);
     if (!itemKind.ok) return NextResponse.json({ error: itemKind.error }, { status: 400 });
 
-    const baseUnit = pickQtyUnit(body.base_unit, "each");
     const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
 
     const consumptionQtyPerBase = toNumber(body.consumption_qty_per_base, 0, 0);
@@ -425,9 +421,9 @@ export async function PUT(request: Request) {
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
 
-    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit ?? baseUnit;
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit;
     const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
-    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? baseUnit;
+    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? consumptionUnit;
     const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
 
     let purchaseUnitMass: number | null = null;
@@ -457,7 +453,6 @@ export async function PUT(request: Request) {
       name,
       sku: cleanText(body.sku) ?? null,
       item_kind: itemKind.value,
-      base_unit: baseUnit,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
       stocktake_uom: cleanText(body.stocktake_uom) ?? null,

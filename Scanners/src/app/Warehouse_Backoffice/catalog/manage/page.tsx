@@ -10,7 +10,6 @@ type Item = { id: string; name: string; sku?: string | null; item_kind?: string 
 type Alert = { ok: boolean; text: string } | null;
 
 const PRODUCT_DEFAULTS = {
-  base_unit: "each",
   consumption_unit: "each",
   consumption_qty_per_base: 1,
   storage_unit: null as string | null,

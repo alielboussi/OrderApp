@@ -704,16 +704,29 @@ fun StocktakeCountScreen(
                             border = BorderStroke(1.dp, primaryRed)
                         ) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    label,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    AsyncImage(
+                                        model = row.imageUrl,
+                                        contentDescription = "Item photo",
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        alignment = Alignment.Center
+                                    )
+                                    Text(
+                                        label,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                                 Text(
                                     formatUomLabel(uom),
                                     style = MaterialTheme.typography.bodyMedium,

@@ -31,7 +31,6 @@ type FormState = {
   name: string;
   sku: string;
   item_kind: "finished" | "ingredient" | "raw";
-  base_unit: string;
   consumption_unit: string;
   consumption_qty_per_base: string;
   qty_decimal_places: string;
@@ -51,7 +50,6 @@ const defaultForm: FormState = {
   name: "",
   sku: "",
   item_kind: "finished",
-  base_unit: "each",
   consumption_unit: "each",
   consumption_qty_per_base: "1",
   qty_decimal_places: "0",
@@ -108,7 +106,6 @@ function ProductCreatePage() {
             name: item.name ?? "",
             sku: item.sku ?? "",
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
-            base_unit: item.base_unit ?? "each",
             consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
             qty_decimal_places: (item.qty_decimal_places ?? 0).toString(),
@@ -158,7 +155,6 @@ function ProductCreatePage() {
         name: form.name,
         sku: form.sku,
         item_kind: form.item_kind,
-        base_unit: form.base_unit,
         consumption_unit: form.consumption_unit,
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
         qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0)))),
@@ -248,15 +244,8 @@ function ProductCreatePage() {
             {!disableVariantControlled && (
               <>
                 <Select
-                  label="Base unit"
-                  hint="Smallest unit you track (e.g., each, kg)"
-                  value={form.base_unit}
-                  onChange={(v) => handleChange("base_unit", v)}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                />
-                <Select
-                  label="Consumption unit"
-                  hint="Unit deducted per base unit sold/used"
+                  label="Unit (stock + consumption)"
+                  hint="Single unit used for stock, transfers, and consumption"
                   value={form.consumption_unit}
                   onChange={(v) => handleChange("consumption_unit", v)}
                   options={qtyUnitOptions as unknown as { value: string; label: string }[]}
@@ -271,7 +260,7 @@ function ProductCreatePage() {
                 <Field
                   type="number"
                   label="Consumption qty"
-                  hint="Consumption units used per 1 base unit"
+                  hint="Consumption units used per 1 unit"
                   value={form.consumption_qty_per_base}
                   onChange={(v) => handleChange("consumption_qty_per_base", v)}
                   step="0.0001"

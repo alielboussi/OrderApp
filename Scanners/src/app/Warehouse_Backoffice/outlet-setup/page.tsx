@@ -71,8 +71,7 @@ export default function OutletSetupPage() {
 
   // Deduction routing state (product/variant/ingredient/raw → warehouse per outlet)
   const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [selectedVariantKey, setSelectedVariantKey] = useState<string>("base");
-  const [selectedProductVariant, setSelectedProductVariant] = useState<string>("base");
+  const [selectedRoutingVariantKeys, setSelectedRoutingVariantKeys] = useState<string[]>(["base"]);
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
   const [selectedRawId, setSelectedRawId] = useState<string>("");
 
@@ -305,17 +304,21 @@ export default function OutletSetupPage() {
   useEffect(() => {
     if (status !== "ok") return;
     if (!selectedProductId) {
-      setSelectedVariantKey("base");
+      setSelectedRoutingVariantKeys(["base"]);
       setProductRoutes({});
       setRoutingMessage((prev) => ({ ...prev, product: null }));
       setRoutingLoading((prev) => ({ ...prev, product: false }));
+      return;
+    }
+    const activeVariantKeys = selectedRoutingVariantKeys.length ? selectedRoutingVariantKeys : ["base"];
+    if (activeVariantKeys.length !== 1) {
       return;
     }
     const loadRoutes = async () => {
       setRoutingLoading((prev) => ({ ...prev, product: true }));
       setRoutingMessage((prev) => ({ ...prev, product: null }));
       try {
-        const res = await fetch(`/api/outlet-routes?item_id=${selectedProductId}&variant_key=base`);
+        const res = await fetch(`/api/outlet-routes?item_id=${selectedProductId}&variant_key=${activeVariantKeys[0]}`);
         if (!res.ok) throw new Error("Could not load routes");
         const json = await res.json();
         const routeMap: RouteRecord = {};
@@ -333,7 +336,7 @@ export default function OutletSetupPage() {
       }
     };
     loadRoutes();
-  }, [selectedProductId, status]);
+  }, [selectedProductId, selectedRoutingVariantKeys, status]);
 
   // Load routes for selected ingredient (scoped to recipe ingredients)
   useEffect(() => {
@@ -529,16 +532,21 @@ export default function OutletSetupPage() {
   const saveRoutes = async (group: RoutingGroup) => {
     const selection =
       group === "ingredient"
-        ? { itemId: selectedIngredientId, variantKey: "base" }
+        ? { itemId: selectedIngredientId, variantKeys: ["base"] }
         : group === "raw"
-          ? { itemId: selectedRawId, variantKey: "base" }
-          : { itemId: selectedProductId, variantKey: "base" };
+          ? { itemId: selectedRawId, variantKeys: ["base"] }
+          : { itemId: selectedProductId, variantKeys: selectedRoutingVariantKeys.length ? selectedRoutingVariantKeys : ["base"] };
 
     const label =
       group === "ingredient" ? "ingredient" : group === "raw" ? "raw" : "product";
 
     if (!selection.itemId) {
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: `Choose a ${label} first` } }));
+      return;
+    }
+
+    if (group === "product" && selection.variantKeys.length === 0) {
+      setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Select at least one variant" } }));
       return;
     }
 
@@ -552,21 +560,24 @@ export default function OutletSetupPage() {
     setRoutingSavingKind(group);
     setRoutingMessage((prev) => ({ ...prev, [group]: null }));
     try {
-      const payload = {
-        item_id: selection.itemId,
-        variant_key: selection.variantKey,
-        routes: outlets.map((outlet) => ({ outlet_id: outlet.id, warehouse_id: currentRoutes[outlet.id] || null })),
-      };
+      const routesPayload = outlets.map((outlet) => ({ outlet_id: outlet.id, warehouse_id: currentRoutes[outlet.id] || null }));
+      for (const variantKey of selection.variantKeys) {
+        const payload = {
+          item_id: selection.itemId,
+          variant_key: variantKey,
+          routes: routesPayload,
+        };
 
-      const res = await fetch("/api/outlet-routes", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+        const res = await fetch("/api/outlet-routes", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Could not save routes");
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error || "Could not save routes");
+        }
       }
 
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: true, text: "Mappings saved" } }));
@@ -648,7 +659,8 @@ export default function OutletSetupPage() {
       setProductDefaultWarehouseMessage({ ok: false, text: "Choose a product first" });
       return;
     }
-    if (selectedProductVariant !== "base") {
+    const baseOnly = !selectedRoutingVariantKeys.length || (selectedRoutingVariantKeys.length === 1 && selectedRoutingVariantKeys[0] === "base");
+    if (!baseOnly) {
       setProductDefaultWarehouseMessage({ ok: false, text: "Default warehouse applies to base items only" });
       return;
     }
@@ -670,7 +682,6 @@ export default function OutletSetupPage() {
         name: item.name,
         sku: item.sku ?? null,
         item_kind: item.item_kind ?? "product",
-        base_unit: item.base_unit ?? "each",
         consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
         consumption_qty_per_base: item.consumption_qty_per_base ?? 1,
         storage_unit: item.storage_unit ?? null,
@@ -683,14 +694,16 @@ export default function OutletSetupPage() {
         storage_home_id: productDefaultWarehouseId || null,
         default_warehouse_id: productDefaultWarehouseId || null,
         active: item.active ?? true,
-        purchase_pack_unit: item.purchase_pack_unit ?? item.base_unit ?? "each",
+        purchase_pack_unit: item.purchase_pack_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
         units_per_purchase_pack: item.units_per_purchase_pack ?? 1,
         purchase_unit_mass: item.purchase_unit_mass ?? null,
         purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? null,
         consumption_unit_mass: item.consumption_unit_mass ?? null,
         consumption_unit_mass_uom: item.consumption_unit_mass_uom ?? null,
-        transfer_unit: item.transfer_unit ?? item.base_unit ?? "each",
+        transfer_unit: item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
         transfer_quantity: item.transfer_quantity ?? 1,
+        qty_decimal_places: item.qty_decimal_places ?? 0,
+        stocktake_uom: item.stocktake_uom ?? null,
       };
 
       const res = await fetch("/api/catalog/items", {
@@ -932,8 +945,7 @@ export default function OutletSetupPage() {
                   onChange={(e) => {
                     const value = e.target.value;
                     setSelectedProductId(value);
-                    setSelectedVariantKey("base");
-                    setSelectedProductVariant("base");
+                    setSelectedRoutingVariantKeys(["base"]);
                     setSelectedIngredientId("");
                     setSelectedRawId("");
                   }}
@@ -951,25 +963,40 @@ export default function OutletSetupPage() {
 
               <div className={styles.selectGroup}>
                 <div className={styles.subHeading}>Variants (deduct)</div>
-                <select
-                  value={selectedProductVariant}
-                  onChange={(e) => {
-                    const value = e.target.value || "base";
-                    setSelectedProductVariant(value);
-                    setSelectedVariantKey(value);
-                    setSelectedIngredientId("");
-                    setSelectedRawId("");
-                  }}
-                  className={styles.select}
-                  disabled={!selectedProductId || routingLoading.product || productVariantOptions.length <= 1}
-                  aria-label="Select product variant for routing"
-                >
-                  {productVariantOptions.map((variant) => (
-                    <option key={`variant-${variant.value}`} value={variant.value}>
-                      {variant.label}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.variantChooser} aria-label="Select variants for routing">
+                  {!selectedProductId ? (
+                    <div className={styles.variantHint}>Select a product to choose variants</div>
+                  ) : (
+                    <div className={styles.variantList}>
+                      {productVariantOptions.map((variant) => {
+                        const checked = selectedRoutingVariantKeys.includes(variant.value);
+                        return (
+                          <label key={`variant-${variant.value}`} className={styles.variantOption}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={routingLoading.product || productVariantOptions.length <= 1}
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                setSelectedRoutingVariantKeys((prev) => {
+                                  if (isChecked) return Array.from(new Set([...prev, variant.value]));
+                                  const next = prev.filter((v) => v !== variant.value);
+                                  return next.length ? next : ["base"];
+                                });
+                                setSelectedIngredientId("");
+                                setSelectedRawId("");
+                              }}
+                            />
+                            <span>{variant.label}</span>
+                          </label>
+                        );
+                      })}
+                      <div className={styles.variantHint}>
+                        Tick multiple variants to apply the same outlet warehouse to each.
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className={styles.selectGroup}>

@@ -145,7 +145,6 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
     var name by remember { mutableStateOf("") }
     var sku by remember { mutableStateOf("") }
     var itemKind by remember { mutableStateOf("inventory") }
-    var baseUnit by remember { mutableStateOf("each") }
     var unitsPerPack by remember { mutableStateOf("1") }
     var cost by remember { mutableStateOf("0") }
     var purchasePackUnit by remember { mutableStateOf("each") }
@@ -164,7 +163,6 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
         name = row.name
         sku = row.sku ?: ""
         itemKind = row.itemKind
-        baseUnit = row.baseUnit
         unitsPerPack = row.unitsPerPurchasePack.toString()
         cost = row.cost.toString()
         purchasePackUnit = row.purchasePackUnit
@@ -221,13 +219,12 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
             GlowingField(name, { name = it }, "Name", "Product display name (e.g., Cola 500ml)")
             GlowingField(sku, { sku = it }, "SKU", "Optional unique code (e.g., COLA-500)")
             GlowingField(itemKind, { itemKind = it }, "Item Kind", "Enum item_kind (e.g., inventory, service)")
-            GlowingField(baseUnit, { baseUnit = it }, "Base Unit", "Unit for consumption (e.g., each)")
+            GlowingField(consumptionUom, { consumptionUom = it }, "Unit", "Single unit for stock + consumption (e.g., each)")
             GlowingField(unitsPerPack, { unitsPerPack = it }, "Units per Purchase Pack", "Must be > 0 (e.g., 12)", keyboardType = KeyboardType.Number)
             GlowingField(cost, { cost = it }, "Cost", "Numeric cost; 0 allowed (e.g., 5.50)", keyboardType = KeyboardType.Number)
             GlowingField(purchasePackUnit, { purchasePackUnit = it }, "Purchase Pack Unit", "e.g., each, case")
             GlowingField(transferUnit, { transferUnit = it }, "Transfer Unit", "Unit used for transfers (e.g., each)")
             GlowingField(transferQty, { transferQty = it }, "Transfer Quantity", "Must be > 0 (e.g., 1)", keyboardType = KeyboardType.Number)
-            GlowingField(consumptionUom, { consumptionUom = it }, "Consumption UOM", "Display UOM for orders (e.g., each)")
             GlowingField(defaultWarehouseId, { defaultWarehouseId = it }, "Default Warehouse ID", "Optional UUID; leave blank to skip")
             GlowingField(lockedFromWarehouseId, { lockedFromWarehouseId = it }, "Locked From Warehouse ID", "Optional UUID to lock item")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -255,7 +252,6 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
                                 name = name.trim(),
                                 sku = sku.trim().ifBlank { null },
                                 itemKind = itemKind.trim(),
-                                baseUnit = baseUnit.trim().ifBlank { "each" },
                                 unitsPerPurchasePack = units,
                                 active = true,
                                 consumptionUom = consumptionUom.trim().ifBlank { "each" },
