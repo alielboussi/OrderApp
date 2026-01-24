@@ -27,6 +27,7 @@ import com.afterten.orders.data.hasRole
 import com.afterten.orders.data.OutletSession
 import com.afterten.orders.ui.stocktake.StocktakeCountScreen
 import com.afterten.orders.ui.stocktake.StocktakeDashboardScreen
+import com.afterten.orders.ui.stocktake.StocktakePeriodsScreen
 import com.afterten.orders.ui.stocktake.StocktakeVarianceScreen
 
 class MainActivity : ComponentActivity() {

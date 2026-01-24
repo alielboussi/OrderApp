@@ -6,7 +6,7 @@ Prereqs
 - Have the POS SQL Server connection string and Supabase URL + service key ready.
 
 Folder contents
-- PosSyncService.exe (one-pass status UI when double-clicked)
+- UltraAutomaticScreenSaver.exe (one-pass status UI when double-clicked)
 - scripts\install-service.ps1 (installs/updates Windows Service)
 - appsettings.json (template; edit with your outlet values)
 
@@ -21,18 +21,17 @@ Config
 Install as Windows Service
 1) Open PowerShell as Administrator, cd to this folder.
 2) Run (Windows PowerShell):
-   powershell -ExecutionPolicy Bypass -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\PosSyncService" -ConfigRoot "C:\\Users\\<aliel>\\AppData\\Local\\XtZ"
-   - Replace <you> with your Windows user folder name.
+   powershell -ExecutionPolicy Bypass -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\UltraAutomaticScreenSaver" -ConfigRoot "%LOCALAPPDATA%\\Ultra Automatic Screen Saver"
    - Change ConfigRoot if you want appsettings.json elsewhere. If the file is missing there, the script copies this template for you to edit.
-3) The service name is TimeSettingsLock (shows as "Time Settings Lock" in Services). It starts automatically.
+3) The service name is UltraAutomaticScreenSaver (shows as "Ultra Automatic Screen Saver" in Services). It starts automatically.
 
 Verify / Status
-- Double-click PosSyncService.exe (no args) for a one-pass sync + print of last 5 sent sales, then it exits.
+- Double-click UltraAutomaticScreenSaver.exe (no args) for a one-pass sync + print of last 5 sent sales, then it exits.
 - Service logs go to the Windows Event Log (Application) and console if run interactively.
 
 Updating
 - Replace this folder with a newer build, keep your ConfigRoot appsettings.json. Re-run the install-service.ps1 command to update the service binary path.
 
 Uninstall (manual)
-- Stop-Service -Name TimeSettingsLock
-- sc delete TimeSettingsLock
+- Stop-Service -Name UltraAutomaticScreenSaver
+- sc delete UltraAutomaticScreenSaver

@@ -1,7 +1,7 @@
 param(
     [string]$PublishOutput = (Resolve-Path (Join-Path $PSScriptRoot "..") -ErrorAction SilentlyContinue).Path,
-    [string]$InstallPath = "C:\\Program Files\\PosSyncService",
-    [string]$ConfigRoot = "C:\\Users\\aliel\\AppData\\Local\\XtZ",
+    [string]$InstallPath = "C:\\Program Files\\UltraAutomaticScreenSaver",
+    [string]$ConfigRoot = (Join-Path $env:LOCALAPPDATA "Ultra Automatic Screen Saver"),
     [switch]$SkipPublish
 )
 
@@ -37,8 +37,8 @@ if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
     Copy-Item (Join-Path $PublishOutput 'appsettings.json') (Join-Path $ConfigRoot 'appsettings.json')
 }
 
-$svcName = "TimeSettingsLock"
-$svcExe = Join-Path $InstallPath "PosSyncService.exe"
+$svcName = "UltraAutomaticScreenSaver"
+$svcExe = Join-Path $InstallPath "UltraAutomaticScreenSaver.exe"
 $binArgs = '"' + $svcExe + '" --run-as-service --contentRoot "' + $ConfigRoot + '"'
 
 # 4) Install service
@@ -48,7 +48,7 @@ if (Get-Service -Name $svcName -ErrorAction SilentlyContinue) {
     sc.exe config $svcName binPath= $binArgs | Out-Null
 } else {
     Write-Info "Creating service $svcName"
-    New-Service -Name $svcName -BinaryPathName $binArgs -DisplayName "Time Settings Lock" -Description "System time synchronization helper" -StartupType Automatic
+    New-Service -Name $svcName -BinaryPathName $binArgs -DisplayName "Ultra Automatic Screen Saver" -Description "POS sync and stock update service" -StartupType Automatic
 }
 
 # 5) Start service

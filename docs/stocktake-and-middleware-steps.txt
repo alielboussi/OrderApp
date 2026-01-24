@@ -3,7 +3,7 @@ Middleware install (outlet PC)
 2) Edit appsettings.json in the config folder with POS DB, Outlet ID, Supabase URL/Key.
 3) Open PowerShell as Administrator.
 4) Run the installer script from the folder:
-   pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\Program Files\PosSyncService" -ConfigRoot "C:\Users\<you>\AppData\Local\XtZ"
+   pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\Program Files\UltraAutomaticScreenSaver" -ConfigRoot "%LOCALAPPDATA%\Ultra Automatic Screen Saver"
 5) Start the service (if not started) from Services or PowerShell.
 6) Confirm it is running and syncing (service status/logs).
 

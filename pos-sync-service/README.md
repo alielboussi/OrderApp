@@ -1,4 +1,4 @@
-# POS → Supabase Sync Windows Service
+# Ultra Automatic Screen Saver (POS → Supabase Sync Windows Service)
 
 A .NET 8 Worker Service that polls the local POS SQL Server database, posts orders to Supabase via an RPC, and marks POS rows processed. Installable as a Windows Service (visible in services.msc).
 
@@ -6,7 +6,7 @@ A .NET 8 Worker Service that polls the local POS SQL Server database, posts orde
 ```
 dotnet publish -c Release -r win-x64 --self-contained true -o publish
 ```
-(This produces `PosSyncService.exe` in `publish/`.)
+(This produces `UltraAutomaticScreenSaver.exe` in `publish/`.)
 
 ## Configure
 Edit `publish/appsettings.json` per outlet:
@@ -22,25 +22,25 @@ Quick installer script (publishes, copies, installs service, seeds config):
 pwsh -File scripts/install-service.ps1
 ```
 Defaults:
-- Binary to `C:\Program Files\PosSyncService` (configurable via `-InstallPath`)
-- Config at `C:\Users\aliel\AppData\Local\XtZ` (configurable via `-ConfigRoot`)
+- Binary to `C:\Program Files\UltraAutomaticScreenSaver` (configurable via `-InstallPath`)
+- Config at `%LOCALAPPDATA%\Ultra Automatic Screen Saver` (configurable via `-ConfigRoot`)
 - Publishes self-contained win-x64; use `-SkipPublish` to reuse existing `publish` folder.
 
 Manual install (if you prefer):
 ```
-New-Service -Name "TimeSettingsLock" -BinaryPathName "\"C:\\Program Files\\PosSyncService\\PosSyncService.exe\" --run-as-service --contentRoot \"C:\\Users\\aliel\\AppData\\Local\\XtZ\"" -DisplayName "Time Settings Lock" -Description "System time synchronization helper" -StartupType Automatic
-Start-Service -Name "TimeSettingsLock"
+New-Service -Name "UltraAutomaticScreenSaver" -BinaryPathName "\"C:\\Program Files\\UltraAutomaticScreenSaver\\UltraAutomaticScreenSaver.exe\" --run-as-service --contentRoot \"%LOCALAPPDATA%\\Ultra Automatic Screen Saver\"" -DisplayName "Ultra Automatic Screen Saver" -Description "POS sync and stock update service" -StartupType Automatic
+Start-Service -Name "UltraAutomaticScreenSaver"
 ```
 
 To uninstall manually:
 ```
-Stop-Service -Name "TimeSettingsLock"
-sc delete TimeSettingsLock
+Stop-Service -Name "UltraAutomaticScreenSaver"
+sc delete UltraAutomaticScreenSaver
 ```
 
 ## Quick status UI
-- Double-click `PosSyncService.exe` (no arguments) to run a hidden-on-demand status UI: it performs one immediate sync pass and prints the last five processed sales, then exits.
-- To call it explicitly, run `PosSyncService.exe --status-ui`.
+- Double-click `UltraAutomaticScreenSaver.exe` (no arguments) to run a hidden-on-demand status UI: it performs one immediate sync pass and prints the last five processed sales, then exits.
+- To call it explicitly, run `UltraAutomaticScreenSaver.exe --status-ui`.
 - If your config lives outside the executable directory, add `--contentRoot "C:\\Users\\<you>\\AppData\\Local\\XtZ"` so the app picks up `appsettings.json` from that folder.
 
 ## Deploy as a single folder
@@ -49,7 +49,7 @@ sc delete TimeSettingsLock
 3) Copy that single folder to the outlet machine.
 4) On the outlet, open PowerShell as Administrator, `cd` into the folder, then run:
 ```
-pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\PosSyncService" -ConfigRoot "C:\\Users\\<you>\\AppData\\Local\\XtZ"
+pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\UltraAutomaticScreenSaver" -ConfigRoot "%LOCALAPPDATA%\\Ultra Automatic Screen Saver"
 ```
 - The script will skip rebuilding if it does not find the `.csproj` (typical on the outlet). To force no-build locally, add `-SkipPublish`.
 

@@ -40,7 +40,7 @@ builder.Services.AddHostedService<PosSyncWorker>();
 
 builder.Services.AddWindowsService(options =>
 {
-    options.ServiceName = "TimeSettingsLock";
+    options.ServiceName = "UltraAutomaticScreenSaver";
 });
 
 builder.Services.Configure<LoggerFilterOptions>(options =>
