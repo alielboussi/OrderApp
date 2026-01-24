@@ -34,6 +34,7 @@ public sealed record PosLineItem(
     decimal Discount,
     decimal Tax,
     string? FlavourId,
+    string? ModifierId,
     string? VariantId,
     string? VariantKey
 );

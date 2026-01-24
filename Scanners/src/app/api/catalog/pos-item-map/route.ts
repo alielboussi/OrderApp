@@ -158,6 +158,9 @@ export async function POST(request: Request) {
     if (!pos_item_id) return NextResponse.json({ error: "pos_item_id is required" }, { status: 400 });
     if (!catalog_item_id) return NextResponse.json({ error: "catalog_item_id is required" }, { status: 400 });
     if (!outlet_id) return NextResponse.json({ error: "outlet_id is required" }, { status: 400 });
+    if (pos_item_id === catalog_item_id) {
+      return NextResponse.json({ error: "pos_item_id cannot be the same as catalog_item_id" }, { status: 400 });
+    }
 
     const supabase = getServiceClient();
     const basePayload: Record<string, any> = {

@@ -236,7 +236,7 @@ export default function PosItemMapPage() {
               <div className={`${styles.tableRow} ${styles.formRow}`}>
                 <input
                   className={styles.searchInput}
-                  placeholder="POS item id"
+                  placeholder="POS item id (from POS)"
                   value={form.pos_item_id}
                   onChange={(e) => setForm((f) => ({ ...f, pos_item_id: e.target.value }))}
                 />
@@ -351,9 +351,17 @@ export default function PosItemMapPage() {
                     setError(null);
                     try {
                       const selectedCatalog = items.find((it) => it.id === form.catalog_item_id.trim());
-                      const derivedPosItemId = form.pos_item_id.trim() || form.catalog_item_id.trim();
+                      const derivedPosItemId = form.pos_item_id.trim();
                       const derivedPosItemName = form.pos_item_name.trim() || selectedCatalog?.name || null;
                       const variantKeys = selectedVariantKeys.length ? selectedVariantKeys : [form.catalog_variant_key || "base"];
+                      if (!derivedPosItemId) {
+                        setError("POS item id is required");
+                        return;
+                      }
+                      if (derivedPosItemId === form.catalog_item_id.trim()) {
+                        setError("POS item id cannot be the same as the catalog item id");
+                        return;
+                      }
                       await Promise.all(
                         variantKeys.map((variantKey) =>
                           fetch("/api/catalog/pos-item-map", {

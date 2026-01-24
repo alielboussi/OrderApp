@@ -186,7 +186,8 @@ public sealed class SupabaseClient
                 sale_price = i.SalePrice,
                 vat_exc_price = i.VatExclusivePrice,
                 flavour_price = i.FlavourPrice,
-                flavour_id = i.FlavourId
+                flavour_id = i.FlavourId,
+                modifier_id = i.ModifierId
             }).ToList(),
             payments = order.Payments.Select(p => new { method = p.Method, amount = p.Amount }).ToList(),
             customer = order.Customer is null ? null : new

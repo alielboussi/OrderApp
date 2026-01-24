@@ -853,7 +853,7 @@ export default function OutletSetupPage() {
       return;
     }
     const outletId = posForm.outlet_id.trim();
-    const derivedPosItemId = posForm.pos_item_id.trim() || catalogId;
+    const derivedPosItemId = posForm.pos_item_id.trim();
     const selectedCatalog = items.find((it) => it.id === catalogId);
     const derivedPosItemName = posForm.pos_item_name.trim() || selectedCatalog?.name || null;
 
@@ -862,7 +862,11 @@ export default function OutletSetupPage() {
     );
 
     if (!derivedPosItemId || !catalogId || !outletId) {
-      setPosError({ ok: false, text: "Catalog item and outlet are required" });
+      setPosError({ ok: false, text: "POS item id, catalog item, and outlet are required" });
+      return;
+    }
+    if (derivedPosItemId === catalogId) {
+      setPosError({ ok: false, text: "POS item id cannot be the same as the catalog item id" });
       return;
     }
     setPosCreating(true);
@@ -1331,6 +1335,30 @@ export default function OutletSetupPage() {
             </p>
 
             <div className={styles.controlsRow}>
+              <input
+                className={styles.input}
+                placeholder="POS item id (from POS)"
+                value={posForm.pos_item_id}
+                onChange={(e) => updatePosForm("pos_item_id", e.target.value)}
+              />
+              <input
+                className={styles.input}
+                placeholder="POS item name (optional)"
+                value={posForm.pos_item_name}
+                onChange={(e) => updatePosForm("pos_item_name", e.target.value)}
+              />
+              <input
+                className={styles.input}
+                placeholder="POS flavour id (optional)"
+                value={posForm.pos_flavour_id}
+                onChange={(e) => updatePosForm("pos_flavour_id", e.target.value)}
+              />
+              <input
+                className={styles.input}
+                placeholder="POS flavour name (optional)"
+                value={posForm.pos_flavour_name}
+                onChange={(e) => updatePosForm("pos_flavour_name", e.target.value)}
+              />
               <select
                 className={styles.select}
                 value={posForm.catalog_item_id}
@@ -1338,7 +1366,6 @@ export default function OutletSetupPage() {
                   const itemId = e.target.value;
                   updatePosForm("catalog_item_id", itemId);
                   updatePosForm("catalog_variant_key", "base");
-                  if (!posForm.pos_item_id) updatePosForm("pos_item_id", itemId);
                   if (!posForm.pos_item_name) {
                     const named = items.find((it) => it.id === itemId)?.name ?? "";
                     updatePosForm("pos_item_name", named);

@@ -251,7 +251,8 @@ ORDER BY bt.id DESC;";
            sd.Price AS UnitPrice,
            sd.Itemdiscount AS Discount,
            sd.ItemGst AS Tax,
-           sd.FlavourId AS FlavourId
+            sd.FlavourId AS FlavourId,
+            sd.ModifierId AS ModifierId
     FROM dbo.Saledetails sd WITH (NOLOCK)
     LEFT JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = sd.MenuItemId
     WHERE sd.saleid = @SaleId;";
@@ -277,6 +278,10 @@ ORDER BY bt.id DESC;";
             var flavourId = flavourOrdinal is null || reader.IsDBNull(flavourOrdinal.Value)
                 ? null
                 : reader.GetValue(flavourOrdinal.Value)?.ToString();
+            var modifierOrdinal = TryGetOrdinal(reader, "ModifierId");
+            var modifierId = modifierOrdinal is null || reader.IsDBNull(modifierOrdinal.Value)
+                ? null
+                : reader.GetValue(modifierOrdinal.Value)?.ToString();
 
             items.Add(new PosLineItem(
                 PosItemId: reader["ItemId"].ToString() ?? string.Empty,
@@ -289,6 +294,7 @@ ORDER BY bt.id DESC;";
                 Discount: reader.IsDBNull(reader.GetOrdinal("Discount")) ? 0 : Convert.ToDecimal(reader["Discount"]),
                 Tax: reader.IsDBNull(reader.GetOrdinal("Tax")) ? 0 : Convert.ToDecimal(reader["Tax"]),
                 FlavourId: flavourId,
+                ModifierId: modifierId,
                 VariantId: null,
                 VariantKey: null
             ));
