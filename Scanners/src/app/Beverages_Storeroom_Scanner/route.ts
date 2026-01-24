@@ -1943,6 +1943,8 @@ function createHtml(config: {
     const REQUIRED_ROLE = 'supervisor';
     const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
+    const BACKOFFICE_ROLE_ID = 'de9f2075-9c97-4da1-a2a0-59ed162947e7';
+    const ALLOWED_USER_IDS = ['fd52f4c1-2403-4670-bdd6-97b4ca7580aa'];
     const ALLOWED_ROLE_SLUGS = ['supervisor', 'administrator'];
     const REQUIRED_ROLE_LABEL = 'Supervisor';
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -4670,12 +4672,16 @@ function createHtml(config: {
           effectiveRoles.push('admin');
         }
         console.log('whoami_roles result', { record, effectiveRoles });
+        const recordUserId = record?.user_id ?? record?.auth_user_id ?? record?.id ?? null;
+        if (recordUserId && ALLOWED_USER_IDS.includes(recordUserId)) {
+          return true;
+        }
         const hasRole = effectiveRoles.some((role) => {
           if (!role) return false;
           if (typeof role === 'string') {
             const trimmed = role.trim();
             if (!trimmed) return false;
-            if (trimmed === REQUIRED_ROLE_ID || trimmed === ADMIN_ROLE_ID) return true;
+            if (trimmed === REQUIRED_ROLE_ID || trimmed === ADMIN_ROLE_ID || trimmed === BACKOFFICE_ROLE_ID) return true;
             return ALLOWED_ROLE_SLUGS.includes(trimmed.toLowerCase());
           }
           if (typeof role === 'object') {
@@ -4692,6 +4698,7 @@ function createHtml(config: {
             return (
               roleId === REQUIRED_ROLE_ID ||
               roleId === ADMIN_ROLE_ID ||
+              roleId === BACKOFFICE_ROLE_ID ||
               (slug !== null && ALLOWED_ROLE_SLUGS.includes(slug))
             );
           }

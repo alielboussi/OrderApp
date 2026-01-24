@@ -59,6 +59,9 @@ sealed class Routes(val route: String) {
     data object StocktakeCount : Routes("stocktake_count/{periodId}") {
         fun route(periodId: String) = "stocktake_count/$periodId"
     }
+    data object StocktakePeriods : Routes("stocktake_periods/{warehouseId}") {
+        fun route(warehouseId: String) = "stocktake_periods/$warehouseId"
+    }
     data object StocktakeVariance : Routes("stocktake_variance/{periodId}") {
         fun route(periodId: String) = "stocktake_variance/$periodId"
     }
@@ -174,7 +177,19 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 root = appViewModel,
                 onBack = { navController.popBackStack() },
                 onOpenCounts = { periodId -> navController.navigate(Routes.StocktakeCount.route(periodId)) },
-                onOpenVariance = { periodId -> navController.navigate(Routes.StocktakeVariance.route(periodId)) }
+                onOpenVariance = { periodId -> navController.navigate(Routes.StocktakeVariance.route(periodId)) },
+                onOpenPeriods = { warehouseId -> navController.navigate(Routes.StocktakePeriods.route(warehouseId)) }
+            )
+        }
+        composable(
+            route = Routes.StocktakePeriods.route,
+            arguments = listOf(navArgument("warehouseId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val warehouseId = backStackEntry.arguments?.getString("warehouseId") ?: ""
+            StocktakePeriodsScreen(
+                root = appViewModel,
+                warehouseId = warehouseId,
+                onBack = { navController.popBackStack() }
             )
         }
         composable(

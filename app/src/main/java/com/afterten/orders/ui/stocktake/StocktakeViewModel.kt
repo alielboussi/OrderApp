@@ -35,6 +35,9 @@ class StocktakeViewModel(
         val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
+        val periods: List<StocktakeRepository.StockPeriod> = emptyList(),
+        val periodsLoading: Boolean = false,
+        val periodsError: String? = null,
         val variance: List<StocktakeRepository.VarianceRow> = emptyList(),
         val openingLockedKeys: Set<String> = emptySet(),
         val lastCount: StocktakeRepository.StockCount? = null,
@@ -272,13 +275,47 @@ class StocktakeViewModel(
     fun closePeriod() {
         val jwt = session?.token ?: return
         val periodId = _ui.value.openPeriod?.id ?: return
+        val warehouseId = _ui.value.selectedWarehouseId ?: return
         pushDebug("closePeriod id=$periodId")
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch {
             runCatching { repo.closePeriod(jwt, periodId) }
                 .onSuccess { period ->
                     pushDebug("closePeriod success id=${period.id}")
-                    _ui.value = _ui.value.copy(openPeriod = period, loading = false, error = null)
+                    val newPeriod = runCatching { repo.startPeriod(jwt, warehouseId, "Auto-opened from ${period.stocktakeNumber ?: period.id}") }
+                        .onFailure { err -> pushDebug("auto startPeriod failed: ${err.message}") }
+                        .getOrNull()
+
+                    if (newPeriod != null) {
+                        val closingCounts = runCatching { repo.listClosingCountsForPeriod(jwt, periodId) }
+                            .onFailure { err -> pushDebug("listClosingCountsForPeriod failed: ${err.message}") }
+                            .getOrElse { emptyList() }
+
+                        closingCounts.forEach { row ->
+                            val key = row.variantKey?.ifBlank { "base" } ?: "base"
+                            runCatching {
+                                repo.recordCount(
+                                    jwt = jwt,
+                                    periodId = newPeriod.id,
+                                    itemId = row.itemId,
+                                    qty = row.countedQty,
+                                    variantKey = key,
+                                    kind = "opening",
+                                    context = mapOf(
+                                        "source" to "auto-carryover",
+                                        "from_period_id" to periodId
+                                    )
+                                )
+                            }.onFailure { err ->
+                                pushDebug("auto opening record failed item=${row.itemId} variant=$key: ${err.message}")
+                            }
+                        }
+                        _ui.value = _ui.value.copy(openPeriod = newPeriod, loading = false, error = null)
+                        refreshOpeningLocks(newPeriod.id)
+                        loadItems(warehouseId)
+                    } else {
+                        _ui.value = _ui.value.copy(openPeriod = period, loading = false, error = null)
+                    }
                 }
                 .onFailure { err ->
                     pushDebug("closePeriod failed: ${err.message}")
@@ -301,6 +338,23 @@ class StocktakeViewModel(
                 .onFailure { err ->
                     pushDebug("loadVariance failed: ${err.message}")
                     _ui.value = _ui.value.copy(loading = false, error = err.message)
+                }
+        }
+    }
+
+    fun loadPeriods(warehouseId: String) {
+        val jwt = session?.token ?: return
+        pushDebug("loadPeriods warehouse=$warehouseId")
+        _ui.value = _ui.value.copy(periodsLoading = true, periodsError = null)
+        viewModelScope.launch {
+            runCatching { repo.listPeriods(jwt, warehouseId) }
+                .onSuccess { rows ->
+                    pushDebug("periods fetched=${rows.size}")
+                    _ui.value = _ui.value.copy(periods = rows, periodsLoading = false, periodsError = null)
+                }
+                .onFailure { err ->
+                    pushDebug("loadPeriods failed: ${err.message}")
+                    _ui.value = _ui.value.copy(periodsLoading = false, periodsError = err.message)
                 }
         }
     }

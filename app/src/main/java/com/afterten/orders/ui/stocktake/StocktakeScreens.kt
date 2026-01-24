@@ -89,7 +89,8 @@ fun StocktakeDashboardScreen(
     root: RootViewModel,
     onBack: () -> Unit,
     onOpenCounts: (String) -> Unit,
-    onOpenVariance: (String) -> Unit
+    onOpenVariance: (String) -> Unit,
+    onOpenPeriods: (String) -> Unit
 ) {
     val session by root.session.collectAsState()
     val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
@@ -271,6 +272,103 @@ fun StocktakeDashboardScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                         border = BorderStroke(1.dp, primaryRed)
                     ) { Text("Close period") }
+                }
+            }
+        }
+
+        OutlinedButton(
+            onClick = { ui.selectedWarehouseId?.let(onOpenPeriods) },
+            enabled = ui.selectedWarehouseId != null && !ui.loading,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+            border = BorderStroke(1.dp, primaryRed)
+        ) { Text("View opening & closing periods") }
+
+        TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Back", color = Color.White)
+        }
+    }
+}
+
+@Composable
+fun StocktakePeriodsScreen(
+    root: RootViewModel,
+    warehouseId: String,
+    onBack: () -> Unit
+) {
+    val session by root.session.collectAsState()
+    val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
+    LaunchedEffect(session?.token) { vm.bindSession(session) }
+    LaunchedEffect(warehouseId, session?.token) {
+        if (warehouseId.isNotBlank()) vm.loadPeriods(warehouseId)
+    }
+    val ui by vm.ui.collectAsState()
+
+    if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
+        AccessDeniedCard(
+            title = "Stocktake role required",
+            message = "Ask an admin to assign the Stocktake role to your account.",
+            primaryLabel = "Back",
+            onPrimary = onBack
+        )
+        return
+    }
+
+    val primaryRed = Color(0xFFD50000)
+    val surfaceBlack = Color.Black
+
+    fun formatStamp(raw: String?): String {
+        if (raw.isNullOrBlank()) return "—"
+        val trimmed = raw.replace('T', ' ')
+        return if (trimmed.length > 19) trimmed.take(19) else trimmed
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("Stocktake periods", fontWeight = FontWeight.Bold, color = Color.White)
+            Spacer(Modifier.size(40.dp))
+        }
+
+        if (ui.periodsLoading) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                CircularProgressIndicator(color = primaryRed)
+            }
+        }
+
+        ui.periodsError?.let {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.Black), border = BorderStroke(1.dp, primaryRed)) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, color = Color.White)
+                }
+            }
+        }
+
+        if (ui.periods.isEmpty() && !ui.periodsLoading) {
+            Text("No stocktake periods found for this warehouse.", color = Color.White)
+        }
+
+        ui.periods.forEach { period ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                border = BorderStroke(1.dp, primaryRed)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(period.stocktakeNumber ?: period.id.take(8), fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Status: ${period.status}", color = Color.White)
+                    Text("Opened: ${formatStamp(period.openedAt)}", color = Color.White)
+                    Text("Closed: ${formatStamp(period.closedAt)}", color = Color.White)
+                    period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
                 }
             }
         }

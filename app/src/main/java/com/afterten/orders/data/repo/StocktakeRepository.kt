@@ -48,6 +48,14 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     )
 
     @Serializable
+    data class StockCountRow(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        @SerialName("counted_qty") val countedQty: Double,
+        val kind: String? = null
+    )
+
+    @Serializable
     data class VarianceRow(
         @SerialName("period_id") val periodId: String,
         @SerialName("warehouse_id") val warehouseId: String,
@@ -123,6 +131,13 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         return list.firstOrNull()
     }
 
+    suspend fun listPeriods(jwt: String, warehouseId: String, limit: Int = 30): List<StockPeriod> {
+        val select = encode("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number")
+        val path = "/rest/v1/warehouse_stock_periods?select=${select}&warehouse_id=eq.${warehouseId}&order=opened_at.desc&limit=${limit}"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(StockPeriod.serializer()), text)
+    }
+
     suspend fun recordCount(
         jwt: String,
         periodId: String,
@@ -174,6 +189,13 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         val path = "/rest/v1/warehouse_stock_counts?select=${select}&period_id=eq.${periodId}&kind=eq.${kind}"
         val text = supabase.getWithJwt(path, jwt)
         return json.decodeFromString(ListSerializer(StockCountKeyRow.serializer()), text)
+    }
+
+    suspend fun listClosingCountsForPeriod(jwt: String, periodId: String): List<StockCountRow> {
+        val select = encode("item_id,variant_key,counted_qty,kind")
+        val path = "/rest/v1/warehouse_stock_counts?select=${select}&period_id=eq.${periodId}&kind=eq.closing"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(StockCountRow.serializer()), text)
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
