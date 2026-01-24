@@ -22,6 +22,23 @@ async function isPlatformAdmin(supabase: SupabaseClient, userId: string): Promis
   return Boolean(data?.user_id);
 }
 
+const READONLY_USER_ID = "fd52f4c1-2403-4670-bdd6-97b4ca7580aa";
+const BACKOFFICE_ROLE_ID = "de9f2075-9c97-4da1-a2a0-59ed162947e7";
+
+async function hasBackofficeRole(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("user_roles")
+    .select("role_id")
+    .eq("user_id", userId)
+    .eq("role_id", BACKOFFICE_ROLE_ID)
+    .maybeSingle();
+  if (error) {
+    if ((error as { code?: string }).code === "PGRST116") return false;
+    throw error;
+  }
+  return Boolean(data?.role_id);
+}
+
 export default function WarehouseBackofficeLogin() {
   const router = useRouter();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
@@ -40,7 +57,9 @@ export default function WarehouseBackofficeLogin() {
 
       const user = data?.user ?? (await supabase.auth.getUser()).data.user;
       const userId = user?.id ?? "";
-      const allowed = userId ? await isPlatformAdmin(supabase, userId) : false;
+      const allowed = userId
+        ? (await isPlatformAdmin(supabase, userId)) || (await hasBackofficeRole(supabase, userId)) || userId === READONLY_USER_ID
+        : false;
 
       if (!allowed) {
         await supabase.auth.signOut();

@@ -68,7 +68,7 @@ const defaultForm: FormState = {
 function ProductCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [saving, setSaving] = useState(false);
@@ -148,6 +148,10 @@ function ProductCreatePage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (readOnly) {
+      setResult({ ok: false, message: "Read-only access: saving is disabled." });
+      return;
+    }
     setSaving(true);
     setResult(null);
     try {
@@ -357,8 +361,8 @@ function ProductCreatePage() {
             <button type="button" onClick={() => setForm(defaultForm)} className={styles.secondaryButton}>
               Clear form
             </button>
-            <button type="submit" className={styles.primaryButton} disabled={saving}>
-              {saving ? "Saving..." : "Save product"}
+            <button type="submit" className={styles.primaryButton} disabled={saving || readOnly}>
+              {readOnly ? "Read-only" : saving ? "Saving..." : "Save product"}
             </button>
           </div>
         </form>

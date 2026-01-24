@@ -62,7 +62,7 @@ type Alert = { ok: boolean; text: string } | null;
 
 export default function OutletSetupPage() {
   const router = useRouter();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
 
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -535,6 +535,10 @@ export default function OutletSetupPage() {
   };
 
   const saveRoutes = async (group: RoutingGroup) => {
+    if (readOnly) {
+      setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Read-only access: saving is disabled." } }));
+      return;
+    }
     const selection =
       group === "ingredient"
         ? { itemId: selectedIngredientId, variantKeys: ["base"] }
@@ -598,6 +602,10 @@ export default function OutletSetupPage() {
   };
 
   const saveAllRoutes = async (): Promise<boolean> => {
+    if (readOnly) {
+      setSaveAllMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return false;
+    }
     if (!selectedProductId) {
       setSaveAllMessage({ ok: false, text: "Select a product first" });
       return false;
@@ -623,6 +631,10 @@ export default function OutletSetupPage() {
 
 
   const saveDefaultWarehouse = async () => {
+    if (readOnly) {
+      setDefaultWarehouseMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     if (!selectedIngredientId) {
       setDefaultWarehouseMessage({ ok: false, text: "Choose an ingredient first" });
       return;
@@ -660,6 +672,10 @@ export default function OutletSetupPage() {
   };
 
   const saveProductDefaultWarehouse = async () => {
+    if (readOnly) {
+      setProductDefaultWarehouseMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     if (!selectedProductId) {
       setProductDefaultWarehouseMessage({ ok: false, text: "Choose a product first" });
       return;
@@ -737,6 +753,10 @@ export default function OutletSetupPage() {
   };
 
   const saveStorageHomesAll = async (): Promise<boolean> => {
+    if (readOnly) {
+      setStorageAllMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return false;
+    }
     const hasAnySelection = selectedProductId || selectedIngredientId || selectedRawId;
     if (!hasAnySelection) {
       setStorageAllMessage({ ok: false, text: "Select a product, ingredient, or raw first" });
@@ -762,6 +782,10 @@ export default function OutletSetupPage() {
   };
 
   const saveRawDefaultWarehouse = async () => {
+    if (readOnly) {
+      setRawDefaultWarehouseMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     if (!selectedRawId) {
       setRawDefaultWarehouseMessage({ ok: false, text: "Choose a raw first" });
       return;
@@ -799,6 +823,10 @@ export default function OutletSetupPage() {
   };
 
   const saveEverything = async () => {
+    if (readOnly) {
+      setCombinedSaveMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     setSavingAll(true);
     setCombinedSaveMessage(null);
     try {
@@ -820,6 +848,10 @@ export default function OutletSetupPage() {
 
   const createPosMapping = async () => {
     const catalogId = posForm.catalog_item_id.trim();
+    if (readOnly) {
+      setPosError({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     const outletId = posForm.outlet_id.trim();
     const derivedPosItemId = posForm.pos_item_id.trim() || catalogId;
     const selectedCatalog = items.find((it) => it.id === catalogId);
@@ -830,7 +862,7 @@ export default function OutletSetupPage() {
     );
 
     if (!derivedPosItemId || !catalogId || !outletId) {
-      setPosError({ ok: false, text: "POS item id, catalog item id, and outlet are required" });
+      setPosError({ ok: false, text: "Catalog item and outlet are required" });
       return;
     }
     setPosCreating(true);
@@ -881,6 +913,10 @@ export default function OutletSetupPage() {
   };
 
   const deletePosMapping = async (mapping: PosMapping) => {
+    if (readOnly) {
+      setPosError({ ok: false, text: "Read-only access: delete is disabled." });
+      return;
+    }
     const params = new URLSearchParams({
       pos_item_id: mapping.pos_item_id,
       catalog_item_id: mapping.catalog_item_id,
@@ -1160,9 +1196,9 @@ export default function OutletSetupPage() {
                 type="button"
                 className={`${styles.minimalButton} ${styles.minimalPrimary}`}
                 onClick={saveEverything}
-                disabled={savingAll || mappingsSaving || storageHomesSaving}
+                disabled={savingAll || mappingsSaving || storageHomesSaving || readOnly}
               >
-                {savingAll ? "Saving..." : "Save all"}
+                {readOnly ? "Read-only" : savingAll ? "Saving..." : "Save all"}
               </button>
             </div>
 
@@ -1275,7 +1311,10 @@ export default function OutletSetupPage() {
                           <button
                             className={styles.secondaryButton}
                             onClick={() => deletePosMapping(m)}
-                            disabled={posDeletingKey === `${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}-${m.warehouse_id ?? "_"}`}
+                            disabled={
+                              readOnly ||
+                              posDeletingKey === `${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}-${m.warehouse_id ?? "_"}`
+                            }
                           >
                             {posDeletingKey === `${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}-${m.warehouse_id ?? "_"}` ? "Deleting…" : "Delete"}
                           </button>
@@ -1373,9 +1412,9 @@ export default function OutletSetupPage() {
                 <button
                   className={styles.primaryButton}
                   onClick={createPosMapping}
-                  disabled={posCreating}
+                  disabled={posCreating || readOnly}
                 >
-                  {posCreating ? "Creating..." : "Add mapping"}
+                  {readOnly ? "Read-only" : posCreating ? "Creating..." : "Add mapping"}
                 </button>
               </div>
             </div>

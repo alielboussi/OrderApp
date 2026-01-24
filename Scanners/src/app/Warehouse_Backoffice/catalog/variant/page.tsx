@@ -96,7 +96,7 @@ const defaultForm: FormState = {
 function VariantCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -185,6 +185,10 @@ function VariantCreatePage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (readOnly) {
+      setResult({ ok: false, message: "Read-only access: saving is disabled." });
+      return;
+    }
     setSaving(true);
     setResult(null);
     try {
@@ -396,8 +400,8 @@ function VariantCreatePage() {
             <button type="button" onClick={() => setForm(defaultForm)} className={styles.secondaryButton}>
               Clear form
             </button>
-            <button type="submit" className={styles.primaryButton} disabled={saving}>
-              {saving ? "Saving..." : "Save variant"}
+            <button type="submit" className={styles.primaryButton} disabled={saving || readOnly}>
+              {readOnly ? "Read-only" : saving ? "Saving..." : "Save variant"}
             </button>
           </div>
         </form>

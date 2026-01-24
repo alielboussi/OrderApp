@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./recipes.module.css";
 
 type ItemKind = "raw" | "ingredient" | "finished";
@@ -51,6 +52,7 @@ function toErrorMessage(error: unknown): string {
 export default function RecipesPage() {
   const router = useRouter();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
+  const { status, readOnly } = useWarehouseAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -242,6 +244,11 @@ export default function RecipesPage() {
   const validIngredientLines = ingredientLines.filter((l) => l.ingredientId && l.qty);
 
   const submitFinishedRecipe = async () => {
+    if (readOnly) {
+      setError("Read-only access: saving is disabled.");
+      setSuccess(null);
+      return;
+    }
     if (!selectedFinished || validFinishedLines.length === 0) {
       setError("Pick a finished product and add at least one ingredient line.");
       setSuccess(null);
@@ -284,6 +291,11 @@ export default function RecipesPage() {
   };
 
   const submitIngredientRecipe = async () => {
+    if (readOnly) {
+      setError("Read-only access: saving is disabled.");
+      setSuccess(null);
+      return;
+    }
     if (!selectedIngredientTarget || validIngredientLines.length === 0) {
       setError("Pick the ingredient to prepare and add at least one raw material line.");
       setSuccess(null);
@@ -325,6 +337,8 @@ export default function RecipesPage() {
     }
   };
 
+  if (status !== "ok") return null;
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -358,8 +372,8 @@ export default function RecipesPage() {
               Choose a sellable finished product, then list the ingredient items it uses per unit.
             </p>
           </div>
-          <button className={styles.primaryButton} onClick={submitFinishedRecipe} disabled={loading}>
-            {hasFinishedRecipe ? "Update finished product recipe" : "Save finished product recipe"}
+          <button className={styles.primaryButton} onClick={submitFinishedRecipe} disabled={loading || readOnly}>
+            {readOnly ? "Read-only" : hasFinishedRecipe ? "Update finished product recipe" : "Save finished product recipe"}
           </button>
         </div>
 
@@ -458,8 +472,8 @@ export default function RecipesPage() {
               Choose an ingredient you prepare, then list the raw materials it consumes per unit.
             </p>
           </div>
-          <button className={styles.primaryButton} onClick={submitIngredientRecipe} disabled={loading}>
-            {hasIngredientRecipe ? "Update ingredient recipe" : "Save ingredient recipe"}
+          <button className={styles.primaryButton} onClick={submitIngredientRecipe} disabled={loading || readOnly}>
+            {readOnly ? "Read-only" : hasIngredientRecipe ? "Update ingredient recipe" : "Save ingredient recipe"}
           </button>
         </div>
 

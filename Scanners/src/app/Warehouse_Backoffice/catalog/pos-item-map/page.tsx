@@ -26,7 +26,7 @@ type Variant = { id: string; item_id: string; name?: string | null };
 
 export default function PosItemMapPage() {
   const router = useRouter();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -36,6 +36,7 @@ export default function PosItemMapPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selectedVariantKeys, setSelectedVariantKeys] = useState<string[]>(["base"]);
   const initialForm = {
     pos_item_id: "",
     pos_item_name: "",
@@ -221,7 +222,7 @@ export default function PosItemMapPage() {
               )}
             </section>
 
-            <section className={styles.tableCard}>
+            <section className={`${styles.tableCard} ${styles.formCard}`}>
               <div className={styles.tableHead}>
                 <span>POS Item ID</span>
                 <span>POS Item Name</span>
@@ -232,7 +233,7 @@ export default function PosItemMapPage() {
                 <span>Warehouse</span>
                 <span>Outlet</span>
               </div>
-              <div className={styles.tableRow}>
+              <div className={`${styles.tableRow} ${styles.formRow}`}>
                 <input
                   className={styles.searchInput}
                   placeholder="POS item id"
@@ -257,10 +258,16 @@ export default function PosItemMapPage() {
                   value={form.pos_flavour_name}
                   onChange={(e) => setForm((f) => ({ ...f, pos_flavour_name: e.target.value }))}
                 />
+              </div>
+              <div className={`${styles.tableRow} ${styles.formRow}`}>
                 <select
                   className={styles.searchInput}
                   value={form.catalog_item_id}
-                  onChange={(e) => setForm((f) => ({ ...f, catalog_item_id: e.target.value, catalog_variant_key: "base" }))}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setForm((f) => ({ ...f, catalog_item_id: next, catalog_variant_key: "base" }));
+                    setSelectedVariantKeys(["base"]);
+                  }}
                   aria-label="Select catalog item"
                 >
                   {itemOptions.map((opt) => (
@@ -269,19 +276,38 @@ export default function PosItemMapPage() {
                     </option>
                   ))}
                 </select>
-                <select
-                  className={styles.searchInput}
-                  value={form.catalog_variant_key}
-                  onChange={(e) => setForm((f) => ({ ...f, catalog_variant_key: e.target.value }))}
-                  disabled={!form.catalog_item_id}
-                  aria-label="Select catalog variant"
-                >
-                  {variantOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.variantChooser} aria-label="Catalog variants">
+                  {!form.catalog_item_id ? (
+                    <div className={styles.variantHint}>Select a product to choose variants</div>
+                  ) : (
+                    <div className={styles.variantList}>
+                      {variantOptions.map((opt) => {
+                        const checked = selectedVariantKeys.includes(opt.value);
+                        return (
+                          <label key={opt.value} className={styles.variantOption}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                setSelectedVariantKeys((prev) => {
+                                  if (isChecked) return Array.from(new Set([...prev, opt.value]));
+                                  const next = prev.filter((v) => v !== opt.value);
+                                  return next.length ? next : ["base"];
+                                });
+                                if (isChecked) {
+                                  setForm((f) => ({ ...f, catalog_variant_key: opt.value }));
+                                }
+                              }}
+                            />
+                            <span>{opt.label}</span>
+                          </label>
+                        );
+                      })}
+                      <div className={styles.variantHint}>Select multiple variants to map in one action.</div>
+                    </div>
+                  )}
+                </div>
                 <select
                   className={styles.searchInput}
                   value={form.warehouse_id}
@@ -313,32 +339,41 @@ export default function PosItemMapPage() {
                 <button
                   className={styles.primaryButton}
                   onClick={async () => {
-                    if (!form.pos_item_id.trim() || !form.catalog_item_id.trim() || !form.outlet_id.trim()) {
-                      setError("POS item id, catalog item, and outlet are required");
+                    if (readOnly) {
+                      setError("Read-only access: saving is disabled.");
+                      return;
+                    }
+                    if (!form.catalog_item_id.trim() || !form.outlet_id.trim()) {
+                      setError("Catalog item and outlet are required");
                       return;
                     }
                     setCreating(true);
                     setError(null);
                     try {
-                      const res = await fetch("/api/catalog/pos-item-map", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          pos_item_id: form.pos_item_id.trim(),
-                          pos_item_name: form.pos_item_name.trim() || null,
-                          pos_flavour_id: form.pos_flavour_id.trim() || null,
-                          pos_flavour_name: form.pos_flavour_name.trim() || null,
-                          catalog_item_id: form.catalog_item_id.trim(),
-                          catalog_variant_key: form.catalog_variant_key.trim() || "base",
-                          warehouse_id: form.warehouse_id.trim() || null,
-                          outlet_id: form.outlet_id.trim(),
-                        }),
-                      });
-                      if (!res.ok) {
-                        const body = await res.json().catch(() => ({}));
-                        throw new Error(body.error || "Failed to create mapping");
-                      }
+                      const selectedCatalog = items.find((it) => it.id === form.catalog_item_id.trim());
+                      const derivedPosItemId = form.pos_item_id.trim() || form.catalog_item_id.trim();
+                      const derivedPosItemName = form.pos_item_name.trim() || selectedCatalog?.name || null;
+                      const variantKeys = selectedVariantKeys.length ? selectedVariantKeys : [form.catalog_variant_key || "base"];
+                      await Promise.all(
+                        variantKeys.map((variantKey) =>
+                          fetch("/api/catalog/pos-item-map", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              pos_item_id: derivedPosItemId,
+                              pos_item_name: derivedPosItemName,
+                              pos_flavour_id: form.pos_flavour_id.trim() || null,
+                              pos_flavour_name: form.pos_flavour_name.trim() || null,
+                              catalog_item_id: form.catalog_item_id.trim(),
+                              catalog_variant_key: variantKey || "base",
+                              warehouse_id: form.warehouse_id.trim() || null,
+                              outlet_id: form.outlet_id.trim(),
+                            }),
+                          })
+                        )
+                      );
                       resetForm();
+                      setSelectedVariantKeys(["base"]);
                       await load();
                     } catch (err) {
                       console.error(err);
@@ -347,9 +382,9 @@ export default function PosItemMapPage() {
                       setCreating(false);
                     }
                   }}
-                  disabled={creating}
+                  disabled={creating || readOnly}
                 >
-                  {creating ? "Creating..." : "Create Map"}
+                  {readOnly ? "Read-only" : creating ? "Creating..." : "Create Map"}
                 </button>
               </div>
             </section>

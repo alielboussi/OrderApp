@@ -29,7 +29,7 @@ type ItemWithVariants = { item: Item; variants: Variant[] };
 
 export default function CatalogMenuPage() {
   const router = useRouter();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [search, setSearch] = useState("");
@@ -60,6 +60,10 @@ export default function CatalogMenuPage() {
   const handleDeleteItem = useCallback(
     async (itemId: string) => {
       if (!itemId) return;
+      if (readOnly) {
+        setError("Read-only access: delete is disabled.");
+        return;
+      }
       const confirmed = window.confirm("Delete this product? This cannot be undone.");
       if (!confirmed) return;
       setLoading(true);
@@ -84,6 +88,10 @@ export default function CatalogMenuPage() {
   const handleDeleteVariant = useCallback(
     async (variantId: string, itemId: string) => {
       if (!variantId || !itemId) return;
+      if (readOnly) {
+        setError("Read-only access: delete is disabled.");
+        return;
+      }
       const confirmed = window.confirm("Delete this variant? This cannot be undone.");
       if (!confirmed) return;
       setLoading(true);
@@ -201,7 +209,7 @@ export default function CatalogMenuPage() {
                             <button className={styles.linkButton} onClick={() => router.push(`/Warehouse_Backoffice/catalog/product?id=${item.id}`)}>
                               Edit product
                             </button>
-                            <button className={styles.linkButton} onClick={() => handleDeleteItem(item.id)}>
+                            <button className={styles.linkButton} onClick={() => handleDeleteItem(item.id)} disabled={readOnly}>
                               Delete
                             </button>
                           </div>
@@ -253,7 +261,7 @@ export default function CatalogMenuPage() {
                                   >
                                     Edit
                                   </button>
-                                  <button className={styles.linkButton} onClick={() => handleDeleteVariant(variant.id, item.id)}>
+                                  <button className={styles.linkButton} onClick={() => handleDeleteVariant(variant.id, item.id)} disabled={readOnly}>
                                     Delete
                                   </button>
                                 </div>

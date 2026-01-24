@@ -7,12 +7,14 @@ const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = 'f71a25d0-9ec2-454d-a606-93cfaa3c606b';
 const DESTINATION_CHOICES = [
   { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Quick Corner' },
-  { id: '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', label: 'Main Preparation Kitchen' },
   { id: 'c4aa315f-2e09-4060-8258-9dab077271ce', label: 'Outlet Reserve' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
-const MULTIPLY_QTY_BY_PACKAGE = false;
+const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
+const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
+  ? STOCK_VIEW_ENV
+  : 'warehouse_stock_items';
+const MULTIPLY_QTY_BY_PACKAGE = true;
 const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
 (globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
 const OPERATOR_CONTEXT_LABELS = {
@@ -29,7 +31,6 @@ type WarehouseRecord = {
   id: string;
   name: string | null;
   parent_warehouse_id: string | null;
-  kind: string | null;
   active: boolean | null;
 };
 
@@ -53,7 +54,8 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 }
 
 async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
-  const ids = [LOCKED_SOURCE_ID, LOCKED_DEST_ID].filter(Boolean);
+  const destinationIds = DESTINATION_CHOICES.map((choice) => choice.id).filter(Boolean);
+  const ids = [LOCKED_SOURCE_ID, ...destinationIds].filter(Boolean);
   if (!ids.length) {
     return [];
   }
@@ -61,7 +63,7 @@ async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
     const supabase = getServiceClient();
     const { data, error } = await supabase
       .from('warehouses')
-      .select('id,name,parent_warehouse_id,kind,active')
+      .select('id,name,parent_warehouse_id,active')
       .in('id', ids);
     if (error) {
       throw error;
@@ -252,6 +254,131 @@ function createHtml(config: {
     }
     .search-field {
       margin-top: 8px;
+    }
+    .search-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .search-input-row input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .search-keyboards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .virtual-numpad {
+      display: none;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.75);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+    }
+    .virtual-numpad.active {
+      display: grid;
+    }
+    .virtual-numpad button {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+    }
+    .virtual-numpad button:hover,
+    .virtual-numpad button:focus-visible {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+    .virtual-numpad button[data-action="clear"],
+    .virtual-numpad button[data-action="delete"],
+    .virtual-numpad button[data-action="close"] {
+      background: rgba(255, 43, 72, 0.08);
+      border-color: rgba(255, 43, 72, 0.4);
+    }
+    .virtual-numpad button.wide-3 {
+      grid-column: span 3;
+    }
+    .virtual-keyboard {
+      display: none;
+      grid-template-columns: repeat(10, minmax(0, 1fr));
+      gap: 10px;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.92);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 28px 72px rgba(0, 0, 0, 0.7);
+      max-width: 820px;
+      width: min(820px, calc(100vw - 32px));
+      justify-items: stretch;
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 40;
+    }
+    .virtual-keyboard.active {
+      display: grid;
+    }
+    .virtual-keyboard button {
+      padding: 14px 10px;
+      min-height: 54px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.05rem;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .virtual-keyboard button:hover,
+    .virtual-keyboard button:focus-visible {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+      outline: none;
+    }
+    .virtual-keyboard button[data-action] {
+      background: rgba(86, 126, 255, 0.12);
+      border-color: rgba(86, 126, 255, 0.45);
+    }
+    .virtual-keyboard button.wide-2 {
+      grid-column: span 2;
+    }
+    .virtual-keyboard button.wide-3 {
+      grid-column: span 3;
+    }
+    .virtual-keyboard button.wide-4 {
+      grid-column: span 4;
+    }
+    .virtual-keyboard button.wide-5 {
+      grid-column: span 5;
+    }
+    .keyboard-trigger {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border-radius: 12px;
+      padding: 10px 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .keyboard-trigger:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-1px);
     }
     #auth-section,
     #app-section {
@@ -635,6 +762,22 @@ function createHtml(config: {
       justify-content: space-between;
       align-items: center;
       gap: 12px;
+    }
+    .variant-pack-unit {
+      margin-top: 4px;
+      margin-bottom: 2px;
+      font-size: 0.8rem;
+      color: #f7a8b7;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .variant-pack-unit span {
+      display: block;
+      font-size: 1rem;
+      color: #ffffff;
+      text-transform: none;
+      letter-spacing: 0.02em;
+      margin-top: 2px;
     }
     .variant-uom {
       font-size: 0.8rem;
@@ -1402,8 +1545,65 @@ function createHtml(config: {
           </section>
           <div class="search-field">
             <label>Search products
-              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+              <div class="search-input-row">
+                <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+                <button type="button" id="search-keyboard-toggle" class="keyboard-trigger">ABC</button>
+                <button type="button" id="search-numpad-toggle" class="keyboard-trigger">123</button>
+                <button type="button" id="search-enter" class="keyboard-trigger">Enter</button>
+              </div>
             </label>
+            <div class="search-keyboards">
+              <div id="search-numpad" class="virtual-numpad" aria-hidden="true">
+                <button type="button" data-key="7">7</button>
+                <button type="button" data-key="8">8</button>
+                <button type="button" data-key="9">9</button>
+                <button type="button" data-key="4">4</button>
+                <button type="button" data-key="5">5</button>
+                <button type="button" data-key="6">6</button>
+                <button type="button" data-key="1">1</button>
+                <button type="button" data-key="2">2</button>
+                <button type="button" data-key="3">3</button>
+                <button type="button" data-action="clear">CLR</button>
+                <button type="button" data-key="0">0</button>
+                <button type="button" data-action="delete">DEL</button>
+                <button type="button" data-action="enter" class="wide-3">ENTER</button>
+                <button type="button" data-action="close" class="wide-3">CLOSE</button>
+              </div>
+              <div id="search-keyboard" class="virtual-keyboard" aria-hidden="true">
+                <button type="button" data-key="Q">Q</button>
+                <button type="button" data-key="W">W</button>
+                <button type="button" data-key="E">E</button>
+                <button type="button" data-key="R">R</button>
+                <button type="button" data-key="T">T</button>
+                <button type="button" data-key="Y">Y</button>
+                <button type="button" data-key="U">U</button>
+                <button type="button" data-key="I">I</button>
+                <button type="button" data-key="O">O</button>
+                <button type="button" data-key="P">P</button>
+                <button type="button" data-key="A">A</button>
+                <button type="button" data-key="S">S</button>
+                <button type="button" data-key="D">D</button>
+                <button type="button" data-key="F">F</button>
+                <button type="button" data-key="G">G</button>
+                <button type="button" data-key="H">H</button>
+                <button type="button" data-key="J">J</button>
+                <button type="button" data-key="K">K</button>
+                <button type="button" data-key="L">L</button>
+                <button type="button" data-key="/">/</button>
+                <button type="button" data-key="Z">Z</button>
+                <button type="button" data-key="X">X</button>
+                <button type="button" data-key="C">C</button>
+                <button type="button" data-key="V">V</button>
+                <button type="button" data-key="B">B</button>
+                <button type="button" data-key="N">N</button>
+                <button type="button" data-key="M">M</button>
+                <button type="button" data-action="backspace" class="wide-2">BACK</button>
+                <button type="button" data-action="space" class="wide-3">SPACE</button>
+                <button type="button" data-action="clear" class="wide-2">CLR</button>
+                <button type="button" data-action="enter" class="wide-2">ENTER</button>
+                <button type="button" data-action="close" class="wide-2">CLOSE</button>
+              </div>
+            </div>
           </div>
           <section id="cart-section">
             <div class="cart-head">
@@ -1916,6 +2116,11 @@ function createHtml(config: {
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
+      const searchKeyboardToggle = document.getElementById('search-keyboard-toggle');
+      const searchNumpadToggle = document.getElementById('search-numpad-toggle');
+      const searchEnterButton = document.getElementById('search-enter');
+      const searchKeyboard = document.getElementById('search-keyboard');
+      const searchNumpad = document.getElementById('search-numpad');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
       const cartCount = document.getElementById('cart-count');
@@ -2107,6 +2312,11 @@ function createHtml(config: {
         return String(value).trim().replace(/[^0-9a-z]/gi, '').toLowerCase();
       }
 
+      function normalizeVariantKeyLocal(value) {
+        const raw = value === undefined || value === null ? '' : String(value).trim();
+        return raw || 'base';
+      }
+
       function submitQtyForm() {
         if (!qtyForm) return;
         if (typeof qtyForm.requestSubmit === 'function') {
@@ -2170,7 +2380,7 @@ function createHtml(config: {
         return Array.from(visited);
       }
 
-      let latestStorageHomes: { item_id: string; normalized_variant_key: string; storage_warehouse_id: string }[] = [];
+      let latestStorageHomes = [];
 
       async function fetchProductsForWarehouse(warehouseIds) {
         if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
@@ -2303,7 +2513,7 @@ function createHtml(config: {
           .eq('active', true);
         if (error) throw error;
 
-        const storageHomeMap = new Map<string, string>();
+        const storageHomeMap = new Map();
         latestStorageHomes.forEach((home) => {
           if (home?.item_id && home?.normalized_variant_key && home?.storage_warehouse_id) {
             const storageKey = String(home.item_id) + "::" + String(home.normalized_variant_key);
@@ -2314,9 +2524,13 @@ function createHtml(config: {
         (data ?? []).forEach((item) => {
           if (!item?.id) return;
           const variants = Array.isArray(item.variants) ? item.variants : [];
+          const seenVariantKeys = new Set();
           variants.forEach((variant) => {
             if (variant?.active === false) return;
             const normalizedKey = normalizeVariantKeyLocal(variant?.key ?? variant?.id ?? '');
+            const dedupeKey = (normalizedKey || 'base').toLowerCase();
+            if (seenVariantKeys.has(dedupeKey)) return;
+            seenVariantKeys.add(dedupeKey);
             const variantStorageKey = String(item.id) + "::" + String(normalizedKey);
             const variantWarehouse =
               storageHomeMap.get(variantStorageKey) ??
@@ -2357,7 +2571,7 @@ function createHtml(config: {
 
       async function safePreloadVariations(productIds) {
         if (state.networkOffline) {
-          console.warn('Skipping variation preload: network offline');
+          console.debug('Skipping variation preload: network offline');
           state.variations = new Map();
           state.variationIndex = new Map();
           return;
@@ -2366,7 +2580,7 @@ function createHtml(config: {
           await preloadVariations(productIds);
         } catch (error) {
           markOfflineIfNetworkError(error);
-          console.warn('Variation preload failed; continuing without variation index', error);
+          console.debug('Variation preload failed; continuing without variation index', error);
           state.variations = new Map();
           state.variationIndex = new Map();
         }
@@ -2418,6 +2632,80 @@ function createHtml(config: {
         scannerWedge.value = '';
         if (!payload) return;
         handleProductScan(payload);
+      }
+
+      function showSearchKeyboard() {
+        if (!searchKeyboard) return;
+        searchKeyboard.classList.add('active');
+        searchKeyboard.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideSearchKeyboard() {
+        if (!searchKeyboard) return;
+        searchKeyboard.classList.remove('active');
+        searchKeyboard.setAttribute('aria-hidden', 'true');
+      }
+
+      function showSearchNumpad() {
+        if (!searchNumpad) return;
+        searchNumpad.classList.add('active');
+        searchNumpad.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideSearchNumpad() {
+        if (!searchNumpad) return;
+        searchNumpad.classList.remove('active');
+        searchNumpad.setAttribute('aria-hidden', 'true');
+      }
+
+      function insertSearchText(text) {
+        if (!itemSearchInput || !text) return;
+        const input = itemSearchInput;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const current = input.value ?? '';
+        const next = current.slice(0, start) + text + current.slice(end);
+        input.value = next;
+        const caret = start + text.length;
+        input.setSelectionRange(caret, caret);
+        input.focus();
+      }
+
+      function deleteSearchChar() {
+        if (!itemSearchInput) return;
+        const input = itemSearchInput;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        if (start === 0 && end === 0) return;
+        const current = input.value ?? '';
+        if (start !== end) {
+          const next = current.slice(0, start) + current.slice(end);
+          input.value = next;
+          input.setSelectionRange(start, start);
+          input.focus();
+          return;
+        }
+        const newStart = Math.max(0, start - 1);
+        const next = current.slice(0, newStart) + current.slice(end);
+        input.value = next;
+        input.setSelectionRange(newStart, newStart);
+        input.focus();
+      }
+
+      function clearSearchText() {
+        if (!itemSearchInput) return;
+        itemSearchInput.value = '';
+        itemSearchInput.focus();
+      }
+
+      function triggerSearchFromField() {
+        if (!itemSearchInput) return;
+        const value = (itemSearchInput.value ?? '').trim();
+        if (!value) return;
+        searchProductsWithScan(value);
+        window.setTimeout(() => {
+          itemSearchInput.select();
+        }, 10);
       }
 
       function formatQtyLabel(qty, uom) {
@@ -2487,7 +2775,8 @@ function createHtml(config: {
       function describeQty(entry, baseQty, effectiveQty) {
         const unitLabel = entry.uom ?? 'UNIT';
         if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
-          return baseQty + ' case(s) → ' + effectiveQty + ' ' + unitLabel;
+          const packLabel = entry.packUom ?? 'PACK';
+          return baseQty + ' ' + packLabel + ' → ' + effectiveQty + ' ' + unitLabel;
         }
         return effectiveQty + ' ' + unitLabel;
       }
@@ -2522,7 +2811,7 @@ function createHtml(config: {
           qtyHint.textContent = '';
           return;
         }
-        qtyHint.textContent = 'Each = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
+        qtyHint.textContent = 'Each pack = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
         qtyHint.style.display = 'block';
       }
 
@@ -2877,23 +3166,10 @@ function createHtml(config: {
         }
       }
 
-      function queueOperatorAutoUnlock() {
-        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
-        const value = operatorPasswordInput?.value?.trim();
-        if (!value) return;
-        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
-          submitOperatorUnlock({ silentMissing: true });
-        }, 200);
-      }
-
       // Disable auto-submit while typing to avoid noisy 400s; only submit on explicit action.
       function queueOperatorAutoUnlock() {
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
-        const value = operatorPasswordInput?.value?.trim();
-        if (!value) return;
-        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
-          submitOperatorUnlock({ silentMissing: true });
-        }, 120);
+        return;
       }
 
       function handleOperatorSelection(context, operatorId) {
@@ -3353,16 +3629,7 @@ function createHtml(config: {
 
       function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
-        const packageSize = resolvePackageSize(product, variation);
-        const entry = {
-          productId: product.id,
-          productName: product.name ?? 'Product',
-          variationId: variation?.id ?? null,
-          variationName: variation?.name ?? null,
-          uom: (variation?.uom || product.uom || 'unit').toUpperCase(),
-          packageSize,
-          unitCost: null
-        };
+        const entry = buildEntry(product, variation);
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
@@ -3372,7 +3639,7 @@ function createHtml(config: {
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = entry.uom;
+        qtyUom.textContent = 'Supplier pack unit: ' + (entry.packUom ?? entry.uom ?? 'UNIT');
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -3389,12 +3656,15 @@ function createHtml(config: {
 
       function buildEntry(product, variation) {
         const packageSize = resolvePackageSize(product, variation);
+        const packUom = (variation?.purchase_pack_unit ?? variation?.transfer_unit ?? product.transfer_unit ?? product.uom ?? 'unit').toString();
+        const consumptionUom = (variation?.consumption_uom ?? product.consumption_uom ?? packUom).toString();
         return {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: (variation?.transfer_unit || variation?.uom || product.transfer_unit || product.uom || 'unit').toUpperCase(),
+          uom: consumptionUom.toUpperCase(),
+          packUom: packUom.toUpperCase(),
           packageSize,
           unitCost: null
         };
@@ -3417,8 +3687,16 @@ function createHtml(config: {
         const rows = isIngredient || !hasVariants
           ? [{ key: 'base', variation: null, label: 'Base' }]
           : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
+        const seenRows = new Set();
+        const uniqueRows = rows.filter((row) => {
+          const token = String(row?.variation?.id ?? row?.key ?? row?.label ?? '').toLowerCase();
+          if (!token) return true;
+          if (seenRows.has(token)) return false;
+          seenRows.add(token);
+          return true;
+        });
 
-        rows.forEach((row) => {
+        uniqueRows.forEach((row) => {
           const entry = buildEntry(product, row.variation);
           const wrapper = document.createElement('div');
           wrapper.className = 'variant-row';
@@ -3432,6 +3710,13 @@ function createHtml(config: {
           uom.textContent = entry.uom;
           header.appendChild(name);
           header.appendChild(uom);
+
+          const packUnit = document.createElement('div');
+          packUnit.className = 'variant-pack-unit';
+          packUnit.textContent = 'Supplier pack unit';
+          const packUnitValue = document.createElement('span');
+          packUnitValue.textContent = entry.packUom ?? entry.uom ?? 'UNIT';
+          packUnit.appendChild(packUnitValue);
 
           const controls = document.createElement('div');
           controls.className = 'variant-qty-controls';
@@ -3491,6 +3776,7 @@ function createHtml(config: {
           });
 
           wrapper.appendChild(header);
+          wrapper.appendChild(packUnit);
           wrapper.appendChild(controls);
           wrapper.appendChild(addBtn);
           variantModalBody.appendChild(wrapper);
@@ -3524,7 +3810,7 @@ function createHtml(config: {
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = target.uom ?? 'UNIT';
+        qtyUom.textContent = 'Supplier pack unit: ' + (target.packUom ?? target.uom ?? 'UNIT');
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -3654,15 +3940,6 @@ function createHtml(config: {
           : [];
         const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
 
-        const loadViaRpc = async () => {
-          const { data, error } = await supabase.rpc('console_locked_warehouses', {
-            p_include_inactive: false,
-            p_locked_ids: lockedIds.length ? lockedIds : null
-          });
-          if (error) throw error;
-          return Array.isArray(data) ? data : [];
-        };
-
         const loadViaServiceApi = async () => {
           const params = new URLSearchParams();
           if (lockedIds.length) {
@@ -3687,13 +3964,12 @@ function createHtml(config: {
             id: record?.id,
             name: record?.name,
             parent_warehouse_id: record?.parent_warehouse_id,
-            kind: record?.kind,
             active: record?.active
           }));
         };
 
         const loadViaTable = async () => {
-          const selectColumns = 'id,name,parent_warehouse_id,kind,active';
+          const selectColumns = 'id,name,parent_warehouse_id,active';
           const { data, error } = await supabase.from('warehouses').select(selectColumns).order('name');
           if (error) throw error;
           const rows = (Array.isArray(data) ? data : []).map((row) => ({ ...row, active: row?.active ?? true }));
@@ -3710,35 +3986,28 @@ function createHtml(config: {
         };
 
         try {
-          return await loadViaRpc();
-        } catch (error) {
-          markOfflineIfNetworkError(error);
-          console.warn('console_locked_warehouses rpc failed, attempting service API fallback', error);
+          return await loadViaServiceApi();
+        } catch (apiError) {
+          markOfflineIfNetworkError(apiError);
+          console.warn('warehouses API fallback failed, falling back to direct table', apiError);
           try {
-            return await loadViaServiceApi();
-          } catch (apiError) {
-            markOfflineIfNetworkError(apiError);
-            console.warn('warehouses API fallback failed, falling back to direct table', apiError);
-            try {
-              return await loadViaTable();
-            } catch (tableError) {
-              markOfflineIfNetworkError(tableError);
-              console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
-              if (Array.isArray(state.warehouses) && state.warehouses.length) {
-                return state.warehouses;
-              }
-              const fallbackList = lockedIds.map((id) => {
-                const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
-                return {
-                  id,
-                  name: choice?.label || 'Warehouse',
-                  parent_warehouse_id: null,
-                  kind: null,
-                  active: true
-                };
-              });
-              return fallbackList;
+            return await loadViaTable();
+          } catch (tableError) {
+            markOfflineIfNetworkError(tableError);
+            console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
+            if (Array.isArray(state.warehouses) && state.warehouses.length) {
+              return state.warehouses;
             }
+            const fallbackList = lockedIds.map((id) => {
+              const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
+              return {
+                id,
+                name: choice?.label || 'Warehouse',
+                parent_warehouse_id: null,
+                active: true
+              };
+            });
+            return fallbackList;
           }
         }
       }
@@ -4527,12 +4796,107 @@ function createHtml(config: {
       itemSearchInput?.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter') return;
         event.preventDefault();
-        const value = (itemSearchInput.value ?? '').trim();
-        if (!value) return;
-        searchProductsWithScan(value);
-        window.setTimeout(() => {
-          itemSearchInput.select();
-        }, 10);
+        triggerSearchFromField();
+      });
+
+      searchEnterButton?.addEventListener('click', () => {
+        triggerSearchFromField();
+      });
+
+      searchKeyboardToggle?.addEventListener('click', () => {
+        if (!searchKeyboard) return;
+        const isActive = searchKeyboard.classList.contains('active');
+        hideSearchNumpad();
+        if (isActive) {
+          hideSearchKeyboard();
+        } else {
+          showSearchKeyboard();
+        }
+        itemSearchInput?.focus();
+      });
+
+      searchNumpadToggle?.addEventListener('click', () => {
+        if (!searchNumpad) return;
+        const isActive = searchNumpad.classList.contains('active');
+        hideSearchKeyboard();
+        if (isActive) {
+          hideSearchNumpad();
+        } else {
+          showSearchNumpad();
+        }
+        itemSearchInput?.focus();
+      });
+
+      searchKeyboard?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertSearchText(key);
+          return;
+        }
+        if (!action) return;
+        if (action === 'space') {
+          insertSearchText(' ');
+          return;
+        }
+        if (action === 'backspace') {
+          deleteSearchChar();
+          return;
+        }
+        if (action === 'clear') {
+          clearSearchText();
+          return;
+        }
+        if (action === 'enter') {
+          triggerSearchFromField();
+          return;
+        }
+        if (action === 'close') {
+          hideSearchKeyboard();
+        }
+      });
+
+      searchKeyboard?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+
+      searchNumpad?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertSearchText(key);
+          return;
+        }
+        if (!action) return;
+        if (action === 'delete') {
+          deleteSearchChar();
+          return;
+        }
+        if (action === 'clear') {
+          clearSearchText();
+          return;
+        }
+        if (action === 'enter') {
+          triggerSearchFromField();
+          return;
+        }
+        if (action === 'close') {
+          hideSearchNumpad();
+        }
+      });
+
+      searchNumpad?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
       });
 
       const openDamageKeyboard = (event) => {

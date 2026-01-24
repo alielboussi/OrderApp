@@ -95,6 +95,41 @@
   width: 100%;
 }
 
+.variantChooser {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.variantList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.variantOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.variantOption input {
+  margin: 0;
+}
+
+.variantHint {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 .inputGroup {
   display: flex;
   flex-direction: column;
@@ -114,12 +149,18 @@
   border-radius: 12px;
   min-width: 260px;
   transition: border-color 140ms ease, box-shadow 140ms ease;
+  color-scheme: dark;
 }
 
 .searchInput:focus {
   border-color: rgba(34, 197, 94, 0.85);
   box-shadow: 0 12px 28px rgba(34, 197, 94, 0.16);
   outline: none;
+}
+
+.searchInput option {
+  background: #0f172a;
+  color: #e6e8f0;
 }
 
 .error {
@@ -135,6 +176,10 @@
   box-shadow: 0 26px 54px rgba(0, 0, 0, 0.5);
 }
 
+.formCard {
+  overflow: visible;
+}
+
 .tableHead,
 .tableRow {
   display: grid;
@@ -142,6 +187,10 @@
   gap: 10px;
   padding: 12px 16px;
   align-items: center;
+}
+
+.formRow {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .tableHead {
@@ -188,6 +237,10 @@
 @media (max-width: 1100px) {
   .tableHead,
   .tableRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .formRow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

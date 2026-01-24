@@ -16,7 +16,7 @@ type ItemMode = "raw" | "ingredient" | "product";
 
 export default function OutletRoutingPage() {
   const router = useRouter();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
 
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -118,6 +118,10 @@ export default function OutletRoutingPage() {
   };
 
   const save = async () => {
+    if (readOnly) {
+      setMessage({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     if (!selectedItemId) {
       setMessage({ ok: false, text: "Choose a product first" });
       return;
@@ -196,8 +200,8 @@ export default function OutletRoutingPage() {
               <button type="button" className={styles.secondaryButton} onClick={() => setRoutes({})} disabled={loading || !selectedItemId}>
                 Clear routes
               </button>
-              <button type="button" className={styles.primaryButton} onClick={save} disabled={saving || loading || !selectedItemId}>
-                {saving ? "Saving..." : "Save mappings"}
+              <button type="button" className={styles.primaryButton} onClick={save} disabled={saving || loading || !selectedItemId || readOnly}>
+                {readOnly ? "Read-only" : saving ? "Saving..." : "Save mappings"}
               </button>
             </div>
           </div>

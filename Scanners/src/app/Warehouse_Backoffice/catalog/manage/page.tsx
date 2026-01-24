@@ -33,7 +33,7 @@ const VARIANT_DEFAULTS = {
 
 export default function CatalogManagePage() {
   const router = useRouter();
-  const { status } = useWarehouseAuth();
+  const { status, readOnly } = useWarehouseAuth();
 
   const [items, setItems] = useState<Item[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -76,6 +76,10 @@ export default function CatalogManagePage() {
 
   const quickCreateProduct = async (event: FormEvent) => {
     event.preventDefault();
+    if (readOnly) {
+      setProductAlert({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     if (!productName.trim()) {
       setProductAlert({ ok: false, text: "Name is required" });
       return;
@@ -122,6 +126,10 @@ export default function CatalogManagePage() {
 
   const quickCreateVariant = async (event: FormEvent) => {
     event.preventDefault();
+    if (readOnly) {
+      setVariantAlert({ ok: false, text: "Read-only access: saving is disabled." });
+      return;
+    }
     if (!variantItemId) {
       setVariantAlert({ ok: false, text: "Choose a product" });
       return;
@@ -214,7 +222,9 @@ export default function CatalogManagePage() {
                 </select>
               </label>
               <div className={styles.actions}>
-                <button type="submit" className={styles.primaryButton} disabled={productSaving}>{productSaving ? "Saving..." : "Save product"}</button>
+                <button type="submit" className={styles.primaryButton} disabled={productSaving || readOnly}>
+                  {readOnly ? "Read-only" : productSaving ? "Saving..." : "Save product"}
+                </button>
               </div>
             </form>
             {productAlert && (
@@ -258,7 +268,9 @@ export default function CatalogManagePage() {
                 <input className={styles.input} type="number" step="0.01" value={variantCost} onChange={(e) => setVariantCost(e.target.value)} />
               </label>
               <div className={styles.actions}>
-                <button type="submit" className={styles.primaryButton} disabled={variantSaving}>{variantSaving ? "Saving..." : "Save variant"}</button>
+                <button type="submit" className={styles.primaryButton} disabled={variantSaving || readOnly}>
+                  {readOnly ? "Read-only" : variantSaving ? "Saving..." : "Save variant"}
+                </button>
               </div>
             </form>
             {variantAlert && (
