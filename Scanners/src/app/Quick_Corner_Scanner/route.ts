@@ -3746,11 +3746,13 @@ function createHtml(config: {
         if (recipeComponents && recipeComponents.length) {
           qtyTitle.textContent = 'Ingredients for ' + (product.name ?? 'Product');
           qtyUom.textContent = 'FINISHED UNITS';
+          qtyInput.step = '1';
         } else {
           qtyTitle.textContent = variation?.name
             ? (product.name ?? 'Product') + ' - ' + variation.name
             : product.name ?? 'Product';
           qtyUom.textContent = entry.uom;
+          qtyInput.step = '0.01';
         }
 
         updateQtyHint(entry);
@@ -5037,6 +5039,12 @@ function createHtml(config: {
         const recipeComponents = Array.isArray(pending.recipeComponents) ? pending.recipeComponents : null;
 
         if (recipeComponents?.length) {
+          const finishedUnits = Math.floor(rawQty);
+          if (!Number.isFinite(finishedUnits) || finishedUnits <= 0) {
+            showResult('Enter a whole number of finished units', true);
+            qtyInput.focus();
+            return;
+          }
           const added = [];
           recipeComponents.forEach((component) => {
             const ingredient = component?.ingredient;
@@ -5045,7 +5053,7 @@ function createHtml(config: {
             const yieldQty = Number(component.yieldQtyUnits) || 1;
             const baseQty = Number(component.qtyPerUnit) || 0;
             if (baseQty <= 0) return;
-            const componentRawQty = (rawQty / yieldQty) * baseQty;
+            const componentRawQty = (finishedUnits / yieldQty) * baseQty;
             const effectiveQty = computeEffectiveQty(componentRawQty, entry);
             if (effectiveQty === null) return;
             addCartItem({ ...entry, qty: effectiveQty, scannedQty: componentRawQty, unitCost: null }, context);
