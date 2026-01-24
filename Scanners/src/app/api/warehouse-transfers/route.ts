@@ -24,6 +24,8 @@ type TransferRecordRaw = {
   reference_code?: string | null;
   note?: string | null;
   created_at?: string | null;
+  created_by?: string | null;
+  operator_name?: string | null;
   source_warehouse_id: string | null;
   destination_warehouse_id: string | null;
   items?: TransferItemRaw[] | null;
@@ -73,6 +75,8 @@ export async function GET(req: NextRequest) {
         reference_code,
         note,
         created_at,
+        created_by,
+        operator_name,
         source_warehouse_id,
         destination_warehouse_id,
         items:warehouse_transfer_items (
@@ -135,6 +139,7 @@ export async function GET(req: NextRequest) {
       const destIdValue = transfer.destination_warehouse_id;
       const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;
       const destName = destIdValue ? warehouseMap.get(destIdValue) ?? null : null;
+      const operatorName = transfer.operator_name ?? null;
 
       return {
         id: transfer.id,
@@ -145,6 +150,7 @@ export async function GET(req: NextRequest) {
         completed_at: transfer.created_at ?? null,
         source_location_id: sourceIdValue,
         dest_location_id: destIdValue,
+        operator_name: operatorName,
         source: sourceIdValue ? { id: sourceIdValue, name: sourceName } : null,
         dest: destIdValue ? { id: destIdValue, name: destName } : null,
         items: Array.isArray(transfer.items)

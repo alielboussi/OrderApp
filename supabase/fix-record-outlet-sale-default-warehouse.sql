@@ -40,7 +40,8 @@ BEGIN
   from public.outlet_item_routes
   where outlet_id = p_outlet_id
     and item_id = p_item_id
-    and normalized_variant_key = v_variant_key
+    and normalized_variant_key in (v_variant_key, 'base')
+  order by (normalized_variant_key = v_variant_key) desc
   limit 1;
 
   v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);
@@ -194,7 +195,8 @@ BEGIN
   from public.outlet_item_routes
   where outlet_id = p_outlet_id
     and item_id = p_item_id
-    and normalized_variant_key = v_variant_key
+    and normalized_variant_key in (v_variant_key, 'base')
+  order by (normalized_variant_key = v_variant_key) desc
   limit 1;
 
   v_deduct_enabled := coalesce(v_route.deduct_enabled, v_deduct_enabled, true);

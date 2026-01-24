@@ -31,6 +31,7 @@ interface TransferRow {
   created_at?: string | null;
   completed_at?: string | null;
   reference_code?: string | null;
+  operator_name?: string | null;
   items: TransferItem[];
 }
 
@@ -434,6 +435,7 @@ export default function WarehouseTransfersWeb() {
                               {sourceName} <span className={styles.muted}>-</span> {destName}
                             </p>
                             <p className={styles.cardSub}>{formatTimestamp(t.created_at)}</p>
+                            <p className={styles.cardSub}>Operator: {t.operator_name ?? "Unknown"}</p>
                             {t.reference_code ? (
                               <p className={styles.cardSub}>Ref: {t.reference_code}</p>
                             ) : null}

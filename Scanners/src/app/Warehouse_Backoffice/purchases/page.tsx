@@ -382,6 +382,7 @@ export default function WarehousePurchasesWeb() {
                           <div className={styles.grow}>
                             <p className={styles.cardTitle}>{warehouseName}</p>
                             <p className={styles.cardSub}>{formatTimestamp(p.recorded_at)}</p>
+                            <p className={styles.cardSub}>Operator: {p.operator_name ?? "Unknown"}</p>
                             {p.reference_code ? <p className={styles.cardSub}>Ref: {p.reference_code}</p> : null}
                             <p className={styles.cardSub}>Supplier: {supplierName}</p>
                           </div>

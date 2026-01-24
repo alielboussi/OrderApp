@@ -374,6 +374,7 @@ export default function WarehouseDamagesWeb() {
                           <div className={styles.grow}>
                             <p className={styles.cardTitle}>{warehouseName}</p>
                             <p className={styles.cardSub}>{formatTimestamp(d.created_at)}</p>
+                            <p className={styles.cardSub}>Operator: {d.operator_name ?? "Unknown"}</p>
                             <p className={styles.cardSub}>Ref: {d.id.slice(0, 8)}</p>
                           </div>
                           <span className={`${styles.statusChip} ${styles.statusChipLogged}`}>

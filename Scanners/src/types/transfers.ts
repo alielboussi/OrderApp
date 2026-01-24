@@ -28,6 +28,7 @@ export type WarehouseTransfer = {
   completed_at?: string | null;
   source_location_id?: string | null;
   dest_location_id?: string | null;
+  operator_name?: string | null;
   items: TransferItem[];
   source?: TransferWarehouseRef | null;
   dest?: TransferWarehouseRef | null;

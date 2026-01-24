@@ -19,6 +19,7 @@ type DamageRecordRaw = {
   warehouse_id: string | null;
   note: string | null;
   context?: unknown;
+  created_by?: string | null;
   created_at?: string | null;
 };
 
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient();
     let query = supabase
       .from('warehouse_damages')
-      .select('id, warehouse_id, note, context, created_at')
+      .select('id, warehouse_id, note, context, created_by, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -78,6 +79,18 @@ export async function GET(req: NextRequest) {
     const { data, error } = (await query) as { data: DamageRecordRaw[] | null; error: Error | null };
     if (error) {
       throw error;
+    }
+
+    const operatorMap = new Map<string, string>();
+    const { data: operators } = await supabase.rpc('console_operator_directory');
+    if (Array.isArray(operators)) {
+      operators.forEach((op) => {
+        const id = (op as { auth_user_id?: string; id?: string }).auth_user_id ?? (op as { id?: string }).id;
+        const name = (op as { display_name?: string; name?: string }).display_name ?? (op as { name?: string }).name;
+        if (id && name) {
+          operatorMap.set(id, name);
+        }
+      });
     }
 
     const warehouseIds = new Set<string>();
@@ -130,6 +143,7 @@ export async function GET(req: NextRequest) {
     const damages: WarehouseDamage[] = parsedDamages.map((damage) => {
       const whId = damage.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
+      const operatorName = damage.created_by ? operatorMap.get(damage.created_by) ?? null : null;
 
       const items: DamageItem[] = Array.isArray(damage.parsedLines)
         ? damage.parsedLines.map((line, index) => {
@@ -157,6 +171,7 @@ export async function GET(req: NextRequest) {
         warehouse: whId ? { id: whId, name: warehouseName } : null,
         note: damage.note ?? null,
         created_at: damage.created_at ?? null,
+        operator_name: operatorName,
         items,
       };
     });

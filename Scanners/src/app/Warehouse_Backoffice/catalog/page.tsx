@@ -38,7 +38,7 @@ export default function CatalogMenu() {
             onClick={() => go("/Warehouse_Backoffice/catalog/manage")}
             className={`${styles.actionCard} ${styles.productCard}`}
           >
-            <p className={`${styles.cardTitle} ${styles.cardTitleProduct}`}>Manage Catalog</p>
+            <p className={`${styles.cardTitle} ${styles.cardTitleProduct}`}>Add New Item</p>
             <p className={styles.cardBody}>Add products and variants on one page, then preview the menu.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
@@ -46,7 +46,7 @@ export default function CatalogMenu() {
             onClick={() => go("/Warehouse_Backoffice/catalog/menu")}
             className={`${styles.actionCard} ${styles.menuCard}`}
           >
-            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Menu Preview</p>
+            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Current Menu</p>
             <p className={styles.cardBody}>Open the full menu list with the original card layout.</p>
             <span className={styles.cardCta}>Open menu</span>
           </button>
@@ -54,7 +54,7 @@ export default function CatalogMenu() {
             onClick={() => go("/Warehouse_Backoffice/recipes")}
             className={`${styles.actionCard} ${styles.recipeCard}`}
           >
-            <p className={`${styles.cardTitle} ${styles.cardTitleRecipe}`}>Recipes</p>
+            <p className={`${styles.cardTitle} ${styles.cardTitleRecipe}`}>Recipe Setup</p>
             <p className={styles.cardBody}>Link finished goods to ingredients, and ingredients to raw materials.</p>
             <span className={styles.cardCta}>Open recipes</span>
           </button>

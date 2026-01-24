@@ -34,6 +34,7 @@ export type WarehousePurchase = {
   auto_whatsapp?: boolean | null;
   recorded_at?: string | null;
   received_at?: string | null;
+  operator_name?: string | null;
   warehouse?: PurchaseWarehouseRef | null;
   supplier?: PurchaseSupplierRef | null;
   items: PurchaseItem[];

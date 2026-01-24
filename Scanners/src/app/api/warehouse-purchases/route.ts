@@ -24,6 +24,7 @@ type PurchaseRecordRaw = {
   reference_code?: string | null;
   note?: string | null;
   auto_whatsapp?: boolean | null;
+  recorded_by?: string | null;
   recorded_at?: string | null;
   received_at?: string | null;
   supplier?: { id: string; name: string | null } | null;
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
         reference_code,
         note,
         auto_whatsapp,
+        recorded_by,
         recorded_at,
         received_at,
         supplier:suppliers ( id, name ),
@@ -110,6 +112,18 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
+    const operatorMap = new Map<string, string>();
+    const { data: operators } = await supabase.rpc('console_operator_directory');
+    if (Array.isArray(operators)) {
+      operators.forEach((op) => {
+        const id = (op as { auth_user_id?: string; id?: string }).auth_user_id ?? (op as { id?: string }).id;
+        const name = (op as { display_name?: string; name?: string }).display_name ?? (op as { name?: string }).name;
+        if (id && name) {
+          operatorMap.set(id, name);
+        }
+      });
+    }
+
     const warehouseIds = new Set<string>();
     (data ?? []).forEach((purchase) => {
       if (purchase.warehouse_id) warehouseIds.add(purchase.warehouse_id);
@@ -134,6 +148,7 @@ export async function GET(req: NextRequest) {
     const purchases: WarehousePurchase[] = (data ?? []).map((purchase) => {
       const whId = purchase.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
+      const operatorName = purchase.recorded_by ? operatorMap.get(purchase.recorded_by) ?? null : null;
 
       return {
         id: purchase.id,
@@ -146,6 +161,7 @@ export async function GET(req: NextRequest) {
         auto_whatsapp: purchase.auto_whatsapp ?? null,
         recorded_at: purchase.recorded_at ?? null,
         received_at: purchase.received_at ?? null,
+        operator_name: operatorName,
         items: Array.isArray(purchase.items)
           ? purchase.items.map((item) => {
               const variantKey = item.variant_key ?? item.variation_key ?? null;

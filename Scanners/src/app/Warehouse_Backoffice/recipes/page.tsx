@@ -21,20 +21,44 @@ type PendingLine = {
   uom: string;
 };
 
-const UOMS = [
-  { value: "each", label: "Each" },
-  { value: "g", label: "Gram(s)" },
-  { value: "kg", label: "Kilogram(s)" },
-  { value: "mg", label: "Milligram(s)" },
-  { value: "ml", label: "Millilitre(s)" },
-  { value: "l", label: "Litre(s)" },
-  { value: "case", label: "Case(s)" },
-  { value: "crate", label: "Crate(s)" },
-  { value: "bottle", label: "Bottle(s)" },
-  { value: "Tin Can", label: "Tin Can(s)" },
-  { value: "Jar", label: "Jar(s)" },
-  { value: "plastic", label: "Plastic(s)" },
-];
+const qtyUnits = [
+  "each",
+  "g",
+  "kg",
+  "mg",
+  "ml",
+  "l",
+  "case",
+  "crate",
+  "bottle",
+  "Tin Can",
+  "Jar",
+] as const;
+
+const formatUnitLabel = (unit: string) => {
+  const trimmed = unit.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  const mapped =
+    lower === "each"
+      ? "Each"
+      : lower === "g"
+        ? "Gram(s)"
+        : lower === "kg"
+          ? "Kilogram(s)"
+          : lower === "mg"
+            ? "Milligram(s)"
+            : lower === "ml"
+              ? "Millilitre(s)"
+              : lower === "l"
+                ? "Litre(s)"
+                : null;
+  if (mapped) return mapped;
+  const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+  return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
+};
+
+const DEFAULT_UOMS = qtyUnits.map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
 
 const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "g" };
 
@@ -68,6 +92,7 @@ export default function RecipesPage() {
   const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([EMPTY_LINE]);
   const [hasFinishedRecipe, setHasFinishedRecipe] = useState(false);
   const [hasIngredientRecipe, setHasIngredientRecipe] = useState(false);
+  const [uoms, setUoms] = useState(DEFAULT_UOMS);
 
   useEffect(() => {
     let active = true;
@@ -77,7 +102,7 @@ export default function RecipesPage() {
         setSuccess(null);
         setLoading(true);
 
-        const [fin, ing, raw] = await Promise.all([
+        const [fin, ing, raw, uomRes] = await Promise.all([
           supabase
             .from("catalog_items")
             .select("id,name,sku,item_kind")
@@ -93,16 +118,30 @@ export default function RecipesPage() {
             .select("id,name,sku,item_kind")
             .eq("item_kind", "raw")
             .order("name", { ascending: true }),
+          supabase
+            .from("uom_conversions")
+            .select("from_uom,to_uom")
+            .eq("active", true),
         ]);
 
         if (!active) return;
         if (fin.error) throw fin.error;
         if (ing.error) throw ing.error;
         if (raw.error) throw raw.error;
+        if (uomRes.error) throw uomRes.error;
 
         setFinishedItems(fin.data || []);
         setIngredientItems(ing.data || []);
         setRawItems(raw.data || []);
+        const uomSet = new Set<string>(qtyUnits);
+        (uomRes.data || []).forEach((row) => {
+          if (row.from_uom) uomSet.add(row.from_uom);
+          if (row.to_uom) uomSet.add(row.to_uom);
+        });
+        const nextUoms = Array.from(uomSet)
+          .sort((a, b) => a.localeCompare(b))
+          .map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
+        setUoms(nextUoms.length ? nextUoms : DEFAULT_UOMS);
       } catch (error) {
         if (!active) return;
         setError(toErrorMessage(error) || "Failed to load catalog items");
@@ -440,7 +479,7 @@ export default function RecipesPage() {
                   onChange={(e) => updateLine(idx, "uom", e.target.value, setFinishedLines)}
                   aria-label="Unit of measure"
                 >
-                  {UOMS.map((u) => (
+                  {uoms.map((u) => (
                     <option key={u.value} value={u.value}>
                       {u.label}
                     </option>
@@ -540,7 +579,7 @@ export default function RecipesPage() {
                   onChange={(e) => updateLine(idx, "uom", e.target.value, setIngredientLines)}
                   aria-label="Unit of measure"
                 >
-                  {UOMS.map((u) => (
+                  {uoms.map((u) => (
                     <option key={u.value} value={u.value}>
                       {u.label}
                     </option>

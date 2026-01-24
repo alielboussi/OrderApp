@@ -25,5 +25,6 @@ export type WarehouseDamage = {
   warehouse?: DamageWarehouseRef | null;
   note?: string | null;
   created_at?: string | null;
+  operator_name?: string | null;
   items: DamageItem[];
 };

@@ -14,6 +14,7 @@ public sealed class SupabaseClient
     private readonly IHttpClientFactory _clientFactory;
     private readonly ILogger<SupabaseClient> _logger;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Guid GlobalScopeId = Guid.Empty;
 
     public SupabaseClient(IOptions<SupabaseOptions> options,
                           IOptions<OutletOptions> outlet,
@@ -143,6 +144,47 @@ public sealed class SupabaseClient
         {
             _logger.LogError(ex, "Error calling Supabase RPC");
             return new SupabaseResult(false, ex.Message);
+        }
+    }
+
+    public async Task<bool> IsSyncPausedAsync(CancellationToken cancellationToken)
+    {
+        var client = CreateClient();
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/v1/counter_values?select=last_value&counter_key=eq.pos_sync_paused&scope_id=eq.{GlobalScopeId}"
+        );
+
+        try
+        {
+            var response = await client.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Supabase pause flag check failed {Status}: {Body}", (int)response.StatusCode, body);
+                return false;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            {
+                return false;
+            }
+
+            var entry = doc.RootElement[0];
+            if (!entry.TryGetProperty("last_value", out var lastValueProp))
+            {
+                return false;
+            }
+
+            var lastValue = lastValueProp.GetInt64();
+            return lastValue > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking POS sync pause flag");
+            return false;
         }
     }
 

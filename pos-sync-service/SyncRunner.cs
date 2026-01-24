@@ -32,6 +32,13 @@ public sealed class SyncRunner
         var failures = new List<SyncFailure>();
         var processed = 0;
 
+        var isPaused = await _supabaseClient.IsSyncPausedAsync(cancellationToken);
+        if (isPaused)
+        {
+            _logger.LogInformation("POS sync paused via Warehouse Backoffice toggle.");
+            return new SyncRunResult(0, failures);
+        }
+
         var pending = await _repository.ReadPendingOrdersAsync(_syncOptions.BatchSize, cancellationToken);
         if (pending.Count == 0)
         {
