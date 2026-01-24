@@ -2,7 +2,9 @@ package com.afterten.orders.ui.stocktake
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -15,9 +17,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -54,19 +61,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.afterten.orders.RootViewModel
@@ -119,7 +125,7 @@ fun StocktakeDashboardScreen(
         disabledContainerColor = Color.Black
     )
 
-    var note by rememberSaveable { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
     var outletMenu by remember { mutableStateOf(false) }
     var warehouseMenu by remember { mutableStateOf(false) }
 
@@ -130,134 +136,110 @@ fun StocktakeDashboardScreen(
     val canSelectOutlet = ui.outlets.isNotEmpty()
     val warehouseEnabled = ui.filteredWarehouses.isNotEmpty()
 
-    val scroll = rememberScrollState()
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .verticalScroll(scroll)
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
-            Text("Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
-            if (ui.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryRed) else Spacer(Modifier.size(24.dp))
+            Text("Outlet Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
+            Spacer(Modifier.size(40.dp))
         }
 
-        ui.error?.let {
-            Card(colors = CardDefaults.cardColors(containerColor = surfaceBlack), border = BorderStroke(1.dp, primaryRed)) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
-                    Spacer(Modifier.width(8.dp))
-                    Text(it, color = Color.White)
-                }
-            }
-        }
-
-        if (!hasOpenPeriod) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
-                border = BorderStroke(1.dp, primaryRed)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Outlet", color = Color.White, fontWeight = FontWeight.Bold)
-                    ExposedDropdownMenuBox(expanded = outletMenu, onExpandedChange = { outletMenu = it }) {
-                        OutlinedTextField(
-                            value = outletLabel,
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = canSelectOutlet && !ui.loading,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) },
-                            modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                                .fillMaxWidth(),
-                            colors = outlinedFieldColors
-                        )
-                        DropdownMenu(expanded = outletMenu, onDismissRequest = { outletMenu = false }) {
-                            ui.outlets.forEach { outlet ->
-                                DropdownMenuItem(
-                                    text = { Text(outlet.name, color = Color.White) },
-                                    onClick = {
-                                        outletMenu = false
-                                        vm.selectOutlet(outlet.id)
-                                    },
-                                    contentPadding = MenuDefaults.DropdownMenuItemContentPadding
-                                )
-                            }
-                        }
-                    }
-
-                    Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
-                    ExposedDropdownMenuBox(expanded = warehouseMenu, onExpandedChange = { warehouseMenu = it }) {
-                        OutlinedTextField(
-                            value = warehouseLabel,
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = warehouseEnabled && !ui.loading,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = warehouseMenu) },
-                            modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                                .fillMaxWidth(),
-                            colors = outlinedFieldColors
-                        )
-                        DropdownMenu(expanded = warehouseMenu, onDismissRequest = { warehouseMenu = false }) {
-                            ui.filteredWarehouses.forEach { wh ->
-                                DropdownMenuItem(
-                                    text = { Text(wh.name, color = Color.White) },
-                                    onClick = {
-                                        warehouseMenu = false
-                                        vm.selectWarehouse(wh.id)
-                                    },
-                                    contentPadding = MenuDefaults.DropdownMenuItemContentPadding
-                                )
-                            }
-                        }
-                    }
-
-                    Text(
-                        "Warehouses come from Outlet setup → Deduct warehouses. Pick the outlet’s warehouse you count in.",
-                        color = Color.White.copy(alpha = 0.8f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        "Flow: enter opening counts, process transfers/damages, then enter closing counts and close the period.",
-                        color = Color.White.copy(alpha = 0.8f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    if (ui.selectedOutletId != null && ui.filteredWarehouses.isEmpty()) {
-                        Text("No warehouses available for this outlet", color = Color.White)
-                    }
-
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+            border = BorderStroke(1.dp, primaryRed)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Outlet", color = Color.White, fontWeight = FontWeight.Bold)
+                ExposedDropdownMenuBox(expanded = outletMenu, onExpandedChange = { outletMenu = it }) {
                     OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Note (optional)") },
+                        value = outletLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = canSelectOutlet && !ui.loading,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) },
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                         colors = outlinedFieldColors
                     )
-                    Button(
-                        enabled = !hasOpenPeriod && ui.selectedOutletId != null && ui.selectedWarehouseId != null && !ui.loading,
-                        onClick = { vm.startStocktake(note.takeIf { it.isNotBlank() }) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Start stocktake")
+                    DropdownMenu(expanded = outletMenu, onDismissRequest = { outletMenu = false }) {
+                        ui.outlets.forEach { outlet ->
+                            DropdownMenuItem(
+                                text = { Text(outlet.name, color = Color.White) },
+                                onClick = {
+                                    outletMenu = false
+                                    vm.selectOutlet(outlet.id)
+                                },
+                                contentPadding = MenuDefaults.DropdownMenuItemContentPadding
+                            )
+                        }
                     }
+                }
+
+                Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
+                ExposedDropdownMenuBox(expanded = warehouseMenu, onExpandedChange = { warehouseMenu = it }) {
+                    OutlinedTextField(
+                        value = warehouseLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = warehouseEnabled && !ui.loading,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = warehouseMenu) },
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                        colors = outlinedFieldColors
+                    )
+                    DropdownMenu(expanded = warehouseMenu, onDismissRequest = { warehouseMenu = false }) {
+                        ui.filteredWarehouses.forEach { wh ->
+                            DropdownMenuItem(
+                                text = { Text(wh.name, color = Color.White) },
+                                onClick = {
+                                    warehouseMenu = false
+                                    vm.selectWarehouse(wh.id)
+                                },
+                                contentPadding = MenuDefaults.DropdownMenuItemContentPadding
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    "Warehouses come from Outlet setup → Deduct warehouses. Pick the outlet’s warehouse you count in.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Flow: enter opening counts, process transfers/damages, then enter closing counts and close the period.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                if (ui.selectedOutletId != null && ui.filteredWarehouses.isEmpty()) {
+                    Text("No warehouses available for this outlet", color = Color.White)
+                }
+
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Note (optional)") },
+                    colors = outlinedFieldColors
+                )
+                Button(
+                    enabled = !hasOpenPeriod && ui.selectedOutletId != null && ui.selectedWarehouseId != null && !ui.loading,
+                    onClick = { vm.startStocktake(note.takeIf { it.isNotBlank() }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Start stocktake")
                 }
             }
         }
-
-        // Debug log intentionally hidden from UI; logs remain in Logcat.
 
         ui.openPeriod?.let { period ->
             Card(
@@ -323,12 +305,12 @@ fun StocktakeCountScreen(
         return
     }
 
-    var search by rememberSaveable { mutableStateOf("") }
-    var inputError by rememberSaveable { mutableStateOf<String?>(null) }
-    var variantDialogOpen by rememberSaveable { mutableStateOf(false) }
-    var dialogItemId by rememberSaveable { mutableStateOf("") }
-    var dialogItemName by rememberSaveable { mutableStateOf("") }
-    var dialogItemKind by rememberSaveable { mutableStateOf<String?>(null) }
+    var search by remember { mutableStateOf("") }
+    var inputError by remember { mutableStateOf<String?>(null) }
+    var variantDialogOpen by remember { mutableStateOf(false) }
+    var dialogItemId by remember { mutableStateOf("") }
+    var dialogItemName by remember { mutableStateOf("") }
+    var dialogItemKind by remember { mutableStateOf<String?>(null) }
     val dialogQty = remember { mutableStateMapOf<String, String>() }
 
     fun formatQty(value: Double?, decimals: Int): String {
@@ -473,6 +455,23 @@ fun StocktakeCountScreen(
         }
     }
 
+    val recipeTargets = remember(filteredBaseItems, allItemsByItemId) {
+        filteredBaseItems.mapNotNull { row ->
+            val rows = allItemsByItemId[row.itemId].orEmpty()
+            val hasRecipe = rows.any { it.hasRecipe == true } && (row.itemKind ?: "").lowercase() != "ingredient"
+            if (hasRecipe) row.itemId else null
+        }
+    }
+
+    LaunchedEffect(recipeTargets, ui.recipeIngredients, ui.recipeIngredientsLoading) {
+        recipeTargets.forEach { itemId ->
+            val recipeKey = "$itemId|base"
+            if (!ui.recipeIngredients.containsKey(recipeKey) && !ui.recipeIngredientsLoading.contains(recipeKey)) {
+                vm.loadRecipeIngredients(itemId, "base")
+            }
+        }
+    }
+
 
     Column(
         modifier = Modifier
@@ -580,14 +579,17 @@ fun StocktakeCountScreen(
                                         val rows = allItemsByItemId[row.itemId].orEmpty()
                                         val variantCount = rows.count { (it.variantKey ?: "base") != "base" }
                                         val hasRecipe = rows.any { it.hasRecipe == true } && (row.itemKind ?: "").lowercase() != "ingredient"
+                                        val recipeKey = "${row.itemId}|base"
+                                        val ingredientCount = ui.recipeIngredients[recipeKey]?.size
                                         val badge = if ((row.itemKind ?: "").lowercase() == "ingredient") {
                                             "Ingredient"
                                         } else if (hasRecipe) {
-                                            "Ingredients"
-                                        } else if (variantCount > 0) {
-                                            "${variantCount} variant${if (variantCount == 1) "" else "s"}"
+                                            when (ingredientCount) {
+                                                null -> "Ingredients: …"
+                                                else -> "Ingredients: $ingredientCount"
+                                            }
                                         } else {
-                                            "Base item"
+                                            "Variants: $variantCount"
                                         }
                                         Text(badge, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                                         val listUom = ui.stocktakeUoms[row.itemId] ?: ui.productUoms[row.itemId] ?: "each"
@@ -652,34 +654,63 @@ fun StocktakeCountScreen(
                 if (!dialogQty.containsKey(key)) {
                     val initUom = ui.stocktakeUoms[row.itemId] ?: ui.productUoms[row.itemId] ?: "each"
                     val initDecimals = resolveDecimals(row.itemId, row.variantKey, initUom)
-                    dialogQty[key] = formatQty(row.netUnits, initDecimals)
+                    val seed = row.netUnits ?: 0.0
+                    dialogQty[key] = if (seed == 0.0) "" else formatQty(seed, initDecimals)
                 }
             }
         }
 
-        Dialog(onDismissRequest = { variantDialogOpen = false }) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color.Black),
-                border = BorderStroke(1.dp, primaryRed),
-                modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(dialogItemName.ifBlank { dialogItemId }, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text(
-                        if (hasRecipe) "Enter ingredient counts" else if (isIngredient) "Enter ingredient count" else "Enter variant counts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
+                IconButton(onClick = { variantDialogOpen = false }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Text(
+                    dialogItemName.ifBlank { dialogItemId },
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.size(40.dp))
+            }
 
-                    if (hasRecipe && recipeLoading) {
-                        Text("Loading ingredients...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
-                    }
+            Text(
+                if (hasRecipe) "Enter ingredient counts" else if (isIngredient) "Enter ingredient count" else "Enter variant counts",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.8f)
+            )
 
-                    if (hasRecipe && !recipeLoading && ingredientRows.isEmpty()) {
-                        Text("No ingredients found for this recipe.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
-                    }
+            if (hasRecipe && recipeLoading) {
+                Text("Loading ingredients...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
+            }
 
-                    displayRows.forEach { row ->
+            if (hasRecipe && !recipeLoading && ingredientRows.isEmpty()) {
+                Text("No ingredients found for this recipe.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
+            }
+
+            BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                val horizontalSpacing = 12.dp
+                val verticalSpacing = 12.dp
+                val columns = 2
+                val cardSize = (maxWidth - horizontalSpacing) / columns
+                val imageSize = minOf(120.dp, cardSize * 0.35f)
+
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+                    horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(displayRows, key = { row -> "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}" }) { row ->
                         val key = row.variantKey?.ifBlank { "base" } ?: "base"
                         val label = if (hasRecipe) {
                             row.itemName ?: row.itemId
@@ -698,115 +729,169 @@ fun StocktakeCountScreen(
                         val step = stepForDecimals(rowDecimals)
                         val currentQty = dialogQty[qtyKey] ?: formatQty(row.netUnits, rowDecimals)
                         val hasStock = (row.netUnits ?: 0.0) > 0.0
+                        val openingLocked = ui.openingLockedKeys.contains(qtyKey)
+                        val entryMode = if (hasStock) "closing" else "opening"
+                        val isLocked = openingLocked && entryMode == "opening"
+                        val fieldBorder = if (isLocked) primaryRed.copy(alpha = 0.4f) else primaryRed
+                        val fieldText = if (isLocked) Color.White.copy(alpha = 0.6f) else Color.White
 
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.Black),
-                            border = BorderStroke(1.dp, primaryRed)
+                            border = BorderStroke(1.dp, primaryRed),
+                            modifier = Modifier.size(cardSize)
                         ) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                AsyncImage(
+                                    model = row.imageUrl,
+                                    contentDescription = "Item photo",
+                                    modifier = Modifier
+                                        .size(imageSize)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    alignment = Alignment.Center
+                                )
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    AsyncImage(
-                                        model = row.imageUrl,
-                                        contentDescription = "Item photo",
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        alignment = Alignment.Center
-                                    )
                                     Text(
                                         label,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White,
                                         style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = TextAlign.Center,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                }
-                                Text(
-                                    formatUomLabel(uom),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    IconButton(
-                                        onClick = {
-                                            val parsed = currentQty.toDoubleOrNull() ?: 0.0
-                                            val next = (parsed - step).coerceAtLeast(0.0)
-                                            dialogQty[qtyKey] = formatQty(next, rowDecimals)
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = primaryRed)
-                                    }
-                                    OutlinedTextField(
-                                        value = currentQty,
-                                        onValueChange = { dialogQty[qtyKey] = sanitizeQtyInput(it, rowDecimals) },
-                                        label = { Text("Qty") },
-                                        modifier = Modifier.weight(1f),
-                                        keyboardOptions = KeyboardOptions(keyboardType = if (rowDecimals > 0) KeyboardType.Decimal else KeyboardType.Number),
-                                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-                                        placeholder = {
-                                            Text(
-                                                formatQty(0.0, rowDecimals),
-                                                modifier = Modifier.fillMaxWidth(),
-                                                textAlign = TextAlign.Center
-                                            )
-                                        },
-                                        colors = outlinedFieldColors
+                                    Text(
+                                        formatUomLabel(uom),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    IconButton(
-                                        onClick = {
-                                            val parsed = currentQty.toDoubleOrNull() ?: 0.0
-                                            val next = parsed + step
-                                            dialogQty[qtyKey] = formatQty(next, rowDecimals)
-                                        }
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(60.dp)
+                                            .border(BorderStroke(1.dp, fieldBorder), RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 6.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = "Increase", tint = primaryRed)
-                                    }
-                                }
-                                Button(
-                                    onClick = {
-                                        val parsed = (dialogQty[qtyKey] ?: "").trim().toDoubleOrNull()
-                                        if (parsed == null || parsed < 0) {
-                                            inputError = "Enter a non-negative number"
-                                            return@Button
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    val parsed = currentQty.toDoubleOrNull() ?: 0.0
+                                                    val next = (parsed - step).coerceAtLeast(0.0)
+                                                    dialogQty[qtyKey] = formatQty(next, rowDecimals)
+                                                },
+                                                modifier = Modifier.size(32.dp),
+                                                enabled = !isLocked
+                                            ) {
+                                                Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = fieldBorder)
+                                            }
+                                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                                BasicTextField(
+                                                    value = currentQty,
+                                                    onValueChange = { dialogQty[qtyKey] = sanitizeQtyInput(it, rowDecimals) },
+                                                    singleLine = true,
+                                                    keyboardOptions = KeyboardOptions(keyboardType = if (rowDecimals > 0) KeyboardType.Decimal else KeyboardType.Number),
+                                                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontSize = 20.sp, lineHeight = 22.sp, color = fieldText),
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    enabled = !isLocked
+                                                )
+                                                if (currentQty.isBlank()) {
+                                                    Text(
+                                                        if (isLocked) "Locked" else "Qty",
+                                                        color = Color.White.copy(alpha = if (isLocked) 0.5f else 0.6f),
+                                                        textAlign = TextAlign.Center
+                                                    )
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    val parsed = currentQty.toDoubleOrNull() ?: 0.0
+                                                    val next = parsed + step
+                                                    dialogQty[qtyKey] = formatQty(next, rowDecimals)
+                                                },
+                                                modifier = Modifier.size(32.dp),
+                                                enabled = !isLocked
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Increase", tint = fieldBorder)
+                                            }
                                         }
-                                        inputError = null
-                                        val mode = if (hasStock) "closing" else "opening"
-                                        val factor = 10.0.pow(rowDecimals.coerceIn(0, 6).toDouble())
-                                        val rounded = round(parsed * factor) / factor
-                                        vm.recordCount(row.itemId, rounded, key, mode)
-                                        variantDialogOpen = false
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
-                                ) {
-                                    Icon(Icons.Default.Check, contentDescription = null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(if (hasStock) "Save closing" else "Save opening")
+                                    }
                                 }
                             }
                         }
                     }
-
-                    inputError?.let { Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall) }
-                    Button(
-                        onClick = { variantDialogOpen = false },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray, contentColor = Color.White)
-                    ) {
-                        Text("Close")
-                    }
                 }
             }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { variantDialogOpen = false },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                ) {
+                    Text("Back")
+                }
+                Button(
+                    onClick = {
+                        var hadError = false
+                        displayRows.forEach { row ->
+                            val key = row.variantKey?.ifBlank { "base" } ?: "base"
+                            val qtyKey = "${row.itemId}|$key"
+                            val hasStock = (row.netUnits ?: 0.0) > 0.0
+                            val entryMode = if (hasStock) "closing" else "opening"
+                            val openingLocked = ui.openingLockedKeys.contains(qtyKey)
+                            if (openingLocked && entryMode == "opening") return@forEach
+                            val rawText = (dialogQty[qtyKey] ?: "").trim()
+                            if (rawText.isBlank()) return@forEach
+                            val parsed = rawText.toDoubleOrNull()
+                            if (parsed == null || parsed < 0) {
+                                hadError = true
+                                return@forEach
+                            }
+                            val uom = variantStocktakeUomMap[key] ?: variantStocktakeUomMap[key.lowercase()]
+                                ?: ui.stocktakeUoms[row.itemId]
+                                ?: variantUomMap[key] ?: variantUomMap[key.lowercase()]
+                                ?: ui.productUoms[row.itemId]
+                                ?: "each"
+                            val rowDecimals = resolveDecimals(row.itemId, key, uom)
+                            val factor = 10.0.pow(rowDecimals.coerceIn(0, 6).toDouble())
+                            val rounded = round(parsed * factor) / factor
+                            val mode = entryMode
+                            vm.recordCount(row.itemId, rounded, key, mode)
+                        }
+                        inputError = if (hadError) "Enter a non-negative number" else null
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save all")
+                }
+            }
+
+            inputError?.let { Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }

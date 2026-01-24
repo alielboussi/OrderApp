@@ -304,7 +304,12 @@ export default function OutletSetupPage() {
   useEffect(() => {
     if (status !== "ok") return;
     if (!selectedProductId) {
-      setSelectedRoutingVariantKeys(["base"]);
+      setSelectedRoutingVariantKeys((prev) => {
+        if (prev.length === 1 && prev[0] === "base") {
+          return prev;
+        }
+        return ["base"];
+      });
       setProductRoutes({});
       setRoutingMessage((prev) => ({ ...prev, product: null }));
       setRoutingLoading((prev) => ({ ...prev, product: false }));

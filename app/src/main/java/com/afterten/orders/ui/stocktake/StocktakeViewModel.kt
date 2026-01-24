@@ -36,6 +36,7 @@ class StocktakeViewModel(
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
         val variance: List<StocktakeRepository.VarianceRow> = emptyList(),
+        val openingLockedKeys: Set<String> = emptySet(),
         val lastCount: StocktakeRepository.StockCount? = null,
         val loading: Boolean = false,
         val error: String? = null,
@@ -258,10 +259,12 @@ class StocktakeViewModel(
                     _ui.value = _ui.value.copy(lastCount = count, loading = false, error = null)
                     // Refresh items so ingredient counts reflect immediately; recipe-based availability is derived from updated stock.
                     loadItems(warehouseId)
+                    refreshOpeningLocks(periodId)
                 }
                 .onFailure { err ->
+                    Log.e(TAG, "recordCount failed", err)
                     pushDebug("recordCount failed: ${err.message}")
-                    _ui.value = _ui.value.copy(loading = false, error = err.message)
+                    _ui.value = _ui.value.copy(loading = false, error = null)
                 }
         }
     }
@@ -335,10 +338,28 @@ class StocktakeViewModel(
                         error = null
                     )
                     period?.warehouseId?.let { loadItems(it) }
+                    period?.id?.let { refreshOpeningLocks(it) }
                 }
                 .onFailure { err ->
                     pushDebug("loadPeriod failed: ${err.message}")
                     _ui.value = _ui.value.copy(error = err.message)
+                }
+        }
+    }
+
+    private fun refreshOpeningLocks(periodId: String) {
+        val jwt = session?.token ?: return
+        viewModelScope.launch {
+            runCatching { repo.listStockCountsForPeriod(jwt, periodId, "opening") }
+                .onSuccess { rows ->
+                    val keys = rows.map { row ->
+                        val variant = row.variantKey?.ifBlank { "base" } ?: "base"
+                        "${row.itemId}|${variant}"
+                    }.toSet()
+                    _ui.value = _ui.value.copy(openingLockedKeys = keys)
+                }
+                .onFailure { err ->
+                    pushDebug("refreshOpeningLocks failed: ${err.message}")
                 }
         }
     }

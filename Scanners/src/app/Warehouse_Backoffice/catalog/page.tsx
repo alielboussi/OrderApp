@@ -3,16 +3,14 @@
 import { useRouter } from "next/navigation";
 import styles from "./catalog.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
-
 export default function CatalogMenu() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
-
-  if (status !== "ok") return null;
-
   const go = (path: string) => router.push(path);
   const back = () => router.push("/Warehouse_Backoffice");
   const backOne = () => router.back();
+
+  if (status !== "ok") return null;
 
   return (
     <div className={styles.page}>
@@ -43,6 +41,14 @@ export default function CatalogMenu() {
             <p className={`${styles.cardTitle} ${styles.cardTitleProduct}`}>Manage Catalog</p>
             <p className={styles.cardBody}>Add products and variants on one page, then preview the menu.</p>
             <span className={styles.cardCta}>Open</span>
+          </button>
+          <button
+            onClick={() => go("/Warehouse_Backoffice/catalog/menu")}
+            className={`${styles.actionCard} ${styles.menuCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Menu Preview</p>
+            <p className={styles.cardBody}>Open the full menu list with the original card layout.</p>
+            <span className={styles.cardCta}>Open menu</span>
           </button>
           <button
             onClick={() => go("/Warehouse_Backoffice/recipes")}

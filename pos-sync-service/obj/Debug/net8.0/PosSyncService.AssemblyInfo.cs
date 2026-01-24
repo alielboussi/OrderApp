@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PosSyncService")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+543590f481e64980f4b3a39874f5ad2c6b7875c2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+40f4d5b6877e19e571260a44ece4739c3bf2502d")]
 [assembly: System.Reflection.AssemblyProductAttribute("PosSyncService")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PosSyncService")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

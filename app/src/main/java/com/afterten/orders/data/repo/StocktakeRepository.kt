@@ -9,6 +9,15 @@ import java.net.URLEncoder
 
 class StocktakeRepository(private val supabase: SupabaseProvider) {
     @Serializable
+    data class RecordCountPayload(
+        @SerialName("p_period_id") val periodId: String,
+        @SerialName("p_item_id") val itemId: String,
+        @SerialName("p_qty") val qty: Double,
+        @SerialName("p_variant_key") val variantKey: String,
+        @SerialName("p_kind") val kind: String,
+        @SerialName("p_context") val context: Map<String, String>? = null
+    )
+    @Serializable
     data class StockPeriod(
         val id: String,
         @SerialName("warehouse_id") val warehouseId: String,
@@ -29,6 +38,13 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         @SerialName("counted_qty") val countedQty: Double,
         val kind: String,
         @SerialName("counted_at") val countedAt: String? = null
+    )
+
+    @Serializable
+    data class StockCountKeyRow(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        val kind: String? = null
     )
 
     @Serializable
@@ -114,15 +130,15 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         qty: Double,
         variantKey: String = "base",
         kind: String = "closing",
-        context: Map<String, Any?> = emptyMap()
+        context: Map<String, String>? = null
     ): StockCount {
-        val payload = mapOf(
-            "p_period_id" to periodId,
-            "p_item_id" to itemId,
-            "p_qty" to qty,
-            "p_variant_key" to variantKey,
-            "p_kind" to kind,
-            "p_context" to context
+        val payload = RecordCountPayload(
+            periodId = periodId,
+            itemId = itemId,
+            qty = qty,
+            variantKey = variantKey,
+            kind = kind,
+            context = context?.takeIf { it.isNotEmpty() }
         )
         val (code, body) = supabase.postWithJwt(
             pathAndQuery = "/rest/v1/rpc/record_stock_count",
@@ -151,6 +167,13 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         val path = "/rest/v1/warehouse_stock_variances?select=${select}&period_id=eq.${periodId}&order=item_id.asc"
         val text = supabase.getWithJwt(path, jwt)
         return json.decodeFromString(ListSerializer(VarianceRow.serializer()), text)
+    }
+
+    suspend fun listStockCountsForPeriod(jwt: String, periodId: String, kind: String): List<StockCountKeyRow> {
+        val select = encode("item_id,variant_key,kind")
+        val path = "/rest/v1/warehouse_stock_counts?select=${select}&period_id=eq.${periodId}&kind=eq.${kind}"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(StockCountKeyRow.serializer()), text)
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")

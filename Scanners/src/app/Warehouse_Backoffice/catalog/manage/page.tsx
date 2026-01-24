@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "./manage.module.css";
@@ -37,8 +37,6 @@ export default function CatalogManagePage() {
 
   const [items, setItems] = useState<Item[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
-  const [itemsError, setItemsError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
 
   // Product quick-add
   const [productName, setProductName] = useState("");
@@ -61,7 +59,6 @@ export default function CatalogManagePage() {
     if (status !== "ok") return;
     async function loadItems() {
       setLoadingItems(true);
-      setItemsError(null);
       try {
         const res = await fetch("/api/catalog/items");
         if (!res.ok) throw new Error("Failed to load products");
@@ -70,21 +67,12 @@ export default function CatalogManagePage() {
         setItems(list);
       } catch (error) {
         console.error(error);
-        setItemsError(error instanceof Error ? error.message : "Unable to load products");
       } finally {
         setLoadingItems(false);
       }
     }
     loadItems();
   }, [status]);
-
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const base = term
-      ? items.filter((it) => (it.name ?? "").toLowerCase().includes(term) || (it.sku ?? "").toLowerCase().includes(term))
-      : items;
-    return base.slice(0, 5);
-  }, [items, search]);
 
   const quickCreateProduct = async (event: FormEvent) => {
     event.preventDefault();
@@ -117,7 +105,6 @@ export default function CatalogManagePage() {
       setProductSku("");
       setProductCost("0");
       setProductHasVars(false);
-      setSearch("");
       setLoadingItems(true);
       const refreshed = await fetch("/api/catalog/items");
       if (refreshed.ok) {
@@ -185,7 +172,7 @@ export default function CatalogManagePage() {
             <p className={styles.kicker}>Catalog</p>
             <h1 className={styles.title}>Manage products & variants</h1>
             <p className={styles.subtitle}>
-              Quick-create products and variants on one page. Below, preview five items; search to surface more or open the full list.
+              Quick-create products and variants on one page.
             </p>
           </div>
           <div className={styles.headerButtons}>
@@ -281,49 +268,6 @@ export default function CatalogManagePage() {
             )}
           </section>
         </div>
-
-        <section className={`${styles.panel} ${styles.menuPanel}`}>
-          <div className={styles.menuHeader}>
-            <div>
-              <h2 className={styles.panelHeader}>Menu preview</h2>
-              <p className={styles.panelBody}>Showing up to 5 items. Type to surface more.</p>
-            </div>
-            <div className={styles.actions}>
-              <input
-                className={`${styles.input} ${styles.searchInput}`}
-                placeholder="Search products / SKU"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <button className={styles.smallButton} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu")}>View all items</button>
-            </div>
-          </div>
-
-          {itemsError && <div className={`${styles.callout} ${styles.calloutError}`}>{itemsError}</div>}
-
-          <div className={styles.list}>
-            {loadingItems ? (
-              <div className={styles.card}>Loading…</div>
-            ) : filtered.length === 0 ? (
-              <div className={styles.card}>No items match.</div>
-            ) : (
-              filtered.map((item) => (
-                <div key={item.id} className={styles.card}>
-                  <p className={styles.cardTitle}>{item.name}</p>
-                  <p className={styles.cardMeta}>
-                    <span className={styles.badge}>{item.item_kind || "product"}</span>
-                    {item.sku ? <span className={styles.badge}>SKU {item.sku}</span> : null}
-                    {item.has_variations ? <span className={styles.badge}>Has variants</span> : null}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-          <div className={styles.menuFooter}>
-            <p className={styles.info}>Need everything? Open the full menu to see products, ingredients, and raws.</p>
-            <button className={styles.smallButton} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu")}>Open full list</button>
-          </div>
-        </section>
       </div>
     </div>
   );

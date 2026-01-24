@@ -183,15 +183,10 @@ public sealed class SupabaseClient
                 pos_item_id = i.PosItemId,
                 name = i.Name,
                 quantity = i.Quantity,
-                unit_price = i.UnitPrice,
                 sale_price = i.SalePrice,
                 vat_exc_price = i.VatExclusivePrice,
                 flavour_price = i.FlavourPrice,
-                discount = i.Discount,
-                tax = i.Tax,
-                flavour_id = i.FlavourId,
-                variant_id = i.VariantId,
-                variant_key = i.VariantKey
+                flavour_id = i.FlavourId
             }).ToList(),
             payments = order.Payments.Select(p => new { method = p.Method, amount = p.Amount }).ToList(),
             customer = order.Customer is null ? null : new
@@ -206,10 +201,10 @@ public sealed class SupabaseClient
                 raw_item_id = ic.RawItemId,
                 quantity_consumed = ic.QuantityConsumed,
                 remaining_quantity = ic.RemainingQuantity,
+                occurred_at = ic.PosDate ?? order.OccurredAt,
                 pos_date = ic.PosDate,
                 kdsid = ic.KdsId,
                 typec = ic.Typec,
-                branch_id = ic.BranchId,
                 branch_missing_note = ic.BranchMissingNote
             }).ToList()
         };

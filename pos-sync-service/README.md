@@ -58,6 +58,15 @@ pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Prog
 - Ensure the Supabase RPC `sync_pos_order` exists and enforces idempotency on `source_event_id`.
 - Map POS item IDs to Supabase catalog/variant IDs inside the payload generation.
 
+## Supabase schema alignment checklist
+This service posts to the RPCs defined in Supabase Schema.sql. Before deployment, confirm:
+- RPCs exist: `sync_pos_order(payload jsonb)`, `validate_pos_order(payload jsonb)`, `log_pos_sync_failure(payload jsonb)`.
+- `pos_item_map` is populated for the outlet (pos_item_id → catalog_item_id, catalog_variant_key, warehouse_id).
+- `outlet_item_routes` and `outlet_warehouses` are set so each routed item/variant resolves to a warehouse.
+- `outlets.deduct_on_pos_sale` is true (or per-route `deduct_enabled` is true) for deduction testing.
+- An open stock period exists for the warehouse used for deduction (required by validation).
+- Items in POS are mapped to catalog items that exist in `catalog_items` and the variant keys are valid.
+
 ## Runtime notes
 - Logs go to the Windows Service log (and console when run interactively).
 - Poll interval defaults to 60s; reduce for near-real-time.
