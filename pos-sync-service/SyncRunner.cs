@@ -47,6 +47,13 @@ public sealed class SyncRunner
 
         foreach (var order in pending)
         {
+            var pausedMidRun = await _supabaseClient.IsSyncPausedAsync(cancellationToken);
+            if (pausedMidRun)
+            {
+                _logger.LogInformation("POS sync paused mid-run; stopping current batch.");
+                break;
+            }
+
             try
             {
                 var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);

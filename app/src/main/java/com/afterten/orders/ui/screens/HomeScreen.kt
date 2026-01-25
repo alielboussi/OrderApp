@@ -33,6 +33,7 @@ fun HomeScreen(
     onCreateOrder: () -> Unit,
     onViewOrders: () -> Unit,
     onOpenStocktake: () -> Unit,
+    onOpenStocktakePeriods: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
 ) {
@@ -115,6 +116,14 @@ fun HomeScreen(
                 enabled = true,
                 colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
             ) { Text("Outlet Stocktake") }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    logger.event("StocktakePeriodsTapped")
+                    onOpenStocktakePeriods()
+                }
+            ) { Text("Stocktake Periods") }
         } else {
             Button(
                 modifier = Modifier.fillMaxWidth(),

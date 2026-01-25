@@ -35,6 +35,8 @@ const qtyUnits = [
   "Jar",
 ] as const;
 
+type UomOption = { value: string; label: string };
+
 const formatUnitLabel = (unit: string) => {
   const trimmed = unit.trim();
   if (!trimmed) return "";
@@ -58,7 +60,7 @@ const formatUnitLabel = (unit: string) => {
   return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
 };
 
-const DEFAULT_UOMS = qtyUnits.map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
+const DEFAULT_UOMS: UomOption[] = qtyUnits.map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
 
 const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "g" };
 
@@ -92,7 +94,7 @@ export default function RecipesPage() {
   const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([EMPTY_LINE]);
   const [hasFinishedRecipe, setHasFinishedRecipe] = useState(false);
   const [hasIngredientRecipe, setHasIngredientRecipe] = useState(false);
-  const [uoms, setUoms] = useState(DEFAULT_UOMS);
+  const [uoms, setUoms] = useState<UomOption[]>(DEFAULT_UOMS);
 
   useEffect(() => {
     let active = true;

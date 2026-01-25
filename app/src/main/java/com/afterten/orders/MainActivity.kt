@@ -28,6 +28,7 @@ import com.afterten.orders.data.OutletSession
 import com.afterten.orders.ui.stocktake.StocktakeCountScreen
 import com.afterten.orders.ui.stocktake.StocktakeDashboardScreen
 import com.afterten.orders.ui.stocktake.StocktakePeriodsScreen
+import com.afterten.orders.ui.stocktake.StocktakePeriodCountsScreen
 import com.afterten.orders.ui.stocktake.StocktakeVarianceScreen
 
 class MainActivity : ComponentActivity() {
@@ -62,6 +63,9 @@ sealed class Routes(val route: String) {
     }
     data object StocktakePeriods : Routes("stocktake_periods/{warehouseId}") {
         fun route(warehouseId: String) = "stocktake_periods/$warehouseId"
+    }
+    data object StocktakePeriodCounts : Routes("stocktake_period_counts/{periodId}") {
+        fun route(periodId: String) = "stocktake_period_counts/$periodId"
     }
     data object StocktakeVariance : Routes("stocktake_variance/{periodId}") {
         fun route(periodId: String) = "stocktake_variance/$periodId"
@@ -102,6 +106,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onViewOrders = { navController.navigate(Routes.Orders.route) },
                 onOpenStocktake = { navController.navigate(Routes.StocktakeDashboard.route) },
+                onOpenStocktakePeriods = { navController.navigate(Routes.StocktakePeriods.route("select")) },
                 onLogout = {
                     appViewModel.setSession(null)
                     navController.navigate(Routes.Login.route) {
@@ -190,6 +195,18 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             StocktakePeriodsScreen(
                 root = appViewModel,
                 warehouseId = warehouseId,
+                onBack = { navController.popBackStack() },
+                onOpenPeriodDetails = { periodId -> navController.navigate(Routes.StocktakePeriodCounts.route(periodId)) }
+            )
+        }
+        composable(
+            route = Routes.StocktakePeriodCounts.route,
+            arguments = listOf(navArgument("periodId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val periodId = backStackEntry.arguments?.getString("periodId") ?: ""
+            StocktakePeriodCountsScreen(
+                root = appViewModel,
+                periodId = periodId,
                 onBack = { navController.popBackStack() }
             )
         }

@@ -276,14 +276,6 @@ fun StocktakeDashboardScreen(
             }
         }
 
-        OutlinedButton(
-            onClick = { ui.selectedWarehouseId?.let(onOpenPeriods) },
-            enabled = ui.selectedWarehouseId != null && !ui.loading,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-            border = BorderStroke(1.dp, primaryRed)
-        ) { Text("View opening & closing periods") }
-
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Back", color = Color.White)
         }
@@ -294,15 +286,18 @@ fun StocktakeDashboardScreen(
 fun StocktakePeriodsScreen(
     root: RootViewModel,
     warehouseId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenPeriodDetails: (String) -> Unit
 ) {
     val session by root.session.collectAsState()
     val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
     LaunchedEffect(session?.token) { vm.bindSession(session) }
-    LaunchedEffect(warehouseId, session?.token) {
-        if (warehouseId.isNotBlank()) vm.loadPeriods(warehouseId)
-    }
     val ui by vm.ui.collectAsState()
+    val needsSelection = warehouseId.isBlank() || warehouseId == "select"
+    val effectiveWarehouseId = if (needsSelection) ui.selectedWarehouseId ?: "" else warehouseId
+    LaunchedEffect(effectiveWarehouseId, session?.token) {
+        if (effectiveWarehouseId.isNotBlank()) vm.loadPeriods(effectiveWarehouseId)
+    }
 
     if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
         AccessDeniedCard(
@@ -316,6 +311,29 @@ fun StocktakePeriodsScreen(
 
     val primaryRed = Color(0xFFD50000)
     val surfaceBlack = Color.Black
+
+    val outlinedFieldColors = TextFieldDefaults.colors(
+        focusedIndicatorColor = primaryRed,
+        unfocusedIndicatorColor = primaryRed,
+        disabledIndicatorColor = primaryRed,
+        cursorColor = Color.White,
+        focusedLabelColor = Color.White,
+        unfocusedLabelColor = Color.White,
+        disabledLabelColor = Color.White,
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White,
+        disabledTextColor = Color.White,
+        focusedContainerColor = Color.Black,
+        unfocusedContainerColor = Color.Black,
+        disabledContainerColor = Color.Black
+    )
+
+    var outletMenu by remember { mutableStateOf(false) }
+    var warehouseMenu by remember { mutableStateOf(false) }
+    val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name ?: "Select outlet"
+    val warehouseLabel = ui.filteredWarehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name ?: "Select warehouse"
+    val canSelectOutlet = ui.outlets.isNotEmpty()
+    val warehouseEnabled = ui.filteredWarehouses.isNotEmpty()
 
     fun formatStamp(raw: String?): String {
         if (raw.isNullOrBlank()) return "—"
@@ -335,6 +353,66 @@ fun StocktakePeriodsScreen(
             IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
             Text("Stocktake periods", fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.size(40.dp))
+        }
+
+        if (needsSelection) {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                border = BorderStroke(1.dp, primaryRed)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Outlet", color = Color.White, fontWeight = FontWeight.Bold)
+                    ExposedDropdownMenuBox(expanded = outletMenu, onExpandedChange = { outletMenu = it }) {
+                        OutlinedTextField(
+                            value = outletLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = canSelectOutlet && !ui.loading,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) },
+                            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            colors = outlinedFieldColors
+                        )
+                        DropdownMenu(expanded = outletMenu, onDismissRequest = { outletMenu = false }) {
+                            ui.outlets.forEach { outlet ->
+                                DropdownMenuItem(
+                                    text = { Text(outlet.name, color = Color.White) },
+                                    onClick = {
+                                        outletMenu = false
+                                        vm.selectOutlet(outlet.id)
+                                    },
+                                    contentPadding = MenuDefaults.DropdownMenuItemContentPadding
+                                )
+                            }
+                        }
+                    }
+
+                    Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
+                    ExposedDropdownMenuBox(expanded = warehouseMenu, onExpandedChange = { warehouseMenu = it }) {
+                        OutlinedTextField(
+                            value = warehouseLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = warehouseEnabled && !ui.loading,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = warehouseMenu) },
+                            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                            colors = outlinedFieldColors
+                        )
+                        DropdownMenu(expanded = warehouseMenu, onDismissRequest = { warehouseMenu = false }) {
+                            ui.filteredWarehouses.forEach { wh ->
+                                DropdownMenuItem(
+                                    text = { Text(wh.name, color = Color.White) },
+                                    onClick = {
+                                        warehouseMenu = false
+                                        vm.selectWarehouse(wh.id)
+                                    },
+                                    contentPadding = MenuDefaults.DropdownMenuItemContentPadding
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (ui.periodsLoading) {
@@ -357,24 +435,146 @@ fun StocktakePeriodsScreen(
             Text("No stocktake periods found for this warehouse.", color = Color.White)
         }
 
-        ui.periods.forEach { period ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
-                border = BorderStroke(1.dp, primaryRed)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(period.stocktakeNumber ?: period.id.take(8), fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("Status: ${period.status}", color = Color.White)
-                    Text("Opened: ${formatStamp(period.openedAt)}", color = Color.White)
-                    Text("Closed: ${formatStamp(period.closedAt)}", color = Color.White)
-                    period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
+        val openPeriods = ui.periods.filter { it.status.equals("open", ignoreCase = true) }
+        val closedPeriods = ui.periods.filter { !it.status.equals("open", ignoreCase = true) }
+
+        if (openPeriods.isNotEmpty()) {
+            Text("Open periods", fontWeight = FontWeight.Bold, color = Color.White)
+            openPeriods.forEach { period ->
+                Card(
+                    onClick = { onOpenPeriodDetails(period.id) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                    border = BorderStroke(1.dp, primaryRed)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(period.stocktakeNumber ?: period.id.take(8), fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Status: ${period.status}", color = Color.White)
+                        Text("Opened: ${formatStamp(period.openedAt)}", color = Color.White)
+                        Text("Closed: ${formatStamp(period.closedAt)}", color = Color.White)
+                        period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
+                        Text("Tap to view counts", color = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
+
+        if (closedPeriods.isNotEmpty()) {
+            Text("Closed periods", fontWeight = FontWeight.Bold, color = Color.White)
+            closedPeriods.forEach { period ->
+                Card(
+                    onClick = { onOpenPeriodDetails(period.id) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                    border = BorderStroke(1.dp, primaryRed)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(period.stocktakeNumber ?: period.id.take(8), fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Status: ${period.status}", color = Color.White)
+                        Text("Opened: ${formatStamp(period.openedAt)}", color = Color.White)
+                        Text("Closed: ${formatStamp(period.closedAt)}", color = Color.White)
+                        period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
+                        Text("Tap to view counts", color = Color.White.copy(alpha = 0.7f))
+                    }
                 }
             }
         }
 
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Back", color = Color.White)
+        }
+    }
+}
+
+@Composable
+fun StocktakePeriodCountsScreen(
+    root: RootViewModel,
+    periodId: String,
+    onBack: () -> Unit
+) {
+    val session by root.session.collectAsState()
+    val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
+    LaunchedEffect(session?.token) { vm.bindSession(session) }
+    LaunchedEffect(periodId, session?.token) {
+        if (periodId.isNotBlank()) vm.loadPeriodCounts(periodId)
+    }
+    val ui by vm.ui.collectAsState()
+
+    if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
+        AccessDeniedCard(
+            title = "Stocktake role required",
+            message = "Ask an admin to assign the Stocktake role to your account.",
+            primaryLabel = "Back",
+            onPrimary = onBack
+        )
+        return
+    }
+
+    val primaryRed = Color(0xFFD50000)
+    val surfaceBlack = Color.Black
+
+    fun formatQty(value: Double): String = String.format("%.2f", value)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("Stocktake Counts", fontWeight = FontWeight.Bold, color = Color.White)
+            if (ui.periodCountsLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryRed) else Spacer(Modifier.size(24.dp))
+        }
+
+        ui.periodCountsError?.let {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.Black), border = BorderStroke(1.dp, primaryRed)) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, color = Color.White)
+                }
+            }
+        }
+
+        if (ui.periodOpeningCounts.isNotEmpty()) {
+            Text("Opening counts", fontWeight = FontWeight.Bold, color = Color.White)
+            ui.periodOpeningCounts.forEach { row ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                    border = BorderStroke(1.dp, primaryRed)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(row.itemName, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Variant: ${row.variantName}", color = Color.White)
+                        Text("Qty: ${formatQty(row.qty)}", color = Color.White)
+                    }
+                }
+            }
+        }
+
+        if (ui.periodClosingCounts.isNotEmpty()) {
+            Text("Closing counts", fontWeight = FontWeight.Bold, color = Color.White)
+            ui.periodClosingCounts.forEach { row ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                    border = BorderStroke(1.dp, primaryRed)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(row.itemName, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Variant: ${row.variantName}", color = Color.White)
+                        Text("Qty: ${formatQty(row.qty)}", color = Color.White)
+                    }
+                }
+            }
+        }
+
+        if (!ui.periodCountsLoading && ui.periodOpeningCounts.isEmpty() && ui.periodClosingCounts.isEmpty()) {
+            Text("No counts recorded for this period.", color = Color.White)
         }
     }
 }

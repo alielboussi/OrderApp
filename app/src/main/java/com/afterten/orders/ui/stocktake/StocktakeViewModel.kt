@@ -26,6 +26,10 @@ class StocktakeViewModel(
         val allItems: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val items: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val variations: List<SupabaseProvider.SimpleVariation> = emptyList(),
+        val periodOpeningCounts: List<PeriodCountDisplay> = emptyList(),
+        val periodClosingCounts: List<PeriodCountDisplay> = emptyList(),
+        val periodCountsLoading: Boolean = false,
+        val periodCountsError: String? = null,
         val recipeIngredients: Map<String, List<String>> = emptyMap(),
         val recipeIngredientsLoading: Set<String> = emptySet(),
         val recipeIngredientsError: String? = null,
@@ -44,6 +48,15 @@ class StocktakeViewModel(
         val loading: Boolean = false,
         val error: String? = null,
         val debug: List<String> = emptyList()
+    )
+
+    data class PeriodCountDisplay(
+        val itemId: String,
+        val itemName: String,
+        val variantKey: String,
+        val variantName: String,
+        val qty: Double,
+        val kind: String
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -355,6 +368,64 @@ class StocktakeViewModel(
                 .onFailure { err ->
                     pushDebug("loadPeriods failed: ${err.message}")
                     _ui.value = _ui.value.copy(periodsLoading = false, periodsError = err.message)
+                }
+        }
+    }
+
+    fun loadPeriodCounts(periodId: String) {
+        val jwt = session?.token ?: return
+        pushDebug("loadPeriodCounts period=$periodId")
+        _ui.value = _ui.value.copy(periodCountsLoading = true, periodCountsError = null)
+        viewModelScope.launch {
+            runCatching {
+                val opening = repo.listCountsForPeriod(jwt, periodId, "opening")
+                val closing = repo.listCountsForPeriod(jwt, periodId, "closing")
+                val catalog = repo.listCatalogItemsForStocktake(jwt)
+                Triple(opening, closing, catalog)
+            }
+                .onSuccess { (opening, closing, catalog) ->
+                    val itemNameMap = catalog.associate { it.itemId to (it.itemName ?: "Item") }
+                    val variantMap = _ui.value.variations
+                        .groupBy { it.productId }
+                        .mapValues { entry ->
+                            entry.value.associateBy { v ->
+                                v.key?.trim()?.lowercase() ?: v.id.trim().lowercase()
+                            }
+                        }
+
+                    fun formatVariantName(itemId: String, keyRaw: String?): String {
+                        val key = keyRaw?.trim()?.ifBlank { "base" } ?: "base"
+                        if (key.equals("base", ignoreCase = true)) return "Base"
+                        val lookup = key.lowercase()
+                        val variation = variantMap[itemId]?.get(lookup)
+                        return variation?.name ?: key
+                    }
+
+                    fun toDisplay(rows: List<StocktakeRepository.StockCountRow>, kind: String): List<PeriodCountDisplay> {
+                        return rows.map { row ->
+                            val itemName = itemNameMap[row.itemId] ?: "Item"
+                            val variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                            PeriodCountDisplay(
+                                itemId = row.itemId,
+                                itemName = itemName,
+                                variantKey = variantKey,
+                                variantName = formatVariantName(row.itemId, variantKey),
+                                qty = row.countedQty,
+                                kind = kind
+                            )
+                        }
+                    }
+
+                    _ui.value = _ui.value.copy(
+                        periodOpeningCounts = toDisplay(opening, "opening"),
+                        periodClosingCounts = toDisplay(closing, "closing"),
+                        periodCountsLoading = false,
+                        periodCountsError = null
+                    )
+                }
+                .onFailure { err ->
+                    pushDebug("loadPeriodCounts failed: ${err.message}")
+                    _ui.value = _ui.value.copy(periodCountsLoading = false, periodCountsError = err.message)
                 }
         }
     }

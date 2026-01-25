@@ -162,20 +162,20 @@ public sealed class SupabaseClient
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogWarning("Supabase pause flag check failed {Status}: {Body}", (int)response.StatusCode, body);
-                return false;
+                return true;
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
             {
-                return false;
+                return true;
             }
 
             var entry = doc.RootElement[0];
             if (!entry.TryGetProperty("last_value", out var lastValueProp))
             {
-                return false;
+                return true;
             }
 
             var lastValue = lastValueProp.GetInt64();
@@ -184,7 +184,7 @@ public sealed class SupabaseClient
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking POS sync pause flag");
-            return false;
+            return true;
         }
     }
 

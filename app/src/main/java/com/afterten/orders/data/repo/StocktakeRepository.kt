@@ -191,6 +191,13 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         return json.decodeFromString(ListSerializer(StockCountKeyRow.serializer()), text)
     }
 
+    suspend fun listCountsForPeriod(jwt: String, periodId: String, kind: String): List<StockCountRow> {
+        val select = encode("item_id,variant_key,counted_qty,kind")
+        val path = "/rest/v1/warehouse_stock_counts?select=${select}&period_id=eq.${periodId}&kind=eq.${kind}"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(StockCountRow.serializer()), text)
+    }
+
     suspend fun listClosingCountsForPeriod(jwt: String, periodId: String): List<StockCountRow> {
         val select = encode("item_id,variant_key,counted_qty,kind")
         val path = "/rest/v1/warehouse_stock_counts?select=${select}&period_id=eq.${periodId}&kind=eq.closing"
