@@ -283,6 +283,7 @@ fun StocktakeDashboardScreen(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun StocktakePeriodsScreen(
     root: RootViewModel,
     warehouseId: String,
