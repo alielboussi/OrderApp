@@ -36,7 +36,12 @@ export default function PosItemMapPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [selectedVariantKeys, setSelectedVariantKeys] = useState<string[]>(["base"]);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [duplicateOutletId, setDuplicateOutletId] = useState("");
+  const [duplicateWarehouseId, setDuplicateWarehouseId] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
+  const [selectedVariantKeys, setSelectedVariantKeys] = useState<string[]>([]);
   const initialForm = {
     pos_item_id: "",
     pos_item_name: "",
@@ -49,6 +54,9 @@ export default function PosItemMapPage() {
   };
   const [form, setForm] = useState(initialForm);
   const resetForm = () => setForm({ ...initialForm });
+
+  const getMappingKey = (mapping: Mapping) =>
+    `${mapping.pos_item_id}-${mapping.pos_flavour_id ?? "_"}-${mapping.catalog_item_id}-${mapping.catalog_variant_key ?? "base"}-${mapping.outlet_id}-${mapping.warehouse_id ?? "_"}`;
 
   const load = async () => {
     setLoading(true);
@@ -112,6 +120,27 @@ export default function PosItemMapPage() {
     });
   }, [mappings, search]);
 
+  const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
+  const filteredKeys = useMemo(() => filtered.map((m) => getMappingKey(m)), [filtered]);
+  const allFilteredSelected = filteredKeys.length > 0 && filteredKeys.every((key) => selectedSet.has(key));
+
+  const toggleSelection = (key: string) => {
+    setSelectedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
+
+  const toggleSelectAllFiltered = () => {
+    if (filteredKeys.length === 0) return;
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (filteredKeys.every((key) => next.has(key))) {
+        filteredKeys.forEach((key) => next.delete(key));
+      } else {
+        filteredKeys.forEach((key) => next.add(key));
+      }
+      return Array.from(next);
+    });
+  };
+
   const outletOptions = useMemo(
     () => outlets.map((o) => ({ value: o.id, label: `${o.name}${o.code ? ` (${o.code})` : ""}` })),
     [outlets]
@@ -143,6 +172,87 @@ export default function PosItemMapPage() {
   }, [variants]);
 
   const isReady = status === "ok";
+
+  const deleteMapping = async (mapping: Mapping) => {
+    if (readOnly) {
+      setError("Read-only access: deleting is disabled.");
+      return;
+    }
+    setError(null);
+    const key = getMappingKey(mapping);
+    setDeletingKey(key);
+    try {
+      const params = new URLSearchParams({
+        pos_item_id: mapping.pos_item_id,
+        catalog_item_id: mapping.catalog_item_id,
+        outlet_id: mapping.outlet_id,
+      });
+      if (mapping.pos_flavour_id) params.set("pos_flavour_id", mapping.pos_flavour_id);
+      if (mapping.catalog_variant_key) params.set("catalog_variant_key", mapping.catalog_variant_key);
+      if (mapping.warehouse_id) params.set("warehouse_id", mapping.warehouse_id);
+
+      const response = await fetch(`/api/catalog/pos-item-map?${params.toString()}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || "Failed to delete mapping");
+      }
+      await load();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to delete mapping");
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  const duplicateSelected = async () => {
+    if (readOnly) {
+      setError("Read-only access: duplicating is disabled.");
+      return;
+    }
+    if (!duplicateOutletId) {
+      setError("Select an outlet to duplicate into.");
+      return;
+    }
+    const selected = mappings.filter((m) => selectedSet.has(getMappingKey(m)));
+    if (!selected.length) {
+      setError("Select at least one mapping to duplicate.");
+      return;
+    }
+    setDuplicating(true);
+    setError(null);
+    try {
+      await Promise.all(
+        selected.map(async (m) => {
+          const response = await fetch("/api/catalog/pos-item-map", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pos_item_id: m.pos_item_id,
+              pos_item_name: m.pos_item_name ?? null,
+              pos_flavour_id: m.pos_flavour_id ?? null,
+              pos_flavour_name: m.pos_flavour_name ?? null,
+              catalog_item_id: m.catalog_item_id,
+              catalog_variant_key: m.catalog_variant_key ?? "base",
+              warehouse_id: duplicateWarehouseId || m.warehouse_id || null,
+              outlet_id: duplicateOutletId,
+            }),
+          });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload?.error || "Failed to duplicate mapping");
+          }
+        })
+      );
+      setSelectedKeys([]);
+      await load();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to duplicate mappings");
+    } finally {
+      setDuplicating(false);
+    }
+  };
 
   return (
     <div className={styles.page}>
@@ -185,11 +295,62 @@ export default function PosItemMapPage() {
                   className={styles.searchInput}
                 />
               </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel}>Duplicate to outlet</label>
+                <select
+                  className={styles.searchInput}
+                  value={duplicateOutletId}
+                  onChange={(e) => setDuplicateOutletId(e.target.value)}
+                  aria-label="Select outlet to duplicate"
+                >
+                  <option value="">Select outlet</option>
+                  {outletOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel}>Duplicate warehouse</label>
+                <select
+                  className={styles.searchInput}
+                  value={duplicateWarehouseId}
+                  onChange={(e) => setDuplicateWarehouseId(e.target.value)}
+                  aria-label="Select warehouse override"
+                >
+                  <option value="">Keep original warehouse</option>
+                  {warehouseOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel}>Selected</label>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={() => void duplicateSelected()}
+                  disabled={duplicating || readOnly || selectedKeys.length === 0}
+                >
+                  {readOnly ? "Read-only" : duplicating ? "Duplicating..." : "Duplicate selected"}
+                </button>
+              </div>
               {error && <div className={styles.error}>{error}</div>}
             </section>
 
             <section className={styles.tableCard}>
               <div className={styles.tableHead}>
+                <span>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all filtered mappings"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAllFiltered}
+                  />
+                </span>
                 <span>POS Item ID</span>
                 <span>POS Item Name</span>
                 <span>POS Flavour ID</span>
@@ -198,6 +359,7 @@ export default function PosItemMapPage() {
                 <span>Variant</span>
                 <span>Warehouse</span>
                 <span>Outlet</span>
+                <span>Actions</span>
               </div>
               {filtered.length === 0 ? (
                 <div className={styles.empty}>No mappings found.</div>
@@ -207,6 +369,14 @@ export default function PosItemMapPage() {
                     key={`${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}`}
                     className={styles.tableRow}
                   >
+                    <span>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select mapping ${m.pos_item_id}`}
+                        checked={selectedSet.has(getMappingKey(m))}
+                        onChange={() => toggleSelection(getMappingKey(m))}
+                      />
+                    </span>
                     <span>{m.pos_item_id}</span>
                     <span className={m.pos_item_name ? undefined : styles.muted}>{m.pos_item_name ?? "—"}</span>
                     <span className={m.pos_flavour_id ? undefined : styles.muted}>{m.pos_flavour_id ?? "—"}</span>
@@ -217,6 +387,18 @@ export default function PosItemMapPage() {
                     </span>
                     <span className={m.warehouse_id ? undefined : styles.muted}>{warehouseNameById[m.warehouse_id ?? ""] ?? m.warehouse_id ?? "—"}</span>
                     <span>{outletNameById[m.outlet_id] ?? m.outlet_id}</span>
+                    <span>
+                      <button
+                        type="button"
+                        className={styles.rowButton}
+                        onClick={() => void deleteMapping(m)}
+                        disabled={readOnly || deletingKey === getMappingKey(m)}
+                      >
+                        {deletingKey === getMappingKey(m)
+                          ? "Deleting..."
+                          : "Delete"}
+                      </button>
+                    </span>
                   </div>
                 ))
               )}
@@ -224,6 +406,7 @@ export default function PosItemMapPage() {
 
             <section className={`${styles.tableCard} ${styles.formCard}`}>
               <div className={styles.tableHead}>
+                <span></span>
                 <span>POS Item ID</span>
                 <span>POS Item Name</span>
                 <span>POS Flavour ID</span>
@@ -232,6 +415,7 @@ export default function PosItemMapPage() {
                 <span>Variant</span>
                 <span>Warehouse</span>
                 <span>Outlet</span>
+                <span></span>
               </div>
               <div className={`${styles.tableRow} ${styles.formRow}`}>
                 <input
@@ -266,7 +450,7 @@ export default function PosItemMapPage() {
                   onChange={(e) => {
                     const next = e.target.value;
                     setForm((f) => ({ ...f, catalog_item_id: next, catalog_variant_key: "base" }));
-                    setSelectedVariantKeys(["base"]);
+                    setSelectedVariantKeys([]);
                   }}
                   aria-label="Select catalog item"
                 >
@@ -292,8 +476,7 @@ export default function PosItemMapPage() {
                                 const isChecked = e.target.checked;
                                 setSelectedVariantKeys((prev) => {
                                   if (isChecked) return Array.from(new Set([...prev, opt.value]));
-                                  const next = prev.filter((v) => v !== opt.value);
-                                  return next.length ? next : ["base"];
+                                  return prev.filter((v) => v !== opt.value);
                                 });
                                 if (isChecked) {
                                   setForm((f) => ({ ...f, catalog_variant_key: opt.value }));
@@ -304,7 +487,7 @@ export default function PosItemMapPage() {
                           </label>
                         );
                       })}
-                      <div className={styles.variantHint}>Select multiple variants to map in one action.</div>
+                      <div className={styles.variantHint}>Select one or more variants to map.</div>
                     </div>
                   )}
                 </div>
@@ -353,7 +536,15 @@ export default function PosItemMapPage() {
                       const selectedCatalog = items.find((it) => it.id === form.catalog_item_id.trim());
                       const derivedPosItemId = form.pos_item_id.trim();
                       const derivedPosItemName = form.pos_item_name.trim() || selectedCatalog?.name || null;
-                      const variantKeys = selectedVariantKeys.length ? selectedVariantKeys : [form.catalog_variant_key || "base"];
+                      const variantKeys = selectedVariantKeys.length
+                        ? selectedVariantKeys
+                        : variantOptions.length === 1 && variantOptions[0]?.value === "base"
+                        ? ["base"]
+                        : [];
+                      if (!variantKeys.length) {
+                        setError("Select at least one variant (or base).");
+                        return;
+                      }
                       if (!derivedPosItemId) {
                         setError("POS item id is required");
                         return;
@@ -381,7 +572,7 @@ export default function PosItemMapPage() {
                         )
                       );
                       resetForm();
-                      setSelectedVariantKeys(["base"]);
+                      setSelectedVariantKeys([]);
                       await load();
                     } catch (err) {
                       console.error(err);

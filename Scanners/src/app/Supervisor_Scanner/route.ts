@@ -5,10 +5,8 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
-const DESTINATION_CHOICES = [
-  { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Quick Corner' }
-] as const;
-const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
+const DESTINATION_CHOICES = [] as const;
+const LOCKED_DEST_ID = '';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
 const MULTIPLY_QTY_BY_PACKAGE = false;
 const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
@@ -1800,7 +1798,6 @@ function createHtml(config: {
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
-      const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
 
       const state = {
         session: null,
@@ -2547,22 +2544,25 @@ function createHtml(config: {
         }
 
         const loadStockAndDefaults = async () => {
-          const allowedWarehouses = [lockedSourceId, lockedDestId].filter(Boolean);
+          const activeDestId = state.destinationSelection;
+          const allowedWarehouses = [lockedSourceId, activeDestId].filter(Boolean);
           const [stockResult, destStockResult, defaultItemsResult, outletRouteResult, storageHomesResult] = await Promise.all([
             supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
-            lockedDestId
-              ? supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').eq('warehouse_id', lockedDestId)
+            activeDestId
+              ? supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').eq('warehouse_id', activeDestId)
               : Promise.resolve({ data: [], error: null }),
-            supabase
-              .from('catalog_items')
-              .select('id,variants')
-              .eq('default_warehouse_id', lockedDestId)
-              .eq('active', true),
-            lockedDestId
+            activeDestId
+              ? supabase
+                  .from('catalog_items')
+                  .select('id,variants')
+                  .eq('default_warehouse_id', activeDestId)
+                  .eq('active', true)
+              : Promise.resolve({ data: [], error: null }),
+            activeDestId
               ? supabase
                   .from('outlet_item_routes')
                   .select('item_id, variant_key')
-                  .eq('warehouse_id', lockedDestId)
+                  .eq('warehouse_id', activeDestId)
                   .eq('deduct_enabled', true)
               : Promise.resolve({ data: [], error: null }),
             allowedWarehouses.length
@@ -2597,14 +2597,14 @@ function createHtml(config: {
             variants.forEach((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
               const variantActive = variant?.active !== false;
-              if (variantDefault === lockedDestId && variantActive && row?.id) {
+              if (variantDefault === activeDestId && variantActive && row?.id) {
                 productsWithWarehouseVariations.add(row.id);
               }
             });
           });
 
           latestStorageHomes.forEach((home) => {
-            if (home?.storage_warehouse_id === lockedDestId && home?.item_id) {
+            if (home?.storage_warehouse_id === activeDestId && home?.item_id) {
               destIds.add(home.item_id);
               if (home.normalized_variant_key && home.normalized_variant_key !== 'base') {
                 productsWithWarehouseVariations.add(home.item_id);
@@ -2702,7 +2702,8 @@ function createHtml(config: {
           .eq('active', true);
         if (error) throw error;
 
-        const allowedVariantWarehouses = new Set([lockedSourceId, lockedDestId].filter(Boolean));
+        const activeDestId = state.destinationSelection;
+        const allowedVariantWarehouses = new Set([lockedSourceId, activeDestId].filter(Boolean));
 
         const storageHomeMap = new Map<string, string>();
         latestStorageHomes.forEach((home) => {
@@ -3920,10 +3921,7 @@ function createHtml(config: {
       }
 
       async function fetchWarehousesMetadata() {
-        const destinationIds = Array.isArray(DESTINATION_CHOICES)
-          ? DESTINATION_CHOICES.map((choice) => (choice && typeof choice.id === 'string' ? choice.id : null)).filter(Boolean)
-          : [];
-        const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
+        const lockedIds = Array.from(new Set([lockedSourceId].filter(Boolean)));
 
         const loadViaRpc = async () => {
           const { data, error } = await supabase.rpc('console_locked_warehouses', {
@@ -4167,13 +4165,12 @@ function createHtml(config: {
           state.warehouses = warehouses ?? [];
           const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
           state.lockedSource = sourceWarehouse;
-          const hydratedDestinations = (DESTINATION_CHOICES || []).map((choice) => {
-            const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
-            return {
-              id: choice.id,
-              label: record?.name ?? choice.label ?? 'Destination warehouse'
-            };
-          });
+          const hydratedDestinations = (state.warehouses || [])
+            .filter((warehouse) => warehouse?.id && warehouse.id !== lockedSourceId && warehouse.active !== false)
+            .map((warehouse) => ({
+              id: warehouse.id,
+              label: warehouse.name ?? 'Destination warehouse'
+            }));
           state.destinationOptions = hydratedDestinations;
           const hasSavedSelection = state.destinationSelection && hydratedDestinations.some((opt) => opt.id === state.destinationSelection);
           if (!hasSavedSelection) {
@@ -4194,7 +4191,7 @@ function createHtml(config: {
             throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
           }
           if (!hydratedDestinations.length) {
-            throw new Error('Destination options missing. Confirm DESTINATION_CHOICES IDs exist in Supabase.');
+            throw new Error('No destination warehouses found. Add another warehouse or mark it active.');
           }
         } catch (error) {
           console.error('refreshMetadata failed', error);
@@ -5243,7 +5240,7 @@ export async function GET(request: Request) {
   const destWarehouse = initialWarehouses.find((w) => w.id === LOCKED_DEST_ID);
   const html = createHtml({
     sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Loading...'),
-    destPillLabel: describeLockedWarehouse(destWarehouse, 'Loading...'),
+    destPillLabel: describeLockedWarehouse(destWarehouse, 'Choose destination'),
     sourceWarehouseName: sourceWarehouse?.name ?? 'Loading...',
     initialWarehousesJson: serializeForScript(initialWarehouses),
     initialView,

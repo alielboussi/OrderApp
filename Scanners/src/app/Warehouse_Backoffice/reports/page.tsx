@@ -143,6 +143,7 @@ export default function WarehouseSalesReportsPage() {
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [productOpen, setProductOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -246,6 +247,12 @@ export default function WarehouseSalesReportsPage() {
       .filter(Boolean)
       .join(", ");
   }, [outlets, selectedOutletIds]);
+
+  const filteredProducts = useMemo(() => {
+    const query = productSearch.trim().toLowerCase();
+    if (!query) return productOptions;
+    return productOptions.filter((product) => (product.name ?? "").toLowerCase().includes(query));
+  }, [productOptions, productSearch]);
 
   const downloadPdfReport = async () => {
     const outletText = selectedOutletNames || "All outlets";
@@ -506,10 +513,19 @@ export default function WarehouseSalesReportsPage() {
               </button>
               {productOpen ? (
                 <div className={styles.dropdownPanel}>
+                  <label className={styles.inputLabel}>
+                    Search products
+                    <input
+                      className={styles.textInput}
+                      placeholder="Search item or ingredient"
+                      value={productSearch}
+                      onChange={(event) => setProductSearch(event.target.value)}
+                    />
+                  </label>
                   {productOptions.length === 0 ? (
                     <p className={styles.muted}>No products found.</p>
                   ) : (
-                    productOptions.map((product) => (
+                    filteredProducts.map((product) => (
                       <label key={product.id} className={styles.checkboxRow}>
                         <input
                           type="checkbox"
@@ -520,6 +536,9 @@ export default function WarehouseSalesReportsPage() {
                       </label>
                     ))
                   )}
+                  {filteredProducts.length === 0 && productOptions.length > 0 ? (
+                    <p className={styles.muted}>No products match your search.</p>
+                  ) : null}
                 </div>
               ) : null}
             </div>

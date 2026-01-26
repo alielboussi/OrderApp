@@ -84,6 +84,9 @@ android {
             )
             manifest.srcFile("src/main/AndroidManifest.xml")
         }
+        getByName("androidTest") {
+            manifest.srcFile("src/androidTest/AndroidManifest.xml")
+        }
     }
 }
 
@@ -112,6 +115,16 @@ tasks.named<Delete>("clean") {
             exclude("lint-cache/**")
         }
     )
+}
+
+// Ensure clean runs before other tasks when invoked together to avoid removing intermediates mid-build.
+val cleanRequested = gradle.startParameter.taskNames.any { name ->
+    name == "clean" || name.endsWith(":clean")
+}
+if (cleanRequested) {
+    tasks.matching { it.name != "clean" }.configureEach {
+        mustRunAfter("clean")
+    }
 }
 
 // Inject Supabase env from gradle.properties (do not hardcode secrets in source)

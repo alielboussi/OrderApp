@@ -69,8 +69,9 @@ export default function OutletWarehouseBalancesPage() {
 
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
-  const [selectedOutletId, setSelectedOutletId] = useState<string>("");
+  const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
+  const [linkedWarehouseIds, setLinkedWarehouseIds] = useState<string[]>([]);
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
@@ -116,10 +117,9 @@ export default function OutletWarehouseBalancesPage() {
           }
         }
 
-        const withAll = [{ id: "all", name: "All Outlets" }, ...mapped];
-        setOutlets(withAll);
-        if (!selectedOutletId && withAll.length > 0) {
-          setSelectedOutletId(withAll[0].id);
+        setOutlets(mapped);
+        if (selectedOutletIds.length === 0 && mapped.length > 0) {
+          setSelectedOutletIds(mapped.map((outlet) => outlet.id));
         }
       } catch (err) {
         if (!active) return;
@@ -134,33 +134,65 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletId]);
+  }, [status, supabase, selectedOutletIds.length]);
+
+  const toggleOutlet = (id: string) => {
+    setSelectedOutletIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  };
+
+  const selectAllOutlets = () => {
+    setSelectedOutletIds(outlets.map((outlet) => outlet.id));
+  };
+
+  const clearOutlets = () => {
+    setSelectedOutletIds([]);
+  };
 
   useEffect(() => {
-    if (status !== "ok" || !selectedOutletId) return;
+    if (status !== "ok") return;
+    if (selectedOutletIds.length === 0) {
+      setWarehouses([]);
+      setLinkedWarehouseIds([]);
+      setSelectedWarehouseId("");
+      return;
+    }
     let active = true;
 
     const loadWarehouses = async () => {
       try {
         setError(null);
-        let query = supabase
-          .from("warehouses")
-          .select("id,name,code,active")
-          .order("name", { ascending: true });
+        const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
+          .from("outlet_warehouses")
+          .select("warehouse_id")
+          .in("outlet_id", selectedOutletIds);
 
-        if (selectedOutletId !== "all") {
-          query = query.eq("outlet_id", selectedOutletId);
+        if (outletWarehouseError) throw outletWarehouseError;
+        const warehouseIds = Array.from(
+          new Set((outletWarehouseRows ?? []).map((row) => row?.warehouse_id).filter(Boolean))
+        ) as string[];
+
+        setLinkedWarehouseIds(warehouseIds);
+        if (warehouseIds.length === 0) {
+          setWarehouses([]);
+          setSelectedWarehouseId("");
+          return;
         }
 
-        const { data, error: warehouseError } = await query;
+        const { data, error: warehouseError } = await supabase
+          .from("warehouses")
+          .select("id,name,code,active")
+          .in("id", warehouseIds)
+          .order("name", { ascending: true });
 
         if (warehouseError) throw warehouseError;
         if (!active) return;
 
-        const filtered = (data || []).filter((row) => row.active ?? true);
-        setWarehouses(filtered as WarehouseOption[]);
-        if (!selectedWarehouseId && filtered.length > 0) {
-          setSelectedWarehouseId(filtered[0].id);
+        const filtered = (data || []).filter((row) => row.active ?? true) as WarehouseOption[];
+        const withAll = [{ id: "all", name: "All linked warehouses", code: null }, ...filtered];
+        setWarehouses(withAll);
+        const isValidSelection = selectedWarehouseId && withAll.some((warehouse) => warehouse.id === selectedWarehouseId);
+        if (!isValidSelection && withAll.length > 0) {
+          setSelectedWarehouseId(withAll[0].id);
         }
       } catch (err) {
         if (!active) return;
@@ -173,7 +205,7 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, selectedOutletId, selectedWarehouseId, supabase]);
+  }, [status, selectedOutletIds, selectedWarehouseId, supabase]);
 
   useEffect(() => {
     if (status !== "ok" || !selectedWarehouseId) return;
@@ -194,10 +226,16 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
+        const warehouseIds = selectedWarehouseId === "all" ? linkedWarehouseIds : [selectedWarehouseId];
+        if (warehouseIds.length === 0) {
+          if (active) setItems([]);
+          return;
+        }
+
         let query = supabase
           .from("warehouse_stock_items")
           .select("item_id,item_name,variant_key,net_units,item_kind,warehouse_id")
-          .eq("warehouse_id", selectedWarehouseId)
+          .in("warehouse_id", warehouseIds)
           .in("item_kind", kinds)
           .order("item_name", { ascending: true })
           .order("variant_key", { ascending: true });
@@ -213,7 +251,26 @@ export default function OutletWarehouseBalancesPage() {
         const { data, error: itemError } = await query;
         if (itemError) throw itemError;
         if (!active) return;
-        setItems((data as StockItem[]) || []);
+
+        const rows = (data as StockItem[]) || [];
+        if (selectedWarehouseId === "all") {
+          const map = new Map<string, StockItem>();
+          rows.forEach((row) => {
+            const key = `${row.item_id}::${row.variant_key ?? "base"}::${row.item_kind ?? ""}`;
+            const existing = map.get(key);
+            if (existing) {
+              existing.net_units = (existing.net_units ?? 0) + (row.net_units ?? 0);
+            } else {
+              map.set(key, { ...row, net_units: row.net_units ?? 0 });
+            }
+          });
+          const aggregated = Array.from(map.values()).sort((a, b) =>
+            (a.item_name ?? "").localeCompare(b.item_name ?? "")
+          );
+          setItems(aggregated);
+        } else {
+          setItems(rows);
+        }
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -227,7 +284,17 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, selectedWarehouseId, includeIngredients, includeRaw, includeFinished, baseOnly, search, supabase]);
+  }, [
+    status,
+    selectedWarehouseId,
+    linkedWarehouseIds,
+    includeIngredients,
+    includeRaw,
+    includeFinished,
+    baseOnly,
+    search,
+    supabase,
+  ]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -300,28 +367,37 @@ export default function OutletWarehouseBalancesPage() {
 
         <section className={styles.filtersCard}>
           <div className={styles.filterRow}>
-            <label className={styles.filterLabel}>
+            <div className={styles.filterLabel}>
               Outlet
-              <select
-                className={styles.select}
-                value={selectedOutletId}
-                onChange={(event) => {
-                  setSelectedOutletId(event.target.value);
-                  setSelectedWarehouseId("");
-                }}
-                disabled={booting}
-              >
+              <div className={styles.outletActions}>
+                <button type="button" className={styles.ghostButton} onClick={selectAllOutlets} disabled={booting}>
+                  Select all
+                </button>
+                <button type="button" className={styles.ghostButton} onClick={clearOutlets} disabled={booting}>
+                  Clear
+                </button>
+              </div>
+              <div className={styles.outletList}>
                 {outlets.length === 0 ? (
-                  <option value="">No outlets found</option>
+                  <span className={styles.emptyNote}>No outlets found</span>
                 ) : (
                   outlets.map((outlet) => (
-                    <option key={outlet.id} value={outlet.id}>
-                      {outlet.name}
-                    </option>
+                    <label key={outlet.id} className={styles.outletRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedOutletIds.includes(outlet.id)}
+                        onChange={() => {
+                          toggleOutlet(outlet.id);
+                          setSelectedWarehouseId("");
+                        }}
+                        disabled={booting}
+                      />
+                      <span>{outlet.name}</span>
+                    </label>
                   ))
                 )}
-              </select>
-            </label>
+              </div>
+            </div>
 
             <label className={styles.filterLabel}>
               Warehouse
@@ -329,7 +405,7 @@ export default function OutletWarehouseBalancesPage() {
                 className={styles.select}
                 value={selectedWarehouseId}
                 onChange={(event) => setSelectedWarehouseId(event.target.value)}
-                disabled={!selectedOutletId}
+                disabled={selectedOutletIds.length === 0}
               >
                 {warehouses.length === 0 ? (
                   <option value="">No warehouses found</option>
@@ -394,7 +470,12 @@ export default function OutletWarehouseBalancesPage() {
           <div className={styles.tableHeader}>
             <div>
               <p className={styles.tableTitle}>Live Balances</p>
-              <p className={styles.tableSubtitle}>Showing {items.length} items</p>
+              <p className={styles.tableSubtitle}>
+                Showing {items.length} items
+                {selectedWarehouseId === "all" && linkedWarehouseIds.length > 0
+                  ? ` · Summed across ${linkedWarehouseIds.length} warehouses`
+                  : ""}
+              </p>
             </div>
             {loading && <span className={styles.loadingTag}>Refreshing…</span>}
           </div>

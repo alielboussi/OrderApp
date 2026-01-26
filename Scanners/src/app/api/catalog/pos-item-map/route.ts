@@ -62,6 +62,32 @@ export async function GET() {
     const supabase = getServiceClient();
     const enrichWithCatalog = buildEnricher(supabase);
 
+    const findExisting = async (selectCols: string) => {
+      const normalizedKey = catalog_variant_key || "base";
+      let query = supabase
+        .from("pos_item_map")
+        .select(selectCols)
+        .eq("pos_item_id", pos_item_id)
+        .eq("catalog_item_id", catalog_item_id)
+        .eq("outlet_id", outlet_id);
+
+      if (normalizedKey === "base") {
+        query = query.or("normalized_variant_key.eq.base,normalized_variant_key.is.null");
+      } else {
+        query = query.eq("normalized_variant_key", normalizedKey);
+      }
+
+      if (pos_flavour_id) query = query.eq("pos_flavour_id", pos_flavour_id);
+      else query = query.or("pos_flavour_id.is.null,pos_flavour_id.eq.");
+
+      if (warehouse_id) query = query.eq("warehouse_id", warehouse_id);
+      else query = query.is("warehouse_id", null);
+
+      const { data, error } = await query.limit(1);
+      if (error) throw error;
+      return Array.isArray(data) && data.length ? data[0] : null;
+    };
+
     const mapWithFallback = (rows: any[]) =>
       rows.map((row) => ({
         ...row,
@@ -177,9 +203,36 @@ export async function POST(request: Request) {
 
     const enrichWithCatalog = buildEnricher(supabase);
 
+    const findExisting = async (selectCols: string) => {
+      let query = supabase
+        .from("pos_item_map")
+        .select(selectCols)
+        .eq("pos_item_id", pos_item_id)
+        .eq("catalog_item_id", catalog_item_id)
+        .eq("catalog_variant_key", catalog_variant_key)
+        .eq("outlet_id", outlet_id);
+
+      if (pos_flavour_id) query = query.eq("pos_flavour_id", pos_flavour_id);
+      else query = query.is("pos_flavour_id", null);
+
+      if (warehouse_id) query = query.eq("warehouse_id", warehouse_id);
+      else query = query.is("warehouse_id", null);
+
+      const { data, error } = await query.limit(1);
+      if (error) throw error;
+      return Array.isArray(data) && data.length ? data[0] : null;
+    };
+
     const insertAndSelect = async (payload: Record<string, any>, selectCols: string) => {
       const { data, error } = await supabase.from("pos_item_map").insert(payload).select(selectCols).single();
-      if (error) throw error;
+      if (error) {
+        const err = error as { code?: string };
+        if (err?.code === "23505") {
+          const existing = await findExisting(selectCols);
+          if (existing) return existing;
+        }
+        throw error;
+      }
 
       const row = data as any;
       let catalogName: string | null = null;
@@ -223,6 +276,11 @@ export async function POST(request: Request) {
     ].join(",");
 
     try {
+      const existing = await findExisting(fullSelect);
+      if (existing) {
+        const [enriched] = await enrichWithCatalog([existing]);
+        return NextResponse.json({ mapping: enriched ?? existing, duplicate: true }, { status: 200 });
+      }
       const data = await insertAndSelect(basePayload, fullSelect);
       return NextResponse.json({ mapping: data }, { status: 201 });
     } catch (error: any) {
@@ -243,6 +301,12 @@ export async function POST(request: Request) {
           "outlet_id",
         ].join(",");
 
+        const existingLegacy = await findExisting(legacySelect);
+        if (existingLegacy) {
+          const [enrichedLegacy] = await enrichWithCatalog([existingLegacy]);
+          return NextResponse.json({ mapping: enrichedLegacy ?? existingLegacy, duplicate: true }, { status: 200 });
+        }
+
         const data = await insertAndSelect(legacyPayload, legacySelect);
         return NextResponse.json({ mapping: data }, { status: 201 });
       }
@@ -250,7 +314,8 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error("[pos-item-map] POST failed", error);
-    return NextResponse.json({ error: "Unable to create mapping" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unable to create mapping";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

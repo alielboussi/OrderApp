@@ -19,6 +19,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup");
   const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
+  const goToOutletWarehouseAssignments = () => router.push("/Warehouse_Backoffice/outlet-warehouse-assignments");
   const goToReports = () => router.push("/Warehouse_Backoffice/reports");
 
   useEffect(() => {
@@ -129,6 +130,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToOutletBalances} className={`${styles.actionCard} ${styles.balanceCard}`}>
             <p className={`${styles.cardTitle} ${styles.balanceTitle}`}>Outlet Warehouse Balances</p>
             <p className={styles.cardBody}>Track live ingredient and raw stock remaining for outlet warehouses.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToOutletWarehouseAssignments} className={`${styles.actionCard} ${styles.assignmentsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.assignmentsTitle}`}>Outlet → Warehouse Setup</p>
+            <p className={styles.cardBody}>Assign outlets to warehouses for stock periods and POS validation.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

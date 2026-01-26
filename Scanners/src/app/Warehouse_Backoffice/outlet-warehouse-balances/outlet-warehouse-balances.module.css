@@ -107,6 +107,46 @@
   color: #9aa8c9;
 }
 
+.outletActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ghostButton {
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.outletList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.outletRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #e2e8f0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.emptyNote {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.85);
+}
+
 .select,
 .input {
   border-radius: 12px;

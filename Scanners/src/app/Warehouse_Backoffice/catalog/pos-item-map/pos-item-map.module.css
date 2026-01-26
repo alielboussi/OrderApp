@@ -88,6 +88,11 @@
   align-items: flex-end;
 }
 
+.controls .searchInput,
+.controls .primaryButton {
+  min-width: 220px;
+}
+
 .formGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -183,7 +188,7 @@
 .tableHead,
 .tableRow {
   display: grid;
-  grid-template-columns: 1.1fr 1fr 1.1fr 1fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 0.4fr 1.1fr 1fr 1.1fr 1fr 1fr 1fr 1fr 1fr 0.8fr;
   gap: 10px;
   padding: 12px 16px;
   align-items: center;
@@ -217,7 +222,8 @@
   font-size: 12px;
   background: rgba(255, 255, 255, 0.08);
   color: #e2e8f0;
-  justify-self: start;
+  display: inline-flex;
+  align-items: center;
 }
 
 .muted {
@@ -232,6 +238,22 @@
 .metaLine {
   color: #94a3b8;
   margin-top: 6px;
+}
+
+.rowButton {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+
+.rowButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1100px) {

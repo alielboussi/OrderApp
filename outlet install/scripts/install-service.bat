@@ -8,7 +8,8 @@ for %%I in ("%SCRIPT_DIR%..") do set "BASE_DIR=%%~fI"
 set "INSTALL_PATH=C:\Program Files\UltraAutomaticScreenSaver"
 set "CONFIG_ROOT=%LOCALAPPDATA%\Ultra Automatic Screen Saver"
 
-set "PS_ARGS=-NoProfile -ExecutionPolicy Bypass -File "%BASE_DIR%\scripts\install-service.ps1" -PublishOutput "%BASE_DIR%" -InstallPath "%INSTALL_PATH%" -ConfigRoot "%CONFIG_ROOT%""
+set "PS_SCRIPT=%BASE_DIR%\scripts\install-service.ps1"
+set "PS_ARGS=-NoProfile -ExecutionPolicy Bypass -File \"%PS_SCRIPT%\" -PublishOutput \"%BASE_DIR%\" -InstallPath \"%INSTALL_PATH%\" -ConfigRoot \"%CONFIG_ROOT%\""
 
 rem Elevate to admin if needed
 net session >nul 2>&1

@@ -438,6 +438,15 @@
           "ordinal_position": 32
         },
         {
+          "data_type": "numeric",
+          "table_name": "catalog_items",
+          "column_name": "selling_price",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 33
+        },
+        {
           "data_type": "text",
           "table_name": "counter_values",
           "column_name": "counter_key",
@@ -4624,6 +4633,18 @@
         },
         {
           "roles": [
+            "authenticated"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_warehouses",
+          "policy_name": "outlet_warehouses_admin_rw",
+          "table_schema": "public",
+          "using_expression": "is_admin(auth.uid())",
+          "with_check_expression": "is_admin(auth.uid())"
+        },
+        {
+          "roles": [
             "service_role"
           ],
           "command": "ALL",
@@ -5120,7 +5141,7 @@
         },
         {
           "arguments": "payload jsonb",
-          "definition": "CREATE OR REPLACE FUNCTION public.log_pos_sync_failure(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  insert into public.pos_sync_failures(\r\n    outlet_id,\r\n    source_event_id,\r\n    pos_order_id,\r\n    sale_id,\r\n    stage,\r\n    error_message,\r\n    details\r\n  ) values (\r\n    nullif(payload->>'outlet_id','')::uuid,\r\n    nullif(payload->>'source_event_id',''),\r\n    nullif(payload->>'pos_order_id',''),\r\n    nullif(payload->>'sale_id',''),\r\n    coalesce(nullif(payload->>'stage',''),'unknown'),\r\n    coalesce(nullif(payload->>'error_message',''), 'unknown error'),\r\n    payload->'details'\r\n  );\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.log_pos_sync_failure(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if coalesce(payload->>'stage','') ilike '%pos_item_match%'\r\n     or coalesce(payload->>'error_message','') ilike '%pos_item_match%'\r\n     or coalesce(payload->>'stage','') = 'missing_mapping'\r\n     or coalesce(payload->>'error_message','') ilike '%missing_mapping%'\r\n     or coalesce(payload->>'error_message','') ilike '%pos_item_map missing%' then\r\n    return;\r\n  end if;\r\n\r\n  insert into public.pos_sync_failures(\r\n    outlet_id,\r\n    source_event_id,\r\n    pos_order_id,\r\n    sale_id,\r\n    stage,\r\n    error_message,\r\n    details\r\n  ) values (\r\n    nullif(payload->>'outlet_id','')::uuid,\r\n    nullif(payload->>'source_event_id',''),\r\n    nullif(payload->>'pos_order_id',''),\r\n    nullif(payload->>'sale_id',''),\r\n    coalesce(nullif(payload->>'stage',''),'unknown'),\r\n    coalesce(nullif(payload->>'error_message',''), 'unknown error'),\r\n    payload->'details'\r\n  );\r\nend;\r\n$function$\n",
           "function_name": "log_pos_sync_failure",
           "function_schema": "public"
         },
@@ -5590,6 +5611,16 @@
           "constraint_type": "CHECK",
           "foreign_table_name": "catalog_items",
           "foreign_column_name": "qty_decimal_places",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_items",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "catalog_items_selling_price_check",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "catalog_items",
+          "foreign_column_name": "selling_price",
           "foreign_table_schema": "public"
         },
         {

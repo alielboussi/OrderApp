@@ -213,9 +213,6 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
             font-size: 10px;
             color: #374151;
           }
-          .page-number::after {
-            content: "Page " counter(page) " of " counter(pages);
-          }
           table, tr, td, th { page-break-inside: avoid; }
         </style>
       </head>
@@ -275,7 +272,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
             </div>
           </div>
         </div>
-        <div class="page-number"></div>
+        <div class="page-number">Page 1 of 1</div>
         <script>
           window.onload = () => {
             setTimeout(() => window.print(), 300);
