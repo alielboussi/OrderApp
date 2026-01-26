@@ -41,6 +41,7 @@ type FormState = {
   storage_unit: string;
   storage_weight: string;
   cost: string;
+  selling_price: string;
   has_variations: boolean;
   has_recipe: boolean;
   outlet_order_visible: boolean;
@@ -63,6 +64,7 @@ const defaultForm: FormState = {
   storage_unit: "",
   storage_weight: "",
   cost: "0",
+  selling_price: "0",
   has_variations: false,
   has_recipe: false,
   outlet_order_visible: true,
@@ -86,6 +88,11 @@ function ProductCreatePage() {
   const disableVariantControlled = form.has_variations;
   const isFinished = form.item_kind === "finished";
   const isIngredient = form.item_kind === "ingredient";
+  const vatExcludedPrice = useMemo(() => {
+    const parsed = Number(form.selling_price);
+    if (!Number.isFinite(parsed) || parsed <= 0) return "";
+    return (parsed / 1.16).toFixed(2);
+  }, [form.selling_price]);
 
   useEffect(() => {
     async function loadWarehouses() {
@@ -122,6 +129,7 @@ function ProductCreatePage() {
             storage_unit: item.storage_unit ?? "",
             storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
             cost: (item.cost ?? 0).toString(),
+            selling_price: (item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
             has_recipe: Boolean(item.has_recipe),
             outlet_order_visible: item.outlet_order_visible ?? true,
@@ -178,6 +186,7 @@ function ProductCreatePage() {
         storage_unit: form.storage_unit || null,
         storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
         cost: toNumber(form.cost, 0),
+        selling_price: toNumber(form.selling_price, 0),
         has_variations: form.has_variations,
         has_recipe: form.has_recipe,
         outlet_order_visible: form.outlet_order_visible,
@@ -360,6 +369,34 @@ function ProductCreatePage() {
               onChange={(v) => handleChange("storage_home_id", v)}
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
+          </div>
+
+          <div className={styles.sectionCard}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Selling Price Setup</h3>
+              <p className={styles.sectionHint}>Enter the default selling price for this product.</p>
+            </div>
+            <div className={styles.sectionGrid}>
+              <Field
+                type="number"
+                label="Selling price"
+                hint="Used for sales reporting and pricing"
+                value={form.selling_price}
+                onChange={(v) => handleChange("selling_price", v)}
+                step="0.01"
+                min="0"
+              />
+              <Field
+                type="number"
+                label="VAT Excluded Price"
+                hint="Selling price with 16% VAT removed"
+                value={vatExcludedPrice}
+                onChange={() => null}
+                step="0.01"
+                min="0"
+                disabled
+              />
+            </div>
           </div>
 
           <div className={styles.toggleRow}>

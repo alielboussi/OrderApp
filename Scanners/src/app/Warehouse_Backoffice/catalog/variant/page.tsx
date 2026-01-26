@@ -67,6 +67,7 @@ type FormState = {
   qty_decimal_places: string;
   stocktake_uom: string;
   cost: string;
+  selling_price: string;
   outlet_order_visible: boolean;
   image_url: string;
   storage_home_id: string;
@@ -89,6 +90,7 @@ const defaultForm: FormState = {
   qty_decimal_places: "0",
   stocktake_uom: "",
   cost: "0",
+  selling_price: "0",
   outlet_order_visible: true,
   image_url: "",
   storage_home_id: "",
@@ -154,6 +156,7 @@ function VariantCreatePage() {
             qty_decimal_places: (variant.qty_decimal_places ?? 0).toString(),
             stocktake_uom: variant.stocktake_uom ?? "",
             cost: (variant.cost ?? 0).toString(),
+            selling_price: (variant.selling_price ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,
             image_url: variant.image_url ?? "",
               storage_home_id: variant.storage_home_id ?? variant.default_warehouse_id ?? "",
@@ -174,6 +177,11 @@ function VariantCreatePage() {
 
   const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select parent product" }, ...items], [items]);
+  const vatExcludedPrice = useMemo(() => {
+    const parsed = Number(form.selling_price);
+    if (!Number.isFinite(parsed) || parsed <= 0) return "";
+    return (parsed / 1.16).toFixed(2);
+  }, [form.selling_price]);
 
   if (status !== "ok") return null;
 
@@ -202,6 +210,7 @@ function VariantCreatePage() {
         transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
         qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0, -1)))),
         cost: toNumber(form.cost, 0, -0.0001),
+        selling_price: toNumber(form.selling_price, 0, -0.0001),
           default_warehouse_id: form.storage_home_id || null,
         ...(editingId ? { id: editingId } : {}),
       };
@@ -382,6 +391,34 @@ function VariantCreatePage() {
               onChange={(v) => handleChange("storage_home_id", v)}
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
+          </div>
+
+          <div className={styles.sectionCard}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Selling Price Setup</h3>
+              <p className={styles.sectionHint}>Enter the default selling price for this variant.</p>
+            </div>
+            <div className={styles.sectionGrid}>
+              <Field
+                type="number"
+                label="Selling price"
+                hint="Used for sales reporting and pricing"
+                value={form.selling_price}
+                onChange={(v) => handleChange("selling_price", v)}
+                step="0.01"
+                min="0"
+              />
+              <Field
+                type="number"
+                label="VAT Excluded Price"
+                hint="Selling price with 16% VAT removed"
+                value={vatExcludedPrice}
+                onChange={() => null}
+                step="0.01"
+                min="0"
+                disabled
+              />
+            </div>
           </div>
 
           <div className={styles.toggleRow}>

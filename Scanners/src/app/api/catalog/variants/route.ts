@@ -23,6 +23,7 @@ type VariantPayload = {
   transfer_quantity: number;
   qty_decimal_places?: number | null;
   cost: number;
+  selling_price?: number | null;
   locked_from_warehouse_id?: string | null;
   outlet_order_visible: boolean;
   image_url?: string | null;
@@ -157,6 +158,7 @@ function toVariantResponse(itemId: string, variant: VariantRecord) {
     transfer_quantity: variant.transfer_quantity ?? 1,
     qty_decimal_places: variant.qty_decimal_places ?? null,
     cost: variant.cost ?? 0,
+    selling_price: (variant as any).selling_price ?? null,
     locked_from_warehouse_id: variant.locked_from_warehouse_id ?? null,
     outlet_order_visible: variant.outlet_order_visible ?? true,
     image_url: variant.image_url ?? null,
@@ -276,6 +278,9 @@ export async function POST(request: Request) {
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
 
+    const sellingPrice = toNumber(body.selling_price ?? 0, 0, -0.0001);
+    if (!sellingPrice.ok) return NextResponse.json({ error: sellingPrice.error }, { status: 400 });
+
     let purchaseUnitMass: number | null = null;
     if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
       const mass = toNumber(body.purchase_unit_mass, 0, 0);
@@ -314,6 +319,7 @@ export async function POST(request: Request) {
       transfer_quantity: transferQuantity.value,
       qty_decimal_places: qtyDecimalPlaces,
       cost: cost.value,
+      selling_price: sellingPrice.value,
       locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
@@ -372,6 +378,9 @@ export async function PUT(request: Request) {
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
 
+    const sellingPrice = toNumber(body.selling_price ?? 0, 0, -0.0001);
+    if (!sellingPrice.ok) return NextResponse.json({ error: sellingPrice.error }, { status: 400 });
+
     let purchaseUnitMass: number | null = null;
     if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
       const mass = toNumber(body.purchase_unit_mass, 0, 0);
@@ -410,6 +419,7 @@ export async function PUT(request: Request) {
       transfer_quantity: transferQuantity.value,
       qty_decimal_places: qtyDecimalPlaces,
       cost: cost.value,
+      selling_price: sellingPrice.value,
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: cleanUuid(body.default_warehouse_id),

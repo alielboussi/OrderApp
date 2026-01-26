@@ -19,6 +19,7 @@ type ItemPayload = {
   storage_unit?: string | null;
   storage_weight?: number | null;
   cost: number;
+  selling_price?: number | null;
   has_variations: boolean;
   has_recipe: boolean;
   outlet_order_visible: boolean;
@@ -50,6 +51,7 @@ const BASE_FIELDS =
 
 const OPTIONAL_COLUMNS = [
   "supplier_sku",
+  "selling_price",
   "has_recipe",
   "consumption_unit_mass",
   "consumption_unit_mass_uom",
@@ -295,6 +297,9 @@ export async function POST(request: Request) {
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
 
+    const sellingPrice = toNumber(body.selling_price ?? 0, 0, -0.0001);
+    if (!sellingPrice.ok) return NextResponse.json({ error: sellingPrice.error }, { status: 400 });
+
     // Legacy-required fields: provide safe defaults to satisfy existing constraints until columns are removed
     const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit;
     const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0); // fallback default 1
@@ -336,6 +341,7 @@ export async function POST(request: Request) {
       storage_unit: storageUnit,
       storage_weight: storageWeight,
       cost: cost.value,
+      selling_price: sellingPrice.value,
       has_variations: cleanBoolean(body.has_variations, false),
       has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
@@ -430,6 +436,9 @@ export async function PUT(request: Request) {
     const cost = toNumber(body.cost ?? 0, 0, -1);
     if (!cost.ok) return NextResponse.json({ error: cost.error }, { status: 400 });
 
+    const sellingPrice = toNumber(body.selling_price ?? 0, 0, -0.0001);
+    if (!sellingPrice.ok) return NextResponse.json({ error: sellingPrice.error }, { status: 400 });
+
     const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit;
     const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
     const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? consumptionUnit;
@@ -470,6 +479,7 @@ export async function PUT(request: Request) {
       storage_unit: storageUnit,
       storage_weight: storageWeight,
       cost: cost.value,
+      selling_price: sellingPrice.value,
       has_variations: cleanBoolean(body.has_variations, false),
       has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),

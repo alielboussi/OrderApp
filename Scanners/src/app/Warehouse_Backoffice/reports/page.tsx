@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import styles from "./reports.module.css";
+import { buildReportPdfHtml } from "./reportpdf";
 
 type OutletOption = {
   id: string;
@@ -81,6 +82,33 @@ function formatCurrency(value: number): string {
 
 function formatQty(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+async function loadLogoDataUrl(): Promise<string | undefined> {
+  try {
+    const candidates = ["/afterten-logo.png", "/afterten_logo.png"];
+    let blob: Blob | null = null;
+    for (const path of candidates) {
+      const response = await fetch(path, { cache: "force-cache" });
+      if (response.ok) {
+        blob = await response.blob();
+        break;
+      }
+    }
+    if (!blob) return undefined;
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read logo"));
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 export default function WarehouseSalesReportsPage() {
@@ -208,6 +236,66 @@ export default function WarehouseSalesReportsPage() {
     setSelectedProductIds([]);
   };
 
+  const selectedOutletNames = useMemo(() => {
+    if (selectedOutletIds.length === 0) return "All outlets";
+    const nameMap = new Map(outlets.map((outlet) => [outlet.id, outlet.name]));
+    return selectedOutletIds
+      .map((id) => nameMap.get(id) ?? id)
+      .filter(Boolean)
+      .join(", ");
+  }, [outlets, selectedOutletIds]);
+
+  const downloadPdfReport = async () => {
+    const outletText = selectedOutletNames || "All outlets";
+    const rangeText = startDate && endDate ? `${startDate} to ${endDate}` : "All dates";
+    const logoDataUrl = await loadLogoDataUrl();
+
+    const html = buildReportPdfHtml({
+      outletText,
+      rangeText,
+      logoDataUrl,
+      rows: aggregated.map((row) => ({
+        item_name: row.item_name,
+        qty_units: row.qty_units,
+        before_tax: row.before_tax,
+        after_tax: row.after_tax,
+      })),
+      totals,
+    });
+
+    const frame = document.createElement("iframe");
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(frame);
+
+    const doc = frame.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(frame);
+      return;
+    }
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const cleanup = () => {
+      if (frame.parentNode) {
+        frame.parentNode.removeChild(frame);
+      }
+    };
+
+    setTimeout(() => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      setTimeout(cleanup, 1000);
+    }, 400);
+  };
+
   const runReport = async () => {
     if (status !== "ok") return;
 
@@ -295,7 +383,7 @@ export default function WarehouseSalesReportsPage() {
       const afterUnit = parseNumber(row.sale_price) || parseNumber(row.flavour_price) || parseNumber(row.vat_exc_price);
       const beforeUnit = parseNumber(row.vat_exc_price) || parseNumber(row.sale_price) || parseNumber(row.flavour_price);
 
-      const after = afterUnit * qty;
+      const after = roundCurrency(afterUnit * qty);
       const before = beforeUnit * qty;
 
       const key = `${row.item_id}|${row.variant_key ?? "base"}`;
@@ -332,7 +420,7 @@ export default function WarehouseSalesReportsPage() {
       after += row.after_tax;
     });
 
-    return { qty, before, after };
+    return { qty, before, after: roundCurrency(after) };
   }, [aggregated]);
 
   if (status !== "ok") return null;
@@ -484,6 +572,13 @@ export default function WarehouseSalesReportsPage() {
         <section className={styles.actionsRow}>
           <button className={styles.primaryButton} onClick={runReport} disabled={loading || selectedOutletIds.length === 0}>
             {loading ? "Running..." : "Run Report"}
+          </button>
+          <button
+            className={styles.secondaryButton}
+            onClick={() => void downloadPdfReport()}
+            disabled={aggregated.length === 0}
+          >
+            Download PDF
           </button>
           <span className={styles.muted}>{reportAt ? `Last run: ${reportAt}` : ""}</span>
           <span className={styles.muted}>Results limited to 5,000 rows.</span>
