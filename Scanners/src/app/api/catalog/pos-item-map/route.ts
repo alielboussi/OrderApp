@@ -62,32 +62,6 @@ export async function GET() {
     const supabase = getServiceClient();
     const enrichWithCatalog = buildEnricher(supabase);
 
-    const findExisting = async (selectCols: string) => {
-      const normalizedKey = catalog_variant_key || "base";
-      let query = supabase
-        .from("pos_item_map")
-        .select(selectCols)
-        .eq("pos_item_id", pos_item_id)
-        .eq("catalog_item_id", catalog_item_id)
-        .eq("outlet_id", outlet_id);
-
-      if (normalizedKey === "base") {
-        query = query.or("normalized_variant_key.eq.base,normalized_variant_key.is.null");
-      } else {
-        query = query.eq("normalized_variant_key", normalizedKey);
-      }
-
-      if (pos_flavour_id) query = query.eq("pos_flavour_id", pos_flavour_id);
-      else query = query.or("pos_flavour_id.is.null,pos_flavour_id.eq.");
-
-      if (warehouse_id) query = query.eq("warehouse_id", warehouse_id);
-      else query = query.is("warehouse_id", null);
-
-      const { data, error } = await query.limit(1);
-      if (error) throw error;
-      return Array.isArray(data) && data.length ? data[0] : null;
-    };
-
     const mapWithFallback = (rows: any[]) =>
       rows.map((row) => ({
         ...row,
