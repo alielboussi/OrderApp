@@ -29,7 +29,7 @@ type ItemWithVariants = { item: Item; variants: Variant[] };
 
 export default function CatalogMenuPage() {
   const router = useRouter();
-  const { status, readOnly } = useWarehouseAuth();
+  const { status, readOnly, deleteDisabled } = useWarehouseAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [search, setSearch] = useState("");
@@ -60,8 +60,8 @@ export default function CatalogMenuPage() {
   const handleDeleteItem = useCallback(
     async (itemId: string) => {
       if (!itemId) return;
-      if (readOnly) {
-        setError("Read-only access: delete is disabled.");
+      if (deleteDisabled) {
+        setError("Delete access is disabled for this user.");
         return;
       }
       const confirmed = window.confirm("Delete this product? This cannot be undone.");
@@ -88,8 +88,8 @@ export default function CatalogMenuPage() {
   const handleDeleteVariant = useCallback(
     async (variantId: string, itemId: string) => {
       if (!variantId || !itemId) return;
-      if (readOnly) {
-        setError("Read-only access: delete is disabled.");
+      if (deleteDisabled) {
+        setError("Delete access is disabled for this user.");
         return;
       }
       const confirmed = window.confirm("Delete this variant? This cannot be undone.");

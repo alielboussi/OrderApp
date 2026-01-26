@@ -62,7 +62,7 @@ type Alert = { ok: boolean; text: string } | null;
 
 export default function OutletSetupPage() {
   const router = useRouter();
-  const { status, readOnly } = useWarehouseAuth();
+  const { status, readOnly, deleteDisabled } = useWarehouseAuth();
 
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -457,14 +457,20 @@ export default function OutletSetupPage() {
     const loadRecipeIngredients = async () => {
       setRecipeIngredientsLoading(true);
       try {
-        const res = await fetch(
-            `/api/recipe-ingredients?finished_item_id=${selectedProductId}&finished_variant_key=base`
+        const keys = selectedVariantKeys.length ? selectedVariantKeys : ["base"];
+        const results = await Promise.all(
+          keys.map(async (key) => {
+            const res = await fetch(
+              `/api/recipe-ingredients?finished_item_id=${selectedProductId}&finished_variant_key=${encodeURIComponent(key || "base")}`
+            );
+            if (!res.ok) throw new Error("Unable to load recipe ingredients");
+            const json = await res.json();
+            return Array.isArray(json.ingredient_item_ids) ? json.ingredient_item_ids : [];
+          })
         );
-        if (!res.ok) throw new Error("Unable to load recipe ingredients");
-        const json = await res.json();
         if (!active) return;
-        const list = Array.isArray(json.ingredient_item_ids) ? json.ingredient_item_ids : [];
-        setRecipeIngredientIds(list);
+        const merged = Array.from(new Set(results.flat())) as string[];
+        setRecipeIngredientIds(merged);
       } catch (error) {
         console.error("recipe ingredients load failed", error);
         if (active) setRecipeIngredientIds([]);
@@ -476,7 +482,7 @@ export default function OutletSetupPage() {
     return () => {
       active = false;
     };
-  }, [selectedProductId]);
+  }, [selectedProductId, selectedVariantKeys]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -917,8 +923,8 @@ export default function OutletSetupPage() {
   };
 
   const deletePosMapping = async (mapping: PosMapping) => {
-    if (readOnly) {
-      setPosError({ ok: false, text: "Read-only access: delete is disabled." });
+    if (deleteDisabled) {
+      setPosError({ ok: false, text: "Delete access is disabled for this user." });
       return;
     }
     const params = new URLSearchParams({
@@ -1089,7 +1095,7 @@ export default function OutletSetupPage() {
             <div className={styles.storageGrid}>
               <div className={styles.storageCard}>
                 <div className={styles.cardHeading}>Ingredient storage/receiving</div>
-                <p className={styles.cardBody}>Storage home for the selected ingredient from the recipe.</p>
+                <p className={styles.cardBody}>Place of storage before being sent to outlet.</p>
                 <select
                   className={styles.select}
                   value={defaultWarehouseId}

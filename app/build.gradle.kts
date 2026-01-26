@@ -32,10 +32,22 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    flavorDimensions += "app"
+    productFlavors {
+        create("orders") {
+            dimension = "app"
+        }
+        create("liveStock") {
+            dimension = "app"
+            applicationId = "com.afterten.livestock"
+        }
+    }
+
     lint {
         lintConfig = file("lint.xml")
         warningsAsErrors = false
         abortOnError = true
+        checkReleaseBuilds = false
     }
 
     compileOptions {
@@ -83,14 +95,21 @@ android {
 // Exclude the lint-cache from :app:clean to avoid occasional FileSystemException
 // You can manually delete app/build/intermediates/lint-cache when needed (after stopping Gradle daemons)
 tasks.named<Delete>("clean") {
+    // Clear default delete targets to avoid removing buildDir (which can fail on Windows due to lint-cache locks)
+    setDelete(emptyList<Any>())
     val buildDirFile = layout.buildDirectory.asFile.get()
+    val intermediatesDir = buildDirFile.resolve("intermediates")
+    val topLevelOutputs = buildDirFile.listFiles()
+        ?.filter { it.name != "intermediates" && it.name != "kspCaches" }
+        ?.toList()
+        ?: emptyList<java.io.File>()
+
     delete(
-        fileTree(buildDirFile) {
-            // These folders are known to be locked by Windows during/after builds
-            exclude("intermediates/lint-cache/**")
-            exclude("kspCaches/**")
-            // If KSP keeps files open, skipping its caches prevents clean from failing.
-            // You can manually delete app/build/kspCaches after closing Android Studio/Gradle daemons.
+        // Delete top-level build outputs except the known locked caches
+        topLevelOutputs,
+        // Delete intermediates except lint-cache
+        fileTree(intermediatesDir) {
+            exclude("lint-cache/**")
         }
     )
 }

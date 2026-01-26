@@ -2633,7 +2633,7 @@ function createHtml(config: {
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
             .select(
-              'id,name,has_variations,item_kind,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants'
+              'id,name,has_variations,item_kind,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants'
             )
             .in('id', Array.from(productIds))
             .eq('active', true)
@@ -2729,6 +2729,7 @@ function createHtml(config: {
               uom: (variant?.purchase_pack_unit ?? variant?.transfer_unit ?? 'each').toString(),
               consumption_uom: (variant?.consumption_uom ?? variant?.purchase_pack_unit ?? 'each').toString(),
               sku: typeof variant?.sku === 'string' ? variant.sku : null,
+              supplier_sku: typeof variant?.supplier_sku === 'string' ? variant.supplier_sku : null,
               package_contains: typeof variant?.units_per_purchase_pack === 'number' ? variant.units_per_purchase_pack : null,
               transfer_unit: (variant?.transfer_unit ?? variant?.purchase_pack_unit ?? 'each').toString(),
               transfer_quantity:
@@ -2746,6 +2747,9 @@ function createHtml(config: {
             }
             if (typeof variation.sku === 'string' && variation.sku.trim()) {
               indexVariationKey(variation.sku, variation);
+            }
+            if (typeof variation.supplier_sku === 'string' && variation.supplier_sku.trim()) {
+              indexVariationKey(variation.supplier_sku, variation);
             }
           });
         });
@@ -4556,7 +4560,7 @@ function createHtml(config: {
           const { data, error } = await supabase
             .from('recipes')
             .select(
-              'ingredient_item_id, qty_per_unit, qty_unit, yield_qty_units, finished_variant_key, recipe_for_kind, active, ingredient:ingredient_item_id (id,name,has_variations,item_kind,default_warehouse_id,locked_from_warehouse_id,uom:purchase_pack_unit,consumption_uom,sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants)'
+              'ingredient_item_id, qty_per_unit, qty_unit, yield_qty_units, finished_variant_key, recipe_for_kind, active, ingredient:ingredient_item_id (id,name,has_variations,item_kind,default_warehouse_id,locked_from_warehouse_id,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants)'
             )
             .eq('finished_item_id', product.id)
             .eq('active', true);
@@ -4629,10 +4633,13 @@ function createHtml(config: {
             const name = (variation.name ?? '').toLowerCase();
             const sku = (variation.sku ?? '').toLowerCase();
             const skuCompact = normalizeKey(variation.sku ?? '');
+            const supplierSku = (variation.supplier_sku ?? '').toLowerCase();
+            const supplierCompact = normalizeKey(variation.supplier_sku ?? '');
             return (
               (!!name && name.includes(normalized)) ||
               (!!sku && sku.includes(normalized)) ||
-              (compact && !!skuCompact && skuCompact === compact)
+              (!!supplierSku && supplierSku.includes(normalized)) ||
+              (compact && ((!!skuCompact && skuCompact === compact) || (!!supplierCompact && supplierCompact === compact)))
             );
           });
         };
@@ -4657,9 +4664,12 @@ function createHtml(config: {
             const productName = (product.name ?? '').toLowerCase();
             const skuLower = (product.sku ?? '').toLowerCase();
             const skuCompact = normalizeKey(product.sku ?? '');
+            const supplierSkuLower = (product.supplier_sku ?? '').toLowerCase();
+            const supplierSkuCompact = normalizeKey(product.supplier_sku ?? '');
             if (productName && productName.includes(normalized)) return true;
             if (skuLower && skuLower.includes(normalized)) return true;
-            if (compact && skuCompact && skuCompact === compact) return true;
+            if (supplierSkuLower && supplierSkuLower.includes(normalized)) return true;
+            if (compact && ((skuCompact && skuCompact === compact) || (supplierSkuCompact && supplierSkuCompact === compact))) return true;
             return false;
           });
         };
@@ -4669,11 +4679,17 @@ function createHtml(config: {
           const productName = (product.name ?? '').toLowerCase();
           const skuLower = (product.sku ?? '').toLowerCase();
           const skuCompact = normalizeKey(product.sku ?? '');
+          const supplierSkuLower = (product.supplier_sku ?? '').toLowerCase();
+          const supplierSkuCompact = normalizeKey(product.supplier_sku ?? '');
           if (product.id === value || product.id?.toLowerCase() === normalized) return true;
           if (productName === normalized) return true;
           if (product.sku) {
             if (skuLower === normalized) return true;
             if (compact && skuCompact && skuCompact === compact) return true;
+          }
+          if (product.supplier_sku) {
+            if (supplierSkuLower === normalized) return true;
+            if (compact && supplierSkuCompact && supplierSkuCompact === compact) return true;
           }
           return false;
         }) || findLooseProduct();

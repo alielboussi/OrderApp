@@ -93,6 +93,7 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.subtitle}>
               Configure outlet defaults, per-item routing, and POS match against the new warehouse schema. Operate inventory without legacy outlet-warehouse tables.
             </p>
+            <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
           </div>
           <div className={styles.heroControl}>
             <p className={`${styles.cardTitle} ${styles.pauseTitle}`}>POS Sync Control</p>

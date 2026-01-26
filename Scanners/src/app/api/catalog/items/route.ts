@@ -10,6 +10,7 @@ type QtyUnit = (typeof QTY_UNITS)[number];
 type ItemPayload = {
   name: string;
   sku?: string | null;
+  supplier_sku?: string | null;
   item_kind: ItemKind;
   consumption_unit: string;
   consumption_qty_per_base: number;
@@ -48,6 +49,7 @@ const BASE_FIELDS =
   "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,stocktake_uom,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,active";
 
 const OPTIONAL_COLUMNS = [
+  "supplier_sku",
   "has_recipe",
   "consumption_unit_mass",
   "consumption_unit_mass_uom",
@@ -172,7 +174,13 @@ export async function GET(request: Request) {
         single = true;
       } else {
         let listQuery = baseSelect.order("name");
-        if (search) listQuery = listQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
+        if (search) {
+          const searchFilters = [`name.ilike.%${search}%`, `sku.ilike.%${search}%`];
+          if (optional.includes("supplier_sku")) {
+            searchFilters.push(`supplier_sku.ilike.%${search}%`);
+          }
+          listQuery = listQuery.or(searchFilters.join(","));
+        }
         const result = await listQuery;
         data = Array.isArray(result.data) ? result.data : [];
         error = result.error;
@@ -319,6 +327,7 @@ export async function POST(request: Request) {
     const payload: ItemPayload = {
       name,
       sku: cleanText(body.sku) ?? null,
+      supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: itemKind.value,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
@@ -452,6 +461,7 @@ export async function PUT(request: Request) {
     const payload: ItemPayload = {
       name,
       sku: cleanText(body.sku) ?? null,
+      supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: itemKind.value,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,

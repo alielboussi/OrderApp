@@ -86,6 +86,13 @@
   line-height: 1.6;
 }
 
+.shortcutNote {
+  margin: 12px 0 0;
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+
 .notice {
   margin-top: 24px;
   font-size: 13px;

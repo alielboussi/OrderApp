@@ -47,6 +47,8 @@ export function useWarehouseAuth() {
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [status, setStatus] = useState<"checking" | "ok" | "redirecting">("checking");
   const [readOnly, setReadOnly] = useState(false);
+  const [deleteDisabled, setDeleteDisabled] = useState(false);
+  const [canViewLogs, setCanViewLogs] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,7 +64,9 @@ export function useWarehouseAuth() {
         const isBackoffice = !error && (await hasBackofficeRole(supabase, currentUserId));
         const isReadOnlyUser = Boolean(currentUserId && currentUserId === READONLY_USER_ID);
         const allowed = isAdmin || isBackoffice || isReadOnlyUser;
-        setReadOnly(isReadOnlyUser);
+        setReadOnly(false);
+        setDeleteDisabled(isReadOnlyUser);
+        setCanViewLogs(isAdmin || isBackoffice);
 
         if (!allowed) {
           await supabase.auth.signOut();
@@ -86,5 +90,5 @@ export function useWarehouseAuth() {
     };
   }, [router, supabase]);
 
-  return { status, readOnly, userId };
+  return { status, readOnly, deleteDisabled, canViewLogs, userId };
 }

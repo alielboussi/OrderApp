@@ -30,8 +30,11 @@ type Warehouse = { id: string; name: string };
 type FormState = {
   name: string;
   sku: string;
+  supplier_sku: string;
   item_kind: "finished" | "ingredient" | "raw";
   consumption_unit: string;
+  purchase_pack_unit: string;
+  units_per_purchase_pack: string;
   consumption_qty_per_base: string;
   qty_decimal_places: string;
   stocktake_uom: string;
@@ -49,8 +52,11 @@ type FormState = {
 const defaultForm: FormState = {
   name: "",
   sku: "",
+  supplier_sku: "",
   item_kind: "finished",
   consumption_unit: "each",
+  purchase_pack_unit: "each",
+  units_per_purchase_pack: "1",
   consumption_qty_per_base: "1",
   qty_decimal_places: "0",
   stocktake_uom: "",
@@ -105,8 +111,11 @@ function ProductCreatePage() {
           setForm({
             name: item.name ?? "",
             sku: item.sku ?? "",
+            supplier_sku: item.supplier_sku ?? "",
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
             consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
+            purchase_pack_unit: item.purchase_pack_unit ?? item.storage_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
+            units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
             qty_decimal_places: (item.qty_decimal_places ?? 0).toString(),
             stocktake_uom: item.stocktake_uom ?? "",
@@ -158,8 +167,11 @@ function ProductCreatePage() {
       const payload = {
         name: form.name,
         sku: form.sku,
+        supplier_sku: form.supplier_sku,
         item_kind: form.item_kind,
         consumption_unit: form.consumption_unit,
+        purchase_pack_unit: form.purchase_pack_unit || form.storage_unit || form.consumption_unit,
+        units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
         qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0)))),
         stocktake_uom: form.stocktake_uom || null,
@@ -238,6 +250,12 @@ function ProductCreatePage() {
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}
             />
+            <Field
+              label="Supplier SKU"
+              hint="Supplier-facing code used for purchase intake scans"
+              value={form.supplier_sku}
+              onChange={(v) => handleChange("supplier_sku", v)}
+            />
             <Select
               label="Stock kind"
               hint="Finished = sellable; Ingredient = used inside recipes; Raw = unprocessed input"
@@ -261,6 +279,26 @@ function ProductCreatePage() {
                   onChange={(v) => handleChange("stocktake_uom", v)}
                   options={[{ value: "", label: "Use consumption unit" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
                 />
+                {isFinished && (
+                  <>
+                    <Select
+                      label="Supplier pack unit"
+                      hint="Unit written on supplier pack for this product"
+                      value={form.purchase_pack_unit}
+                      onChange={(v) => handleChange("purchase_pack_unit", v)}
+                      options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                    />
+                    <Field
+                      type="number"
+                      label="Units inside one supplier pack"
+                      hint="How many base units are inside one supplier pack"
+                      value={form.units_per_purchase_pack}
+                      onChange={(v) => handleChange("units_per_purchase_pack", v)}
+                      step="1"
+                      min="1"
+                    />
+                  </>
+                )}
                 <Field
                   type="number"
                   label="Consumption qty"

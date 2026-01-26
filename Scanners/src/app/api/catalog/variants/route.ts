@@ -11,6 +11,7 @@ type VariantPayload = {
   item_id: string;
   name: string;
   sku?: string | null;
+  supplier_sku?: string | null;
   item_kind: ItemKind;
   consumption_uom: string;
   stocktake_uom?: string | null;
@@ -144,6 +145,7 @@ function toVariantResponse(itemId: string, variant: VariantRecord) {
     item_id: itemId,
     name: variant.name ?? "Variant",
     sku: variant.sku ?? null,
+    supplier_sku: (variant as any).supplier_sku ?? null,
     item_kind: variant.item_kind ?? "finished",
     consumption_uom: variant.consumption_uom ?? "each",
     stocktake_uom: variant.stocktake_uom ?? null,
@@ -240,7 +242,8 @@ export async function GET(request: Request) {
       ? variantsWithStorage.filter((variant) => {
           const name = variant.name?.toLowerCase?.() ?? "";
           const sku = variant.sku?.toLowerCase?.() ?? "";
-          return name.includes(search) || sku.includes(search);
+          const supplierSku = (variant as any).supplier_sku?.toLowerCase?.() ?? "";
+          return name.includes(search) || sku.includes(search) || supplierSku.includes(search);
         })
       : variantsWithStorage;
 
@@ -299,6 +302,7 @@ export async function POST(request: Request) {
       item_id: itemId,
       name,
       sku: cleanText(body.sku) ?? null,
+      supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
       stocktake_uom: cleanText(body.stocktake_uom) ?? null,
@@ -394,6 +398,7 @@ export async function PUT(request: Request) {
       item_id: itemId,
       name,
       sku: cleanText(body.sku) ?? null,
+      supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
       stocktake_uom: cleanText(body.stocktake_uom) ?? null,

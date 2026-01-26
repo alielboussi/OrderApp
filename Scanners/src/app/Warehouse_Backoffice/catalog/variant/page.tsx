@@ -55,6 +55,7 @@ type FormState = {
   item_id: string;
   name: string;
   sku: string;
+  supplier_sku: string;
   item_kind: string;
   consumption_uom: string;
   purchase_pack_unit: string;
@@ -76,6 +77,7 @@ const defaultForm: FormState = {
   item_id: "",
   name: "",
   sku: "",
+  supplier_sku: "",
   item_kind: "finished",
   consumption_uom: "each",
   purchase_pack_unit: "each",
@@ -140,6 +142,7 @@ function VariantCreatePage() {
             item_id: variant.item_id ?? incomingItemId ?? "",
             name: variant.name ?? "",
             sku: variant.sku ?? "",
+            supplier_sku: variant.supplier_sku ?? "",
             item_kind: variant.item_kind ?? "finished",
             consumption_uom: variant.consumption_uom ?? "each",
             purchase_pack_unit: variant.purchase_pack_unit ?? "each",
@@ -272,6 +275,12 @@ function VariantCreatePage() {
               hint="Optional code used for scans/search"
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}
+            />
+            <Field
+              label="Supplier SKU"
+              hint="Supplier-facing code used for purchase intake scans"
+              value={form.supplier_sku}
+              onChange={(v) => handleChange("supplier_sku", v)}
             />
             <Select
               label="Stock kind"
