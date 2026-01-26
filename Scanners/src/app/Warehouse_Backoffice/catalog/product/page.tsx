@@ -245,7 +245,7 @@ function ProductCreatePage() {
               required
             />
             <Field
-              label="SKU or barcode"
+              label="Internal SKU"
               hint="Optional code used for scans/search"
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}

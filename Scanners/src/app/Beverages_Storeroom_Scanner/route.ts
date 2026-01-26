@@ -5,9 +5,11 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = 'f71a25d0-9ec2-454d-a606-93cfaa3c606b';
+const HOMES_PARENT_ID = 'c021ea3b-7109-4690-be6c-0c7ae8278a5d';
 const DESTINATION_CHOICES = [
   { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Quick Corner' },
-  { id: 'c4aa315f-2e09-4060-8258-9dab077271ce', label: 'Outlet Reserve' }
+  { id: 'c4aa315f-2e09-4060-8258-9dab077271ce', label: 'Outlet Reserve' },
+  { id: '732d83ba-48f6-481a-bedf-291b5f158552', label: 'Destination' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
@@ -465,8 +467,19 @@ function createHtml(config: {
       flex-direction: column;
       gap: 8px;
     }
+    .destination-select-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
     .destination-pill-select {
       display: block;
+      text-align: center;
+    }
+    .destination-pill-select .destination-pill-hint {
+      display: block;
+      margin-bottom: 6px;
+      text-align: center;
     }
     .destination-pill-select select {
       width: 100%;
@@ -476,12 +489,15 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 12px 16px;
       color: #ff5d73;
-      font-size: 1.35rem;
+      font-size: 1.7rem;
       font-weight: 600;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.02em;
       text-transform: uppercase;
       cursor: pointer;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .destination-pill-select select option {
+      font-size: 1.5rem;
     }
     .destination-pill-select select:focus-visible {
       outline: none;
@@ -1069,7 +1085,7 @@ function createHtml(config: {
       justify-items: stretch;
       position: fixed;
       left: 50%;
-      top: 50%;
+      top: 45%;
       transform: translate(-50%, -50%);
       z-index: 40;
     }
@@ -1518,12 +1534,20 @@ function createHtml(config: {
             <div class="locked-pill locked-pill--destination">
               <h3>To</h3>
               <p id="dest-label">${escapeHtml(destPillLabel)}</p>
-              <label class="destination-pill-select">
-                <span class="sr-only">Select destination warehouse</span>
-                <select id="console-destination-select">
-                  <option value="">Choose destination</option>
-                </select>
-              </label>
+              <div class="destination-select-grid">
+                <label class="destination-pill-select">
+                  <span class="destination-pill-hint">Outlets</span>
+                  <select id="console-destination-select">
+                    <option value="">Select outlet</option>
+                  </select>
+                </label>
+                <label class="destination-pill-select">
+                  <span class="destination-pill-hint">Homes</span>
+                  <select id="console-homes-select">
+                    <option value="">Select home</option>
+                  </select>
+                </label>
+              </div>
             </div>
           </div>
         </article>
@@ -2002,6 +2026,7 @@ function createHtml(config: {
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
+      const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
 
       const state = {
         session: null,
@@ -2024,6 +2049,8 @@ function createHtml(config: {
         operators: [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
         destinationSelection: null,
+        homesOptions: [],
+        homesSelection: null,
         purchaseForm: {
           supplierId: '',
           referenceCode: '',
@@ -2176,6 +2203,7 @@ function createHtml(config: {
         damage: document.getElementById('damage-operator-select')
       };
       const destinationSelect = document.getElementById('console-destination-select');
+      const homesSelect = document.getElementById('console-homes-select');
       const operatorStatusLabels = {
         transfer: document.getElementById('transfer-operator-status'),
         purchase: document.getElementById('purchase-operator-status'),
@@ -2274,7 +2302,7 @@ function createHtml(config: {
 
       setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
         sourceMissingText: state.lockedSource ? undefined : 'Loading...',
-        destMissingText: state.lockedDest ? undefined : 'Choose destination'
+        destMissingText: state.lockedDest ? undefined : 'Select outlet'
       });
 
       window.setTimeout(() => {
@@ -2610,6 +2638,9 @@ function createHtml(config: {
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
           return true;
         }
+        if (homesSelect && (active === homesSelect || active.closest('.destination-pill-select'))) {
+          return true;
+        }
         if (active instanceof HTMLElement) {
           if (active.closest('#operator-passcode-modal')) return true;
           if (active.closest('.operator-auth-card')) return true;
@@ -2902,7 +2933,7 @@ function createHtml(config: {
         destinationSelect.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = state.destinationOptions.length ? 'Choose destination' : 'No destinations';
+        placeholder.textContent = state.destinationOptions.length ? 'Select outlet' : 'No outlets';
         destinationSelect.appendChild(placeholder);
         state.destinationOptions.forEach((option) => {
           if (!option?.id) return;
@@ -2914,6 +2945,27 @@ function createHtml(config: {
         const savedValue = state.destinationSelection ?? existingValue;
         destinationSelect.value = savedValue || '';
         destinationSelect.disabled = !state.destinationOptions.length;
+        syncDestinationPillLabel();
+      }
+
+      function renderHomesOptions() {
+        if (!homesSelect) return;
+        const existingValue = homesSelect.value;
+        homesSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = state.homesOptions.length ? 'Select home' : 'No homes';
+        homesSelect.appendChild(placeholder);
+        state.homesOptions.forEach((option) => {
+          if (!option?.id) return;
+          const opt = document.createElement('option');
+          opt.value = option.id;
+          opt.textContent = option.label ?? 'Home';
+          homesSelect.appendChild(opt);
+        });
+        const savedValue = state.homesSelection ?? existingValue;
+        homesSelect.value = savedValue || '';
+        homesSelect.disabled = !state.homesOptions.length;
         syncDestinationPillLabel();
       }
 
@@ -2957,18 +3009,19 @@ function createHtml(config: {
       }
 
       function enforceOperatorLocks() {
-        const destinationSelected = Boolean(getSelectedDestination());
+        const transferDestinationSelected = Boolean(getSelectedDestination());
+        const primaryDestinationSelected = Boolean(getSelectedPrimaryDestination());
         const transferUnlocked = Boolean(getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true }));
         if (transferSubmit) {
-          transferSubmit.disabled = state.loading || !transferUnlocked || !destinationSelected;
+          transferSubmit.disabled = state.loading || !transferUnlocked || !transferDestinationSelected;
         }
         const purchaseUnlocked = Boolean(getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true }));
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !destinationSelected;
+          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !primaryDestinationSelected;
         }
         const damageUnlocked = Boolean(getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true }));
         if (damageSubmit) {
-          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !destinationSelected;
+          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !primaryDestinationSelected;
         }
       }
 
@@ -3039,7 +3092,18 @@ function createHtml(config: {
         return null;
       }
 
-      function getSelectedDestination() {
+      function getHomesOptionById(id) {
+        if (!id) return null;
+        const optionFromState = state.homesOptions.find((option) => option.id === id);
+        if (optionFromState) return optionFromState;
+        const warehouseRecord = state.warehouses.find((w) => w.id === id);
+        if (warehouseRecord) {
+          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Home' };
+        }
+        return null;
+      }
+
+      function getSelectedPrimaryDestination() {
         const id = state.destinationSelection;
         if (!id) return null;
         const option = getDestinationOptionById(id);
@@ -3047,17 +3111,34 @@ function createHtml(config: {
         return { id, label: 'Destination warehouse' };
       }
 
-      function showDestinationPrompt() {
+      function getSelectedHomeDestination() {
+        const id = state.homesSelection;
+        if (!id) return null;
+        const option = getHomesOptionById(id);
+        if (option) return option;
+        return { id, label: 'Home' };
+      }
+
+      function getSelectedDestination() {
+        return getSelectedHomeDestination() ?? getSelectedPrimaryDestination();
+      }
+
+      function showDestinationPrompt(context) {
+        if (context === 'transfer' && homesSelect && state.homesOptions.length) {
+          homesSelect.focus();
+          return;
+        }
         destinationSelect?.focus();
       }
 
       function ensureDestinationSelected(context, shouldPrompt = true) {
-        if (getSelectedDestination()) {
+        const selection = context === 'transfer' ? getSelectedDestination() : getSelectedPrimaryDestination();
+        if (selection) {
           return true;
         }
         if (shouldPrompt) {
           showResult('Select a destination warehouse for ' + formatOperatorLabel(context) + '.', true);
-          showDestinationPrompt();
+          showDestinationPrompt(context);
         }
         return false;
       }
@@ -3068,7 +3149,7 @@ function createHtml(config: {
         if (selection) {
           destLabel.textContent = selection.label;
         } else {
-          destLabel.textContent = 'Choose destination';
+          destLabel.textContent = 'Select outlet';
         }
       }
 
@@ -3076,7 +3157,9 @@ function createHtml(config: {
         const trimmed = warehouseId || '';
         if (!trimmed) {
           state.destinationSelection = null;
-          state.lockedDest = null;
+          if (!state.homesSelection) {
+            state.lockedDest = null;
+          }
           if (destinationSelect && destinationSelect.value !== '') {
             destinationSelect.value = '';
           }
@@ -3091,9 +3174,46 @@ function createHtml(config: {
           return;
         }
         state.destinationSelection = trimmed;
+        state.homesSelection = null;
         state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
         if (destinationSelect && destinationSelect.value !== trimmed) {
           destinationSelect.value = trimmed;
+        }
+        if (homesSelect && homesSelect.value !== '') {
+          homesSelect.value = '';
+        }
+        syncDestinationPillLabel();
+        enforceOperatorLocks();
+      }
+
+      function handleHomesSelection(warehouseId) {
+        const trimmed = warehouseId || '';
+        if (!trimmed) {
+          state.homesSelection = null;
+          if (!state.destinationSelection) {
+            state.lockedDest = null;
+          }
+          if (homesSelect && homesSelect.value !== '') {
+            homesSelect.value = '';
+          }
+          syncDestinationPillLabel();
+          enforceOperatorLocks();
+          return;
+        }
+        const option = getHomesOptionById(trimmed);
+        if (!option) {
+          showResult('Home unavailable. Refresh directory.', true);
+          renderHomesOptions();
+          return;
+        }
+        state.homesSelection = trimmed;
+        state.destinationSelection = null;
+        state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
+        if (homesSelect && homesSelect.value !== trimmed) {
+          homesSelect.value = trimmed;
+        }
+        if (destinationSelect && destinationSelect.value !== '') {
+          destinationSelect.value = '';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -4191,9 +4311,45 @@ function createHtml(config: {
           } else {
             state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
           }
+
+          let homesRows = state.warehouses.filter((w) => w.parent_warehouse_id === homesParentId);
+          if (!homesRows.length && homesParentId) {
+            const { data: childRows, error: childErr } = await supabase
+              .from('warehouses')
+              .select('id,name,parent_warehouse_id,active')
+              .eq('parent_warehouse_id', homesParentId);
+            if (!childErr && Array.isArray(childRows)) {
+              homesRows = childRows.map((row) => ({ ...row, active: row?.active ?? true }));
+            }
+          }
+          state.homesOptions = homesRows
+            .filter((row) => row && row.active !== false)
+            .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
+            .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
+
+          if (state.homesSelection && state.destinationSelection) {
+            state.destinationSelection = null;
+            if (destinationSelect) {
+              destinationSelect.value = '';
+            }
+          }
+
+          const hasSavedHomesSelection = state.homesSelection && state.homesOptions.some((opt) => opt.id === state.homesSelection);
+          if (!hasSavedHomesSelection) {
+            state.homesSelection = null;
+            if (homesSelect) {
+              homesSelect.value = '';
+            }
+          }
+
+          if (state.homesSelection) {
+            state.lockedDest = state.warehouses.find((w) => w.id === state.homesSelection) ?? null;
+          }
+
           renderDestinationOptions();
+          renderHomesOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
-            destMissingText: 'Choose destination'
+            destMissingText: 'Select outlet'
           });
           syncDestinationPillLabel();
           if (!sourceWarehouse) {
@@ -5152,6 +5308,11 @@ function createHtml(config: {
       destinationSelect?.addEventListener('change', (event) => {
         const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
         handleDestinationSelection(value);
+      });
+
+      homesSelect?.addEventListener('change', (event) => {
+        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
+        handleHomesSelection(value);
       });
 
       operatorModalForm?.addEventListener('submit', (event) => {

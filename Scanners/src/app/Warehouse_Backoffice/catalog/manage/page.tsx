@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "./manage.module.css";
 
-type Item = { id: string; name: string; sku?: string | null; item_kind?: string | null; has_variations?: boolean | null };
+type Item = { id: string; name: string; sku?: string | null; supplier_sku?: string | null; item_kind?: string | null; has_variations?: boolean | null };
 
 type Alert = { ok: boolean; text: string } | null;
 
@@ -41,6 +41,7 @@ export default function CatalogManagePage() {
   // Product quick-add
   const [productName, setProductName] = useState("");
   const [productSku, setProductSku] = useState("");
+  const [productSupplierSku, setProductSupplierSku] = useState("");
   const [productKind, setProductKind] = useState<"finished" | "ingredient" | "raw">("finished");
   const [productCost, setProductCost] = useState("0");
   const [productHasVars, setProductHasVars] = useState(false);
@@ -51,6 +52,7 @@ export default function CatalogManagePage() {
   const [variantItemId, setVariantItemId] = useState("");
   const [variantName, setVariantName] = useState("");
   const [variantSku, setVariantSku] = useState("");
+  const [variantSupplierSku, setVariantSupplierSku] = useState("");
   const [variantCost, setVariantCost] = useState("0");
   const [variantSaving, setVariantSaving] = useState(false);
   const [variantAlert, setVariantAlert] = useState<Alert>(null);
@@ -90,6 +92,7 @@ export default function CatalogManagePage() {
       const payload = {
         name: productName.trim(),
         sku: productSku.trim(),
+        supplier_sku: productSupplierSku.trim(),
         item_kind: productKind,
         cost: Number(productCost) || 0,
         has_variations: productHasVars,
@@ -107,6 +110,7 @@ export default function CatalogManagePage() {
       setProductAlert({ ok: true, text: "Product saved" });
       setProductName("");
       setProductSku("");
+      setProductSupplierSku("");
       setProductCost("0");
       setProductHasVars(false);
       setLoadingItems(true);
@@ -145,6 +149,7 @@ export default function CatalogManagePage() {
         item_id: variantItemId,
         name: variantName.trim(),
         sku: variantSku.trim(),
+        supplier_sku: variantSupplierSku.trim(),
         cost: Number(variantCost) || 0,
         ...VARIANT_DEFAULTS,
       };
@@ -160,6 +165,7 @@ export default function CatalogManagePage() {
       setVariantAlert({ ok: true, text: "Variant saved" });
       setVariantName("");
       setVariantSku("");
+      setVariantSupplierSku("");
       setVariantCost("0");
     } catch (error) {
       console.error(error);
@@ -199,8 +205,16 @@ export default function CatalogManagePage() {
                 <input className={styles.input} value={productName} onChange={(e) => setProductName(e.target.value)} required />
               </label>
               <label className={styles.label}>
-                SKU / barcode
+                Internal SKU
                 <input className={styles.input} value={productSku} onChange={(e) => setProductSku(e.target.value)} />
+              </label>
+              <label className={styles.label}>
+                Supplier SKU
+                <input
+                  className={styles.input}
+                  value={productSupplierSku}
+                  onChange={(e) => setProductSupplierSku(e.target.value)}
+                />
               </label>
               <label className={styles.label}>
                 Type
@@ -260,8 +274,16 @@ export default function CatalogManagePage() {
                 <input className={styles.input} value={variantName} onChange={(e) => setVariantName(e.target.value)} required />
               </label>
               <label className={styles.label}>
-                Variant SKU / barcode
+                Internal SKU
                 <input className={styles.input} value={variantSku} onChange={(e) => setVariantSku(e.target.value)} />
+              </label>
+              <label className={styles.label}>
+                Supplier SKU
+                <input
+                  className={styles.input}
+                  value={variantSupplierSku}
+                  onChange={(e) => setVariantSupplierSku(e.target.value)}
+                />
               </label>
               <label className={styles.label}>
                 Cost

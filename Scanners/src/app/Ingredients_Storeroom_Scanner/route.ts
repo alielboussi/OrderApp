@@ -339,6 +339,12 @@ function createHtml(config: {
     }
     .destination-pill-select {
       display: block;
+      text-align: center;
+    }
+    .destination-pill-select .destination-pill-hint {
+      display: block;
+      margin-bottom: 6px;
+      text-align: center;
     }
     .destination-pill-select select {
       width: 100%;
@@ -348,12 +354,15 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 12px 16px;
       color: #ff5d73;
-      font-size: 1.35rem;
+      font-size: 1.6rem;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       cursor: pointer;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .destination-pill-select select option {
+      font-size: 1.35rem;
     }
     .destination-pill-select select:focus-visible {
       outline: none;
@@ -925,7 +934,7 @@ function createHtml(config: {
       justify-items: stretch;
       position: fixed;
       left: 50%;
-      top: 50%;
+      top: 45%;
       transform: translate(-50%, -50%);
       z-index: 40;
     }
@@ -1375,9 +1384,9 @@ function createHtml(config: {
               <h3>To</h3>
               <p id="dest-label">${escapeHtml(destPillLabel)}</p>
               <label class="destination-pill-select">
-                <span class="sr-only">Select destination warehouse</span>
+                <span class="destination-pill-hint">Outlets</span>
                 <select id="console-destination-select">
-                  <option value="">Choose destination</option>
+                  <option value="">Select outlet</option>
                 </select>
               </label>
             </div>
@@ -2068,7 +2077,7 @@ function createHtml(config: {
 
       setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
         sourceMissingText: state.lockedSource ? undefined : 'Loading...',
-        destMissingText: state.lockedDest ? undefined : 'Choose destination'
+        destMissingText: state.lockedDest ? undefined : 'Select outlet'
       });
 
       window.setTimeout(() => {
@@ -2612,7 +2621,7 @@ function createHtml(config: {
         destinationSelect.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = state.destinationOptions.length ? 'Choose destination' : 'No destinations';
+        placeholder.textContent = state.destinationOptions.length ? 'Select outlet' : 'No outlets';
         destinationSelect.appendChild(placeholder);
         state.destinationOptions.forEach((option) => {
           if (!option?.id) return;
@@ -2778,7 +2787,7 @@ function createHtml(config: {
         if (selection) {
           destLabel.textContent = selection.label;
         } else {
-          destLabel.textContent = 'Choose destination';
+          destLabel.textContent = 'Select outlet';
         }
       }
 
@@ -3923,7 +3932,7 @@ function createHtml(config: {
           }
           renderDestinationOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
-            destMissingText: 'Choose destination'
+            destMissingText: 'Select outlet'
           });
           syncDestinationPillLabel();
           if (!sourceWarehouse) {

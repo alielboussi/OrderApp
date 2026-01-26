@@ -346,12 +346,15 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 12px 16px;
       color: #ff5d73;
-      font-size: 1.35rem;
+      font-size: 1.6rem;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       cursor: pointer;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .destination-pill-select select option {
+      font-size: 1.35rem;
     }
     .destination-pill-select select:focus-visible {
       outline: none;
@@ -923,7 +926,7 @@ function createHtml(config: {
       justify-items: stretch;
       position: fixed;
       left: 50%;
-      top: 50%;
+      top: 45%;
       transform: translate(-50%, -50%);
       z-index: 40;
     }
