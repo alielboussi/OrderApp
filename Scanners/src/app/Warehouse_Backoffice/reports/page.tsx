@@ -127,6 +127,8 @@ export default function WarehouseSalesReportsPage() {
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState(toDateInputValue(lastWeek));
   const [endDate, setEndDate] = useState(toDateInputValue(today));
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [includeFinished, setIncludeFinished] = useState(true);
   const [includeIngredient, setIncludeIngredient] = useState(true);
   const [includeRaw, setIncludeRaw] = useState(true);
@@ -248,11 +250,13 @@ export default function WarehouseSalesReportsPage() {
   const downloadPdfReport = async () => {
     const outletText = selectedOutletNames || "All outlets";
     const rangeText = startDate && endDate ? `${startDate} to ${endDate}` : "All dates";
+    const timeText = startTime || endTime ? `${startTime || "00:00"} to ${endTime || "23:59"}` : "All day";
     const logoDataUrl = await loadLogoDataUrl();
 
     const html = buildReportPdfHtml({
       outletText,
       rangeText,
+      timeText,
       logoDataUrl,
       rows: aggregated.map((row) => ({
         item_name: row.item_name,
@@ -316,14 +320,19 @@ export default function WarehouseSalesReportsPage() {
       }
 
       if (startDate) {
-        const startIso = new Date(`${startDate}T00:00:00`).toISOString();
+        const startIso = new Date(`${startDate}T${startTime || "00:00"}:00`).toISOString();
         query = query.gte("sold_at", startIso);
       }
 
       if (endDate) {
-        const end = new Date(`${endDate}T00:00:00`);
-        end.setDate(end.getDate() + 1);
-        query = query.lt("sold_at", end.toISOString());
+        if (endTime) {
+          const endIso = new Date(`${endDate}T${endTime}:00`).toISOString();
+          query = query.lte("sold_at", endIso);
+        } else {
+          const end = new Date(`${endDate}T00:00:00`);
+          end.setDate(end.getDate() + 1);
+          query = query.lt("sold_at", end.toISOString());
+        }
       }
 
       const { data, error: queryError } = await query;
@@ -524,10 +533,18 @@ export default function WarehouseSalesReportsPage() {
               <input className={styles.textInput} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </label>
             <label className={styles.inputLabel}>
+              Start time
+              <input className={styles.textInput} type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+            </label>
+            <label className={styles.inputLabel}>
               End date
               <input className={styles.textInput} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
             </label>
-            <p className={styles.smallNote}>End date is inclusive.</p>
+            <label className={styles.inputLabel}>
+              End time
+              <input className={styles.textInput} type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+            </label>
+            <p className={styles.smallNote}>Leave time blank to include the full day.</p>
           </div>
 
           <div className={styles.filterCard}>

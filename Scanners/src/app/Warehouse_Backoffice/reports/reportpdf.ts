@@ -14,6 +14,7 @@ type ReportTotals = {
 type ReportPdfOptions = {
   outletText: string;
   rangeText: string;
+  timeText?: string;
   rows: ReportRow[];
   totals: ReportTotals;
   logoDataUrl?: string;
@@ -33,6 +34,10 @@ function formatCurrency(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatWholeCurrency(value: number): string {
+  return Math.round(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
 function formatQty(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
@@ -41,6 +46,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
   const {
     outletText,
     rangeText,
+    timeText,
     rows,
     totals,
     logoDataUrl,
@@ -54,7 +60,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
           <td>${escapeHtml(row.item_name)}</td>
           <td>${formatQty(row.qty_units)}</td>
           <td>${formatCurrency(row.before_tax)}</td>
-          <td>${formatCurrency(row.after_tax)}</td>
+          <td>${formatWholeCurrency(row.after_tax)}</td>
         </tr>
       `
     )
@@ -230,6 +236,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
             <div class="subheader">
               <div><strong>Outlets:</strong> ${escapeHtml(outletText)}</div>
               <div><strong>Date range:</strong> ${escapeHtml(rangeText)}</div>
+              ${timeText ? `<div><strong>Time range:</strong> ${escapeHtml(timeText)}</div>` : ""}
             </div>
             <table>
               <thead>
@@ -248,7 +255,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
                   <td>Total</td>
                   <td>${formatQty(totals.qty)}</td>
                   <td>${formatCurrency(totals.before)}</td>
-                  <td>${formatCurrency(totals.after)}</td>
+                  <td>${formatWholeCurrency(totals.after)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -259,7 +266,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
               </div>
               <div>
                 <div class="label">Sales After Tax</div>
-                <div class="value">${formatCurrency(totals.after)}</div>
+                <div class="value">${formatWholeCurrency(totals.after)}</div>
               </div>
               <div>
                 <div class="label">Units Sold</div>

@@ -5,6 +5,7 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
+const HOMES_PARENT_ID = 'c021ea3b-7109-4690-be6c-0c7ae8278a5d';
 const DESTINATION_CHOICES = [
   { id: '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', label: 'Main Preparation Kitchen' },
   { id: '0cdfba88-b3b9-43d5-a2a8-4e852bf9300b', label: 'Pastry Kitchen' },
@@ -54,7 +55,8 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 }
 
 async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
-  const ids = [LOCKED_SOURCE_ID, LOCKED_DEST_ID].filter(Boolean);
+  const destinationIds = DESTINATION_CHOICES.map((choice) => choice.id).filter(Boolean);
+  const ids = [LOCKED_SOURCE_ID, ...destinationIds].filter(Boolean);
   if (!ids.length) {
     return [];
   }
@@ -337,6 +339,11 @@ function createHtml(config: {
       text-align: left;
       display: flex;
       flex-direction: column;
+      gap: 8px;
+    }
+    .destination-select-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
       gap: 8px;
     }
     .destination-pill-select {
@@ -1385,12 +1392,20 @@ function createHtml(config: {
             <div class="locked-pill locked-pill--destination">
               <h3>To</h3>
               <p id="dest-label">${escapeHtml(destPillLabel)}</p>
-              <label class="destination-pill-select">
-                <span class="destination-pill-hint">Outlets</span>
-                <select id="console-destination-select">
-                  <option value="">Select outlet</option>
-                </select>
-              </label>
+              <div class="destination-select-grid">
+                <label class="destination-pill-select">
+                  <span class="destination-pill-hint">Outlets</span>
+                  <select id="console-destination-select">
+                    <option value="">Select outlet</option>
+                  </select>
+                </label>
+                <label class="destination-pill-select">
+                  <span class="destination-pill-hint">Homes</span>
+                  <select id="console-homes-select">
+                    <option value="">Select home</option>
+                  </select>
+                </label>
+              </div>
             </div>
           </div>
         </article>
@@ -1807,6 +1822,7 @@ function createHtml(config: {
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
+      const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
 
       const state = {
         session: null,
@@ -1829,6 +1845,8 @@ function createHtml(config: {
         operators: [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
         destinationSelection: null,
+        homesOptions: [],
+        homesSelection: null,
         purchaseForm: {
           supplierId: '',
           referenceCode: '',
@@ -1976,6 +1994,7 @@ function createHtml(config: {
         damage: document.getElementById('damage-operator-select')
       };
       const destinationSelect = document.getElementById('console-destination-select');
+      const homesSelect = document.getElementById('console-homes-select');
       const operatorStatusLabels = {
         transfer: document.getElementById('transfer-operator-status'),
         purchase: document.getElementById('purchase-operator-status'),
@@ -2633,6 +2652,27 @@ function createHtml(config: {
         syncDestinationPillLabel();
       }
 
+      function renderHomesOptions() {
+        if (!homesSelect) return;
+        const existingValue = homesSelect.value;
+        homesSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = state.homesOptions.length ? 'Select home' : 'No homes';
+        homesSelect.appendChild(placeholder);
+        state.homesOptions.forEach((option) => {
+          if (!option?.id) return;
+          const opt = document.createElement('option');
+          opt.value = option.id;
+          opt.textContent = option.label ?? 'Home';
+          homesSelect.appendChild(opt);
+        });
+        const savedValue = state.homesSelection ?? existingValue;
+        homesSelect.value = savedValue || '';
+        homesSelect.disabled = !state.homesOptions.length;
+        syncDestinationPillLabel();
+      }
+
       function showOperatorPrompt(context) {
         const select = operatorSelects[context];
         if (select) {
@@ -2755,7 +2795,18 @@ function createHtml(config: {
         return null;
       }
 
-      function getSelectedDestination() {
+      function getHomesOptionById(id) {
+        if (!id) return null;
+        const optionFromState = state.homesOptions.find((option) => option.id === id);
+        if (optionFromState) return optionFromState;
+        const warehouseRecord = state.warehouses.find((w) => w.id === id);
+        if (warehouseRecord) {
+          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Home' };
+        }
+        return null;
+      }
+
+      function getSelectedPrimaryDestination() {
         const id = state.destinationSelection;
         if (!id) return null;
         const option = getDestinationOptionById(id);
@@ -2763,17 +2814,34 @@ function createHtml(config: {
         return { id, label: 'Destination warehouse' };
       }
 
-      function showDestinationPrompt() {
+      function getSelectedHomeDestination() {
+        const id = state.homesSelection;
+        if (!id) return null;
+        const option = getHomesOptionById(id);
+        if (option) return option;
+        return { id, label: 'Home' };
+      }
+
+      function getSelectedDestination() {
+        return getSelectedHomeDestination() ?? getSelectedPrimaryDestination();
+      }
+
+      function showDestinationPrompt(context) {
+        if (context === 'transfer' && homesSelect && state.homesOptions.length) {
+          homesSelect.focus();
+          return;
+        }
         destinationSelect?.focus();
       }
 
       function ensureDestinationSelected(context, shouldPrompt = true) {
-        if (getSelectedDestination()) {
+        const selection = context === 'transfer' ? getSelectedDestination() : getSelectedPrimaryDestination();
+        if (selection) {
           return true;
         }
         if (shouldPrompt) {
           showResult('Select a destination warehouse for ' + formatOperatorLabel(context) + '.', true);
-          showDestinationPrompt();
+          showDestinationPrompt(context);
         }
         return false;
       }
@@ -2792,7 +2860,9 @@ function createHtml(config: {
         const trimmed = warehouseId || '';
         if (!trimmed) {
           state.destinationSelection = null;
-          state.lockedDest = null;
+          if (!state.homesSelection) {
+            state.lockedDest = null;
+          }
           if (destinationSelect && destinationSelect.value !== '') {
             destinationSelect.value = '';
           }
@@ -2807,9 +2877,46 @@ function createHtml(config: {
           return;
         }
         state.destinationSelection = trimmed;
+        state.homesSelection = null;
         state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
         if (destinationSelect && destinationSelect.value !== trimmed) {
           destinationSelect.value = trimmed;
+        }
+        if (homesSelect && homesSelect.value !== '') {
+          homesSelect.value = '';
+        }
+        syncDestinationPillLabel();
+        enforceOperatorLocks();
+      }
+
+      function handleHomesSelection(warehouseId) {
+        const trimmed = warehouseId || '';
+        if (!trimmed) {
+          state.homesSelection = null;
+          if (!state.destinationSelection) {
+            state.lockedDest = null;
+          }
+          if (homesSelect && homesSelect.value !== '') {
+            homesSelect.value = '';
+          }
+          syncDestinationPillLabel();
+          enforceOperatorLocks();
+          return;
+        }
+        const option = getHomesOptionById(trimmed);
+        if (!option) {
+          showResult('Home unavailable. Refresh directory.', true);
+          renderHomesOptions();
+          return;
+        }
+        state.homesSelection = trimmed;
+        state.destinationSelection = null;
+        state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
+        if (homesSelect && homesSelect.value !== trimmed) {
+          homesSelect.value = trimmed;
+        }
+        if (destinationSelect && destinationSelect.value !== '') {
+          destinationSelect.value = '';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -3910,7 +4017,40 @@ function createHtml(config: {
           } else {
             state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
           }
+          let homesRows = state.warehouses.filter((w) => w.parent_warehouse_id === homesParentId);
+          if (!homesRows.length && homesParentId) {
+            const { data: childRows, error: childErr } = await supabase
+              .from('warehouses')
+              .select('id,name,parent_warehouse_id,active')
+              .eq('parent_warehouse_id', homesParentId);
+            if (!childErr && Array.isArray(childRows)) {
+              homesRows = childRows.map((row) => ({ ...row, active: row?.active ?? true }));
+            }
+          }
+          state.homesOptions = homesRows
+            .filter((row) => row && row.active !== false)
+            .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
+            .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
+
+          if (state.homesSelection && state.destinationSelection) {
+            state.destinationSelection = null;
+            if (destinationSelect) {
+              destinationSelect.value = '';
+            }
+          }
+
+          const hasSavedHomesSelection = state.homesSelection && state.homesOptions.some((opt) => opt.id === state.homesSelection);
+          if (!hasSavedHomesSelection) {
+            state.homesSelection = null;
+            if (homesSelect) {
+              homesSelect.value = '';
+            }
+          }
+          if (state.homesSelection) {
+            state.lockedDest = state.warehouses.find((w) => w.id === state.homesSelection) ?? null;
+          }
           renderDestinationOptions();
+          renderHomesOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
             destMissingText: 'Select outlet'
           });
@@ -4776,6 +4916,11 @@ function createHtml(config: {
       destinationSelect?.addEventListener('change', (event) => {
         const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
         handleDestinationSelection(value);
+      });
+
+      homesSelect?.addEventListener('change', (event) => {
+        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
+        handleHomesSelection(value);
       });
 
       operatorModalForm?.addEventListener('submit', (event) => {

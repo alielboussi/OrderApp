@@ -473,9 +473,10 @@ type FieldProps = {
   type?: string;
   step?: string;
   min?: string;
+  disabled?: boolean;
 };
 
-function Field({ label, hint, value, onChange, required, type = "text", step, min }: FieldProps) {
+function Field({ label, hint, value, onChange, required, type = "text", step, min, disabled }: FieldProps) {
   return (
     <label className={styles.field}>
       <span className={styles.label}>{label}</span>
@@ -488,6 +489,7 @@ function Field({ label, hint, value, onChange, required, type = "text", step, mi
         type={type}
         step={step}
         min={min}
+        disabled={disabled}
       />
     </label>
   );
