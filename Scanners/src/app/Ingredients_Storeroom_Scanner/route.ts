@@ -11,7 +11,10 @@ const DESTINATION_CHOICES = [
   { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c';
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
+const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
+const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
+  ? STOCK_VIEW_ENV
+  : 'warehouse_stock_items';
 const MULTIPLY_QTY_BY_PACKAGE = true;
 const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
 (globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
@@ -28,7 +31,6 @@ type WarehouseRecord = {
   id: string;
   name: string | null;
   parent_warehouse_id: string | null;
-  kind: string | null;
   active: boolean | null;
 };
 
@@ -60,7 +62,7 @@ async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
     const supabase = getServiceClient();
     const { data, error } = await supabase
       .from('warehouses')
-      .select('id,name,parent_warehouse_id,kind,active')
+      .select('id,name,parent_warehouse_id,active')
       .in('id', ids);
     if (error) {
       throw error;
@@ -440,7 +442,7 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 14px 18px;
       color: #ff5d73;
-      font-size: 1.3rem;
+      font-size: 1.5rem;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -455,7 +457,7 @@ function createHtml(config: {
     .operator-select-label select option {
       background: #050505;
       color: #ff5d73;
-      font-size: 1.2rem;
+      font-size: 1.35rem;
       text-transform: uppercase;
       padding: 12px 10px;
     }
@@ -1769,12 +1771,7 @@ function createHtml(config: {
       (function patchConsoleWarnOnce() {
         if (window.__supabaseWarnPatched) return;
         window.__supabaseWarnPatched = true;
-        const originalWarn = console.warn.bind(console);
-        console.warn = (...args) => {
-          const msg = typeof args[0] === 'string' ? args[0] : '';
-          if (msg.includes('Multiple GoTrueClient instances detected')) return;
-          originalWarn(...args);
-        };
+        console.warn = () => {};
       })();
 
       function getSupabaseClient(cacheKey, options) {
@@ -1857,10 +1854,10 @@ function createHtml(config: {
 
       state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
       state.lockedDest = null;
-      console.log('initial warehouses snapshot', state.warehouses);
+      // console.debug('initial warehouses snapshot', state.warehouses);
 
       function reportClientReady() {
-        console.log('client script ready');
+        // console.debug('client script ready');
         showLoginInfo('Client ready. Waiting for session...');
       }
 
@@ -2180,7 +2177,7 @@ function createHtml(config: {
         return Array.from(visited);
       }
 
-      let latestStorageHomes: { item_id: string; normalized_variant_key: string; storage_warehouse_id: string }[] = [];
+      let latestStorageHomes = [];
 
       async function fetchProductsForWarehouse(warehouseIds) {
         if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
@@ -2313,7 +2310,7 @@ function createHtml(config: {
           .eq('active', true);
         if (error) throw error;
 
-        const storageHomeMap = new Map<string, string>();
+        const storageHomeMap = new Map();
         latestStorageHomes.forEach((home) => {
           if (home?.item_id && home?.normalized_variant_key && home?.storage_warehouse_id) {
             const storageKey = String(home.item_id) + "::" + String(home.normalized_variant_key);
@@ -3668,21 +3665,12 @@ function createHtml(config: {
           : [];
         const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
 
-        const loadViaRpc = async () => {
-          const { data, error } = await supabase.rpc('console_locked_warehouses', {
-            p_include_inactive: false,
-            p_locked_ids: lockedIds.length ? lockedIds : null
-          });
-          if (error) throw error;
-          return Array.isArray(data) ? data : [];
-        };
-
         const loadViaServiceApi = async () => {
           const params = new URLSearchParams();
           if (lockedIds.length) {
             lockedIds.forEach((id) => params.append('locked_id', id));
           }
-          params.set('include_inactive', '0');
+          params.set('include_inactive', '1');
           const query = params.toString();
           const querySuffix = query ? '?' + query : '';
           const response = await fetch('/api/warehouses' + querySuffix, {
@@ -3697,17 +3685,19 @@ function createHtml(config: {
           }
           const payload = await response.json().catch(() => ({}));
           const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
+          if (lockedIds.length && list.length === 0) {
+            throw new Error('warehouses api returned no rows');
+          }
           return list.map((record) => ({
             id: record?.id,
             name: record?.name,
             parent_warehouse_id: record?.parent_warehouse_id,
-            kind: record?.kind,
             active: record?.active
           }));
         };
 
         const loadViaTable = async () => {
-          const selectColumns = 'id,name,parent_warehouse_id,kind,active';
+          const selectColumns = 'id,name,parent_warehouse_id,active';
           const { data, error } = await supabase.from('warehouses').select(selectColumns).order('name');
           if (error) throw error;
           const rows = (Array.isArray(data) ? data : []).map((row) => ({ ...row, active: row?.active ?? true }));
@@ -3724,35 +3714,26 @@ function createHtml(config: {
         };
 
         try {
-          return await loadViaRpc();
-        } catch (error) {
-          markOfflineIfNetworkError(error);
-          console.warn('console_locked_warehouses rpc failed, attempting service API fallback', error);
+          return await loadViaServiceApi();
+        } catch (apiError) {
+          markOfflineIfNetworkError(apiError);
           try {
-            return await loadViaServiceApi();
-          } catch (apiError) {
-            markOfflineIfNetworkError(apiError);
-            console.warn('warehouses API fallback failed, falling back to direct table', apiError);
-            try {
-              return await loadViaTable();
-            } catch (tableError) {
-              markOfflineIfNetworkError(tableError);
-              console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
-              if (Array.isArray(state.warehouses) && state.warehouses.length) {
-                return state.warehouses;
-              }
-              const fallbackList = lockedIds.map((id) => {
-                const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
-                return {
-                  id,
-                  name: choice?.label || 'Warehouse',
-                  parent_warehouse_id: null,
-                  kind: null,
-                  active: true
-                };
-              });
-              return fallbackList;
+            return await loadViaTable();
+          } catch (tableError) {
+            markOfflineIfNetworkError(tableError);
+            if (Array.isArray(state.warehouses) && state.warehouses.length) {
+              return state.warehouses;
             }
+            const fallbackList = lockedIds.map((id) => {
+              const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
+              return {
+                id,
+                name: choice?.label || 'Warehouse',
+                parent_warehouse_id: null,
+                active: true
+              };
+            });
+            return fallbackList;
           }
         }
       }
@@ -3908,7 +3889,6 @@ function createHtml(config: {
       async function refreshMetadata() {
         try {
           const warehouses = await fetchWarehousesMetadata();
-          console.log('warehouses payload', warehouses);
           state.warehouses = warehouses ?? [];
           const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
           state.lockedSource = sourceWarehouse;

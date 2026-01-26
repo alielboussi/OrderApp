@@ -575,7 +575,7 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 14px 18px;
       color: #ff5d73;
-      font-size: 1.3rem;
+      font-size: 1.5rem;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -590,7 +590,7 @@ function createHtml(config: {
     .operator-select-label select option {
       background: #050505;
       color: #ff5d73;
-      font-size: 1.2rem;
+      font-size: 1.35rem;
       text-transform: uppercase;
       padding: 12px 10px;
     }

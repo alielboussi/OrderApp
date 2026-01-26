@@ -19,6 +19,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup");
   const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
+  const goToReports = () => router.push("/Warehouse_Backoffice/reports");
 
   useEffect(() => {
     if (status !== "ok") {
@@ -140,6 +141,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToPosMatch} className={`${styles.actionCard} ${styles.mappingCard}`}>
             <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>MIntpos-App Match</p>
             <p className={styles.cardBody}>Map POS items/flavours to catalog item + variant + warehouse for deductions.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToReports} className={`${styles.actionCard} ${styles.reportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Outlet Sales Reports</p>
+            <p className={styles.cardBody}>Filter sales by outlet, date, and product type with before/after tax totals.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
