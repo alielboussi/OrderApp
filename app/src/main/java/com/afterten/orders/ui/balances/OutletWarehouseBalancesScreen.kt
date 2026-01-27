@@ -92,7 +92,7 @@ fun OutletWarehouseBalancesScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Afterten Live Stock", fontWeight = FontWeight.Bold, color = Color.White)
+            Text("Afterten Orders", fontWeight = FontWeight.Bold, color = Color.White)
             Button(
                 onClick = onLogout,
                 colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
@@ -188,7 +188,7 @@ fun OutletWarehouseBalancesScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
-                        Text("Live Stock", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Outlet Warehouse Balances", fontWeight = FontWeight.Bold, color = Color.White)
                         Text("Showing ${ui.items.size} items", color = Color.White.copy(alpha = 0.7f))
                     }
                     if (ui.loading) {

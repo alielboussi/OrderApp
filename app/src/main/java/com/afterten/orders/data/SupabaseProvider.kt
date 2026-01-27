@@ -279,7 +279,10 @@ class SupabaseProvider(context: Context) {
         val whoRoles = rolesList.firstOrNull()
         val roleDescriptors = when {
             whoRoles?.roleCatalog?.isNotEmpty() == true -> whoRoles.roleCatalog
-            else -> (whoRoles?.roles ?: emptyList()).map { RoleDescriptor(slug = it) }
+            else -> (whoRoles?.roles ?: emptyList()).map { value ->
+                val isUuid = value.contains("-")
+                if (isUuid) RoleDescriptor(id = value) else RoleDescriptor(slug = value)
+            }
         }
 
         // Effective admin: BuildConfig gate OR DB role

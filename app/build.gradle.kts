@@ -37,10 +37,6 @@ android {
         create("orders") {
             dimension = "app"
         }
-        create("liveStock") {
-            dimension = "app"
-            applicationId = "com.afterten.livestock"
-        }
     }
 
     lint {
