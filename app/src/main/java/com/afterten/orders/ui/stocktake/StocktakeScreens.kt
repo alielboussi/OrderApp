@@ -183,20 +183,6 @@ fun StocktakeDashboardScreen(
                     color = Color.White.copy(alpha = 0.8f),
                     style = MaterialTheme.typography.bodySmall
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (ui.showMappedOnly) "Showing mapped warehouses" else "Showing all warehouses",
-                        color = Color.White.copy(alpha = 0.8f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    TextButton(onClick = { vm.toggleShowMappedOnly(!ui.showMappedOnly) }) {
-                        Text(if (ui.showMappedOnly) "Show all" else "Show mapped", color = Color.White)
-                    }
-                }
                 Text(
                     "Flow: enter opening counts, process transfers/damages, then enter closing counts and close the period.",
                     color = Color.White.copy(alpha = 0.8f),
@@ -204,10 +190,7 @@ fun StocktakeDashboardScreen(
                 )
 
                 if (ui.warehouses.isEmpty()) {
-                    Text(
-                        if (ui.showMappedOnly) "No mapped warehouses available" else "No warehouses available",
-                        color = Color.White
-                    )
+                    Text("No mapped warehouses available", color = Color.White)
                 }
 
                 OutlinedTextField(
@@ -361,20 +344,6 @@ fun StocktakePeriodsScreen(
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            if (ui.showMappedOnly) "Showing mapped warehouses" else "Showing all warehouses",
-                            color = Color.White.copy(alpha = 0.8f),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        TextButton(onClick = { vm.toggleShowMappedOnly(!ui.showMappedOnly) }) {
-                            Text(if (ui.showMappedOnly) "Show all" else "Show mapped", color = Color.White)
-                        }
-                    }
                     ExposedDropdownMenuBox(expanded = warehouseMenu, onExpandedChange = { warehouseMenu = it }) {
                         OutlinedTextField(
                             value = warehouseLabel,

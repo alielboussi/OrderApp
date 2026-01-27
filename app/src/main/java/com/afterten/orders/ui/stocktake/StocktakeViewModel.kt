@@ -44,8 +44,7 @@ class StocktakeViewModel(
         val lastCount: StocktakeRepository.StockCount? = null,
         val loading: Boolean = false,
         val error: String? = null,
-        val debug: List<String> = emptyList(),
-        val showMappedOnly: Boolean = true
+        val debug: List<String> = emptyList()
     )
 
     data class PeriodCountDisplay(
@@ -68,21 +67,17 @@ class StocktakeViewModel(
         Log.d(TAG, message)
     }
 
-    private suspend fun fetchWarehouses(mappedOnly: Boolean): Pair<List<SupabaseProvider.Warehouse>, Throwable?> {
+    private suspend fun fetchWarehouses(): Pair<List<SupabaseProvider.Warehouse>, Throwable?> {
         val jwt = session?.token ?: return emptyList<SupabaseProvider.Warehouse>() to null
-        val result = if (!mappedOnly) {
-            runCatching { repo.listWarehouses(jwt) }
-        } else {
-            runCatching {
-                val outletIds = buildList {
-                    session?.outletId?.takeIf { it.isNotBlank() }?.let { add(it) }
-                    if (isEmpty()) {
-                        addAll(repo.listWhoamiOutlets(jwt).mapNotNull { it.outletId.takeIf(String::isNotBlank) })
-                    }
+        val result = runCatching {
+            val outletIds = buildList {
+                session?.outletId?.takeIf { it.isNotBlank() }?.let { add(it) }
+                if (isEmpty()) {
+                    addAll(repo.listWhoamiOutlets(jwt).mapNotNull { it.outletId.takeIf(String::isNotBlank) })
                 }
-                val warehouseIds = repo.listWarehouseIdsForOutlets(jwt, outletIds)
-                repo.listWarehousesByIds(jwt, warehouseIds)
             }
+            val warehouseIds = repo.listWarehouseIdsForOutlets(jwt, outletIds, true)
+            repo.listWarehousesByIds(jwt, warehouseIds)
         }
         val warehouses = result.getOrElse { emptyList<SupabaseProvider.Warehouse>() }
             .filter { it.active }
@@ -103,7 +98,7 @@ class StocktakeViewModel(
                 loadReferenceData(session.token)
             }
 
-            val warehousesResult = runCatching { fetchWarehouses(_ui.value.showMappedOnly) }
+            val warehousesResult = runCatching { fetchWarehouses() }
             val (warehouses, whErr) = warehousesResult.getOrElse { emptyList<SupabaseProvider.Warehouse>() to it }
             val current = _ui.value
             val retainedWarehouse = current.selectedWarehouseId?.takeIf { id -> warehouses.any { it.id == id } }
@@ -115,13 +110,13 @@ class StocktakeViewModel(
             if (warehouses.isNotEmpty()) {
                 pushDebug("Warehouses loaded count=${warehouses.size}")
             } else {
-                pushDebug("No warehouses returned (mappedOnly=${_ui.value.showMappedOnly})")
+                pushDebug("No mapped warehouses returned")
             }
 
             fun summarize(t: Throwable?): String? = t?.message?.take(140)
             val errorMessage = when {
                 whErr != null -> "Unable to load warehouses: ${summarize(whErr) ?: "unknown error"}"
-                _ui.value.showMappedOnly && warehouses.isEmpty() -> "No mapped warehouses found for your outlet."
+                warehouses.isEmpty() -> "No mapped warehouses found for your outlet."
                 else -> null
             }
 
@@ -143,23 +138,6 @@ class StocktakeViewModel(
         }
     }
 
-    fun toggleShowMappedOnly(mappedOnly: Boolean) {
-        if (_ui.value.showMappedOnly == mappedOnly) return
-        _ui.value = _ui.value.copy(showMappedOnly = mappedOnly, loading = true, error = null, selectedWarehouseId = null, items = emptyList())
-        viewModelScope.launch {
-            val (warehouses, whErr) = fetchWarehouses(mappedOnly)
-            _ui.value = _ui.value.copy(
-                warehouses = warehouses,
-                selectedWarehouseId = warehouses.firstOrNull()?.id,
-                loading = false,
-                error = whErr?.message
-            )
-            warehouses.firstOrNull()?.id?.let {
-                refreshOpenPeriod(it)
-                loadItems(it)
-            }
-        }
-    }
 
     private suspend fun loadReferenceData(jwt: String) {
         val variations = runCatching { repo.listAllVariations(jwt) }

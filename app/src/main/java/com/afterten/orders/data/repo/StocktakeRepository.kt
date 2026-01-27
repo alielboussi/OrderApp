@@ -21,7 +21,7 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     data class StockPeriod(
         val id: String,
         @SerialName("warehouse_id") val warehouseId: String,
-        @SerialName("outlet_id") val outletId: String,
+        @SerialName("outlet_id") val outletId: String? = null,
         val status: String,
         @SerialName("opened_at") val openedAt: String? = null,
         @SerialName("closed_at") val closedAt: String? = null,
@@ -82,8 +82,11 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
 
     suspend fun listWarehouses(jwt: String) = supabase.listWarehouses(jwt)
 
-    suspend fun listWarehouseIdsForOutlets(jwt: String, outletIds: Collection<String>) =
-        supabase.listWarehouseIdsForOutlets(jwt, outletIds)
+    suspend fun listWarehouseIdsForOutlets(
+        jwt: String,
+        outletIds: Collection<String>,
+        showInStocktakeOnly: Boolean = true
+    ) = supabase.listWarehouseIdsForOutlets(jwt, outletIds, showInStocktakeOnly)
 
     suspend fun listWarehousesByIds(jwt: String, ids: Collection<String>) =
         supabase.fetchWarehousesByIds(jwt, ids)

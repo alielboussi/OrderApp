@@ -626,7 +626,8 @@ class SupabaseProvider(context: Context) {
 
     @Serializable
     private data class OutletWarehouseMapRow(
-        @SerialName("warehouse_id") val warehouseId: String? = null
+        @SerialName("warehouse_id") val warehouseId: String? = null,
+        @SerialName("show_in_stocktake") val showInStocktake: Boolean? = null
     )
 
     @Serializable
@@ -1034,12 +1035,22 @@ class SupabaseProvider(context: Context) {
             .filter { it.active }
     }
 
-    suspend fun listWarehouseIdsForOutlets(jwt: String, outletIds: Collection<String>): List<String> {
+    suspend fun listWarehouseIdsForOutlets(
+        jwt: String,
+        outletIds: Collection<String>,
+        showInStocktakeOnly: Boolean = true
+    ): List<String> {
         val unique = outletIds.mapNotNull { it?.trim() }.filter { it.isNotEmpty() }.distinct()
         if (unique.isEmpty()) return emptyList()
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
-        val url = "$supabaseUrl/rest/v1/outlet_warehouses?select=warehouse_id&outlet_id=in.$encoded"
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlet_warehouses?select=warehouse_id,show_in_stocktake&outlet_id=in.$encoded")
+            if (showInStocktakeOnly) {
+                append("&show_in_stocktake=eq.true")
+            }
+        }
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")

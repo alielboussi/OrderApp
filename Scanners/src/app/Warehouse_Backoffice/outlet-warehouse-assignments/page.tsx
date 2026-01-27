@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
@@ -23,6 +24,7 @@ type Warehouse = {
 type Assignment = {
   outlet_id: string | null;
   warehouse_id: string | null;
+  show_in_stocktake?: boolean | null;
 };
 
 export default function OutletWarehouseAssignmentsPage() {
@@ -39,6 +41,7 @@ export default function OutletWarehouseAssignmentsPage() {
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
   const [outletId, setOutletId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
+  const [showInStocktake, setShowInStocktake] = useState(true);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -51,7 +54,7 @@ export default function OutletWarehouseAssignmentsPage() {
         await Promise.all([
           supabase.from("outlets").select("id,name,code,active").order("name"),
           supabase.from("warehouses").select("id,name,code,active").order("name"),
-          supabase.from("outlet_warehouses").select("outlet_id,warehouse_id"),
+          supabase.from("outlet_warehouses").select("outlet_id,warehouse_id,show_in_stocktake"),
         ]);
 
       if (outletError) throw outletError;
@@ -106,13 +109,17 @@ export default function OutletWarehouseAssignmentsPage() {
     try {
       const { error: insertError } = await supabase
         .from("outlet_warehouses")
-        .upsert({ outlet_id: outletId, warehouse_id: warehouseId }, { onConflict: "outlet_id,warehouse_id", ignoreDuplicates: true });
+        .upsert(
+          { outlet_id: outletId, warehouse_id: warehouseId, show_in_stocktake: showInStocktake },
+          { onConflict: "outlet_id,warehouse_id", ignoreDuplicates: true }
+        );
       if (insertError) {
         const message = insertError.message || JSON.stringify(insertError);
         throw new Error(message);
       }
       setOutletId("");
       setWarehouseId("");
+      setShowInStocktake(true);
       await load();
     } catch (err) {
       console.error("handleAssign failed", err);
@@ -151,6 +158,33 @@ export default function OutletWarehouseAssignmentsPage() {
     }
   };
 
+  const handleToggleStocktake = async (row: Assignment, nextValue: boolean) => {
+    if (readOnly) {
+      setError("Read-only access: saving is disabled.");
+      return;
+    }
+    if (!row.outlet_id || !row.warehouse_id) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: updateError } = await supabase
+        .from("outlet_warehouses")
+        .update({ show_in_stocktake: nextValue })
+        .match({ outlet_id: row.outlet_id, warehouse_id: row.warehouse_id });
+      if (updateError) {
+        const message = updateError.message || JSON.stringify(updateError);
+        throw new Error(message);
+      }
+      await load();
+    } catch (err) {
+      console.error("handleToggleStocktake failed", err);
+      const message = err instanceof Error ? err.message : JSON.stringify(err);
+      setError(message || "Failed to update stocktake visibility");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (status !== "ok") return null;
 
   return (
@@ -172,7 +206,11 @@ export default function OutletWarehouseAssignmentsPage() {
           <div className={styles.formRow}>
             <label className={styles.label}>
               Outlet
-              <select className={styles.input} value={outletId} onChange={(e) => setOutletId(e.target.value)}>
+              <select
+                className={styles.input}
+                value={outletId}
+                onChange={(event: ChangeEvent<HTMLSelectElement>) => setOutletId(event.target.value)}
+              >
                 <option value="">Select outlet</option>
                 {outlets.map((o) => (
                   <option key={o.id} value={o.id}>
@@ -183,13 +221,28 @@ export default function OutletWarehouseAssignmentsPage() {
             </label>
             <label className={styles.label}>
               Warehouse
-              <select className={styles.input} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              <select
+                className={styles.input}
+                value={warehouseId}
+                onChange={(event: ChangeEvent<HTMLSelectElement>) => setWarehouseId(event.target.value)}
+              >
                 <option value="">Select warehouse</option>
                 {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name ?? w.id}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className={styles.label}>
+              Show in stocktake
+              <select
+                className={styles.input}
+                value={showInStocktake ? "yes" : "no"}
+                onChange={(event: ChangeEvent<HTMLSelectElement>) => setShowInStocktake(event.target.value === "yes")}
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
               </select>
             </label>
             <div className={styles.formActions}>
@@ -212,19 +265,34 @@ export default function OutletWarehouseAssignmentsPage() {
                 <tr>
                   <th>Outlet</th>
                   <th>Warehouse</th>
+                  <th>Show in stocktake</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {assignments.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className={styles.empty}>No assignments yet.</td>
+                    <td colSpan={4} className={styles.empty}>No assignments yet.</td>
                   </tr>
                 ) : (
                   assignments.map((row) => (
                     <tr key={`${row.outlet_id ?? "_"}-${row.warehouse_id ?? "_"}`}>
                       <td>{row.outlet_id ? outletLabelById.get(row.outlet_id) ?? row.outlet_id : "—"}</td>
                       <td>{row.warehouse_id ? warehouseLabelById.get(row.warehouse_id) ?? row.warehouse_id : "—"}</td>
+                      <td>
+                        <select
+                          aria-label={`Show ${row.warehouse_id ? warehouseLabelById.get(row.warehouse_id) ?? row.warehouse_id : "warehouse"} in stocktake`}
+                          className={styles.input}
+                          value={row.show_in_stocktake === false ? "no" : "yes"}
+                          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                            handleToggleStocktake(row, event.target.value === "yes")
+                          }
+                          disabled={readOnly || saving}
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </td>
                       <td>
                         <button
                           type="button"
