@@ -76,7 +76,17 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
 
     suspend fun listOutlets(jwt: String) = supabase.listOutlets(jwt)
 
+    suspend fun listWhoamiOutlets(jwt: String) = supabase.listWhoamiOutlets(jwt)
+
     suspend fun listWarehousesForOutlet(jwt: String, outletId: String?) = supabase.listWarehousesForOutlet(jwt, outletId)
+
+    suspend fun listWarehouses(jwt: String) = supabase.listWarehouses(jwt)
+
+    suspend fun listWarehouseIdsForOutlets(jwt: String, outletIds: Collection<String>) =
+        supabase.listWarehouseIdsForOutlets(jwt, outletIds)
+
+    suspend fun listWarehousesByIds(jwt: String, ids: Collection<String>) =
+        supabase.fetchWarehousesByIds(jwt, ids)
 
     suspend fun listWarehouseItems(jwt: String, warehouseId: String, outletId: String?, search: String? = null) =
         supabase.listWarehouseItems(jwt, warehouseId, outletId, search)

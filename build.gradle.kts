@@ -13,3 +13,15 @@ allprojects {
         mavenCentral()
     }
 }
+
+// Ensure clean runs first when combined with build/assemble tasks.
+gradle.projectsEvaluated {
+    allprojects {
+        val cleanTask = tasks.findByName("clean")
+        if (cleanTask != null) {
+            tasks.matching { it.name != "clean" }.configureEach {
+                mustRunAfter(cleanTask)
+            }
+        }
+    }
+}

@@ -106,14 +106,18 @@ export default function OutletWarehouseAssignmentsPage() {
     try {
       const { error: insertError } = await supabase
         .from("outlet_warehouses")
-        .insert({ outlet_id: outletId, warehouse_id: warehouseId });
-      if (insertError) throw insertError;
+        .upsert({ outlet_id: outletId, warehouse_id: warehouseId }, { onConflict: "outlet_id,warehouse_id", ignoreDuplicates: true });
+      if (insertError) {
+        const message = insertError.message || JSON.stringify(insertError);
+        throw new Error(message);
+      }
       setOutletId("");
       setWarehouseId("");
       await load();
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Failed to assign outlet warehouse");
+      console.error("handleAssign failed", err);
+      const message = err instanceof Error ? err.message : JSON.stringify(err);
+      setError(message || "Failed to assign outlet warehouse");
     } finally {
       setSaving(false);
     }
@@ -133,11 +137,15 @@ export default function OutletWarehouseAssignmentsPage() {
         .from("outlet_warehouses")
         .delete()
         .match({ outlet_id: row.outlet_id, warehouse_id: row.warehouse_id });
-      if (deleteError) throw deleteError;
+      if (deleteError) {
+        const message = deleteError.message || JSON.stringify(deleteError);
+        throw new Error(message);
+      }
       await load();
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Failed to delete assignment");
+      console.error("handleDelete failed", err);
+      const message = err instanceof Error ? err.message : JSON.stringify(err);
+      setError(message || "Failed to delete assignment");
     } finally {
       setDeleteKey(null);
     }

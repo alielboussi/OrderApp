@@ -20,9 +20,7 @@ class StocktakeViewModel(
     }
 
     data class UiState(
-        val outlets: List<SupabaseProvider.Outlet> = emptyList(),
         val warehouses: List<SupabaseProvider.Warehouse> = emptyList(),
-        val filteredWarehouses: List<SupabaseProvider.Warehouse> = emptyList(),
         val allItems: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val items: List<SupabaseProvider.WarehouseStockItem> = emptyList(),
         val variations: List<SupabaseProvider.SimpleVariation> = emptyList(),
@@ -36,7 +34,6 @@ class StocktakeViewModel(
         val productUoms: Map<String, String> = emptyMap(),
         val stocktakeUoms: Map<String, String> = emptyMap(),
         val qtyDecimals: Map<String, Int> = emptyMap(),
-        val selectedOutletId: String? = null,
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
         val periods: List<StocktakeRepository.StockPeriod> = emptyList(),
@@ -47,7 +44,8 @@ class StocktakeViewModel(
         val lastCount: StocktakeRepository.StockCount? = null,
         val loading: Boolean = false,
         val error: String? = null,
-        val debug: List<String> = emptyList()
+        val debug: List<String> = emptyList(),
+        val showMappedOnly: Boolean = true
     )
 
     data class PeriodCountDisplay(
@@ -70,10 +68,25 @@ class StocktakeViewModel(
         Log.d(TAG, message)
     }
 
-    private suspend fun fetchWarehouses(outletId: String?): Pair<List<SupabaseProvider.Warehouse>, Throwable?> {
+    private suspend fun fetchWarehouses(mappedOnly: Boolean): Pair<List<SupabaseProvider.Warehouse>, Throwable?> {
         val jwt = session?.token ?: return emptyList<SupabaseProvider.Warehouse>() to null
-        val result = runCatching { repo.listWarehousesForOutlet(jwt, outletId) }
-        return result.getOrElse { emptyList<SupabaseProvider.Warehouse>() } to result.exceptionOrNull()
+        val result = if (!mappedOnly) {
+            runCatching { repo.listWarehouses(jwt) }
+        } else {
+            runCatching {
+                val outletIds = buildList {
+                    session?.outletId?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    if (isEmpty()) {
+                        addAll(repo.listWhoamiOutlets(jwt).mapNotNull { it.outletId.takeIf(String::isNotBlank) })
+                    }
+                }
+                val warehouseIds = repo.listWarehouseIdsForOutlets(jwt, outletIds)
+                repo.listWarehousesByIds(jwt, warehouseIds)
+            }
+        }
+        val warehouses = result.getOrElse { emptyList<SupabaseProvider.Warehouse>() }
+            .filter { it.active }
+        return warehouses to result.exceptionOrNull()
     }
 
     fun bindSession(session: OutletSession?) {
@@ -83,71 +96,38 @@ class StocktakeViewModel(
             return
         }
         viewModelScope.launch {
-            pushDebug("bindSession: start for outletId=${session.outletId}")
+            pushDebug("bindSession: start")
             _ui.value = _ui.value.copy(loading = true, error = null)
 
             viewModelScope.launch {
                 loadReferenceData(session.token)
             }
 
-            Log.d(TAG, "bindSession: fetching outlets for outletId=${session.outletId}")
-
-            val outletsResult = runCatching { repo.listOutlets(session.token) }
-            outletsResult.onSuccess { Log.d(TAG, "listOutlets returned ${it.size} outlets") }
-            outletsResult.onFailure { Log.e(TAG, "listOutlets failed", it) }
-            outletsResult.exceptionOrNull()?.let { pushDebug("listOutlets failed: ${it.message}") }
-
-            val outlets = outletsResult.getOrElse {
-                session.outletId.takeIf { it.isNotBlank() }?.let { oid ->
-                    listOf(SupabaseProvider.Outlet(id = oid, name = session.outletName.ifBlank { "Outlet" }))
-                } ?: emptyList()
-            }.ifEmpty {
-                session.outletId.takeIf { it.isNotBlank() }?.let { oid ->
-                    listOf(SupabaseProvider.Outlet(id = oid, name = session.outletName.ifBlank { "Outlet" }))
-                } ?: emptyList()
-            }
-
-            if (outlets.isEmpty()) {
-                Log.w(TAG, "No outlets available after fetch/fallback; session outletId=${session.outletId}")
-                pushDebug("No outlets available after fetch/fallback")
-            }
-
-            val preferredOutlet = session.outletId.takeIf { it.isNotBlank() } ?: outlets.firstOrNull()?.id
-
-            val (filtered, whErr) = fetchWarehouses(preferredOutlet)
+            val warehousesResult = runCatching { fetchWarehouses(_ui.value.showMappedOnly) }
+            val (warehouses, whErr) = warehousesResult.getOrElse { emptyList<SupabaseProvider.Warehouse>() to it }
             val current = _ui.value
-            val warehousesToUse = if (filtered.isNotEmpty()) filtered else current.warehouses
-            val filteredWarehousesToUse = if (filtered.isNotEmpty()) filtered else current.filteredWarehouses
-            val retainedWarehouse = current.selectedWarehouseId?.takeIf { id -> warehousesToUse.any { it.id == id } }
-            val selectedWarehouse: String? = retainedWarehouse
+            val retainedWarehouse = current.selectedWarehouseId?.takeIf { id -> warehouses.any { it.id == id } }
+            val preferredWarehouse = retainedWarehouse ?: warehouses.firstOrNull()?.id
             val itemsToKeep = if (retainedWarehouse != null && current.items.isNotEmpty()) current.items else emptyList()
             val openPeriodToKeep = if (retainedWarehouse != null) current.openPeriod else null
 
-            whErr?.let { Log.e(TAG, "listWarehousesForOutlet failed", it) }
-            if (filtered.isNotEmpty()) {
-                Log.d(TAG, "Warehouses loaded for outlet=$preferredOutlet: ${filtered.size}")
-                pushDebug("Warehouses loaded for outlet=$preferredOutlet count=${filtered.size}")
-            }
-
-            if (filtered.isEmpty()) {
-                pushDebug("No warehouses returned for outlet=$preferredOutlet")
+            whErr?.let { Log.e(TAG, "listWarehouses failed", it) }
+            if (warehouses.isNotEmpty()) {
+                pushDebug("Warehouses loaded count=${warehouses.size}")
+            } else {
+                pushDebug("No warehouses returned (mappedOnly=${_ui.value.showMappedOnly})")
             }
 
             fun summarize(t: Throwable?): String? = t?.message?.take(140)
-
             val errorMessage = when {
                 whErr != null -> "Unable to load warehouses: ${summarize(whErr) ?: "unknown error"}"
-                outletsResult.isFailure && outlets.isEmpty() -> "Unable to load outlets: ${summarize(outletsResult.exceptionOrNull()) ?: "unknown error"}"
-                outletsResult.isFailure -> "Outlets list unavailable; showing your assigned outlet"
+                _ui.value.showMappedOnly && warehouses.isEmpty() -> "No mapped warehouses found for your outlet."
                 else -> null
             }
 
             _ui.value = _ui.value.copy(
-                outlets = outlets,
-                warehouses = warehousesToUse,
-                filteredWarehouses = filteredWarehousesToUse,
-                selectedOutletId = preferredOutlet ?: outlets.firstOrNull()?.id,
-                selectedWarehouseId = selectedWarehouse,
+                warehouses = warehouses,
+                selectedWarehouseId = preferredWarehouse,
                 items = itemsToKeep,
                 openPeriod = openPeriodToKeep,
                 variance = emptyList(),
@@ -156,7 +136,28 @@ class StocktakeViewModel(
                 error = errorMessage
             )
 
-            selectedWarehouse?.let { loadItems(it) }
+            preferredWarehouse?.let {
+                refreshOpenPeriod(it)
+                loadItems(it)
+            }
+        }
+    }
+
+    fun toggleShowMappedOnly(mappedOnly: Boolean) {
+        if (_ui.value.showMappedOnly == mappedOnly) return
+        _ui.value = _ui.value.copy(showMappedOnly = mappedOnly, loading = true, error = null, selectedWarehouseId = null, items = emptyList())
+        viewModelScope.launch {
+            val (warehouses, whErr) = fetchWarehouses(mappedOnly)
+            _ui.value = _ui.value.copy(
+                warehouses = warehouses,
+                selectedWarehouseId = warehouses.firstOrNull()?.id,
+                loading = false,
+                error = whErr?.message
+            )
+            warehouses.firstOrNull()?.id?.let {
+                refreshOpenPeriod(it)
+                loadItems(it)
+            }
         }
     }
 
@@ -193,28 +194,6 @@ class StocktakeViewModel(
             stocktakeUoms = stocktakeUoms,
             qtyDecimals = qtyDecimals
         )
-    }
-
-    fun selectOutlet(id: String) {
-        pushDebug("selectOutlet=$id")
-        _ui.value = _ui.value.copy(loading = true, error = null, selectedOutletId = id, filteredWarehouses = emptyList(), selectedWarehouseId = null)
-        viewModelScope.launch {
-            val (filtered, whErr) = fetchWarehouses(id)
-            val nextWarehouseId: String? = null
-            whErr?.let { pushDebug("listWarehousesForOutlet failed: ${it.message}") }
-            if (filtered.isEmpty()) pushDebug("No warehouses returned for outlet=$id")
-            _ui.value = _ui.value.copy(
-                warehouses = filtered,
-                filteredWarehouses = filtered,
-                selectedWarehouseId = nextWarehouseId,
-                items = emptyList(),
-                openPeriod = null,
-                variance = emptyList(),
-                lastCount = null,
-                loading = false,
-                error = whErr?.message
-            )
-        }
     }
 
     fun selectWarehouse(id: String) {
@@ -464,7 +443,6 @@ class StocktakeViewModel(
                     _ui.value = _ui.value.copy(
                         openPeriod = period,
                         selectedWarehouseId = period?.warehouseId,
-                        selectedOutletId = period?.outletId ?: _ui.value.selectedOutletId,
                         error = null
                     )
                     period?.warehouseId?.let { loadItems(it) }
@@ -556,10 +534,9 @@ class StocktakeViewModel(
 
     private suspend fun loadItems(warehouseId: String) {
         val jwt = session?.token ?: return
-        val outletId = _ui.value.selectedOutletId ?: session?.outletId
-        pushDebug("loadItems warehouse=$warehouseId outlet=$outletId")
+        pushDebug("loadItems warehouse=$warehouseId")
         _ui.value = _ui.value.copy(items = emptyList(), loading = true, error = null)
-        runCatching { repo.listWarehouseItems(jwt, warehouseId, outletId, null) }
+        runCatching { repo.listWarehouseItems(jwt, warehouseId, null, null) }
             .onSuccess { fetched ->
                 pushDebug("list_warehouse_items fetched=${fetched.size}")
                 fetched.take(5).forEach { row ->
@@ -568,96 +545,22 @@ class StocktakeViewModel(
                 val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
                     .onFailure { pushDebug("warehouse_stock_items failed: ${it.message}") }
                     .getOrElse { emptyList() }
-                val outletFallback = if (!outletId.isNullOrBlank()) {
-                    runCatching { repo.listOutletProductsFallback(jwt, outletId) }
-                        .onFailure { pushDebug("outlet_products fallback failed: ${it.message}") }
-                        .getOrElse { emptyList() }
-                } else {
-                    emptyList()
-                }
-                val combined = (fetched + direct + outletFallback)
+                val combined = (fetched + direct)
                     .distinctBy { it.itemId to (it.variantKey ?: "base") }
                 val display = pickDisplayItems(combined)
                 if (display.isNotEmpty()) {
                     pushDebug("list_warehouse_items display=${display.size}")
                     _ui.value = _ui.value.copy(allItems = combined, items = display, loading = false, error = null)
                 } else {
-                    pushDebug("list_warehouse_items empty; trying direct warehouse_stock_items")
-                    runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
-                        .onSuccess { direct ->
-                            val directDisplay = pickDisplayItems(direct)
-                            if (directDisplay.isNotEmpty()) {
-                                pushDebug("warehouse_stock_items fetched=${direct.size} display=${directDisplay.size}")
-                                _ui.value = _ui.value.copy(allItems = direct, items = directDisplay, loading = false, error = null)
-                            } else {
-                                pushDebug("warehouse_stock_items empty; trying outlet_item_routes fallback")
-                                val outletKey = outletId
-
-                                suspend fun loadOutletProductsOrCatalog(outletKey: String?) {
-                                    if (outletKey.isNullOrBlank()) {
-                                        pushDebug("outlet_products skipped: outletId missing; trying catalog_items")
-                                        runCatching { repo.listCatalogItemsForStocktake(jwt) }
-                                            .onSuccess { catalogItems ->
-                                                val catalogDisplay = pickDisplayItems(catalogItems)
-                                                pushDebug("catalog_items fetched=${catalogItems.size} display=${catalogDisplay.size}")
-                                                _ui.value = _ui.value.copy(items = catalogDisplay, loading = false, error = null)
-                                            }
-                                            .onFailure { err ->
-                                                pushDebug("catalog_items failed: ${err.message}")
-                                                _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
-                                            }
-                                    } else {
-                                        runCatching { repo.listOutletProductsFallback(jwt, outletKey) }
-                                            .onSuccess { outletRows ->
-                                                val outletDisplay = pickDisplayItems(outletRows)
-                                                if (outletDisplay.isNotEmpty()) {
-                                                    pushDebug("outlet_products fetched=${outletRows.size} display=${outletDisplay.size}")
-                                                    _ui.value = _ui.value.copy(items = outletDisplay, loading = false, error = null)
-                                                } else {
-                                                    pushDebug("outlet_products empty; trying catalog_items")
-                                                    runCatching { repo.listCatalogItemsForStocktake(jwt) }
-                                                        .onSuccess { catalogItems ->
-                                                            val catalogDisplay = pickDisplayItems(catalogItems)
-                                                            pushDebug("catalog_items fetched=${catalogItems.size} display=${catalogDisplay.size}")
-                                                            _ui.value = _ui.value.copy(items = catalogDisplay, loading = false, error = null)
-                                                        }
-                                                        .onFailure { err ->
-                                                            pushDebug("catalog_items failed: ${err.message}")
-                                                            _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
-                                                        }
-                                                }
-                                            }
-                                            .onFailure { err ->
-                                                pushDebug("outlet_products failed: ${err.message}")
-                                                _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
-                                            }
-                                    }
-                                }
-
-                                if (outletKey.isNullOrBlank()) {
-                                    pushDebug("outlet_item_routes skipped: outletId missing")
-                                    loadOutletProductsOrCatalog(outletKey)
-                                } else {
-                                    runCatching { repo.listOutletWarehouseRoutesFallback(jwt, outletKey, warehouseId) }
-                                        .onSuccess { routeRows ->
-                                            val routeDisplay = pickDisplayItems(routeRows)
-                                            if (routeDisplay.isNotEmpty()) {
-                                                pushDebug("outlet_item_routes fetched=${routeRows.size} display=${routeDisplay.size}")
-                                                _ui.value = _ui.value.copy(items = routeDisplay, loading = false, error = null)
-                                            } else {
-                                                pushDebug("outlet_item_routes empty; trying outlet_products fallback")
-                                                loadOutletProductsOrCatalog(outletKey)
-                                            }
-                                        }
-                                        .onFailure { err ->
-                                            pushDebug("outlet_item_routes failed: ${err.message}")
-                                            loadOutletProductsOrCatalog(outletKey)
-                                        }
-                                }
-                            }
+                    pushDebug("list_warehouse_items empty; trying catalog_items")
+                    runCatching { repo.listCatalogItemsForStocktake(jwt) }
+                        .onSuccess { catalogItems ->
+                            val catalogDisplay = pickDisplayItems(catalogItems)
+                            pushDebug("catalog_items fetched=${catalogItems.size} display=${catalogDisplay.size}")
+                            _ui.value = _ui.value.copy(items = catalogDisplay, loading = false, error = null)
                         }
                         .onFailure { err ->
-                            pushDebug("warehouse_stock_items failed: ${err.message}")
+                            pushDebug("catalog_items failed: ${err.message}")
                             _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
                         }
                 }

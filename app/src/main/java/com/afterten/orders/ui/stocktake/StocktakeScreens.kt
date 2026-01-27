@@ -127,15 +127,11 @@ fun StocktakeDashboardScreen(
     )
 
     var note by remember { mutableStateOf("") }
-    var outletMenu by remember { mutableStateOf(false) }
     var warehouseMenu by remember { mutableStateOf(false) }
 
-    val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name
-        ?: "Select outlet"
-    val warehouseLabel = ui.filteredWarehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name
+    val warehouseLabel = ui.warehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name
         ?: "Select warehouse"
-    val canSelectOutlet = ui.outlets.isNotEmpty()
-    val warehouseEnabled = ui.filteredWarehouses.isNotEmpty()
+    val warehouseEnabled = ui.warehouses.isNotEmpty()
 
     Column(
         modifier = Modifier
@@ -147,7 +143,7 @@ fun StocktakeDashboardScreen(
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
-            Text("Outlet Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
+            Text("Warehouse Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.size(40.dp))
         }
 
@@ -157,31 +153,6 @@ fun StocktakeDashboardScreen(
             border = BorderStroke(1.dp, primaryRed)
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Outlet", color = Color.White, fontWeight = FontWeight.Bold)
-                ExposedDropdownMenuBox(expanded = outletMenu, onExpandedChange = { outletMenu = it }) {
-                    OutlinedTextField(
-                        value = outletLabel,
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = canSelectOutlet && !ui.loading,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) },
-                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                        colors = outlinedFieldColors
-                    )
-                    DropdownMenu(expanded = outletMenu, onDismissRequest = { outletMenu = false }) {
-                        ui.outlets.forEach { outlet ->
-                            DropdownMenuItem(
-                                text = { Text(outlet.name, color = Color.White) },
-                                onClick = {
-                                    outletMenu = false
-                                    vm.selectOutlet(outlet.id)
-                                },
-                                contentPadding = MenuDefaults.DropdownMenuItemContentPadding
-                            )
-                        }
-                    }
-                }
-
                 Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
                 ExposedDropdownMenuBox(expanded = warehouseMenu, onExpandedChange = { warehouseMenu = it }) {
                     OutlinedTextField(
@@ -194,7 +165,7 @@ fun StocktakeDashboardScreen(
                         colors = outlinedFieldColors
                     )
                     DropdownMenu(expanded = warehouseMenu, onDismissRequest = { warehouseMenu = false }) {
-                        ui.filteredWarehouses.forEach { wh ->
+                        ui.warehouses.forEach { wh ->
                             DropdownMenuItem(
                                 text = { Text(wh.name, color = Color.White) },
                                 onClick = {
@@ -208,18 +179,35 @@ fun StocktakeDashboardScreen(
                 }
 
                 Text(
-                    "Warehouses come from Outlet setup → Deduct warehouses. Pick the outlet’s warehouse you count in.",
+                    "Stocktake is warehouse-level. Pick the warehouse you count in.",
                     color = Color.White.copy(alpha = 0.8f),
                     style = MaterialTheme.typography.bodySmall
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (ui.showMappedOnly) "Showing mapped warehouses" else "Showing all warehouses",
+                        color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(onClick = { vm.toggleShowMappedOnly(!ui.showMappedOnly) }) {
+                        Text(if (ui.showMappedOnly) "Show all" else "Show mapped", color = Color.White)
+                    }
+                }
                 Text(
                     "Flow: enter opening counts, process transfers/damages, then enter closing counts and close the period.",
                     color = Color.White.copy(alpha = 0.8f),
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                if (ui.selectedOutletId != null && ui.filteredWarehouses.isEmpty()) {
-                    Text("No warehouses available for this outlet", color = Color.White)
+                if (ui.warehouses.isEmpty()) {
+                    Text(
+                        if (ui.showMappedOnly) "No mapped warehouses available" else "No warehouses available",
+                        color = Color.White
+                    )
                 }
 
                 OutlinedTextField(
@@ -242,7 +230,7 @@ fun StocktakeDashboardScreen(
                     }
                 }
                 Button(
-                    enabled = !hasOpenPeriod && ui.selectedOutletId != null && ui.selectedWarehouseId != null && !ui.loading,
+                    enabled = !hasOpenPeriod && ui.selectedWarehouseId != null && !ui.loading,
                     onClick = { vm.startStocktake(note.takeIf { it.isNotBlank() }) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
@@ -341,12 +329,9 @@ fun StocktakePeriodsScreen(
         disabledContainerColor = Color.Black
     )
 
-    var outletMenu by remember { mutableStateOf(false) }
     var warehouseMenu by remember { mutableStateOf(false) }
-    val outletLabel = ui.outlets.firstOrNull { it.id == ui.selectedOutletId }?.name ?: "Select outlet"
-    val warehouseLabel = ui.filteredWarehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name ?: "Select warehouse"
-    val canSelectOutlet = ui.outlets.isNotEmpty()
-    val warehouseEnabled = ui.filteredWarehouses.isNotEmpty()
+    val warehouseLabel = ui.warehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name ?: "Select warehouse"
+    val warehouseEnabled = ui.warehouses.isNotEmpty()
 
     fun formatStamp(raw: String?): String {
         if (raw.isNullOrBlank()) return "—"
@@ -375,32 +360,21 @@ fun StocktakePeriodsScreen(
                 border = BorderStroke(1.dp, primaryRed)
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Outlet", color = Color.White, fontWeight = FontWeight.Bold)
-                    ExposedDropdownMenuBox(expanded = outletMenu, onExpandedChange = { outletMenu = it }) {
-                        OutlinedTextField(
-                            value = outletLabel,
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = canSelectOutlet && !ui.loading,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = outletMenu) },
-                            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                            colors = outlinedFieldColors
+                    Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (ui.showMappedOnly) "Showing mapped warehouses" else "Showing all warehouses",
+                            color = Color.White.copy(alpha = 0.8f),
+                            style = MaterialTheme.typography.bodySmall
                         )
-                        DropdownMenu(expanded = outletMenu, onDismissRequest = { outletMenu = false }) {
-                            ui.outlets.forEach { outlet ->
-                                DropdownMenuItem(
-                                    text = { Text(outlet.name, color = Color.White) },
-                                    onClick = {
-                                        outletMenu = false
-                                        vm.selectOutlet(outlet.id)
-                                    },
-                                    contentPadding = MenuDefaults.DropdownMenuItemContentPadding
-                                )
-                            }
+                        TextButton(onClick = { vm.toggleShowMappedOnly(!ui.showMappedOnly) }) {
+                            Text(if (ui.showMappedOnly) "Show all" else "Show mapped", color = Color.White)
                         }
                     }
-
-                    Text("Warehouse", color = Color.White, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = warehouseMenu, onExpandedChange = { warehouseMenu = it }) {
                         OutlinedTextField(
                             value = warehouseLabel,
@@ -412,7 +386,7 @@ fun StocktakePeriodsScreen(
                             colors = outlinedFieldColors
                         )
                         DropdownMenu(expanded = warehouseMenu, onDismissRequest = { warehouseMenu = false }) {
-                            ui.filteredWarehouses.forEach { wh ->
+                            ui.warehouses.forEach { wh ->
                                 DropdownMenuItem(
                                     text = { Text(wh.name, color = Color.White) },
                                     onClick = {

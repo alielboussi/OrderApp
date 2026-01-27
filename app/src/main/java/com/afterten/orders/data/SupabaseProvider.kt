@@ -625,6 +625,11 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    private data class OutletWarehouseMapRow(
+        @SerialName("warehouse_id") val warehouseId: String? = null
+    )
+
+    @Serializable
     private data class OutletWarehouseLink(
         @SerialName("warehouse_id") val warehouseId: String
     )
@@ -1027,6 +1032,23 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) throw IllegalStateException("listWarehousesByOutlet failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(Warehouse.serializer()), txt)
             .filter { it.active }
+    }
+
+    suspend fun listWarehouseIdsForOutlets(jwt: String, outletIds: Collection<String>): List<String> {
+        val unique = outletIds.mapNotNull { it?.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (unique.isEmpty()) return emptyList()
+        val filter = "(${unique.joinToString(",")})"
+        val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
+        val url = "$supabaseUrl/rest/v1/outlet_warehouses?select=warehouse_id&outlet_id=in.$encoded"
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("listWarehouseIdsForOutlets failed: HTTP $code $txt")
+        val rows = relaxedJson.decodeFromString(ListSerializer(OutletWarehouseMapRow.serializer()), txt)
+        return rows.mapNotNull { it.warehouseId?.trim()?.takeIf(String::isNotEmpty) }.distinct()
     }
 
     suspend fun listWarehouseBalanceItems(
