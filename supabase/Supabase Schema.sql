@@ -1796,6 +1796,15 @@
           "ordinal_position": 3
         },
         {
+          "data_type": "boolean",
+          "table_name": "outlet_warehouses",
+          "column_name": "show_in_stocktake",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "true",
+          "ordinal_position": 4
+        },
+        {
           "data_type": "uuid",
           "table_name": "outlets",
           "column_name": "id",
@@ -5137,7 +5146,7 @@
         },
         {
           "arguments": "p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.list_warehouse_items(p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text)\n RETURNS SETOF warehouse_stock_items\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select *\r\n  from public.warehouse_stock_items b\r\n  where b.warehouse_id = p_warehouse_id\r\n    and (\r\n      p_search is null\r\n      or b.item_name ilike ('%' || p_search || '%')\r\n    )\r\n  order by b.item_name asc, b.variant_key asc;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.list_warehouse_items(p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text)\n RETURNS SETOF warehouse_stock_items\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  with mapped_outlets as (\r\n    select ow.outlet_id\r\n    from public.outlet_warehouses ow\r\n    where ow.warehouse_id = p_warehouse_id\r\n      and coalesce(ow.show_in_stocktake, true)\r\n  ),\r\n  mapped_products as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      op.item_id,\r\n      ci.name as item_name,\r\n      public.normalize_variant_key(coalesce(op.variant_key, 'base')) as variant_key,\r\n      0::numeric as net_units,\r\n      coalesce(ci.cost, 0)::numeric as unit_cost,\r\n      ci.image_url,\r\n      ci.variants,\r\n      ci.item_kind as base_item_kind,\r\n      exists (\r\n        select 1 from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = op.item_id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = public.normalize_variant_key(coalesce(op.variant_key, 'base'))\r\n      ) as has_recipe\r\n    from public.outlet_products op\r\n    join public.catalog_items ci on ci.id = op.item_id\r\n    where op.outlet_id in (select outlet_id from mapped_outlets)\r\n      and op.enabled = true\r\n  ),\r\n  mapped_enriched as (\r\n    select\r\n      mp.warehouse_id,\r\n      mp.item_id,\r\n      mp.item_name,\r\n      mp.variant_key,\r\n      mp.net_units,\r\n      mp.unit_cost,\r\n      mp.image_url,\r\n      mp.has_recipe,\r\n      case\r\n        when (\r\n          select (v.value ->> 'item_kind')\r\n          from jsonb_array_elements(coalesce(mp.variants, '[]'::jsonb)) v(value)\r\n          where public.normalize_variant_key(coalesce((v.value ->> 'key'), (v.value ->> 'id'), 'base')) = mp.variant_key\r\n          limit 1\r\n        ) in ('finished','ingredient','raw')\r\n        then (\r\n          select (v.value ->> 'item_kind')\r\n          from jsonb_array_elements(coalesce(mp.variants, '[]'::jsonb)) v(value)\r\n          where public.normalize_variant_key(coalesce((v.value ->> 'key'), (v.value ->> 'id'), 'base')) = mp.variant_key\r\n          limit 1\r\n        )::item_kind\r\n        else mp.base_item_kind\r\n      end as item_kind\r\n    from mapped_products mp\r\n  )\r\n  select\r\n    wsi.warehouse_id,\r\n    wsi.item_id,\r\n    wsi.item_name,\r\n    wsi.variant_key,\r\n    wsi.net_units,\r\n    wsi.unit_cost,\r\n    wsi.item_kind,\r\n    wsi.image_url,\r\n    wsi.has_recipe\r\n  from public.warehouse_stock_items wsi\r\n  where wsi.warehouse_id = p_warehouse_id\r\n    and (\r\n      p_search is null\r\n      or wsi.item_name ilike ('%' || p_search || '%')\r\n    )\r\n\r\n  union\r\n\r\n  select\r\n    me.warehouse_id,\r\n    me.item_id,\r\n    me.item_name,\r\n    me.variant_key,\r\n    me.net_units,\r\n    me.unit_cost,\r\n    me.item_kind,\r\n    me.image_url,\r\n    me.has_recipe\r\n  from mapped_enriched me\r\n  where (\r\n      p_search is null\r\n      or me.item_name ilike ('%' || p_search || '%')\r\n    )\r\n\r\n  order by item_name asc, variant_key asc;\r\n$function$\n",
           "function_name": "list_warehouse_items",
           "function_schema": "public"
         },
@@ -5732,7 +5741,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5742,7 +5751,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -5812,7 +5821,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -5822,7 +5831,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -6452,7 +6461,7 @@
           "constraint_name": "outlet_item_routes_norm_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -6462,7 +6471,7 @@
           "constraint_name": "outlet_item_routes_norm_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -6522,7 +6531,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -6532,7 +6541,17 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -6557,22 +6576,12 @@
         },
         {
           "table_name": "outlet_item_routes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
           "column_name": "normalized_variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -6592,7 +6601,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -6692,27 +6701,37 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_products",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_products_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_products",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_products",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_products_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_products",
           "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "outlet_products",
-          "column_name": "item_id",
+          "column_name": "variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
           "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_products",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_products_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_products",
-          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -6723,16 +6742,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
           "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_products",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_products_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_products",
-          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -6992,7 +7001,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7002,27 +7011,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7033,6 +7022,26 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -7217,6 +7226,16 @@
         },
         {
           "table_name": "outlet_warehouses",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_77200_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_warehouses",
           "column_name": "outlet_id",
           "table_schema": "public",
           "constraint_name": "outlet_warehouses_outlet_id_fkey",
@@ -7242,7 +7261,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "warehouse_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7252,16 +7271,6 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_warehouses",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_warehouses_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_warehouses",
           "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
@@ -7273,6 +7282,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_warehouses",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_warehouses_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_warehouses",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7352,7 +7371,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_sales_warehouse_id",
+          "foreign_column_name": "deduct_on_pos_sale",
           "foreign_table_schema": "public"
         },
         {
@@ -7362,7 +7381,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "deduct_on_pos_sale",
+          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {

@@ -777,7 +777,8 @@ class SupabaseProvider(context: Context) {
         val sku: String? = null,
         @SerialName("has_variations") val hasVariations: Boolean = false,
         @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
-        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true
+        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true,
+        @SerialName("selling_price") val sellingPrice: Double? = null
     )
 
     @Serializable
@@ -786,6 +787,7 @@ class SupabaseProvider(context: Context) {
         val key: String? = null,
         @SerialName("item_id") val productId: String,
         val name: String,
+        @SerialName("image_url") val imageUrl: String? = null,
         @SerialName("purchase_pack_unit") val uom: String,
         @SerialName("consumption_uom") val consumptionUom: String = "each",
         @SerialName("stocktake_uom") val stocktakeUom: String? = null,
@@ -803,6 +805,7 @@ class SupabaseProvider(context: Context) {
         val name: String = "",
         val sku: String? = null,
         val cost: Double? = null,
+        @SerialName("image_url") val imageUrl: String? = null,
         @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true,
         @SerialName("purchase_pack_unit") val uom: String? = null,
         @SerialName("consumption_uom") val consumptionUom: String? = null,
@@ -1448,8 +1451,8 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listActiveProducts(jwt: String): List<SimpleProduct> {
-        val urlWithDecimals = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,purchase_pack_unit,consumption_uom,stocktake_uom,qty_decimal_places,sku,has_variations,units_per_purchase_pack,outlet_order_visible&order=name.asc"
-        val urlFallback = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,purchase_pack_unit,consumption_uom,sku,has_variations,units_per_purchase_pack,outlet_order_visible&order=name.asc"
+        val urlWithDecimals = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,purchase_pack_unit,consumption_uom,stocktake_uom,qty_decimal_places,sku,has_variations,units_per_purchase_pack,outlet_order_visible,selling_price&order=name.asc"
+        val urlFallback = "$supabaseUrl/rest/v1/catalog_items?active=eq.true&select=id,name,purchase_pack_unit,consumption_uom,sku,has_variations,units_per_purchase_pack,outlet_order_visible,selling_price&order=name.asc"
 
         suspend fun fetch(url: String): List<SimpleProduct> {
             val resp = http.get(url) {
@@ -1513,6 +1516,7 @@ class SupabaseProvider(context: Context) {
             key = keyValue ?: idValue,
             productId = productId,
             name = name,
+            imageUrl = variant.imageUrl,
             uom = uom,
             consumptionUom = consumption,
             stocktakeUom = variant.stocktakeUom,

@@ -51,6 +51,30 @@ const formatUnitLabel = (unit: string) => {
 type Warehouse = { id: string; name: string };
 type Item = { id: string; name: string; sku?: string | null };
 
+type VariantSummary = {
+  id: string;
+  item_id: string;
+  name: string;
+  sku?: string | null;
+  supplier_sku?: string | null;
+  item_kind: string;
+  consumption_uom: string;
+  stocktake_uom?: string | null;
+  purchase_pack_unit: string;
+  units_per_purchase_pack: number;
+  purchase_unit_mass?: number | null;
+  purchase_unit_mass_uom?: string | null;
+  transfer_unit: string;
+  transfer_quantity: number;
+  qty_decimal_places?: number | null;
+  cost: number;
+  selling_price?: number | null;
+  outlet_order_visible: boolean;
+  image_url?: string | null;
+  default_warehouse_id?: string | null;
+  active: boolean;
+};
+
 type FormState = {
   item_id: string;
   name: string;
@@ -104,6 +128,11 @@ function VariantCreatePage() {
   const [form, setForm] = useState<FormState>(defaultForm);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [variantList, setVariantList] = useState<VariantSummary[]>([]);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<string[]>([]);
+  const [bulkUnitsValue, setBulkUnitsValue] = useState("");
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loadingVariant, setLoadingVariant] = useState(false);
@@ -175,6 +204,34 @@ function VariantCreatePage() {
     if (!editingId && incomingItemId) setForm((prev) => ({ ...prev, item_id: incomingItemId }));
   }, [editingId, incomingItemId]);
 
+  useEffect(() => {
+    const productId = form.item_id?.trim();
+    if (!productId) {
+      setVariantList([]);
+      setBulkSelectedIds([]);
+      return;
+    }
+    let active = true;
+    const loadVariants = async () => {
+      try {
+        const res = await fetch(`/api/catalog/variants?item_id=${encodeURIComponent(productId)}`);
+        if (!res.ok) throw new Error("Failed to load variants");
+        const json = await res.json();
+        const variants = Array.isArray(json?.variants) ? (json.variants as VariantSummary[]) : [];
+        if (!active) return;
+        setVariantList(variants);
+        setBulkSelectedIds((prev) => prev.filter((id) => variants.some((v) => v.id === id)));
+      } catch (error) {
+        console.error("variant list load failed", error);
+        if (active) setVariantList([]);
+      }
+    };
+    loadVariants();
+    return () => {
+      active = false;
+    };
+  }, [form.item_id]);
+
   const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select parent product" }, ...items], [items]);
   const vatExcludedPrice = useMemo(() => {
@@ -186,6 +243,67 @@ function VariantCreatePage() {
   if (status !== "ok") return null;
 
   const handleChange = (key: keyof FormState, value: string | boolean) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const toggleBulkSelection = (id: string) => {
+    setBulkSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  };
+
+  const selectAllBulk = () => {
+    setBulkSelectedIds(variantList.map((variant) => variant.id));
+  };
+
+  const clearAllBulk = () => {
+    setBulkSelectedIds([]);
+  };
+
+  const applyBulkUnits = async () => {
+    const rawValue = bulkUnitsValue.trim();
+    if (!rawValue) {
+      setBulkResult("Enter a units-per-pack value first.");
+      return;
+    }
+    const numeric = Number(rawValue);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      setBulkResult("Units per pack must be a positive number.");
+      return;
+    }
+    if (bulkSelectedIds.length === 0) {
+      setBulkResult("Select at least one variant.");
+      return;
+    }
+    setBulkApplying(true);
+    setBulkResult(null);
+    try {
+      const selectedVariants = variantList.filter((variant) => bulkSelectedIds.includes(variant.id));
+      await Promise.all(
+        selectedVariants.map((variant) =>
+          fetch("/api/catalog/variants", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...variant,
+              units_per_purchase_pack: numeric,
+              item_id: variant.item_id,
+              id: variant.id,
+            }),
+          })
+        )
+      );
+
+      const res = await fetch(`/api/catalog/variants?item_id=${encodeURIComponent(form.item_id)}`);
+      if (res.ok) {
+        const json = await res.json();
+        const variants = Array.isArray(json?.variants) ? (json.variants as VariantSummary[]) : [];
+        setVariantList(variants);
+      }
+      setBulkResult("Applied units-per-pack to selected variants.");
+    } catch (error) {
+      console.error("bulk update failed", error);
+      setBulkResult(error instanceof Error ? error.message : "Bulk update failed");
+    } finally {
+      setBulkApplying(false);
+    }
+  };
 
   const toNumber = (value: string, fallback: number, min = 0) => {
     const parsed = Number(value);
@@ -392,6 +510,71 @@ function VariantCreatePage() {
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
           </div>
+
+          {form.item_id && variantList.length > 0 && (
+            <div className={styles.sectionCard}>
+              <div className={styles.sectionHeader}>
+                <h3 className={styles.sectionTitle}>Bulk update variants</h3>
+                <p className={styles.sectionHint}>
+                  Select variants and apply a shared value (Units inside one supplier pack).
+                </p>
+              </div>
+              <div className={styles.sectionGrid}>
+                <div className={styles.field}>
+                  <span className={styles.label}>Units inside one supplier pack</span>
+                  <span className={styles.hint}>Applies to selected variants</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={bulkUnitsValue}
+                    onChange={(event) => setBulkUnitsValue(event.target.value)}
+                    aria-label="Units inside one supplier pack"
+                  />
+                </div>
+                <div className={styles.field}>
+                  <span className={styles.label}>Selection</span>
+                  <span className={styles.hint}>Choose which variants to update</span>
+                  <div className={styles.bulkActions}>
+                    <button type="button" onClick={selectAllBulk} className={styles.secondaryButton}>
+                      Select all
+                    </button>
+                    <button type="button" onClick={clearAllBulk} className={styles.secondaryButton}>
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyBulkUnits}
+                      className={styles.primaryButton}
+                      disabled={bulkApplying || readOnly}
+                    >
+                      {bulkApplying ? "Applying..." : "Apply"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.toggleRow}>
+                {variantList.map((variant) => (
+                  <label key={variant.id} className={styles.checkbox}>
+                    <div>
+                      <div className={styles.label}>{variant.name}</div>
+                      <div className={styles.hint}>Units per pack: {variant.units_per_purchase_pack ?? "-"}</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      className={styles.checkboxInput}
+                      checked={bulkSelectedIds.includes(variant.id)}
+                      onChange={() => toggleBulkSelection(variant.id)}
+                      disabled={bulkApplying}
+                    />
+                  </label>
+                ))}
+              </div>
+              {bulkResult && <div className={styles.sectionHint}>{bulkResult}</div>}
+            </div>
+          )}
 
           <div className={styles.sectionCard}>
             <div className={styles.sectionHeader}>

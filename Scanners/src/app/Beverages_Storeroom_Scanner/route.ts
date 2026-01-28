@@ -3810,9 +3810,16 @@ function createHtml(config: {
         const variations = state.variations.get(product.id) ?? [];
         const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
         const hasVariants = variations.length > 0;
-        const rows = isIngredient || !hasVariants
+        let rows = isIngredient || !hasVariants
           ? [{ key: 'base', variation: null, label: 'Base' }]
           : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
+        if (preferredVariation) {
+          rows = [{
+            key: preferredVariation.id,
+            variation: preferredVariation,
+            label: preferredVariation.name || 'Variant'
+          }];
+        }
         const seenRows = new Set();
         const uniqueRows = rows.filter((row) => {
           const token = String(row?.variation?.id ?? row?.key ?? row?.label ?? '').toLowerCase();

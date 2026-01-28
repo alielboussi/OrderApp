@@ -72,6 +72,14 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         @SerialName("variance_cost") val varianceCost: Double = 0.0
     )
 
+    @Serializable
+    data class StockLedgerRow(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        @SerialName("delta_units") val deltaUnits: Double = 0.0,
+        val reason: String? = null
+    )
+
     private val json = relaxedJson
 
     suspend fun listOutlets(jwt: String) = supabase.listOutlets(jwt)
@@ -216,6 +224,26 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         val path = "/rest/v1/warehouse_stock_counts?select=${select}&period_id=eq.${periodId}&kind=eq.closing"
         val text = supabase.getWithJwt(path, jwt)
         return json.decodeFromString(ListSerializer(StockCountRow.serializer()), text)
+    }
+
+    suspend fun listStockLedgerForPeriod(
+        jwt: String,
+        warehouseId: String,
+        openedAt: String,
+        closedAt: String
+    ): List<StockLedgerRow> {
+        val select = encode("item_id,variant_key,delta_units,reason")
+        val opened = encode(openedAt)
+        val closed = encode(closedAt)
+        val path = "/rest/v1/stock_ledger?select=${select}" +
+            "&warehouse_id=eq.${warehouseId}" +
+            "&location_type=eq.warehouse" +
+            "&item_id=not.is.null" +
+            "&occurred_at=gte.${opened}" +
+            "&occurred_at=lte.${closed}" +
+            "&reason=in.(warehouse_transfer,outlet_sale,damage)"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(StockLedgerRow.serializer()), text)
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")

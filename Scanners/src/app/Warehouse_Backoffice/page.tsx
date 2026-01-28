@@ -21,6 +21,8 @@ export default function WarehouseBackofficeDashboard() {
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
   const goToOutletWarehouseAssignments = () => router.push("/Warehouse_Backoffice/outlet-warehouse-assignments");
   const goToReports = () => router.push("/Warehouse_Backoffice/reports");
+  const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
+  const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
 
   useEffect(() => {
     if (status !== "ok") {
@@ -160,6 +162,18 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToInventory} className={`${styles.actionCard} ${styles.inventoryCard}`}>
             <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Scanner Reports</p>
             <p className={styles.cardBody}>Process transfers, purchases, and damages with the new warehouse roles.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToVariantBulkUpdate} className={`${styles.actionCard} ${styles.bulkCard}`}>
+            <p className={`${styles.cardTitle} ${styles.bulkTitle}`}>Bulk Variant Update</p>
+            <p className={styles.cardBody}>Apply a single value to multiple variants in one step.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToStockReports} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Stock Reports</p>
+            <p className={styles.cardBody}>Review stocktake periods for mapped warehouses.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

@@ -25,8 +25,6 @@ const itemKinds = [
   { value: "raw", label: "Raw (unprocessed material)" },
 ];
 
-type Warehouse = { id: string; name: string };
-
 type FormState = {
   name: string;
   sku: string;
@@ -46,7 +44,6 @@ type FormState = {
   has_recipe: boolean;
   outlet_order_visible: boolean;
   image_url: string;
-  storage_home_id: string;
   active: boolean;
 };
 
@@ -69,7 +66,6 @@ const defaultForm: FormState = {
   has_recipe: false,
   outlet_order_visible: true,
   image_url: "",
-  storage_home_id: "",
   active: true,
 };
 
@@ -78,7 +74,6 @@ function ProductCreatePage() {
   const searchParams = useSearchParams();
   const { status, readOnly } = useWarehouseAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loadingItem, setLoadingItem] = useState(false);
@@ -95,17 +90,6 @@ function ProductCreatePage() {
   }, [form.selling_price]);
 
   useEffect(() => {
-    async function loadWarehouses() {
-      try {
-        const res = await fetch("/api/warehouses");
-        if (!res.ok) throw new Error("Failed to load warehouses");
-        const json = await res.json();
-        setWarehouses(Array.isArray(json.warehouses) ? json.warehouses : []);
-      } catch (error) {
-        console.error("warehouses load failed", error);
-      }
-    }
-
     async function loadItem(id: string) {
       if (!id) return;
       setLoadingItem(true);
@@ -134,7 +118,6 @@ function ProductCreatePage() {
             has_recipe: Boolean(item.has_recipe),
             outlet_order_visible: item.outlet_order_visible ?? true,
             image_url: item.image_url ?? "",
-            storage_home_id: item.storage_home_id ?? item.default_warehouse_id ?? "",
             active: item.active ?? true,
           });
         }
@@ -146,14 +129,21 @@ function ProductCreatePage() {
       }
     }
 
-    loadWarehouses();
     if (editingId) loadItem(editingId);
   }, [editingId]);
 
-  const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
-
   const handleChange = (key: keyof FormState, value: string | boolean) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      if (key === "has_variations") {
+        const next = Boolean(value);
+        return {
+          ...prev,
+          has_variations: next,
+          supplier_sku: next ? "" : prev.supplier_sku,
+        };
+      }
+      return { ...prev, [key]: value };
+    });
   };
 
   if (status !== "ok") return null;
@@ -175,7 +165,7 @@ function ProductCreatePage() {
       const payload = {
         name: form.name,
         sku: form.sku,
-        supplier_sku: form.supplier_sku,
+        supplier_sku: form.has_variations ? null : form.supplier_sku || null,
         item_kind: form.item_kind,
         consumption_unit: form.consumption_unit,
         purchase_pack_unit: form.purchase_pack_unit || form.storage_unit || form.consumption_unit,
@@ -191,7 +181,6 @@ function ProductCreatePage() {
         has_recipe: form.has_recipe,
         outlet_order_visible: form.outlet_order_visible,
         image_url: form.image_url,
-        default_warehouse_id: form.storage_home_id || null,
         active: form.active,
         ...(editingId ? { id: editingId } : {}),
       };
@@ -259,12 +248,14 @@ function ProductCreatePage() {
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}
             />
-            <Field
-              label="Supplier SKU"
-              hint="Supplier-facing code used for purchase intake scans"
-              value={form.supplier_sku}
-              onChange={(v) => handleChange("supplier_sku", v)}
-            />
+            {!form.has_variations && (
+              <Field
+                label="Supplier SKU"
+                hint="Supplier-facing code used for purchase intake scans"
+                value={form.supplier_sku}
+                onChange={(v) => handleChange("supplier_sku", v)}
+              />
+            )}
             <Select
               label="Stock kind"
               hint="Finished = sellable; Ingredient = used inside recipes; Raw = unprocessed input"
@@ -362,42 +353,37 @@ function ProductCreatePage() {
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
             />
-            <Select
-              label="Storage home"
-              hint="Warehouse where this item lives and receives stock"
-              value={form.storage_home_id}
-              onChange={(v) => handleChange("storage_home_id", v)}
-              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
-            />
           </div>
 
-          <div className={styles.sectionCard}>
-            <div className={styles.sectionHeader}>
-              <h3 className={styles.sectionTitle}>Selling Price Setup</h3>
-              <p className={styles.sectionHint}>Enter the default selling price for this product.</p>
+          {!form.has_variations && (
+            <div className={styles.sectionCard}>
+              <div className={styles.sectionHeader}>
+                <h3 className={styles.sectionTitle}>Selling Price Setup</h3>
+                <p className={styles.sectionHint}>Enter the default selling price for this product.</p>
+              </div>
+              <div className={styles.sectionGrid}>
+                <Field
+                  type="number"
+                  label="Selling price"
+                  hint="Used for sales reporting and pricing"
+                  value={form.selling_price}
+                  onChange={(v) => handleChange("selling_price", v)}
+                  step="0.01"
+                  min="0"
+                />
+                <Field
+                  type="number"
+                  label="VAT Excluded Price"
+                  hint="Selling price with 16% VAT removed"
+                  value={vatExcludedPrice}
+                  onChange={() => null}
+                  step="0.01"
+                  min="0"
+                  disabled
+                />
+              </div>
             </div>
-            <div className={styles.sectionGrid}>
-              <Field
-                type="number"
-                label="Selling price"
-                hint="Used for sales reporting and pricing"
-                value={form.selling_price}
-                onChange={(v) => handleChange("selling_price", v)}
-                step="0.01"
-                min="0"
-              />
-              <Field
-                type="number"
-                label="VAT Excluded Price"
-                hint="Selling price with 16% VAT removed"
-                value={vatExcludedPrice}
-                onChange={() => null}
-                step="0.01"
-                min="0"
-                disabled
-              />
-            </div>
-          </div>
+          )}
 
           <div className={styles.toggleRow}>
             <Checkbox

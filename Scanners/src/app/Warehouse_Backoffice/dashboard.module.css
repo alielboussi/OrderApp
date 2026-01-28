@@ -134,6 +134,8 @@
 .assignmentsCard { border-color: rgba(56, 189, 248, 0.6); box-shadow: 0 18px 38px rgba(56, 189, 248, 0.25); }
 .reportsCard { border-color: rgba(251, 191, 36, 0.5); box-shadow: 0 18px 38px rgba(251, 191, 36, 0.22); }
 .pauseCard { border-color: rgba(251, 113, 133, 0.6); box-shadow: 0 18px 38px rgba(251, 113, 133, 0.22); }
+.bulkCard { border-color: rgba(147, 51, 234, 0.6); box-shadow: 0 18px 38px rgba(147, 51, 234, 0.24); }
+.stockReportsCard { border-color: rgba(16, 185, 129, 0.6); box-shadow: 0 18px 38px rgba(16, 185, 129, 0.24); }
 
 .cardTitle {
   font-size: 15px;
@@ -164,6 +166,14 @@
 
 .assignmentsTitle {
   color: #38bdf8;
+}
+
+.bulkTitle {
+  color: #c084fc;
+}
+
+.stockReportsTitle {
+  color: #6ee7b7;
 }
 
 .reportsTitle {

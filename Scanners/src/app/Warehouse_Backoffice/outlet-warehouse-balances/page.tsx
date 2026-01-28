@@ -164,7 +164,8 @@ export default function OutletWarehouseBalancesPage() {
         const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
           .from("outlet_warehouses")
           .select("warehouse_id")
-          .in("outlet_id", selectedOutletIds);
+          .in("outlet_id", selectedOutletIds)
+          .eq("show_in_stocktake", true);
 
         if (outletWarehouseError) throw outletWarehouseError;
         const warehouseIds = Array.from(
@@ -232,27 +233,66 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
-        let query = supabase
-          .from("warehouse_stock_items")
-          .select("item_id,item_name,variant_key,net_units,item_kind,warehouse_id")
+        const searchValue = search.trim() || null;
+
+        const { data: periodRows, error: periodError } = await supabase
+          .from("warehouse_stock_periods")
+          .select("id,warehouse_id,opened_at")
           .in("warehouse_id", warehouseIds)
-          .in("item_kind", kinds)
-          .order("item_name", { ascending: true })
-          .order("variant_key", { ascending: true });
+          .eq("status", "open")
+          .order("opened_at", { ascending: false });
 
-        if (search.trim()) {
-          query = query.ilike("item_name", `%${search.trim()}%`);
+        if (periodError) throw periodError;
+        const latestOpenByWarehouse = new Map<string, string>();
+        (periodRows ?? []).forEach((row) => {
+          if (!row?.warehouse_id || !row?.id) return;
+          if (!latestOpenByWarehouse.has(row.warehouse_id)) {
+            latestOpenByWarehouse.set(row.warehouse_id, row.id);
+          }
+        });
+        const periodIds = Array.from(latestOpenByWarehouse.values());
+        if (periodIds.length === 0) {
+          if (active) setItems([]);
+          return;
         }
 
-        if (baseOnly) {
-          query = query.or("variant_key.eq.base,variant_key.is.null");
-        }
+        const { data: countRows, error: countError } = await supabase
+          .from("warehouse_stock_counts")
+          .select("item_id,variant_key,period_id")
+          .in("period_id", periodIds);
 
-        const { data, error: itemError } = await query;
-        if (itemError) throw itemError;
+        if (countError) throw countError;
+        const countedKeys = new Set(
+          (countRows ?? [])
+            .map((row) => `${row?.item_id}::${(row?.variant_key ?? "base").toLowerCase()}`)
+            .filter((key) => key && !key.startsWith("undefined::"))
+        );
+
+        const fetchWarehouseItems = async (warehouseId: string) => {
+          const { data, error } = await supabase.rpc("list_warehouse_items", {
+            p_warehouse_id: warehouseId,
+            p_outlet_id: null,
+            p_search: searchValue,
+          });
+          if (error) throw error;
+          return ((data as StockItem[]) || []).filter((row) => {
+            if (!row) return false;
+            const kind = row.item_kind ?? "";
+            if (!kinds.includes(kind)) return false;
+            const key = `${row.item_id}::${(row.variant_key ?? "base").toLowerCase()}`;
+            if (!countedKeys.has(key)) return false;
+            if (baseOnly) {
+              const vKey = (row.variant_key ?? "base").toLowerCase();
+              if (vKey !== "base") return false;
+            }
+            return true;
+          });
+        };
+
+        const fetchedLists = await Promise.all(warehouseIds.map(fetchWarehouseItems));
         if (!active) return;
 
-        const rows = (data as StockItem[]) || [];
+        const rows = fetchedLists.flat();
         if (selectedWarehouseId === "all") {
           const map = new Map<string, StockItem>();
           rows.forEach((row) => {

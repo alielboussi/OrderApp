@@ -34,6 +34,7 @@ class StocktakeViewModel(
         val productUoms: Map<String, String> = emptyMap(),
         val stocktakeUoms: Map<String, String> = emptyMap(),
         val qtyDecimals: Map<String, Int> = emptyMap(),
+        val productPrices: Map<String, Double> = emptyMap(),
         val selectedWarehouseId: String? = null,
         val openPeriod: StocktakeRepository.StockPeriod? = null,
         val periods: List<StocktakeRepository.StockPeriod> = emptyList(),
@@ -54,6 +55,26 @@ class StocktakeViewModel(
         val variantName: String,
         val qty: Double,
         val kind: String
+    )
+
+    data class VarianceReportRow(
+        val itemId: String,
+        val variantKey: String,
+        val itemLabel: String,
+        val openingQty: Double,
+        val transfersQty: Double,
+        val damagesQty: Double,
+        val salesQty: Double,
+        val expectedQty: Double,
+        val closingQty: Double,
+        val varianceQty: Double,
+        val varianceAmount: Double
+    )
+
+    data class VarianceReport(
+        val period: StocktakeRepository.StockPeriod,
+        val rows: List<VarianceReportRow>,
+        val generatedAt: String
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -156,6 +177,9 @@ class StocktakeViewModel(
                 ?: product.consumptionUom.ifBlank { product.uom.ifBlank { "each" } }
             product.id to uom
         }.toMap()
+        val productPrices = products.associate { product ->
+            product.id to (product.sellingPrice ?: 0.0)
+        }
         fun decimalKey(itemId: String, variantKey: String?) = "${itemId}|${variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
         val qtyDecimals = mutableMapOf<String, Int>()
         products.forEach { product ->
@@ -170,7 +194,8 @@ class StocktakeViewModel(
             variations = variations,
             productUoms = productUoms,
             stocktakeUoms = stocktakeUoms,
-            qtyDecimals = qtyDecimals
+            qtyDecimals = qtyDecimals,
+            productPrices = productPrices
         )
     }
 
@@ -433,6 +458,95 @@ class StocktakeViewModel(
         }
     }
 
+    suspend fun buildVarianceReport(periodId: String): VarianceReport {
+        val jwt = session?.token ?: error("No session")
+        val period = repo.fetchPeriodById(jwt, periodId) ?: error("Stocktake period not found")
+        val openedAt = period.openedAt ?: error("Period missing opening time")
+        val closedAt = period.closedAt ?: java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
+            .toString()
+
+        val varianceRows = repo.fetchVariances(jwt, periodId)
+        val openingCounts = repo.listCountsForPeriod(jwt, periodId, "opening")
+        val closingCounts = repo.listCountsForPeriod(jwt, periodId, "closing")
+        val includedKeys = (openingCounts + closingCounts)
+            .map { row -> "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase() }
+            .toSet()
+
+        val ledgerRows = repo.listStockLedgerForPeriod(jwt, period.warehouseId, openedAt, closedAt)
+        val transfersByKey = mutableMapOf<String, Double>()
+        val damagesByKey = mutableMapOf<String, Double>()
+        val salesByKey = mutableMapOf<String, Double>()
+
+        ledgerRows.forEach { row ->
+            val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+            when (row.reason?.lowercase()) {
+                "warehouse_transfer" -> {
+                    transfersByKey[key] = (transfersByKey[key] ?: 0.0) + row.deltaUnits
+                }
+                "damage" -> {
+                    damagesByKey[key] = (damagesByKey[key] ?: 0.0) + row.deltaUnits
+                }
+                "outlet_sale" -> {
+                    salesByKey[key] = (salesByKey[key] ?: 0.0) + kotlin.math.abs(row.deltaUnits)
+                }
+            }
+        }
+
+        val variationMap = _ui.value.variations
+            .groupBy { it.productId }
+            .mapValues { entry ->
+                entry.value.associateBy { v -> v.key?.trim()?.lowercase() ?: v.id.trim().lowercase() }
+            }
+
+        fun variantLabel(itemId: String, variantKey: String): String {
+            if (variantKey.equals("base", ignoreCase = true)) return ""
+            val variant = variationMap[itemId]?.get(variantKey.lowercase())
+            return variant?.name?.ifBlank { variantKey } ?: variantKey
+        }
+
+        val priceMap = _ui.value.productPrices
+
+        val rows = varianceRows
+            .filter { row ->
+                val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+                includedKeys.isEmpty() || includedKeys.contains(key)
+            }
+            .map { row ->
+                val variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                val key = "${row.itemId}|${variantKey}".lowercase()
+                val baseName = row.itemName ?: row.itemId
+                val variant = variantLabel(row.itemId, variantKey)
+                val label = if (variant.isBlank()) baseName else "$baseName ($variant)"
+                val transfers = transfersByKey[key] ?: 0.0
+                val damages = damagesByKey[key] ?: 0.0
+                val sales = salesByKey[key] ?: 0.0
+                val expected = row.openingQty + transfers + damages - sales
+                val closing = row.closingQty
+                val varianceQty = expected - closing
+                val sellingPrice = priceMap[row.itemId] ?: 0.0
+                val varianceAmount = varianceQty * sellingPrice
+                VarianceReportRow(
+                    itemId = row.itemId,
+                    variantKey = variantKey,
+                    itemLabel = label,
+                    openingQty = row.openingQty,
+                    transfersQty = transfers,
+                    damagesQty = damages,
+                    salesQty = sales,
+                    expectedQty = expected,
+                    closingQty = closing,
+                    varianceQty = varianceQty,
+                    varianceAmount = varianceAmount
+                )
+            }
+            .sortedBy { it.itemLabel.lowercase() }
+
+        val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
+            .toString()
+
+        return VarianceReport(period = period, rows = rows, generatedAt = nowLabel)
+    }
+
     private fun refreshOpeningLocks(periodId: String) {
         val jwt = session?.token ?: return
         viewModelScope.launch {
@@ -453,25 +567,11 @@ class StocktakeViewModel(
     private fun pickDisplayItems(items: List<SupabaseProvider.WarehouseStockItem>): List<SupabaseProvider.WarehouseStockItem> {
         val total = items.size
 
-        val nonIngredients = items.filterNot { it.itemKind?.equals("ingredient", ignoreCase = true) == true }
-        val grouped = nonIngredients.groupBy { it.itemId }
-        val variantSelections = grouped.values.flatMap { group ->
-            group.filter { (it.variantKey ?: "base").lowercase() != "base" }
-        }
-        val recipeBases = grouped.values.mapNotNull { group ->
-            val hasRecipe = group.any { it.hasRecipe == true }
-            if (!hasRecipe) return@mapNotNull null
+        val grouped = items.groupBy { it.itemId }
+        val result = grouped.values.mapNotNull { group ->
             group.firstOrNull { (it.variantKey ?: "base").lowercase() == "base" } ?: group.firstOrNull()
         }
-        val baseSingles = grouped.values.mapNotNull { group ->
-            val hasNonBase = group.any { (it.variantKey ?: "base").lowercase() != "base" }
-            val hasRecipe = group.any { it.hasRecipe == true }
-            if (hasNonBase || hasRecipe) return@mapNotNull null
-            group.firstOrNull { (it.variantKey ?: "base").lowercase() == "base" } ?: group.firstOrNull()
-        }
-
-        val result = (recipeBases + variantSelections + baseSingles)
-            .distinctBy { it.itemId to (it.variantKey ?: "base") }
+            .distinctBy { it.itemId }
             .sortedBy { it.itemName ?: it.itemId }
 
         val excluded = items.filterNot { candidate ->
@@ -488,7 +588,7 @@ class StocktakeViewModel(
             }
         }
 
-        pushDebug("pickDisplayItems total=$total recipeBases=${recipeBases.size} variants=${variantSelections.size} result=${result.size} excluded=${excluded.size}")
+        pushDebug("pickDisplayItems total=$total result=${result.size} excluded=${excluded.size}")
         excluded.take(6).forEach { row ->
             pushDebug("excluded id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe} reason=${exclusionReason(row)}")
         }
@@ -530,17 +630,12 @@ class StocktakeViewModel(
                     pushDebug("list_warehouse_items display=${display.size}")
                     _ui.value = _ui.value.copy(allItems = combined, items = display, loading = false, error = null)
                 } else {
-                    pushDebug("list_warehouse_items empty; trying catalog_items")
-                    runCatching { repo.listCatalogItemsForStocktake(jwt) }
-                        .onSuccess { catalogItems ->
-                            val catalogDisplay = pickDisplayItems(catalogItems)
-                            pushDebug("catalog_items fetched=${catalogItems.size} display=${catalogDisplay.size}")
-                            _ui.value = _ui.value.copy(items = catalogDisplay, loading = false, error = null)
-                        }
-                        .onFailure { err ->
-                            pushDebug("catalog_items failed: ${err.message}")
-                            _ui.value = _ui.value.copy(items = emptyList(), loading = false, error = err.message)
-                        }
+                    pushDebug("list_warehouse_items empty for warehouse=$warehouseId")
+                    _ui.value = _ui.value.copy(
+                        items = emptyList(),
+                        loading = false,
+                        error = "No stocktake items found for this warehouse."
+                    )
                 }
             }
             .onFailure { err ->

@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { type Session, type SupabaseClient } from "@supabase/supabase-js";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 
-const READONLY_USER_ID = "fd52f4c1-2403-4670-bdd6-97b4ca7580aa";
+const READONLY_USER_IDS = [
+  "fd52f4c1-2403-4670-bdd6-97b4ca7580aa",
+  "a77c117e-3c48-437d-abb5-ed9fc159372f",
+];
 const BACKOFFICE_ROLE_ID = "de9f2075-9c97-4da1-a2a0-59ed162947e7";
 
 async function isPlatformAdmin(supabase: SupabaseClient, session: Session | null): Promise<boolean> {
@@ -62,9 +65,9 @@ export function useWarehouseAuth() {
 
         const isAdmin = !error && (await isPlatformAdmin(supabase, session));
         const isBackoffice = !error && (await hasBackofficeRole(supabase, currentUserId));
-        const isReadOnlyUser = Boolean(currentUserId && currentUserId === READONLY_USER_ID);
+        const isReadOnlyUser = Boolean(currentUserId && READONLY_USER_IDS.includes(currentUserId));
         const allowed = isAdmin || isBackoffice || isReadOnlyUser;
-        setReadOnly(false);
+        setReadOnly(isReadOnlyUser);
         setDeleteDisabled(isReadOnlyUser);
         setCanViewLogs(isAdmin || isBackoffice);
 

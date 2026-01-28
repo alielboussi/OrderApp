@@ -5,12 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
@@ -61,20 +62,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import android.os.Environment
+import android.widget.Toast
+import com.afterten.orders.util.generateStocktakeVariancePdf
+import java.io.File
+import kotlinx.coroutines.launch
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
@@ -96,6 +106,8 @@ fun StocktakeDashboardScreen(
     val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
     LaunchedEffect(session?.token) { vm.bindSession(session) }
     val ui by vm.ui.collectAsState()
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val hasOpenPeriod = ui.openPeriod?.status == "open"
 
     if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
@@ -108,8 +120,9 @@ fun StocktakeDashboardScreen(
         return
     }
 
-    val primaryRed = Color(0xFFD50000)
-    val surfaceBlack = Color.Black
+    val primaryRed = Color(0xFFB71C1C)
+    val backgroundBlack = Color(0xFF0B0B0B)
+    val surfaceBlack = Color(0xFF121212)
     val outlinedFieldColors = TextFieldDefaults.colors(
         focusedIndicatorColor = primaryRed,
         unfocusedIndicatorColor = primaryRed,
@@ -121,9 +134,9 @@ fun StocktakeDashboardScreen(
         focusedTextColor = Color.White,
         unfocusedTextColor = Color.White,
         disabledTextColor = Color.White,
-        focusedContainerColor = Color.Black,
-        unfocusedContainerColor = Color.Black,
-        disabledContainerColor = Color.Black
+        focusedContainerColor = surfaceBlack,
+        unfocusedContainerColor = surfaceBlack,
+        disabledContainerColor = surfaceBlack
     )
 
     var note by remember { mutableStateOf("") }
@@ -136,7 +149,7 @@ fun StocktakeDashboardScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+                .background(backgroundBlack)
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -293,8 +306,9 @@ fun StocktakePeriodsScreen(
         return
     }
 
-    val primaryRed = Color(0xFFD50000)
-    val surfaceBlack = Color.Black
+    val primaryRed = Color(0xFFB71C1C)
+    val backgroundBlack = Color(0xFF0B0B0B)
+    val surfaceBlack = Color(0xFF121212)
 
     val outlinedFieldColors = TextFieldDefaults.colors(
         focusedIndicatorColor = primaryRed,
@@ -307,9 +321,9 @@ fun StocktakePeriodsScreen(
         focusedTextColor = Color.White,
         unfocusedTextColor = Color.White,
         disabledTextColor = Color.White,
-        focusedContainerColor = Color.Black,
-        unfocusedContainerColor = Color.Black,
-        disabledContainerColor = Color.Black
+        focusedContainerColor = surfaceBlack,
+        unfocusedContainerColor = surfaceBlack,
+        disabledContainerColor = surfaceBlack
     )
 
     var warehouseMenu by remember { mutableStateOf(false) }
@@ -322,10 +336,27 @@ fun StocktakePeriodsScreen(
         return if (trimmed.length > 19) trimmed.take(19) else trimmed
     }
 
+    fun downloadVariancePdf(period: com.afterten.orders.data.repo.StocktakeRepository.StockPeriod) {
+        scope.launch {
+            try {
+                val report = vm.buildVarianceReport(period.id)
+                val pdfFile = generateStocktakeVariancePdf(ctx.cacheDir, ctx, report)
+                val dir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: ctx.cacheDir
+                val safeName = period.stocktakeNumber?.ifBlank { null } ?: period.id.take(8)
+                val outFile = File(dir, "stocktake-variance-$safeName.pdf")
+                pdfFile.copyTo(outFile, overwrite = true)
+                pdfFile.delete()
+                Toast.makeText(ctx, "Saved to ${outFile.absolutePath}", Toast.LENGTH_LONG).show()
+            } catch (err: Throwable) {
+                Toast.makeText(ctx, err.message ?: "Failed to export PDF", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(backgroundBlack)
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -378,7 +409,7 @@ fun StocktakePeriodsScreen(
         }
 
         ui.periodsError?.let {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.Black), border = BorderStroke(1.dp, primaryRed)) {
+            Card(colors = CardDefaults.cardColors(containerColor = surfaceBlack), border = BorderStroke(1.dp, primaryRed)) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
                     Spacer(Modifier.width(8.dp))
@@ -409,7 +440,19 @@ fun StocktakePeriodsScreen(
                         Text("Opened: ${formatStamp(period.openedAt)}", color = Color.White)
                         Text("Closed: ${formatStamp(period.closedAt)}", color = Color.White)
                         period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
-                        Text("Tap to view counts", color = Color.White.copy(alpha = 0.7f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { onOpenPeriodDetails(period.id) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                            ) { Text("View counts") }
+                            OutlinedButton(
+                                onClick = { downloadVariancePdf(period) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                border = BorderStroke(1.dp, primaryRed)
+                            ) { Text("Variance PDF") }
+                        }
                     }
                 }
             }
@@ -430,7 +473,19 @@ fun StocktakePeriodsScreen(
                         Text("Opened: ${formatStamp(period.openedAt)}", color = Color.White)
                         Text("Closed: ${formatStamp(period.closedAt)}", color = Color.White)
                         period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
-                        Text("Tap to view counts", color = Color.White.copy(alpha = 0.7f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { onOpenPeriodDetails(period.id) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                            ) { Text("View counts") }
+                            OutlinedButton(
+                                onClick = { downloadVariancePdf(period) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                border = BorderStroke(1.dp, primaryRed)
+                            ) { Text("Variance PDF") }
+                        }
                     }
                 }
             }
@@ -466,15 +521,16 @@ fun StocktakePeriodCountsScreen(
         return
     }
 
-    val primaryRed = Color(0xFFD50000)
-    val surfaceBlack = Color.Black
+    val primaryRed = Color(0xFFB71C1C)
+    val backgroundBlack = Color(0xFF0B0B0B)
+    val surfaceBlack = Color(0xFF121212)
 
     fun formatQty(value: Double): String = String.format("%.2f", value)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(backgroundBlack)
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -486,7 +542,7 @@ fun StocktakePeriodCountsScreen(
         }
 
         ui.periodCountsError?.let {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.Black), border = BorderStroke(1.dp, primaryRed)) {
+            Card(colors = CardDefaults.cardColors(containerColor = surfaceBlack), border = BorderStroke(1.dp, primaryRed)) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
                     Spacer(Modifier.width(8.dp))
@@ -617,9 +673,11 @@ fun StocktakeCountScreen(
             }
         }
     }
-    val imageSize = 96.dp
+    val imageSize = 112.dp
 
-    val primaryRed = Color(0xFFD50000)
+    val primaryRed = Color(0xFFB71C1C)
+    val backgroundBlack = Color(0xFF0B0B0B)
+    val surfaceBlack = Color(0xFF121212)
     val outlinedFieldColors = TextFieldDefaults.colors(
         focusedIndicatorColor = primaryRed,
         unfocusedIndicatorColor = primaryRed,
@@ -631,9 +689,9 @@ fun StocktakeCountScreen(
         focusedTextColor = Color.White,
         unfocusedTextColor = Color.White,
         disabledTextColor = Color.White,
-        focusedContainerColor = Color.Black,
-        unfocusedContainerColor = Color.Black,
-        disabledContainerColor = Color.Black
+        focusedContainerColor = surfaceBlack,
+        unfocusedContainerColor = surfaceBlack,
+        disabledContainerColor = surfaceBlack
     )
 
     val variantLabelMap = remember(ui.variations) {
@@ -656,6 +714,19 @@ fun StocktakeCountScreen(
             map[variation.id.lowercase()] = uom
             variation.key?.let { key -> map[key] = uom }
             variation.key?.let { key -> map[key.lowercase()] = uom }
+        }
+        map
+    }
+    val variantImageMap = remember(ui.variations) {
+        val map = mutableMapOf<String, String>()
+        ui.variations.forEach { variation ->
+            val url = variation.imageUrl?.trim().orEmpty()
+            if (url.isNotBlank()) {
+                map[variation.id] = url
+                map[variation.id.lowercase()] = url
+                variation.key?.let { key -> map[key] = url }
+                variation.key?.let { key -> map[key.lowercase()] = url }
+            }
         }
         map
     }
@@ -727,147 +798,151 @@ fun StocktakeCountScreen(
     }
 
 
-    Column(
+    val columns = 2
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .verticalScroll(rememberScrollState())
+            .background(backgroundBlack)
             .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(stocktakeNumber ?: ui.openPeriod?.stocktakeNumber ?: "Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
-                Text(periodId.take(8) + "…", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+        item(span = { GridItemSpan(columns) }) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stocktakeNumber ?: ui.openPeriod?.stocktakeNumber ?: "Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(periodId.take(8) + "…", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { vm.refreshItems() },
+                        enabled = !ui.loading && !ui.selectedWarehouseId.isNullOrBlank()
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                    }
+                    if (ui.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryRed) else Spacer(Modifier.size(24.dp))
+                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { vm.refreshItems() },
-                    enabled = !ui.loading && !ui.selectedWarehouseId.isNullOrBlank()
+        }
+
+        ui.error?.let { message ->
+            item(span = { GridItemSpan(columns) }) {
+                Card(colors = CardDefaults.cardColors(containerColor = surfaceBlack), border = BorderStroke(1.dp, primaryRed)) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
+                        Spacer(Modifier.width(8.dp))
+                        Text(message, color = Color.White)
+                    }
+                }
+            }
+        }
+
+        item(span = { GridItemSpan(columns) }) {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = surfaceBlack),
+                border = BorderStroke(1.dp, primaryRed)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        label = { Text("Search items in warehouse") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedFieldColors
+                    )
+                    Text(
+                        "Tap an ingredient, variant group, or recipe item to enter counts.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        "Opening counts must be entered before closing counts for the same item.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                    if (filteredBaseItems.isEmpty()) {
+                        Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                    }
+                }
+            }
+        }
+
+        items(
+            items = filteredBaseItems,
+            key = { row -> row.itemId }
+        ) { row ->
+            Button(
+                onClick = {
+                    inputError = null
+                    dialogQty.clear()
+                    dialogItemId = row.itemId
+                    dialogItemName = row.itemName ?: row.itemId
+                    dialogItemKind = row.itemKind
+                    variantDialogOpen = true
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = surfaceBlack, contentColor = Color.White),
+                border = BorderStroke(1.dp, primaryRed),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                }
-                if (ui.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryRed) else Spacer(Modifier.size(24.dp))
-            }
-        }
-
-        ui.error?.let {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.Black), border = BorderStroke(1.dp, primaryRed)) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = primaryRed)
-                    Spacer(Modifier.width(8.dp))
-                    Text(it, color = Color.White)
-                }
-            }
-        }
-
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color.Black),
-            border = BorderStroke(1.dp, primaryRed)
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = search,
-                    onValueChange = { search = it },
-                    label = { Text("Search items in warehouse") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = outlinedFieldColors
-                )
-                Text(
-                    "Tap an ingredient, variant group, or recipe item to enter counts.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.8f)
-                )
-                Text(
-                    "Opening counts must be entered before closing counts for the same item.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.8f)
-                )
-                if (filteredBaseItems.isEmpty()) {
-                    Text("No items found for this warehouse", style = MaterialTheme.typography.bodyMedium, color = Color.White)
-                } else {
-                    BoxWithConstraints {
-                        val columns = 2
-                        val targetSize = 440.dp // ~7cm square at 160dpi
-                        val horizontalSpacing = 12.dp
-                        val cardSize = minOf(targetSize, (maxWidth - horizontalSpacing) / columns)
-
-                        FlowRow(
-                            maxItemsInEachRow = columns,
-                            horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            filteredBaseItems.take(80).forEach { row ->
-                                Button(
-                                    onClick = {
-                                        inputError = null
-                                        dialogQty.clear()
-                                        dialogItemId = row.itemId
-                                        dialogItemName = row.itemName ?: row.itemId
-                                        dialogItemKind = row.itemKind
-                                        variantDialogOpen = true
-                                    },
-                                    modifier = Modifier
-                                        .size(cardSize),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
-                                    border = BorderStroke(1.dp, primaryRed),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize(),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        AsyncImage(
-                                            model = row.imageUrl,
-                                            contentDescription = "Product photo",
-                                            modifier = Modifier
-                                                .size(imageSize)
-                                                .clip(RoundedCornerShape(8.dp)),
-                                            alignment = Alignment.Center
-                                        )
-                                        Text(row.itemName ?: "Item", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                                        val rows = allItemsByItemId[row.itemId].orEmpty()
-                                        val variantCount = rows.count { (it.variantKey ?: "base") != "base" }
-                                        val hasRecipe = rows.any { it.hasRecipe == true } && (row.itemKind ?: "").lowercase() != "ingredient"
-                                        val recipeKey = "${row.itemId}|base"
-                                        val ingredientCount = ui.recipeIngredients[recipeKey]?.size
-                                        val badge = if ((row.itemKind ?: "").lowercase() == "ingredient") {
-                                            "Ingredient"
-                                        } else if (hasRecipe) {
-                                            when (ingredientCount) {
-                                                null -> "Ingredients: …"
-                                                else -> "Ingredients: $ingredientCount"
-                                            }
-                                        } else {
-                                            "Variants: $variantCount"
-                                        }
-                                        Text(badge, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
-                                        val listUom = ui.stocktakeUoms[row.itemId] ?: ui.productUoms[row.itemId] ?: "each"
-                                        val listDecimals = resolveDecimals(row.itemId, row.variantKey, listUom)
-                                        Text("Qty: ${formatQty(row.netUnits, listDecimals)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
-                                    }
-                                }
-
-                            }
+                    AsyncImage(
+                        model = row.imageUrl,
+                        contentDescription = "Product photo",
+                        modifier = Modifier
+                            .size(imageSize)
+                            .clip(RoundedCornerShape(8.dp)),
+                        alignment = Alignment.Center,
+                        contentScale = ContentScale.Crop
+                    )
+                    Text(
+                        row.itemName ?: "Item",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val rows = allItemsByItemId[row.itemId].orEmpty()
+                    val variantCount = rows.count { (it.variantKey ?: "base") != "base" }
+                    val hasRecipe = rows.any { it.hasRecipe == true } && (row.itemKind ?: "").lowercase() != "ingredient"
+                    val recipeKey = "${row.itemId}|base"
+                    val ingredientCount = ui.recipeIngredients[recipeKey]?.size
+                    val badge = if ((row.itemKind ?: "").lowercase() == "ingredient") {
+                        "Ingredient"
+                    } else if (hasRecipe) {
+                        when (ingredientCount) {
+                            null -> "Ingredients: …"
+                            else -> "Ingredients: $ingredientCount"
                         }
+                    } else {
+                        "Variants: $variantCount"
                     }
-                    Spacer(Modifier.height(12.dp))
-                    ui.lastCount?.let { last ->
-                        val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
-                        Text(
-                            "$kindLabel saved: ${formatQty(last.countedQty, 2)}",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
+                    Text(badge, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                 }
             }
         }
 
+        ui.lastCount?.let { last ->
+            item(span = { GridItemSpan(columns) }) {
+                val kindLabel = last.kind.replaceFirstChar { ch -> ch.titlecase() }
+                Text(
+                    "$kindLabel saved: ${formatQty(last.countedQty, 2)}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
     }
 
     if (variantDialogOpen) {
@@ -917,7 +992,7 @@ fun StocktakeCountScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(backgroundBlack)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -927,7 +1002,7 @@ fun StocktakeCountScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { variantDialogOpen = false }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = primaryRed)
                 }
                 Text(
                     dialogItemName.ifBlank { dialogItemId },
@@ -951,12 +1026,14 @@ fun StocktakeCountScreen(
                 Text("No ingredients found for this recipe.", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
             }
 
-            BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                val configuration = LocalConfiguration.current
                 val horizontalSpacing = 12.dp
                 val verticalSpacing = 12.dp
                 val columns = 2
-                val cardSize = (maxWidth - horizontalSpacing) / columns
-                val imageSize = minOf(120.dp, cardSize * 0.35f)
+                val availableWidth = (configuration.screenWidthDp.dp - 32.dp).coerceAtLeast(0.dp)
+                val cardSize = (availableWidth - horizontalSpacing) / columns
+                val imageSize = minOf(140.dp, cardSize * 0.4f)
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(columns),
@@ -972,6 +1049,11 @@ fun StocktakeCountScreen(
                             "Base"
                         } else {
                             variantLabelMap[key] ?: variantLabelMap[key.lowercase()] ?: key.take(8)
+                        }
+                        val imageModel = if (hasRecipe || isIngredient || key == "base") {
+                            row.imageUrl
+                        } else {
+                            variantImageMap[key] ?: variantImageMap[key.lowercase()]
                         }
                         val uom = variantStocktakeUomMap[key] ?: variantStocktakeUomMap[key.lowercase()]
                             ?: ui.stocktakeUoms[row.itemId]
@@ -990,7 +1072,7 @@ fun StocktakeCountScreen(
                         val fieldText = if (isLocked) Color.White.copy(alpha = 0.6f) else Color.White
 
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.Black),
+                            colors = CardDefaults.cardColors(containerColor = surfaceBlack),
                             border = BorderStroke(1.dp, primaryRed),
                             modifier = Modifier.size(cardSize)
                         ) {
@@ -1000,12 +1082,13 @@ fun StocktakeCountScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 AsyncImage(
-                                    model = row.imageUrl,
+                                    model = imageModel,
                                     contentDescription = "Item photo",
                                     modifier = Modifier
                                         .size(imageSize)
                                         .clip(RoundedCornerShape(12.dp)),
-                                    alignment = Alignment.Center
+                                    alignment = Alignment.Center,
+                                    contentScale = ContentScale.Crop
                                 )
                                 Column(
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1099,10 +1182,10 @@ fun StocktakeCountScreen(
                     .padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedButton(
+                Button(
                     onClick = { variantDialogOpen = false },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
                 ) {
                     Text("Back")
                 }
