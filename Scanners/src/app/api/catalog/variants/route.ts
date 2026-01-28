@@ -595,7 +595,8 @@ export async function PUT(request: Request) {
       }
     }
     if (body.purchase_unit_mass_uom !== undefined) {
-      update.purchase_unit_mass_uom = cleanText(body.purchase_unit_mass_uom) ?? null;
+      const massUom = cleanText(body.purchase_unit_mass_uom);
+      update.purchase_unit_mass_uom = massUom ? pickQtyUnit(massUom, "g") : null;
     }
     if (body.transfer_unit !== undefined) {
       update.transfer_unit = cleanText(body.transfer_unit) ?? "each";
