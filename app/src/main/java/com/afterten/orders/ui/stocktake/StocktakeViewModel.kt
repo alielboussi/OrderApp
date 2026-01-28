@@ -36,12 +36,14 @@ class StocktakeViewModel(
         val qtyDecimals: Map<String, Int> = emptyMap(),
         val productPrices: Map<String, Double> = emptyMap(),
         val selectedWarehouseId: String? = null,
+        val selectedWarehouseOutlets: List<SupabaseProvider.Outlet> = emptyList(),
         val openPeriod: StocktakeRepository.StockPeriod? = null,
         val periods: List<StocktakeRepository.StockPeriod> = emptyList(),
         val periodsLoading: Boolean = false,
         val periodsError: String? = null,
         val variance: List<StocktakeRepository.VarianceRow> = emptyList(),
         val openingLockedKeys: Set<String> = emptySet(),
+        val closingLockedKeys: Set<String> = emptySet(),
         val lastCount: StocktakeRepository.StockCount? = null,
         val loading: Boolean = false,
         val error: String? = null,
@@ -155,6 +157,7 @@ class StocktakeViewModel(
             preferredWarehouse?.let {
                 refreshOpenPeriod(it)
                 loadItems(it)
+                refreshWarehouseOutlets(it)
             }
         }
     }
@@ -205,6 +208,7 @@ class StocktakeViewModel(
         viewModelScope.launch {
             refreshOpenPeriod(id)
             loadItems(id)
+            refreshWarehouseOutlets(id)
         }
     }
 
@@ -217,6 +221,7 @@ class StocktakeViewModel(
             loadReferenceData(jwt)
             refreshOpenPeriod(warehouseId)
             loadItems(warehouseId)
+            refreshWarehouseOutlets(warehouseId)
         }
     }
 
@@ -263,6 +268,7 @@ class StocktakeViewModel(
                     // Refresh items so ingredient counts reflect immediately; recipe-based availability is derived from updated stock.
                     loadItems(warehouseId)
                     refreshOpeningLocks(periodId)
+                    refreshClosingLocks(periodId)
                 }
                 .onFailure { err ->
                     Log.e(TAG, "recordCount failed", err)
@@ -282,40 +288,16 @@ class StocktakeViewModel(
             runCatching { repo.closePeriod(jwt, periodId) }
                 .onSuccess { period ->
                     pushDebug("closePeriod success id=${period.id}")
-                    val newPeriod = runCatching { repo.startPeriod(jwt, warehouseId, "Auto-opened from ${period.stocktakeNumber ?: period.id}") }
-                        .onFailure { err -> pushDebug("auto startPeriod failed: ${err.message}") }
-                        .getOrNull()
-
-                    if (newPeriod != null) {
-                        val closingCounts = runCatching { repo.listClosingCountsForPeriod(jwt, periodId) }
-                            .onFailure { err -> pushDebug("listClosingCountsForPeriod failed: ${err.message}") }
-                            .getOrElse { emptyList() }
-
-                        closingCounts.forEach { row ->
-                            val key = row.variantKey?.ifBlank { "base" } ?: "base"
-                            runCatching {
-                                repo.recordCount(
-                                    jwt = jwt,
-                                    periodId = newPeriod.id,
-                                    itemId = row.itemId,
-                                    qty = row.countedQty,
-                                    variantKey = key,
-                                    kind = "opening",
-                                    context = mapOf(
-                                        "source" to "auto-carryover",
-                                        "from_period_id" to periodId
-                                    )
-                                )
-                            }.onFailure { err ->
-                                pushDebug("auto opening record failed item=${row.itemId} variant=$key: ${err.message}")
-                            }
-                        }
-                        _ui.value = _ui.value.copy(openPeriod = newPeriod, loading = false, error = null)
-                        refreshOpeningLocks(newPeriod.id)
-                        loadItems(warehouseId)
-                    } else {
-                        _ui.value = _ui.value.copy(openPeriod = period, loading = false, error = null)
-                    }
+                    _ui.value = _ui.value.copy(
+                        openPeriod = null,
+                        openingLockedKeys = emptySet(),
+                        closingLockedKeys = emptySet(),
+                        lastCount = null,
+                        loading = false,
+                        error = null
+                    )
+                    refreshOpenPeriod(warehouseId)
+                    loadItems(warehouseId)
                 }
                 .onFailure { err ->
                     pushDebug("closePeriod failed: ${err.message}")
@@ -403,9 +385,20 @@ class StocktakeViewModel(
                         }
                     }
 
+                    val openingKeys = opening.map { row ->
+                        val variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                        "${row.itemId}|${variantKey}"
+                    }.toSet()
+                    val closingKeys = closing.map { row ->
+                        val variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                        "${row.itemId}|${variantKey}"
+                    }.toSet()
+
                     _ui.value = _ui.value.copy(
                         periodOpeningCounts = toDisplay(opening, "opening"),
                         periodClosingCounts = toDisplay(closing, "closing"),
+                        openingLockedKeys = openingKeys,
+                        closingLockedKeys = closingKeys,
                         periodCountsLoading = false,
                         periodCountsError = null
                     )
@@ -448,8 +441,14 @@ class StocktakeViewModel(
                         selectedWarehouseId = period?.warehouseId,
                         error = null
                     )
-                    period?.warehouseId?.let { loadItems(it) }
-                    period?.id?.let { refreshOpeningLocks(it) }
+                    period?.warehouseId?.let {
+                        loadItems(it)
+                        refreshWarehouseOutlets(it)
+                    }
+                    period?.id?.let {
+                        refreshOpeningLocks(it)
+                        refreshClosingLocks(it)
+                    }
                 }
                 .onFailure { err ->
                     pushDebug("loadPeriod failed: ${err.message}")
@@ -560,6 +559,36 @@ class StocktakeViewModel(
                 }
                 .onFailure { err ->
                     pushDebug("refreshOpeningLocks failed: ${err.message}")
+                }
+        }
+    }
+
+    private fun refreshClosingLocks(periodId: String) {
+        val jwt = session?.token ?: return
+        viewModelScope.launch {
+            runCatching { repo.listStockCountsForPeriod(jwt, periodId, "closing") }
+                .onSuccess { rows ->
+                    val keys = rows.map { row ->
+                        val variant = row.variantKey?.ifBlank { "base" } ?: "base"
+                        "${row.itemId}|${variant}"
+                    }.toSet()
+                    _ui.value = _ui.value.copy(closingLockedKeys = keys)
+                }
+                .onFailure { err ->
+                    pushDebug("refreshClosingLocks failed: ${err.message}")
+                }
+        }
+    }
+
+    private fun refreshWarehouseOutlets(warehouseId: String) {
+        val jwt = session?.token ?: return
+        viewModelScope.launch {
+            runCatching { repo.listOutletsForWarehouse(jwt, warehouseId, true) }
+                .onSuccess { outlets ->
+                    _ui.value = _ui.value.copy(selectedWarehouseOutlets = outlets)
+                }
+                .onFailure { err ->
+                    pushDebug("refreshWarehouseOutlets failed: ${err.message}")
                 }
         }
     }

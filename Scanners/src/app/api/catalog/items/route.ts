@@ -150,6 +150,7 @@ async function upsertBaseStorageHome(
       {
         item_id: itemId,
         variant_key: normalizedVariantKey,
+        normalized_variant_key: normalizedVariantKey,
         storage_warehouse_id: warehouseId,
       },
       { onConflict: "item_id,normalized_variant_key" }

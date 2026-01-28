@@ -631,6 +631,12 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    private data class WarehouseOutletMapRow(
+        @SerialName("outlet_id") val outletId: String? = null,
+        @SerialName("show_in_stocktake") val showInStocktake: Boolean? = null
+    )
+
+    @Serializable
     private data class OutletWarehouseLink(
         @SerialName("warehouse_id") val warehouseId: String
     )
@@ -1059,6 +1065,52 @@ class SupabaseProvider(context: Context) {
         if (code !in 200..299) throw IllegalStateException("listWarehouseIdsForOutlets failed: HTTP $code $txt")
         val rows = relaxedJson.decodeFromString(ListSerializer(OutletWarehouseMapRow.serializer()), txt)
         return rows.mapNotNull { it.warehouseId?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+    }
+
+    suspend fun listOutletsForWarehouse(
+        jwt: String,
+        warehouseId: String,
+        showInStocktakeOnly: Boolean = true
+    ): List<Outlet> {
+        val targetWarehouse = warehouseId.trim()
+        if (targetWarehouse.isEmpty()) return emptyList()
+        val mapUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlet_warehouses?select=outlet_id,show_in_stocktake&warehouse_id=eq.")
+            append(targetWarehouse)
+            if (showInStocktakeOnly) {
+                append("&show_in_stocktake=eq.true")
+            }
+        }
+        val mapResp = http.get(mapUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val mapCode = mapResp.status.value
+        val mapTxt = mapResp.bodyAsText()
+        if (mapCode !in 200..299) throw IllegalStateException("listOutletsForWarehouse mapping failed: HTTP $mapCode $mapTxt")
+        val rows = relaxedJson.decodeFromString(ListSerializer(WarehouseOutletMapRow.serializer()), mapTxt)
+        val outletIds = rows.mapNotNull { it.outletId?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+        if (outletIds.isEmpty()) return emptyList()
+
+        val filter = "(${outletIds.joinToString(",")})"
+        val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
+        val outletUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlets")
+            append("?select=id,name,code,channel,auth_user_id,active,created_at,updated_at")
+            append("&id=in.")
+            append(encoded)
+            append("&order=name.asc")
+        }
+        val outletResp = http.get(outletUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val outletCode = outletResp.status.value
+        val outletTxt = outletResp.bodyAsText()
+        if (outletCode !in 200..299) throw IllegalStateException("listOutletsForWarehouse outlets failed: HTTP $outletCode $outletTxt")
+        return relaxedJson.decodeFromString(ListSerializer(Outlet.serializer()), outletTxt)
     }
 
     suspend fun listWarehouseBalanceItems(

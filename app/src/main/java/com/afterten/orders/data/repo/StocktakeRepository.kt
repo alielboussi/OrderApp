@@ -96,6 +96,12 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         showInStocktakeOnly: Boolean = true
     ) = supabase.listWarehouseIdsForOutlets(jwt, outletIds, showInStocktakeOnly)
 
+    suspend fun listOutletsForWarehouse(
+        jwt: String,
+        warehouseId: String,
+        showInStocktakeOnly: Boolean = true
+    ) = supabase.listOutletsForWarehouse(jwt, warehouseId, showInStocktakeOnly)
+
     suspend fun listWarehousesByIds(jwt: String, ids: Collection<String>) =
         supabase.fetchWarehousesByIds(jwt, ids)
 

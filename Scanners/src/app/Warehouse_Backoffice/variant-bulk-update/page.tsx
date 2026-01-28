@@ -268,18 +268,24 @@ export default function VariantBulkUpdatePage() {
       const updateValue = parsed.value as unknown;
       const selectedVariants = variants.filter((variant) => selectedVariantIds.includes(variant.id));
       await Promise.all(
-        selectedVariants.map((variant) =>
-          fetch("/api/catalog/variants", {
+        selectedVariants.map(async (variant) => {
+          const res = await fetch("/api/catalog/variants", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              ...variant,
-              [fieldMeta.value]: updateValue,
               id: variant.id,
               item_id: variant.item_id,
+              name: variant.name,
+              [fieldMeta.value]: updateValue,
             }),
-          })
-        )
+          });
+          if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            const details = payload?.details ? ` (${JSON.stringify(payload.details)})` : "";
+            const message = (payload?.error || `Update failed for ${variant.name || variant.id}`) + details;
+            throw new Error(message);
+          }
+        })
       );
 
       const res = await fetch(`/api/catalog/variants?item_id=${encodeURIComponent(selectedItemId)}`);

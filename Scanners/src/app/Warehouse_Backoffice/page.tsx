@@ -9,9 +9,6 @@ import styles from "./dashboard.module.css";
 export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
-  const [syncPaused, setSyncPaused] = useState<boolean | null>(null);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
   const supabase = getWarehouseBrowserClient();
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
@@ -25,64 +22,6 @@ export default function WarehouseBackofficeDashboard() {
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
   const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
 
-  useEffect(() => {
-    if (status !== "ok") {
-      return;
-    }
-
-    const loadPauseState = async () => {
-      setSyncLoading(true);
-      setSyncError(null);
-      const { data, error } = await supabase
-        .from("counter_values")
-        .select("last_value")
-        .eq("counter_key", "pos_sync_paused")
-        .eq("scope_id", "00000000-0000-0000-0000-000000000000")
-        .maybeSingle();
-
-      if (error) {
-        setSyncError(error.message);
-        setSyncLoading(false);
-        return;
-      }
-
-      setSyncPaused((data?.last_value ?? 0) > 0);
-      setSyncLoading(false);
-    };
-
-    void loadPauseState();
-  }, [status, supabase]);
-
-  const toggleSyncPaused = async () => {
-    if (syncPaused === null) {
-      return;
-    }
-
-    const nextValue = syncPaused ? 0 : 1;
-    setSyncLoading(true);
-    setSyncError(null);
-
-    const { error } = await supabase
-      .from("counter_values")
-      .upsert(
-        {
-          counter_key: "pos_sync_paused",
-          scope_id: "00000000-0000-0000-0000-000000000000",
-          last_value: nextValue,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "counter_key,scope_id" }
-      );
-
-    if (error) {
-      setSyncError(error.message);
-      setSyncLoading(false);
-      return;
-    }
-
-    setSyncPaused(nextValue > 0);
-    setSyncLoading(false);
-  };
 
   if (status !== "ok") {
     return null;
@@ -100,27 +39,7 @@ export default function WarehouseBackofficeDashboard() {
             </p>
             <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
           </div>
-          <div className={styles.heroControl}>
-            <p className={`${styles.cardTitle} ${styles.pauseTitle}`}>POS Sync Control</p>
-            <p className={styles.cardBody}>Pause or resume POS sale syncing across every outlet.</p>
-            <div className={styles.pauseRow}>
-              <label className={styles.toggleSwitch}>
-                <input
-                  className={styles.toggleInput}
-                  type="checkbox"
-                  checked={Boolean(syncPaused)}
-                  onChange={toggleSyncPaused}
-                  disabled={syncLoading || syncPaused === null}
-                  aria-label="Toggle POS sync"
-                />
-                <span className={styles.toggleTrack} aria-hidden="true" />
-              </label>
-              <span className={styles.pauseState}>
-                {syncLoading ? "Updating..." : syncPaused === null ? "Status unknown" : syncPaused ? "Paused" : "Active"}
-              </span>
-            </div>
-            {syncError ? <p className={styles.pauseError}>Error: {syncError}</p> : null}
-          </div>
+          <div className={styles.heroControl} />
         </header>
 
         <section className={styles.actionsGrid}>
