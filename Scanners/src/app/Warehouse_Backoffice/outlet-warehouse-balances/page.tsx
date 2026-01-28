@@ -22,7 +22,18 @@ type StockItem = {
   item_name: string | null;
   variant_key: string | null;
   net_units: number | null;
+  sold_units?: number | null;
   item_kind: "raw" | "ingredient" | "finished" | string | null;
+};
+
+type OutletStockRow = {
+  outlet_id: string | null;
+  item_id: string;
+  item_name: string | null;
+  variant_key: string | null;
+  sent_units: number | null;
+  consumed_units: number | null;
+  on_hand_units: number | null;
 };
 
 type WhoAmIRoles = {
@@ -42,6 +53,11 @@ function toErrorMessage(error: unknown): string {
 function formatQty(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "-";
   return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+function parseQty(value: number | null): number {
+  if (typeof value !== "number" || Number.isNaN(value)) return 0;
+  return value;
 }
 
 function formatQtyWithUom(value: number | null, uom?: string): { text: string; uom: string } {
@@ -235,82 +251,82 @@ export default function OutletWarehouseBalancesPage() {
 
         const searchValue = search.trim() || null;
 
-        const { data: periodRows, error: periodError } = await supabase
-          .from("warehouse_stock_periods")
-          .select("id,warehouse_id,opened_at")
+        const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
+          .from("outlet_warehouses")
+          .select("outlet_id")
           .in("warehouse_id", warehouseIds)
-          .eq("status", "open")
-          .order("opened_at", { ascending: false });
+          .in("outlet_id", selectedOutletIds)
+          .eq("show_in_stocktake", true);
 
-        if (periodError) throw periodError;
-        const latestOpenByWarehouse = new Map<string, string>();
-        (periodRows ?? []).forEach((row) => {
-          if (!row?.warehouse_id || !row?.id) return;
-          if (!latestOpenByWarehouse.has(row.warehouse_id)) {
-            latestOpenByWarehouse.set(row.warehouse_id, row.id);
-          }
-        });
-        const periodIds = Array.from(latestOpenByWarehouse.values());
-        if (periodIds.length === 0) {
+        if (outletWarehouseError) throw outletWarehouseError;
+
+        const outletIds = Array.from(
+          new Set((outletWarehouseRows ?? []).map((row) => row?.outlet_id).filter(Boolean))
+        ) as string[];
+
+        if (outletIds.length === 0) {
           if (active) setItems([]);
           return;
         }
 
-        const { data: countRows, error: countError } = await supabase
-          .from("warehouse_stock_counts")
-          .select("item_id,variant_key,period_id")
-          .in("period_id", periodIds);
+        let balancesQuery = supabase
+          .from("outlet_stock_summary")
+          .select("outlet_id,item_id,item_name,variant_key,sent_units,consumed_units,on_hand_units")
+          .in("outlet_id", outletIds);
 
-        if (countError) throw countError;
-        const countedKeys = new Set(
-          (countRows ?? [])
-            .map((row) => `${row?.item_id}::${(row?.variant_key ?? "base").toLowerCase()}`)
-            .filter((key) => key && !key.startsWith("undefined::"))
-        );
-
-        const fetchWarehouseItems = async (warehouseId: string) => {
-          const { data, error } = await supabase.rpc("list_warehouse_items", {
-            p_warehouse_id: warehouseId,
-            p_outlet_id: null,
-            p_search: searchValue,
-          });
-          if (error) throw error;
-          return ((data as StockItem[]) || []).filter((row) => {
-            if (!row) return false;
-            const kind = row.item_kind ?? "";
-            if (!kinds.includes(kind)) return false;
-            const key = `${row.item_id}::${(row.variant_key ?? "base").toLowerCase()}`;
-            if (!countedKeys.has(key)) return false;
-            if (baseOnly) {
-              const vKey = (row.variant_key ?? "base").toLowerCase();
-              if (vKey !== "base") return false;
-            }
-            return true;
-          });
-        };
-
-        const fetchedLists = await Promise.all(warehouseIds.map(fetchWarehouseItems));
-        if (!active) return;
-
-        const rows = fetchedLists.flat();
-        if (selectedWarehouseId === "all") {
-          const map = new Map<string, StockItem>();
-          rows.forEach((row) => {
-            const key = `${row.item_id}::${row.variant_key ?? "base"}::${row.item_kind ?? ""}`;
-            const existing = map.get(key);
-            if (existing) {
-              existing.net_units = (existing.net_units ?? 0) + (row.net_units ?? 0);
-            } else {
-              map.set(key, { ...row, net_units: row.net_units ?? 0 });
-            }
-          });
-          const aggregated = Array.from(map.values()).sort((a, b) =>
-            (a.item_name ?? "").localeCompare(b.item_name ?? "")
-          );
-          setItems(aggregated);
-        } else {
-          setItems(rows);
+        if (searchValue) {
+          balancesQuery = balancesQuery.ilike("item_name", `%${searchValue}%`);
         }
+
+        const { data: balanceRows, error: balanceError } = await balancesQuery;
+        if (balanceError) throw balanceError;
+
+        const rows = (balanceRows as OutletStockRow[]) || [];
+        const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
+
+        const { data: itemRows, error: itemError } = await supabase
+          .from("catalog_items")
+          .select("id,item_kind")
+          .in("id", itemIds);
+
+        if (itemError) throw itemError;
+
+        const itemKindMap = new Map<string, string>();
+        (itemRows ?? []).forEach((row) => {
+          if (row?.id) itemKindMap.set(row.id, row.item_kind ?? "");
+        });
+
+        const map = new Map<string, StockItem>();
+        rows.forEach((row) => {
+          const kind = itemKindMap.get(row.item_id) ?? "";
+          if (!kinds.includes(kind)) return;
+          const vKey = (row.variant_key ?? "base").toLowerCase();
+          if (baseOnly && vKey !== "base") return;
+
+          const key = `${row.item_id}::${vKey}::${kind}`;
+          const existing = map.get(key);
+          const soldUnits = parseQty(row.consumed_units);
+          const onHandUnits = parseQty(row.on_hand_units);
+
+          if (existing) {
+            existing.sold_units = (existing.sold_units ?? 0) + soldUnits;
+            existing.net_units = (existing.net_units ?? 0) + onHandUnits;
+          } else {
+            map.set(key, {
+              item_id: row.item_id,
+              item_name: row.item_name,
+              variant_key: row.variant_key,
+              item_kind: kind,
+              sold_units: soldUnits,
+              net_units: onHandUnits,
+            });
+          }
+        });
+
+        const aggregated = Array.from(map.values()).sort((a, b) =>
+          (a.item_name ?? "").localeCompare(b.item_name ?? "")
+        );
+        setItems(aggregated);
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -333,6 +349,7 @@ export default function OutletWarehouseBalancesPage() {
     includeFinished,
     baseOnly,
     search,
+    selectedOutletIds,
     supabase,
   ]);
 
@@ -527,6 +544,7 @@ export default function OutletWarehouseBalancesPage() {
               <span>Item</span>
               <span>Variant</span>
               <span>Kind</span>
+              <span className={styles.alignRight}>Sold Units</span>
               <span className={styles.alignRight}>Net Units</span>
             </div>
 
@@ -535,6 +553,9 @@ export default function OutletWarehouseBalancesPage() {
                 <span>{item.item_name || item.item_id}</span>
                 <span>{variantNames[item.variant_key ?? ""] || item.variant_key || "base"}</span>
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
+                <span className={styles.alignRight}>
+                  {formatQty(item.sold_units ?? 0)}
+                </span>
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {
                     const formatted = formatQtyWithUom(item.net_units, itemUoms[item.item_id]);

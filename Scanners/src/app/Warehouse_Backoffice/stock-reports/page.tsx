@@ -13,11 +13,13 @@ type WarehouseOption = { id: string; name: string | null; code: string | null; a
 type StockPeriod = {
   id: string;
   warehouse_id: string;
+  outlet_id: string | null;
   status: string;
   opened_at: string | null;
   closed_at: string | null;
   note: string | null;
   stocktake_number: string | null;
+  outlets?: { name: string | null } | null;
 };
 
 type WhoAmIRoles = { outlets: Array<{ outlet_id: string; outlet_name: string }> | null };
@@ -183,7 +185,7 @@ export default function StockReportsPage() {
 
         const { data, error: periodError } = await supabase
           .from("warehouse_stock_periods")
-          .select("id,warehouse_id,status,opened_at,closed_at,note,stocktake_number")
+          .select("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number,outlets(name)")
           .in("warehouse_id", warehouseIds)
           .order("opened_at", { ascending: false });
 
@@ -286,6 +288,7 @@ export default function StockReportsPage() {
                 {openPeriods.map((period) => (
                   <article key={period.id} className={styles.card}>
                     <h3 className={styles.cardTitle}>{period.stocktake_number || period.id.slice(0, 8)}</h3>
+                    <p className={styles.cardMeta}>Outlet: {period.outlets?.name || "—"}</p>
                     <p className={styles.cardMeta}>Status: {period.status}</p>
                     <p className={styles.cardMeta}>Opened: {formatStamp(period.opened_at)}</p>
                     <p className={styles.cardMeta}>Closed: {formatStamp(period.closed_at)}</p>
@@ -303,6 +306,7 @@ export default function StockReportsPage() {
                 {closedPeriods.map((period) => (
                   <article key={period.id} className={styles.card}>
                     <h3 className={styles.cardTitle}>{period.stocktake_number || period.id.slice(0, 8)}</h3>
+                    <p className={styles.cardMeta}>Outlet: {period.outlets?.name || "—"}</p>
                     <p className={styles.cardMeta}>Status: {period.status}</p>
                     <p className={styles.cardMeta}>Opened: {formatStamp(period.opened_at)}</p>
                     <p className={styles.cardMeta}>Closed: {formatStamp(period.closed_at)}</p>
