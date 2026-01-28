@@ -258,7 +258,8 @@ export async function GET(request: Request) {
         itemError = fallback.error;
       }
       if (itemError) throw itemError;
-      if (!itemRow || itemRow.active === false) {
+      const itemActive = (itemRow as { active?: boolean | null } | null)?.active;
+      if (!itemRow || itemActive === false) {
         return NextResponse.json({ variants: [] });
       }
       itemIds = [itemId];
