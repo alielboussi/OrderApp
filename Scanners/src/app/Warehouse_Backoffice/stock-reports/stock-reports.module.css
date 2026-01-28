@@ -165,6 +165,31 @@
   color: #e2e8f0;
 }
 
+.cardActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.pdfButton {
+  background: rgba(185, 28, 28, 0.2);
+  color: #fee2e2;
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease;
+}
+
+.pdfButton:disabled {
+  cursor: default;
+  opacity: 0.6;
+  transform: none;
+}
+
 .sectionTitle {
   margin: 0 0 8px;
   font-size: 15px;

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./stock-reports.module.css";
+import { buildStocktakeVariancePdfHtml } from "./stocktakepdf";
 
 type OutletOption = { id: string; name: string };
 
@@ -19,10 +20,33 @@ type StockPeriod = {
   closed_at: string | null;
   note: string | null;
   stocktake_number: string | null;
-  outlets?: Array<{ name: string | null }> | null;
 };
 
 type WhoAmIRoles = { outlets: Array<{ outlet_id: string; outlet_name: string }> | null };
+
+type VarianceRow = {
+  item_name: string | null;
+  variant_key: string | null;
+  opening_qty: number | null;
+  transfer_qty: number | null;
+  damage_qty: number | null;
+  sales_qty: number | null;
+  closing_qty: number | null;
+  expected_qty: number | null;
+  variance_qty: number | null;
+  variance_cost: number | null;
+};
+
+type VarianceApiResponse = {
+  period: {
+    id: string;
+    opened_at: string | null;
+    closed_at: string | null;
+    stocktake_number: string | null;
+    warehouse_id: string;
+  };
+  rows: Array<VarianceRow & { item_id?: string | null }>;
+};
 
 function formatStamp(raw?: string | null): string {
   if (!raw) return "—";
@@ -40,6 +64,29 @@ function toErrorMessage(error: unknown): string {
   }
 }
 
+async function loadLogoDataUrl(): Promise<string | undefined> {
+  try {
+    const candidates = ["/afterten-logo.png", "/afterten_logo.png"];
+    let blob: Blob | null = null;
+    for (const path of candidates) {
+      const response = await fetch(path, { cache: "force-cache" });
+      if (response.ok) {
+        blob = await response.blob();
+        break;
+      }
+    }
+    if (!blob) return undefined;
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read logo"));
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 export default function StockReportsPage() {
   const router = useRouter();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
@@ -53,6 +100,16 @@ export default function StockReportsPage() {
   const [periods, setPeriods] = useState<StockPeriod[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+
+  const warehouseNameMap = useMemo(() => {
+    const map = new Map<string, { name: string | null; code: string | null }>();
+    warehouses.forEach((warehouse) => {
+      if (warehouse.id === "all") return;
+      map.set(warehouse.id, { name: warehouse.name ?? null, code: warehouse.code ?? null });
+    });
+    return map;
+  }, [warehouses]);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -185,7 +242,7 @@ export default function StockReportsPage() {
 
         const { data, error: periodError } = await supabase
           .from("warehouse_stock_periods")
-          .select("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number,outlets(name)")
+          .select("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number")
           .in("warehouse_id", warehouseIds)
           .order("opened_at", { ascending: false });
 
@@ -209,6 +266,84 @@ export default function StockReportsPage() {
 
   const openPeriods = periods.filter((period) => period.status?.toLowerCase() === "open");
   const closedPeriods = periods.filter((period) => period.status?.toLowerCase() !== "open");
+
+  const downloadVariancePdf = async (period: StockPeriod) => {
+    try {
+      setPdfBusyId(period.id);
+      setError(null);
+      const response = await fetch(`/api/stocktake-variance?period_id=${period.id}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to load variance data");
+      }
+
+      const payload = (await response.json()) as VarianceApiResponse;
+      const apiRows = payload.rows ?? [];
+      const openedAt = payload.period.opened_at;
+      const closedAt = payload.period.closed_at;
+
+      const logoDataUrl = await loadLogoDataUrl();
+      const warehouseName =
+        warehouseNameMap.get(period.warehouse_id)?.name || warehouseNameMap.get(period.warehouse_id)?.code || "—";
+      const periodLabel = payload.period.stocktake_number || period.id.slice(0, 8);
+      const dateRange = `${formatStamp(openedAt)} → ${formatStamp(closedAt)}`;
+      const periodText = `${periodLabel} · ${dateRange}`;
+
+      const html = buildStocktakeVariancePdfHtml({
+        warehouseText: warehouseName,
+        periodText,
+        logoDataUrl,
+        rows: apiRows.map((row) => ({
+          item_name: row.item_name ?? "",
+          variant_key: row.variant_key,
+          opening_qty: row.opening_qty ?? 0,
+          transfer_qty: Math.abs(row.transfer_qty ?? 0),
+          damage_qty: Math.abs(row.damage_qty ?? 0),
+          sales_qty: Math.abs(row.sales_qty ?? 0),
+          closing_qty: row.closing_qty ?? 0,
+          expected_qty: row.expected_qty ?? 0,
+          variance_qty: row.variance_qty ?? 0,
+          variance_cost: row.variance_cost ?? 0,
+        })),
+      });
+
+      const frame = document.createElement("iframe");
+      frame.style.position = "fixed";
+      frame.style.right = "0";
+      frame.style.bottom = "0";
+      frame.style.width = "0";
+      frame.style.height = "0";
+      frame.style.border = "0";
+      frame.setAttribute("aria-hidden", "true");
+      document.body.appendChild(frame);
+
+      const doc = frame.contentWindow?.document;
+      if (!doc) {
+        document.body.removeChild(frame);
+        return;
+      }
+
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      const cleanup = () => {
+        if (frame.parentNode) {
+          frame.parentNode.removeChild(frame);
+        }
+      };
+
+      setTimeout(() => {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+        setTimeout(cleanup, 1000);
+      }, 400);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
 
   if (status !== "ok") return null;
 
@@ -288,11 +423,23 @@ export default function StockReportsPage() {
                 {openPeriods.map((period) => (
                   <article key={period.id} className={styles.card}>
                     <h3 className={styles.cardTitle}>{period.stocktake_number || period.id.slice(0, 8)}</h3>
-                    <p className={styles.cardMeta}>Outlet: {period.outlets?.[0]?.name || "—"}</p>
+                    <p className={styles.cardMeta}>
+                      Warehouse: {warehouseNameMap.get(period.warehouse_id)?.name || warehouseNameMap.get(period.warehouse_id)?.code || "—"}
+                    </p>
                     <p className={styles.cardMeta}>Status: {period.status}</p>
                     <p className={styles.cardMeta}>Opened: {formatStamp(period.opened_at)}</p>
                     <p className={styles.cardMeta}>Closed: {formatStamp(period.closed_at)}</p>
                     {period.note ? <p className={styles.cardNote}>Note: {period.note}</p> : null}
+                    <div className={styles.cardActions}>
+                      <button
+                        type="button"
+                        className={styles.pdfButton}
+                        onClick={() => void downloadVariancePdf(period)}
+                        disabled={pdfBusyId === period.id}
+                      >
+                        {pdfBusyId === period.id ? "Preparing PDF..." : "Variance PDF"}
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -306,11 +453,23 @@ export default function StockReportsPage() {
                 {closedPeriods.map((period) => (
                   <article key={period.id} className={styles.card}>
                     <h3 className={styles.cardTitle}>{period.stocktake_number || period.id.slice(0, 8)}</h3>
-                    <p className={styles.cardMeta}>Outlet: {period.outlets?.[0]?.name || "—"}</p>
+                    <p className={styles.cardMeta}>
+                      Warehouse: {warehouseNameMap.get(period.warehouse_id)?.name || warehouseNameMap.get(period.warehouse_id)?.code || "—"}
+                    </p>
                     <p className={styles.cardMeta}>Status: {period.status}</p>
                     <p className={styles.cardMeta}>Opened: {formatStamp(period.opened_at)}</p>
                     <p className={styles.cardMeta}>Closed: {formatStamp(period.closed_at)}</p>
                     {period.note ? <p className={styles.cardNote}>Note: {period.note}</p> : null}
+                    <div className={styles.cardActions}>
+                      <button
+                        type="button"
+                        className={styles.pdfButton}
+                        onClick={() => void downloadVariancePdf(period)}
+                        disabled={pdfBusyId === period.id}
+                      >
+                        {pdfBusyId === period.id ? "Preparing PDF..." : "Variance PDF"}
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>
