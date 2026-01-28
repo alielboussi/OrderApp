@@ -93,21 +93,86 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
-type VariantRecord = VariantPayload & { key?: string; id?: string };
-
-type CatalogItemRow = {
+type CatalogVariantRow = VariantPayload & {
   id: string;
-  name?: string | null;
-  variants?: VariantRecord[] | null;
-  active?: boolean | null;
-  item_kind?: ItemKind | null;
+  item_id: string;
 };
-
-const asVariantArray = (value: unknown): VariantRecord[] => (Array.isArray(value) ? (value as VariantRecord[]) : []);
 const normalizeVariantKey = (value?: string | null) => {
   const normalized = value?.trim();
   return normalized && normalized.length ? normalized : "base";
 };
+
+const VARIANT_BASE_FIELDS =
+  "id,item_id,name,item_kind,consumption_uom,purchase_pack_unit,units_per_purchase_pack,transfer_unit,transfer_quantity,cost,outlet_order_visible,active";
+
+const VARIANT_OPTIONAL_FIELDS = [
+  "sku",
+  "supplier_sku",
+  "stocktake_uom",
+  "purchase_unit_mass",
+  "purchase_unit_mass_uom",
+  "qty_decimal_places",
+  "selling_price",
+  "locked_from_warehouse_id",
+  "image_url",
+  "default_warehouse_id",
+] as const;
+
+function selectVariantFields(optional: readonly string[]) {
+  const optionalPart = optional.length ? `,${optional.join(",")}` : "";
+  return `${VARIANT_BASE_FIELDS}${optionalPart}`;
+}
+
+function normalizeVariantRow(row: Partial<CatalogVariantRow>) {
+  return {
+    id: row.id ?? "",
+    item_id: row.item_id ?? "",
+    name: row.name ?? "Variant",
+    sku: row.sku ?? null,
+    supplier_sku: row.supplier_sku ?? null,
+    item_kind: row.item_kind ?? "finished",
+    consumption_uom: row.consumption_uom ?? "each",
+    stocktake_uom: row.stocktake_uom ?? null,
+    purchase_pack_unit: row.purchase_pack_unit ?? "each",
+    units_per_purchase_pack: row.units_per_purchase_pack ?? 1,
+    purchase_unit_mass: row.purchase_unit_mass ?? null,
+    purchase_unit_mass_uom: row.purchase_unit_mass_uom ?? null,
+    transfer_unit: row.transfer_unit ?? row.purchase_pack_unit ?? "each",
+    transfer_quantity: row.transfer_quantity ?? 1,
+    qty_decimal_places: row.qty_decimal_places ?? null,
+    cost: row.cost ?? 0,
+    selling_price: row.selling_price ?? null,
+    locked_from_warehouse_id: row.locked_from_warehouse_id ?? null,
+    outlet_order_visible: row.outlet_order_visible ?? true,
+    image_url: row.image_url ?? null,
+    default_warehouse_id: row.default_warehouse_id ?? null,
+    active: row.active ?? true,
+  };
+}
+
+function toErrorDetails(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return { message: "Unknown error" };
+  }
+  const anyError = error as { message?: string; code?: string; details?: string; hint?: string };
+  return {
+    message: anyError.message ?? "Unknown error",
+    code: anyError.code,
+    details: anyError.details,
+    hint: anyError.hint,
+  };
+}
+
+async function refreshHasVariations(supabase: ReturnType<typeof getServiceClient>, itemId: string) {
+  const { count, error } = await supabase
+    .from("catalog_variants")
+    .select("id", { count: "exact", head: true })
+    .eq("item_id", itemId)
+    .eq("active", true);
+  if (error) throw error;
+  const hasVariations = (count ?? 0) > 0;
+  await supabase.from("catalog_items").update({ has_variations: hasVariations }).eq("id", itemId);
+}
 
 async function upsertVariantStorageHome(
   supabase: ReturnType<typeof getServiceClient>,
@@ -138,32 +203,32 @@ async function upsertVariantStorageHome(
     );
 }
 
-function toVariantResponse(itemId: string, variant: VariantRecord) {
-  const key = (variant.key ?? variant.id ?? "").toString().trim();
+function toVariantResponse(variantId: string, payload: VariantPayload) {
+  const key = variantId.toString().trim();
   if (!key) return null;
   return {
     id: key,
-    item_id: itemId,
-    name: variant.name ?? "Variant",
-    sku: variant.sku ?? null,
-    supplier_sku: (variant as any).supplier_sku ?? null,
-    item_kind: variant.item_kind ?? "finished",
-    consumption_uom: variant.consumption_uom ?? "each",
-    stocktake_uom: variant.stocktake_uom ?? null,
-    purchase_pack_unit: variant.purchase_pack_unit ?? "each",
-    units_per_purchase_pack: variant.units_per_purchase_pack ?? 1,
-    purchase_unit_mass: variant.purchase_unit_mass ?? null,
-    purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? null,
-    transfer_unit: variant.transfer_unit ?? variant.purchase_pack_unit ?? "each",
-    transfer_quantity: variant.transfer_quantity ?? 1,
-    qty_decimal_places: variant.qty_decimal_places ?? null,
-    cost: variant.cost ?? 0,
-    selling_price: (variant as any).selling_price ?? null,
-    locked_from_warehouse_id: variant.locked_from_warehouse_id ?? null,
-    outlet_order_visible: variant.outlet_order_visible ?? true,
-    image_url: variant.image_url ?? null,
-    default_warehouse_id: variant.default_warehouse_id ?? null,
-    active: variant.active ?? true,
+    item_id: payload.item_id,
+    name: payload.name ?? "Variant",
+    sku: payload.sku ?? null,
+    supplier_sku: payload.supplier_sku ?? null,
+    item_kind: payload.item_kind ?? "finished",
+    consumption_uom: payload.consumption_uom ?? "each",
+    stocktake_uom: payload.stocktake_uom ?? null,
+    purchase_pack_unit: payload.purchase_pack_unit ?? "each",
+    units_per_purchase_pack: payload.units_per_purchase_pack ?? 1,
+    purchase_unit_mass: payload.purchase_unit_mass ?? null,
+    purchase_unit_mass_uom: payload.purchase_unit_mass_uom ?? null,
+    transfer_unit: payload.transfer_unit ?? payload.purchase_pack_unit ?? "each",
+    transfer_quantity: payload.transfer_quantity ?? 1,
+    qty_decimal_places: payload.qty_decimal_places ?? null,
+    cost: payload.cost ?? 0,
+    selling_price: payload.selling_price ?? null,
+    locked_from_warehouse_id: payload.locked_from_warehouse_id ?? null,
+    outlet_order_visible: payload.outlet_order_visible ?? true,
+    image_url: payload.image_url ?? null,
+    default_warehouse_id: payload.default_warehouse_id ?? null,
+    active: payload.active ?? true,
   };
 }
 
@@ -174,19 +239,97 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim() || undefined;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-    let query = supabase.from("catalog_items").select("id,name,variants,active");
-    if (itemId) query = query.eq("id", itemId);
-    query = query.eq("active", true);
+    let itemIds: string[] = [];
+    if (itemId) {
+      let itemRow: { id?: string; active?: boolean | null } | null = null;
+      let itemError: any = null;
+      const primary = await supabase.from("catalog_items").select("id,active").eq("id", itemId).maybeSingle();
+      itemRow = (primary.data as typeof itemRow) ?? null;
+      itemError = primary.error;
+      if (itemError?.code === "42703") {
+        const fallback = await supabase.from("catalog_items").select("id").eq("id", itemId).maybeSingle();
+        itemRow = (fallback.data as typeof itemRow) ?? null;
+        itemError = fallback.error;
+      }
+      if (itemError) throw itemError;
+      if (!itemRow || itemRow.active === false) {
+        return NextResponse.json({ variants: [] });
+      }
+      itemIds = [itemId];
+    } else {
+      let itemRows: { id?: string }[] | null = null;
+      let itemsError: any = null;
+      const primary = await supabase.from("catalog_items").select("id").eq("active", true);
+      itemRows = (primary.data as typeof itemRows) ?? null;
+      itemsError = primary.error;
+      if (itemsError?.code === "42703") {
+        const fallback = await supabase.from("catalog_items").select("id");
+        itemRows = (fallback.data as typeof itemRows) ?? null;
+        itemsError = fallback.error;
+      }
+      if (itemsError) throw itemsError;
+      itemIds = (itemRows ?? []).map((row: any) => row.id).filter(Boolean);
+    }
 
-    const { data, error } = (await query) as { data: CatalogItemRow[] | null; error: Error | null };
-    if (error) throw error;
+    if (itemIds.length === 0) {
+      if (!id) return NextResponse.json({ variants: [] });
+    }
 
-    const { data: recipeRows, error: recipeError } = await supabase
-      .from("recipes")
-      .select("finished_item_id, finished_variant_key")
-      .eq("active", true);
-    if (recipeError) throw recipeError;
+    let optional = [...VARIANT_OPTIONAL_FIELDS];
+    let variantRows: Partial<CatalogVariantRow>[] | null = null;
+    let variantError: any = null;
+
+    while (true) {
+      let variantQuery = supabase
+        .from("catalog_variants")
+        .select(selectVariantFields(optional));
+      if (itemIds.length) variantQuery = variantQuery.in("item_id", itemIds);
+      if (id) variantQuery = variantQuery.eq("id", id);
+
+      const result = (await variantQuery) as {
+        data: Partial<CatalogVariantRow>[] | null;
+        error: any | null;
+      };
+      variantRows = result.data;
+      variantError = result.error;
+
+      if (variantError?.code === "42703" && optional.length) {
+        optional.pop();
+        continue;
+      }
+      break;
+    }
+
+    if (variantError) throw variantError;
+
     const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
+
+    let recipeRows: RecipeRow[] | null = null;
+    let recipeError: any = null;
+    while (true) {
+      let recipeQuery = supabase.from("recipes").select("finished_item_id, finished_variant_key");
+      if (itemIds.length) recipeQuery = recipeQuery.in("finished_item_id", itemIds);
+      recipeQuery = recipeQuery.eq("active", true);
+
+      const result = await recipeQuery;
+      recipeRows = (result.data as RecipeRow[] | null) ?? null;
+      recipeError = result.error;
+
+      if (recipeError?.code === "42703") {
+        // finished_variant_key or active missing in older schemas; retry with minimal select.
+        const minimal = await supabase.from("recipes").select("finished_item_id");
+        recipeRows = (minimal.data as RecipeRow[] | null) ?? null;
+        recipeError = minimal.error;
+      }
+
+      if (recipeError?.code === "42P01") {
+        // recipes table missing
+        recipeRows = [];
+        recipeError = null;
+      }
+      break;
+    }
+    if (recipeError) throw recipeError;
     const recipeCountByVariant: Record<string, number> = {};
     (recipeRows as RecipeRow[] | null)?.forEach((row) => {
       if (!row.finished_item_id) return;
@@ -194,35 +337,50 @@ export async function GET(request: Request) {
       recipeCountByVariant[comboKey] = (recipeCountByVariant[comboKey] || 0) + 1;
     });
 
-    const variants = (data ?? []).flatMap((item) => {
-      const entries = asVariantArray(item.variants);
-      return entries
-        .map((variant) => {
-          const normalizedKey = normalizeVariant((variant as any).key ?? (variant as any).id ?? null);
-          const hasRecipe = recipeCountByVariant[`${item.id}::${normalizedKey}`] > 0;
-          const response = toVariantResponse(item.id, variant);
-          if (!response) return null;
-          return {
-            ...response,
-            has_recipe: hasRecipe,
-          };
-        })
-        .filter((v): v is NonNullable<ReturnType<typeof toVariantResponse>> & { has_recipe: boolean } => Boolean(v));
-    });
+    const variants = (variantRows ?? [])
+      .map((row) => normalizeVariantRow(row))
+      .filter((variant) => normalizeVariantKey(variant.id) !== "base")
+      .map((variant) => {
+        const normalizedKey = normalizeVariant(variant.id);
+        const hasRecipe = recipeCountByVariant[`${variant.item_id}::${normalizedKey}`] > 0;
+        return {
+          ...variant,
+          has_recipe: hasRecipe,
+        };
+      });
 
-    const variantIds = variants.map((v) => v.id);
-    const itemIds = Array.from(new Set(variants.map((v) => v.item_id)));
     const storageHomeByKey: Record<string, string | null> = {};
-
     if (itemIds.length) {
-      const { data: storageRows, error: storageErr } = await supabase
+      let storageRows: { item_id?: string; normalized_variant_key?: string | null; variant_key?: string | null; storage_warehouse_id?: string | null }[] = [];
+      let storageErr: any = null;
+
+      const primary = await supabase
         .from("item_storage_homes")
         .select("item_id, normalized_variant_key, storage_warehouse_id")
         .in("item_id", itemIds);
+      storageRows = (primary.data as typeof storageRows) ?? [];
+      storageErr = primary.error;
+
+      if (storageErr?.code === "42703") {
+        const fallback = await supabase
+          .from("item_storage_homes")
+          .select("item_id, variant_key, storage_warehouse_id")
+          .in("item_id", itemIds);
+        storageRows = (fallback.data as typeof storageRows) ?? [];
+        storageErr = fallback.error;
+      }
+
+      if (storageErr?.code === "42P01") {
+        storageRows = [];
+        storageErr = null;
+      }
+
       if (storageErr) throw storageErr;
-      (storageRows ?? []).forEach((row) => {
-        if (row?.item_id && row?.normalized_variant_key) {
-          storageHomeByKey[`${row.item_id}::${row.normalized_variant_key}`] = row.storage_warehouse_id;
+      storageRows.forEach((row) => {
+        const rawKey = row?.normalized_variant_key ?? row?.variant_key ?? null;
+        const normalizedKey = normalizeVariantKey(rawKey ?? undefined);
+        if (row?.item_id && normalizedKey) {
+          storageHomeByKey[`${row.item_id}::${normalizedKey}`] = row.storage_warehouse_id ?? null;
         }
       });
     }
@@ -235,7 +393,7 @@ export async function GET(request: Request) {
     });
 
     if (id) {
-      const found = variantsWithStorage.find((variant) => variant.id === id);
+      const found = variantsWithStorage.find((variant) => variant.id === id && (!itemId || variant.item_id === itemId));
       if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ variant: found });
     }
@@ -251,8 +409,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ variants: filtered });
   } catch (error) {
-    console.error("[catalog/variants] GET failed", error);
-    return NextResponse.json({ error: "Unable to load variants" }, { status: 500 });
+    const details = toErrorDetails(error);
+    console.error("[catalog/variants] GET failed", details);
+    return NextResponse.json({ error: "Unable to load variants", details }, { status: 500 });
   }
 }
 
@@ -297,9 +456,9 @@ export async function POST(request: Request) {
     const supabase = getServiceClient();
     const { data: itemRow, error: itemError } = (await supabase
       .from("catalog_items")
-      .select("variants,item_kind")
+      .select("id,item_kind")
       .eq("id", itemId)
-      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
+      .maybeSingle()) as { data: { id: string; item_kind?: ItemKind | null } | null; error: Error | null };
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
@@ -327,17 +486,21 @@ export async function POST(request: Request) {
       active: cleanBoolean(body.active, true),
     };
 
-    const existing = asVariantArray(itemRow.variants);
-    const newVariant: VariantRecord = { ...payload, key: randomUUID() };
-    const nextVariants = [...existing, newVariant];
+    const providedId = cleanText(body.id) ?? cleanText(body.key);
+    const variantId = providedId ?? randomUUID();
+    if (normalizeVariantKey(variantId) === "base") {
+      return NextResponse.json({ error: "Variant key cannot be base" }, { status: 400 });
+    }
 
-    const { error: updateError } = await supabase
-      .from("catalog_items")
-      .update({ variants: nextVariants, has_variations: true })
-      .eq("id", itemId);
-    if (updateError) throw updateError;
+    const { error: insertError } = await supabase.from("catalog_variants").insert({
+      id: variantId,
+      ...payload,
+    });
+    if (insertError) throw insertError;
 
-    const responseVariant = toVariantResponse(itemId, newVariant);
+    await refreshHasVariations(supabase, itemId);
+
+    const responseVariant = toVariantResponse(variantId, payload);
     if (!responseVariant) return NextResponse.json({ error: "Failed to save variant" }, { status: 500 });
 
     try {
@@ -357,7 +520,7 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const id = cleanText(body.id);
-    if (!id || !isUuid(id)) return NextResponse.json({ error: "id is required for update" }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "id is required for update" }, { status: 400 });
 
     const itemId = cleanUuid(body.item_id);
     if (!itemId) return NextResponse.json({ error: "Parent product (item_id) is required" }, { status: 400 });
@@ -397,9 +560,9 @@ export async function PUT(request: Request) {
     const supabase = getServiceClient();
     const { data: itemRow, error: itemError } = (await supabase
       .from("catalog_items")
-      .select("variants,item_kind")
+      .select("id,item_kind")
       .eq("id", itemId)
-      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
+      .maybeSingle()) as { data: { id: string; item_kind?: ItemKind | null } | null; error: Error | null };
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
@@ -426,25 +589,25 @@ export async function PUT(request: Request) {
       active: cleanBoolean(body.active, true),
     };
 
-    const existing = asVariantArray(itemRow.variants);
-    const updated = existing.map((variant) => {
-      const key = (variant?.key ?? variant?.id ?? "").toString().trim();
-      if (key && key === id) {
-        return { ...variant, ...payload, key } as VariantRecord;
-      }
-      return variant;
-    });
-
-    const found = updated.find((variant) => (variant?.key ?? variant?.id ?? "").toString() === id) ?? null;
-    if (!found) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
+    const { data: existing, error: existingError } = await supabase
+      .from("catalog_variants")
+      .select("id")
+      .eq("id", id)
+      .eq("item_id", itemId)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
 
     const { error: updateError } = await supabase
-      .from("catalog_items")
-      .update({ variants: updated, has_variations: true })
-      .eq("id", itemId);
+      .from("catalog_variants")
+      .update({ ...payload })
+      .eq("id", id)
+      .eq("item_id", itemId);
     if (updateError) throw updateError;
 
-    const responseVariant = toVariantResponse(itemId, found);
+    await refreshHasVariations(supabase, itemId);
+
+    const responseVariant = toVariantResponse(id, payload);
     if (!responseVariant) return NextResponse.json({ error: "Failed to update variant" }, { status: 500 });
 
     try {
@@ -471,32 +634,27 @@ export async function DELETE(request: Request) {
       if (!itemId) itemId = typeof body.item_id === "string" ? body.item_id.trim() : "";
     }
 
-    if (!id || !isUuid(id)) return NextResponse.json({ error: "Valid variant id is required" }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "Variant id is required" }, { status: 400 });
     if (!itemId || !isUuid(itemId)) return NextResponse.json({ error: "Valid parent item_id is required" }, { status: 400 });
 
     const supabase = getServiceClient();
-    const { data: itemRow, error: itemError } = (await supabase
-      .from("catalog_items")
-      .select("variants,has_variations")
-      .eq("id", itemId)
-      .maybeSingle()) as { data: CatalogItemRow | null; error: Error | null };
+    const { data: existing, error: existingError } = await supabase
+      .from("catalog_variants")
+      .select("id")
+      .eq("id", id)
+      .eq("item_id", itemId)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
 
-    if (itemError) throw itemError;
-    if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
+    const { error: deleteError } = await supabase
+      .from("catalog_variants")
+      .delete()
+      .eq("id", id)
+      .eq("item_id", itemId);
+    if (deleteError) throw deleteError;
 
-    const existing = asVariantArray(itemRow.variants);
-    const filtered = existing.filter((variant) => {
-      const key = (variant?.key ?? variant?.id ?? "").toString().trim();
-      return !key || key !== id;
-    });
-
-    if (filtered.length === existing.length) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
-
-    const { error: updateError } = await supabase
-      .from("catalog_items")
-      .update({ variants: filtered, has_variations: filtered.length > 0 })
-      .eq("id", itemId);
-    if (updateError) throw updateError;
+    await refreshHasVariations(supabase, itemId);
 
     return NextResponse.json({ id, item_id: itemId });
   } catch (error) {

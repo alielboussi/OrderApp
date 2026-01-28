@@ -5,46 +5,53 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
   return async (rows: any[]) => {
       if (!rows?.length) return [];
 
+      const normalizeVariantKey = (value?: string | null) => {
+        const trimmed = value?.trim();
+        return trimmed && trimmed.length ? trimmed : "base";
+      };
+
       const itemIds = Array.from(new Set((rows ?? []).map((r) => r.catalog_item_id).filter(Boolean)));
-      let catalogById = new Map<string, { name?: string | null; variants?: any[] }>();
+      let catalogById = new Map<string, { name?: string | null; variants?: Map<string, string> }>();
 
       if (itemIds.length) {
-        const { data: catalogData, error: catalogError } = await supabase
-          .from("catalog_items")
-          .select("id,name,variants")
-          .in("id", itemIds);
+        const [{ data: catalogData, error: catalogError }, { data: variantData, error: variantError }] = await Promise.all([
+          supabase.from("catalog_items").select("id,name").in("id", itemIds),
+          supabase.from("catalog_variants").select("id,item_id,name").in("item_id", itemIds),
+        ]);
+
         if (catalogError) {
           console.error("[pos-item-map] catalog lookup failed", catalogError);
-        } else {
-          (catalogData ?? []).forEach((c: any) => {
-            let variants: any[] = [];
-            if (Array.isArray(c.variants)) variants = c.variants;
-            else if (typeof c.variants === "string") {
-              try {
-                const parsed = JSON.parse(c.variants);
-                variants = Array.isArray(parsed) ? parsed : [];
-              } catch (parseErr) {
-                console.error("[pos-item-map] variants parse failed", parseErr);
-              }
-            }
-            catalogById.set(c.id, { name: c.name, variants });
-          });
         }
+        if (variantError) {
+          console.error("[pos-item-map] variant lookup failed", variantError);
+        }
+
+        const variantLabelByItem = new Map<string, Map<string, string>>();
+        (variantData ?? []).forEach((variant: any) => {
+          if (!variant?.item_id || !variant?.id) return;
+          const itemKey = variant.item_id;
+          const label = variant.name || variant.id;
+          const map = variantLabelByItem.get(itemKey) ?? new Map<string, string>();
+          map.set(variant.id, label);
+          map.set(normalizeVariantKey(variant.id), label);
+          variantLabelByItem.set(itemKey, map);
+        });
+
+        (catalogData ?? []).forEach((c: any) => {
+          catalogById.set(c.id, { name: c.name, variants: variantLabelByItem.get(c.id) ?? new Map() });
+        });
       }
 
-      const findVariantLabel = (variants: any[], key: string | null | undefined) => {
-        if (!key || !variants?.length) return null;
-        const match = variants.find(
-          (v: any) => v?.key === key || v?.id === key || v?.name === key || v?.label === key || v?.title === key
-        );
-        if (!match) return null;
-        return match.name || match.label || match.title || match.key || key;
+      const findVariantLabel = (variants: Map<string, string> | undefined, key: string | null | undefined) => {
+        if (!key || !variants) return null;
+        const trimmed = key.trim();
+        return variants.get(trimmed) ?? variants.get(normalizeVariantKey(trimmed)) ?? null;
       };
 
       return (rows ?? []).map((row: any) => {
         const catalog = catalogById.get(row.catalog_item_id);
         const variantKey = row.catalog_variant_key || row.normalized_variant_key || "base";
-        const variantLabel = findVariantLabel(catalog?.variants ?? [], variantKey);
+        const variantLabel = findVariantLabel(catalog?.variants, variantKey);
 
         return {
           ...row,
@@ -212,19 +219,20 @@ export async function POST(request: Request) {
       let catalogName: string | null = null;
       let catalogVariantLabel: string | null = null;
       if (row?.catalog_item_id) {
-        const { data: catalogItem, error: catalogError } = await supabase
-          .from("catalog_items")
-          .select("id,name,variants")
-          .eq("id", row.catalog_item_id)
-          .single();
+        const [{ data: catalogItem, error: catalogError }, { data: variantRow, error: variantError }] = await Promise.all([
+          supabase.from("catalog_items").select("id,name").eq("id", row.catalog_item_id).single(),
+          supabase
+            .from("catalog_variants")
+            .select("id,name")
+            .eq("item_id", row.catalog_item_id)
+            .eq("id", row.catalog_variant_key || row.normalized_variant_key || "base")
+            .maybeSingle(),
+        ]);
         if (!catalogError && catalogItem) {
           catalogName = (catalogItem as any).name ?? null;
-          const variants = Array.isArray((catalogItem as any).variants) ? (catalogItem as any).variants : [];
-          const variantKey = row.catalog_variant_key || row.normalized_variant_key || "base";
-          const match = variants.find(
-            (v: any) => v?.key === variantKey || v?.id === variantKey || v?.name === variantKey || v?.label === variantKey
-          );
-          catalogVariantLabel = match ? match.name || match.label || match.title || match.key || variantKey : null;
+        }
+        if (!variantError && variantRow) {
+          catalogVariantLabel = (variantRow as any).name ?? (variantRow as any).id ?? null;
         }
       }
 

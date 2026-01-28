@@ -8,7 +8,7 @@ const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
 const DESTINATION_CHOICES = [] as const;
 const LOCKED_DEST_ID = '';
 const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
-const MULTIPLY_QTY_BY_PACKAGE = false;
+const MULTIPLY_QTY_BY_PACKAGE = true;
 const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
 (globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
 const OPERATOR_CONTEXT_LABELS = {
@@ -844,6 +844,16 @@ function createHtml(config: {
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: clamp(12px, 2vw, 18px);
     }
+    .purchase-grid label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .purchase-grid input,
+    .purchase-grid select {
+      min-height: 40px;
+      box-sizing: border-box;
+    }
     .reference-field {
       position: relative;
       display: flex;
@@ -857,6 +867,56 @@ function createHtml(config: {
     .purchase-grid label textarea {
       min-height: 88px;
       resize: vertical;
+    }
+    .search-field {
+      position: relative;
+    }
+    .purchase-field-actions,
+    .reference-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+    .keyboard-toggle {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+    }
+    .purchase-inline-keyboard {
+      position: fixed;
+      left: 50%;
+      bottom: 140px;
+      top: auto;
+      transform: translateX(-50%);
+      width: min(620px, calc(100vw - 32px));
+      max-width: 620px;
+      z-index: 35;
+    }
+    .purchase-inline-numpad {
+      position: fixed;
+      left: 50%;
+      bottom: 140px;
+      top: auto;
+      transform: translateX(-50%);
+      z-index: 60;
+    }
+    .purchase-inline-keyboard {
+      padding: 12px;
+      gap: 8px;
+    }
+    .purchase-inline-keyboard button {
+      min-height: 46px;
+      font-size: 0.95rem;
+      padding: 10px 8px;
+    }
+    .purchase-inline-numpad button {
+      min-height: 44px;
+      font-size: 0.95rem;
+      padding: 10px 8px;
     }
     .purchase-timestamp-hint {
       margin: 0;
@@ -1524,11 +1584,89 @@ function createHtml(config: {
                 <option value="">Select supplier</option>
               </select>
             </label>
+            <label class="search-field">Item search
+              <input id="purchase-item-search" type="text" placeholder="Search items or scan barcode" autocomplete="off" />
+              <div class="purchase-field-actions">
+                <button type="button" id="purchase-search-keyboard-toggle" class="keyboard-toggle">Keyboard</button>
+                <button type="button" id="purchase-search-numpad-toggle" class="keyboard-toggle">Numpad</button>
+              </div>
+              <div id="purchase-search-keyboard" class="virtual-keyboard purchase-inline-keyboard" aria-hidden="true">
+                <button type="button" data-key="1">1</button>
+                <button type="button" data-key="2">2</button>
+                <button type="button" data-key="3">3</button>
+                <button type="button" data-key="4">4</button>
+                <button type="button" data-key="5">5</button>
+                <button type="button" data-key="6">6</button>
+                <button type="button" data-key="7">7</button>
+                <button type="button" data-key="8">8</button>
+                <button type="button" data-key="9">9</button>
+                <button type="button" data-key="0">0</button>
+                <button type="button" data-key="-" aria-label="Dash">-</button>
+                <button type="button" data-key="/" aria-label="Slash">/</button>
+                <button type="button" data-key="Q">Q</button>
+                <button type="button" data-key="W">W</button>
+                <button type="button" data-key="E">E</button>
+                <button type="button" data-key="R">R</button>
+                <button type="button" data-key="T">T</button>
+                <button type="button" data-key="Y">Y</button>
+                <button type="button" data-key="U">U</button>
+                <button type="button" data-key="I">I</button>
+                <button type="button" data-key="O">O</button>
+                <button type="button" data-key="P">P</button>
+                <button type="button" data-key="A">A</button>
+                <button type="button" data-key="S">S</button>
+                <button type="button" data-key="D">D</button>
+                <button type="button" data-key="F">F</button>
+                <button type="button" data-key="G">G</button>
+                <button type="button" data-key="H">H</button>
+                <button type="button" data-key="J">J</button>
+                <button type="button" data-key="K">K</button>
+                <button type="button" data-key="L">L</button>
+                <button type="button" data-key=";" aria-label="Semicolon">;</button>
+                <button type="button" data-key="Z">Z</button>
+                <button type="button" data-key="X">X</button>
+                <button type="button" data-key="C">C</button>
+                <button type="button" data-key="V">V</button>
+                <button type="button" data-key="B">B</button>
+                <button type="button" data-key="N">N</button>
+                <button type="button" data-key="M">M</button>
+                <button type="button" data-key="," aria-label="Comma">,</button>
+                <button type="button" data-key="." aria-label="Period">.</button>
+                <button type="button" data-key="'" aria-label="Apostrophe">'</button>
+                <button type="button" class="wide-5" data-action="space">Space</button>
+                <button type="button" class="wide-3" data-action="delete">Backspace</button>
+                <button type="button" class="wide-3" data-action="enter">Enter</button>
+                <button type="button" class="wide-5" data-action="clear">Clear</button>
+                <button type="button" class="wide-5" data-action="close">Close</button>
+              </div>
+              <div id="purchase-search-numpad" class="virtual-numpad purchase-inline-numpad" aria-hidden="true">
+                <button type="button" data-key="7">7</button>
+                <button type="button" data-key="8">8</button>
+                <button type="button" data-key="9">9</button>
+                <button type="button" data-key="4">4</button>
+                <button type="button" data-key="5">5</button>
+                <button type="button" data-key="6">6</button>
+                <button type="button" data-key="1">1</button>
+                <button type="button" data-key="2">2</button>
+                <button type="button" data-key="3">3</button>
+                <button type="button" data-action="clear">CLR</button>
+                <button type="button" data-key="0">0</button>
+                <button type="button" data-action="enter">Enter</button>
+                <button type="button" data-action="delete">DEL</button>
+                <button type="button" data-key="-">-</button>
+                <button type="button" data-key="/">/</button>
+                <button type="button" data-action="close">Close</button>
+              </div>
+            </label>
             <div class="reference-field">
               <label>Reference / Invoice #
                 <input type="text" id="purchase-reference" placeholder="INV-12345" required />
               </label>
-              <div id="reference-numpad" class="virtual-keyboard" aria-hidden="true">
+              <div class="reference-actions">
+                <button type="button" id="reference-keyboard-toggle" class="keyboard-toggle">Keyboard</button>
+                <button type="button" id="reference-numpad-toggle" class="keyboard-toggle">Numpad</button>
+              </div>
+              <div id="reference-numpad" class="virtual-keyboard purchase-inline-keyboard" aria-hidden="true">
                 <!-- Digits Row -->
                 <button type="button" data-key="1">1</button>
                 <button type="button" data-key="2">2</button>
@@ -1578,8 +1716,27 @@ function createHtml(config: {
                 <!-- Row 4 -->
                 <button type="button" class="wide-5" data-action="space">Space</button>
                 <button type="button" class="wide-3" data-action="delete">Backspace</button>
+                <button type="button" class="wide-3" data-action="enter">Enter</button>
                 <button type="button" class="wide-5" data-action="clear">Clear</button>
                 <button type="button" class="wide-5" data-action="close">Close</button>
+              </div>
+              <div id="reference-numpad-digits" class="virtual-numpad purchase-inline-numpad" aria-hidden="true">
+                <button type="button" data-key="7">7</button>
+                <button type="button" data-key="8">8</button>
+                <button type="button" data-key="9">9</button>
+                <button type="button" data-key="4">4</button>
+                <button type="button" data-key="5">5</button>
+                <button type="button" data-key="6">6</button>
+                <button type="button" data-key="1">1</button>
+                <button type="button" data-key="2">2</button>
+                <button type="button" data-key="3">3</button>
+                <button type="button" data-action="clear">CLR</button>
+                <button type="button" data-key="0">0</button>
+                <button type="button" data-action="enter">Enter</button>
+                <button type="button" data-action="delete">DEL</button>
+                <button type="button" data-key="-">-</button>
+                <button type="button" data-key="/">/</button>
+                <button type="button" data-action="close">Close</button>
               </div>
             </div>
           </div>
@@ -1949,6 +2106,14 @@ function createHtml(config: {
       const purchaseForm = document.getElementById('purchase-form');
       const purchaseSupplier = document.getElementById('purchase-supplier');
       const purchaseReference = document.getElementById('purchase-reference');
+      const purchaseItemSearchInput = document.getElementById('purchase-item-search');
+      const purchaseSearchKeyboard = document.getElementById('purchase-search-keyboard');
+      const purchaseSearchNumpad = document.getElementById('purchase-search-numpad');
+      const purchaseSearchKeyboardToggle = document.getElementById('purchase-search-keyboard-toggle');
+      const purchaseSearchNumpadToggle = document.getElementById('purchase-search-numpad-toggle');
+      const referenceKeyboardToggle = document.getElementById('reference-keyboard-toggle');
+      const referenceNumpadToggle = document.getElementById('reference-numpad-toggle');
+      const referenceNumpadDigits = document.getElementById('reference-numpad-digits');
       const purchaseSummaryList = document.getElementById('purchase-summary-list');
       const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
       const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
@@ -2030,6 +2195,12 @@ function createHtml(config: {
         document.body.classList.toggle('view-damage', view === 'damage');
         syncViewVisibility(view);
         syncViewQuery(view);
+        setMode(view);
+        if (view === 'purchase' && state.suppliers.length === 0) {
+          fetchSuppliers().catch((error) => {
+            console.warn('Supplier prefetch failed on view change', error);
+          });
+        }
       }
 
       applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
@@ -2561,7 +2732,7 @@ function createHtml(config: {
             activeDestId
               ? supabase
                   .from('catalog_items')
-                  .select('id,variants')
+                  .select('id')
                   .eq('default_warehouse_id', activeDestId)
                   .eq('active', true)
               : Promise.resolve({ data: [], error: null }),
@@ -2598,16 +2769,28 @@ function createHtml(config: {
           });
 
           const productsWithWarehouseVariations = new Set();
+          const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
           (defaultItemsResult.data ?? []).forEach((row) => {
             if (row?.id) destIds.add(row.id);
-            const variants = Array.isArray(row?.variants) ? row.variants : [];
-            variants.forEach((variant) => {
-              const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-              const variantActive = variant?.active !== false;
-              if (variantDefault === activeDestId && variantActive && row?.id) {
-                productsWithWarehouseVariations.add(row.id);
-              }
-            });
+          });
+
+          let defaultVariants = [];
+          if (defaultItemIds.length) {
+            const { data: variantData, error: variantError } = await supabase
+              .from('catalog_variants')
+              .select('id,item_id,default_warehouse_id,locked_from_warehouse_id,active')
+              .in('item_id', defaultItemIds);
+            if (variantError) throw variantError;
+            defaultVariants = Array.isArray(variantData) ? variantData : [];
+          }
+
+          defaultVariants.forEach((variant) => {
+            const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
+            const variantActive = variant?.active !== false;
+            if (variantDefault === activeDestId && variantActive && variant?.item_id) {
+              destIds.add(variant.item_id);
+              productsWithWarehouseVariations.add(variant.item_id);
+            }
           });
 
           latestStorageHomes.forEach((home) => {
@@ -2643,16 +2826,30 @@ function createHtml(config: {
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
             .select(
-              'id,name,has_variations,item_kind,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants'
+              'id,name,has_variations,item_kind,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity'
             )
             .in('id', Array.from(productIds))
             .eq('active', true)
             .order('name');
           if (prodErr) throw prodErr;
 
+          const { data: variantRows, error: variantErr } = await supabase
+            .from('catalog_variants')
+            .select('id,item_id,default_warehouse_id,locked_from_warehouse_id,active')
+            .in('item_id', Array.from(productIds));
+          if (variantErr) throw variantErr;
+
+          const variantsByItem = new Map();
+          (variantRows ?? []).forEach((variant) => {
+            if (!variant?.item_id) return;
+            const list = variantsByItem.get(variant.item_id) ?? [];
+            list.push(variant);
+            variantsByItem.set(variant.item_id, list);
+          });
+
           return (products ?? []).map((product) => {
             if (!product?.id) return product;
-            const variants = Array.isArray(product.variants) ? product.variants : [];
+            const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
               if (variantDefault !== lockedSourceId) return false;
@@ -2703,10 +2900,11 @@ function createHtml(config: {
           return;
         }
         const { data, error } = await supabase
-          .from('catalog_items')
-          .select('id,variants')
-          .in('id', productIds)
-          .eq('active', true);
+          .from('catalog_variants')
+          .select(
+            'id,item_id,name,purchase_pack_unit,transfer_unit,consumption_uom,sku,supplier_sku,units_per_purchase_pack,transfer_quantity,default_warehouse_id,locked_from_warehouse_id,active'
+          )
+          .in('item_id', productIds);
         if (error) throw error;
 
         const activeDestId = state.destinationSelection;
@@ -2719,50 +2917,47 @@ function createHtml(config: {
           }
         });
 
-        (data ?? []).forEach((item) => {
-          if (!item?.id) return;
-          const variants = Array.isArray(item.variants) ? item.variants : [];
-          variants.forEach((variant) => {
-            if (variant?.active === false) return;
-            const normalizedKey = normalizeVariantKeyLocal(variant?.key ?? variant?.id ?? '');
-            const variantWarehouse =
-              storageHomeMap.get(item.id + '::' + normalizedKey) ??
-              variant?.default_warehouse_id ??
-              variant?.locked_from_warehouse_id ??
-              null;
-            if (variantWarehouse && !allowedVariantWarehouses.has(variantWarehouse)) return;
+        (data ?? []).forEach((variant) => {
+          if (!variant?.item_id || !variant?.id) return;
+          if (variant?.active === false) return;
+          const normalizedKey = normalizeVariantKeyLocal(variant?.id ?? '');
+          const variantWarehouse =
+            storageHomeMap.get(variant.item_id + '::' + normalizedKey) ??
+            variant?.default_warehouse_id ??
+            variant?.locked_from_warehouse_id ??
+            null;
+          if (variantWarehouse && !allowedVariantWarehouses.has(variantWarehouse)) return;
 
-            const key = normalizedKey || 'base';
-            const variation = {
-              id: key,
-              product_id: item.id,
-              name: (variant?.name ?? '').toString() || 'Variant',
-              uom: (variant?.purchase_pack_unit ?? variant?.transfer_unit ?? 'each').toString(),
-              consumption_uom: (variant?.consumption_uom ?? variant?.purchase_pack_unit ?? 'each').toString(),
-              sku: typeof variant?.sku === 'string' ? variant.sku : null,
-              supplier_sku: typeof variant?.supplier_sku === 'string' ? variant.supplier_sku : null,
-              package_contains: typeof variant?.units_per_purchase_pack === 'number' ? variant.units_per_purchase_pack : null,
-              transfer_unit: (variant?.transfer_unit ?? variant?.purchase_pack_unit ?? 'each').toString(),
-              transfer_quantity:
-                typeof variant?.transfer_quantity === 'number'
-                  ? variant.transfer_quantity
-                  : Number(variant?.transfer_quantity) || 1
-            };
+          const key = normalizedKey || 'base';
+          const variation = {
+            id: key,
+            product_id: variant.item_id,
+            name: (variant?.name ?? '').toString() || 'Variant',
+            uom: (variant?.purchase_pack_unit ?? variant?.transfer_unit ?? 'each').toString(),
+            consumption_uom: (variant?.consumption_uom ?? variant?.purchase_pack_unit ?? 'each').toString(),
+            sku: typeof variant?.sku === 'string' ? variant.sku : null,
+            supplier_sku: typeof variant?.supplier_sku === 'string' ? variant.supplier_sku : null,
+            package_contains: typeof variant?.units_per_purchase_pack === 'number' ? variant.units_per_purchase_pack : null,
+            transfer_unit: (variant?.transfer_unit ?? variant?.purchase_pack_unit ?? 'each').toString(),
+            transfer_quantity:
+              typeof variant?.transfer_quantity === 'number'
+                ? variant.transfer_quantity
+                : Number(variant?.transfer_quantity) || 1
+          };
 
-            const list = state.variations.get(item.id) ?? [];
-            list.push(variation);
-            state.variations.set(item.id, list);
+          const list = state.variations.get(variant.item_id) ?? [];
+          list.push(variation);
+          state.variations.set(variant.item_id, list);
 
-            if (key) {
-              indexVariationKey(key, variation);
-            }
-            if (typeof variation.sku === 'string' && variation.sku.trim()) {
-              indexVariationKey(variation.sku, variation);
-            }
-            if (typeof variation.supplier_sku === 'string' && variation.supplier_sku.trim()) {
-              indexVariationKey(variation.supplier_sku, variation);
-            }
-          });
+          if (key) {
+            indexVariationKey(key, variation);
+          }
+          if (typeof variation.sku === 'string' && variation.sku.trim()) {
+            indexVariationKey(variation.sku, variation);
+          }
+          if (typeof variation.supplier_sku === 'string' && variation.supplier_sku.trim()) {
+            indexVariationKey(variation.supplier_sku, variation);
+          }
         });
       }
 
@@ -2798,6 +2993,7 @@ function createHtml(config: {
         if (active === purchaseReference) return true;
         if (active === damageNote) return true;
         if (active === itemSearchInput) return true;
+        if (active === purchaseItemSearchInput) return true;
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
           return true;
         }
@@ -3345,7 +3541,7 @@ function createHtml(config: {
           if (!supplier?.id) return;
           const option = document.createElement('option');
           option.value = supplier.id;
-          option.textContent = supplier.name ?? 'Supplier';
+          option.textContent = supplier.name ?? supplier.supplier_name ?? supplier.display_name ?? 'Supplier';
           purchaseSupplier.appendChild(option);
         });
         const hasExisting = state.suppliers.some((supplier) => supplier?.id === state.purchaseForm.supplierId);
@@ -3381,6 +3577,24 @@ function createHtml(config: {
         referenceNumpad.style.display = 'grid';
         referenceNumpad.classList.add('active');
         referenceNumpad.setAttribute('aria-hidden', 'false');
+        if (referenceNumpadDigits) {
+          referenceNumpadDigits.style.display = 'none';
+          referenceNumpadDigits.classList.remove('active');
+          referenceNumpadDigits.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      function showReferenceNumpadDigits() {
+        if (!referenceNumpadDigits) return;
+        window.clearTimeout(referenceNumpadHideTimeoutId);
+        referenceNumpadDigits.style.display = 'grid';
+        referenceNumpadDigits.classList.add('active');
+        referenceNumpadDigits.setAttribute('aria-hidden', 'false');
+        if (referenceNumpad) {
+          referenceNumpad.style.display = 'none';
+          referenceNumpad.classList.remove('active');
+          referenceNumpad.setAttribute('aria-hidden', 'true');
+        }
       }
 
       function hideReferenceNumpad() {
@@ -3388,6 +3602,11 @@ function createHtml(config: {
         referenceNumpad.style.display = 'none';
         referenceNumpad.classList.remove('active');
         referenceNumpad.setAttribute('aria-hidden', 'true');
+        if (referenceNumpadDigits) {
+          referenceNumpadDigits.style.display = 'none';
+          referenceNumpadDigits.classList.remove('active');
+          referenceNumpadDigits.setAttribute('aria-hidden', 'true');
+        }
       }
 
       function forceCloseReferenceNumpad(event) {
@@ -3456,6 +3675,77 @@ function createHtml(config: {
         input.setSelectionRange(newStart, newStart);
         syncReferenceValue(next);
         input.focus();
+      }
+
+      function showPurchaseSearchKeyboard() {
+        if (!purchaseSearchKeyboard) return;
+        purchaseSearchKeyboard.style.display = 'grid';
+        purchaseSearchKeyboard.classList.add('active');
+        purchaseSearchKeyboard.setAttribute('aria-hidden', 'false');
+        if (purchaseSearchNumpad) {
+          purchaseSearchNumpad.style.display = 'none';
+          purchaseSearchNumpad.classList.remove('active');
+          purchaseSearchNumpad.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      function showPurchaseSearchNumpad() {
+        if (!purchaseSearchNumpad) return;
+        purchaseSearchNumpad.style.display = 'grid';
+        purchaseSearchNumpad.classList.add('active');
+        purchaseSearchNumpad.setAttribute('aria-hidden', 'false');
+        if (purchaseSearchKeyboard) {
+          purchaseSearchKeyboard.style.display = 'none';
+          purchaseSearchKeyboard.classList.remove('active');
+          purchaseSearchKeyboard.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      function hidePurchaseSearchKeyboards() {
+        if (purchaseSearchKeyboard) {
+          purchaseSearchKeyboard.style.display = 'none';
+          purchaseSearchKeyboard.classList.remove('active');
+          purchaseSearchKeyboard.setAttribute('aria-hidden', 'true');
+        }
+        if (purchaseSearchNumpad) {
+          purchaseSearchNumpad.style.display = 'none';
+          purchaseSearchNumpad.classList.remove('active');
+          purchaseSearchNumpad.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      function insertPurchaseSearchText(text) {
+        if (!purchaseItemSearchInput || !text) return;
+        const input = purchaseItemSearchInput;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const current = input.value ?? '';
+        const next = current.slice(0, start) + text + current.slice(end);
+        input.value = next;
+        const caret = start + text.length;
+        input.setSelectionRange(caret, caret);
+        input.focus();
+      }
+
+      function deletePurchaseSearchChar() {
+        if (!purchaseItemSearchInput) return;
+        const input = purchaseItemSearchInput;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const current = input.value ?? '';
+        if (start === 0 && end === 0) return;
+        const nextStart = start === end ? Math.max(start - 1, 0) : start;
+        const next = current.slice(0, nextStart) + current.slice(end);
+        input.value = next;
+        input.setSelectionRange(nextStart, nextStart);
+        input.focus();
+      }
+
+      function submitPurchaseSearch() {
+        if (!purchaseItemSearchInput) return;
+        const value = (purchaseItemSearchInput.value ?? '').trim();
+        if (!value) return;
+        searchProductsWithScan(value);
       }
 
       // Damage note virtual keyboard (kept ASCII-clean)
@@ -4077,11 +4367,9 @@ function createHtml(config: {
       }
 
       async function fetchSuppliers() {
-        if (state.networkOffline) {
-          console.warn('Skipping supplier fetch: network offline');
-          state.suppliers = [];
-          renderSupplierOptions();
-          return;
+        const skipDirect = state.networkOffline;
+        if (skipDirect) {
+          console.warn('Supplier fetch: network offline (skipping direct Supabase queries)');
         }
 
         const loadViaRpc = async (warehouseId) => {
@@ -4128,17 +4416,44 @@ function createHtml(config: {
           return Array.isArray(data) ? data : [];
         };
 
+        const loadViaApi = async () => {
+          const response = await fetch('/api/suppliers', { credentials: 'same-origin', cache: 'no-store' });
+          if (!response.ok) {
+            const info = await response.json().catch(() => ({}));
+            const wrapped = new Error(info.error || 'suppliers api failed');
+            wrapped.status = response.status;
+            throw wrapped;
+          }
+          const payload = await response.json().catch(() => ({}));
+          return Array.isArray(payload?.suppliers) ? payload.suppliers : [];
+        };
+
+        const mergeSuppliers = (baseList, extraList) => {
+          const map = new Map();
+          (Array.isArray(baseList) ? baseList : []).forEach((supplier) => {
+            if (supplier?.id) map.set(supplier.id, supplier);
+          });
+          (Array.isArray(extraList) ? extraList : []).forEach((supplier) => {
+            if (supplier?.id && !map.has(supplier.id)) {
+              map.set(supplier.id, supplier);
+            }
+          });
+          return Array.from(map.values());
+        };
+
         let list = [];
         let lastError = null;
 
-        try {
-          list = await loadViaRpc(lockedSourceId);
-        } catch (error) {
-          lastError = error;
-          console.warn('Primary supplier fetch failed, attempting link-table fallback', error);
+        if (!skipDirect) {
+          try {
+            list = await loadViaRpc(lockedSourceId);
+          } catch (error) {
+            lastError = error;
+            console.warn('Primary supplier fetch failed, attempting link-table fallback', error);
+          }
         }
 
-        if (!list.length) {
+        if (!skipDirect && !list.length) {
           try {
             list = await loadViaLinkTable(lockedSourceId);
           } catch (error) {
@@ -4147,7 +4462,7 @@ function createHtml(config: {
           }
         }
 
-        if (!list.length) {
+        if (!skipDirect && !list.length) {
           try {
             list = await loadAllSuppliers();
           } catch (error) {
@@ -4156,7 +4471,16 @@ function createHtml(config: {
           }
         }
 
-        state.suppliers = list.filter((s) => s && s.active !== false);
+        let apiList = [];
+        try {
+          apiList = await loadViaApi();
+        } catch (error) {
+          lastError = error;
+          console.warn('Suppliers api fallback failed', error);
+        }
+
+        const merged = mergeSuppliers(list, apiList);
+        state.suppliers = merged.filter((s) => s && s.active !== false);
         renderSupplierOptions();
 
         if (!state.suppliers.length && lastError) {
@@ -4567,7 +4891,7 @@ function createHtml(config: {
           const { data, error } = await supabase
             .from('recipes')
             .select(
-              'ingredient_item_id, qty_per_unit, qty_unit, yield_qty_units, finished_variant_key, recipe_for_kind, active, ingredient:ingredient_item_id (id,name,has_variations,item_kind,default_warehouse_id,locked_from_warehouse_id,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,variants)'
+              'ingredient_item_id, qty_per_unit, qty_unit, yield_qty_units, finished_variant_key, recipe_for_kind, active, ingredient:ingredient_item_id (id,name,has_variations,item_kind,default_warehouse_id,locked_from_warehouse_id,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity)'
             )
             .eq('finished_item_id', product.id)
             .eq('active', true);
@@ -4909,6 +5233,100 @@ function createHtml(config: {
         }, 10);
       });
 
+      purchaseItemSearchInput?.addEventListener('focus', () => {
+        state.mode = 'purchase';
+        showPurchaseSearchKeyboard();
+      });
+
+      purchaseItemSearchInput?.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const value = (purchaseItemSearchInput.value ?? '').trim();
+        if (!value) return;
+        await searchProductsWithScan(value);
+        window.setTimeout(() => {
+          purchaseItemSearchInput.select();
+        }, 10);
+      });
+
+      purchaseSearchKeyboardToggle?.addEventListener('click', () => {
+        showPurchaseSearchKeyboard();
+        purchaseItemSearchInput?.focus();
+      });
+
+      purchaseSearchNumpadToggle?.addEventListener('click', () => {
+        showPurchaseSearchNumpad();
+        purchaseItemSearchInput?.focus();
+      });
+
+      purchaseSearchKeyboard?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertPurchaseSearchText(key);
+          return;
+        }
+        if (action === 'space') {
+          insertPurchaseSearchText(' ');
+          return;
+        }
+        if (action === 'delete') {
+          deletePurchaseSearchChar();
+          return;
+        }
+        if (action === 'enter') {
+          submitPurchaseSearch();
+          hidePurchaseSearchKeyboards();
+          return;
+        }
+        if (action === 'clear') {
+          if (purchaseItemSearchInput) {
+            purchaseItemSearchInput.value = '';
+            purchaseItemSearchInput.focus();
+          }
+          return;
+        }
+        if (action === 'close') {
+          hidePurchaseSearchKeyboards();
+        }
+      });
+
+      purchaseSearchNumpad?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertPurchaseSearchText(key);
+          return;
+        }
+        if (action === 'delete') {
+          deletePurchaseSearchChar();
+          return;
+        }
+        if (action === 'clear') {
+          if (purchaseItemSearchInput) {
+            purchaseItemSearchInput.value = '';
+            purchaseItemSearchInput.focus();
+          }
+          return;
+        }
+        if (action === 'enter') {
+          submitPurchaseSearch();
+          hidePurchaseSearchKeyboards();
+          return;
+        }
+        if (action === 'close') {
+          hidePurchaseSearchKeyboards();
+        }
+      });
+
       const openDamageKeyboard = (event) => {
         const pointerTriggered = event?.type === 'pointerdown';
         if (!pointerTriggered && damageKeyboardSuppressed) {
@@ -4978,8 +5396,27 @@ function createHtml(config: {
         showReferenceNumpad();
       });
 
+      referenceKeyboardToggle?.addEventListener('click', () => {
+        showReferenceNumpad();
+        purchaseReference?.focus();
+      });
+
+      referenceNumpadToggle?.addEventListener('click', () => {
+        showReferenceNumpadDigits();
+        purchaseReference?.focus();
+      });
+
+      purchaseReference?.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+        showReferenceNumpad();
+      });
+
       referenceNumpad?.addEventListener('mousedown', (event) => {
         // Prevent focus from leaving the input while clicking the on-screen keyboard.
+        event.preventDefault();
+      });
+
+      referenceNumpadDigits?.addEventListener('mousedown', (event) => {
         event.preventDefault();
       });
 
@@ -4989,15 +5426,29 @@ function createHtml(config: {
 
       document.addEventListener('pointerdown', (event) => {
         const target = event.target;
-        const interactingWithReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
-        const interactingWithReferenceNumpad = referenceNumpad?.contains(target);
+        const interactingWithReferenceInput =
+          target === purchaseReference ||
+          purchaseReference?.contains(target) ||
+          (target instanceof HTMLElement && target.closest('.reference-field'));
+        const interactingWithReferenceNumpad =
+          referenceNumpad?.contains(target) || referenceNumpadDigits?.contains(target);
+        const interactingWithPurchaseSearch =
+          target === purchaseItemSearchInput ||
+          purchaseItemSearchInput?.contains(target) ||
+          purchaseSearchKeyboard?.contains(target) ||
+          purchaseSearchNumpad?.contains(target) ||
+          (target instanceof HTMLElement && target.closest('.purchase-field-actions'));
         if (interactingWithReferenceInput || interactingWithReferenceNumpad) {
           // Keep the keyboard open while interacting with it or its source input.
           window.clearTimeout(referenceNumpadHideTimeoutId);
           showReferenceNumpad();
           return;
         }
+        if (interactingWithPurchaseSearch) {
+          return;
+        }
         hideReferenceNumpad();
+        hidePurchaseSearchKeyboards();
       });
 
       referenceNumpad?.addEventListener('click', (event) => {
@@ -5021,6 +5472,38 @@ function createHtml(config: {
         if (action === 'space') {
           insertReferenceText(' ');
           purchaseReference?.focus();
+          return;
+        }
+        if (action === 'enter') {
+          hideReferenceNumpad();
+          purchaseReference?.blur();
+          return;
+        }
+        if (action === 'delete') {
+          deleteReferenceChar();
+          return;
+        }
+        if (action === 'close') {
+          forceCloseReferenceNumpad(event);
+        }
+      });
+
+      referenceNumpadDigits?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertReferenceText(key.toUpperCase());
+          return;
+        }
+        if (!action) return;
+        if (action === 'clear') {
+          syncReferenceValue('');
+          if (purchaseReference) {
+            purchaseReference.value = '';
+            purchaseReference.focus();
+          }
           return;
         }
         if (action === 'enter') {

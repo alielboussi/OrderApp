@@ -1063,10 +1063,9 @@ fun StocktakeCountScreen(
                         val qtyKey = "${row.itemId}|$key"
                         val rowDecimals = resolveDecimals(row.itemId, key, uom)
                         val step = stepForDecimals(rowDecimals)
-                        val currentQty = dialogQty[qtyKey] ?: formatQty(row.netUnits, rowDecimals)
-                        val hasStock = (row.netUnits ?: 0.0) > 0.0
+                        val currentQty = dialogQty[qtyKey].orEmpty()
                         val openingLocked = ui.openingLockedKeys.contains(qtyKey)
-                        val entryMode = if (hasStock) "closing" else "opening"
+                        val entryMode = if (openingLocked) "closing" else "opening"
                         val isLocked = openingLocked && entryMode == "opening"
                         val fieldBorder = if (isLocked) primaryRed.copy(alpha = 0.4f) else primaryRed
                         val fieldText = if (isLocked) Color.White.copy(alpha = 0.6f) else Color.White
@@ -1195,12 +1194,12 @@ fun StocktakeCountScreen(
                         displayRows.forEach { row ->
                             val key = row.variantKey?.ifBlank { "base" } ?: "base"
                             val qtyKey = "${row.itemId}|$key"
-                            val hasStock = (row.netUnits ?: 0.0) > 0.0
-                            val entryMode = if (hasStock) "closing" else "opening"
                             val openingLocked = ui.openingLockedKeys.contains(qtyKey)
+                            val entryMode = if (openingLocked) "closing" else "opening"
                             if (openingLocked && entryMode == "opening") return@forEach
                             val rawText = (dialogQty[qtyKey] ?: "").trim()
-                            val parsed = if (rawText.isBlank()) 0.0 else rawText.toDoubleOrNull()
+                            if (rawText.isBlank()) return@forEach
+                            val parsed = rawText.toDoubleOrNull()
                             if (parsed == null || parsed < 0) {
                                 hadError = true
                                 return@forEach

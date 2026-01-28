@@ -799,25 +799,21 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
-    private data class VariantJson(
-        val key: String? = null,
-        val id: String? = null,
-        val name: String = "",
-        val sku: String? = null,
-        val cost: Double? = null,
-        @SerialName("image_url") val imageUrl: String? = null,
-        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean = true,
-        @SerialName("purchase_pack_unit") val uom: String? = null,
-        @SerialName("consumption_uom") val consumptionUom: String? = null,
-        @SerialName("units_per_purchase_pack") val packageContains: Double? = null,
-        @SerialName("stocktake_uom") val stocktakeUom: String? = null,
-        @SerialName("qty_decimal_places") val qtyDecimalPlaces: Int? = null
-    )
-
-    @Serializable
-    private data class CatalogItemVariantsDto(
+    private data class CatalogVariantRow(
         val id: String,
-        val variants: List<VariantJson>? = null
+        @SerialName("item_id") val itemId: String,
+        val name: String? = null,
+        @SerialName("item_kind") val itemKind: String? = null,
+        @SerialName("purchase_pack_unit") val purchasePackUnit: String? = null,
+        @SerialName("consumption_uom") val consumptionUom: String? = null,
+        @SerialName("stocktake_uom") val stocktakeUom: String? = null,
+        @SerialName("qty_decimal_places") val qtyDecimalPlaces: Int? = null,
+        val cost: Double? = null,
+        @SerialName("units_per_purchase_pack") val unitsPerPurchasePack: Double? = null,
+        val sku: String? = null,
+        @SerialName("outlet_order_visible") val outletOrderVisible: Boolean? = null,
+        @SerialName("image_url") val imageUrl: String? = null,
+        val active: Boolean? = null
     )
 
     @Serializable
@@ -1111,7 +1107,7 @@ class SupabaseProvider(context: Context) {
         val url = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,variants,consumption_unit,consumption_uom")
+            append("?select=id,name,consumption_unit,consumption_uom")
             append("&id=in.(")
             append(idFilter)
             append(")")
@@ -1123,7 +1119,47 @@ class SupabaseProvider(context: Context) {
         val code = resp.status.value
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("catalog_items meta failed: HTTP $code $txt")
-        return relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), txt)
+        val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), txt)
+
+        val variantsByItem = fetchCatalogVariantsLite(jwt, ids)
+        return items.map { item ->
+            val variants = variantsByItem[item.id].orEmpty()
+            item.copy(variants = variants)
+        }
+    }
+
+    private suspend fun fetchCatalogVariantsLite(jwt: String, itemIds: List<String>): Map<String, List<CatalogVariantLite>> {
+        if (itemIds.isEmpty()) return emptyMap()
+        val idFilter = itemIds.joinToString(",") { it }
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/catalog_variants")
+            append("?select=id,item_id,name,item_kind,active")
+            append("&item_id=in.(")
+            append(idFilter)
+            append(")")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("catalog_variants meta failed: HTTP $code $txt")
+        val rows = relaxedJson.decodeFromString(ListSerializer(CatalogVariantRow.serializer()), txt)
+        return rows
+            .filter { it.active != false }
+            .groupBy { it.itemId }
+            .mapValues { (_, variants) ->
+                variants.map { variant ->
+                    CatalogVariantLite(
+                        key = variant.id,
+                        id = variant.id,
+                        name = variant.name,
+                        itemKind = variant.itemKind
+                    )
+                }
+            }
     }
 
     suspend fun listWarehouses(jwt: String): List<Warehouse> {
@@ -1478,43 +1514,40 @@ class SupabaseProvider(context: Context) {
     }
 
     suspend fun listVariationsForProduct(jwt: String, productId: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/catalog_items?id=eq.$productId&select=id,variants&limit=1"
+        val url = "$supabaseUrl/rest/v1/catalog_variants?item_id=eq.$productId&select=id,item_id,name,image_url,purchase_pack_unit,consumption_uom,stocktake_uom,qty_decimal_places,cost,units_per_purchase_pack,sku,outlet_order_visible,active"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        val items = relaxedJson
-            .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
-        val item = items.firstOrNull() ?: return emptyList()
-        return item.variants.orEmpty().mapNotNull { toSimpleVariation(productId, it) }
+        val rows = relaxedJson.decodeFromString(ListSerializer(CatalogVariantRow.serializer()), txt)
+        return rows
+            .filter { it.active != false }
+            .mapNotNull { toSimpleVariation(it) }
     }
 
     suspend fun listAllVariations(jwt: String): List<SimpleVariation> {
-        val url = "$supabaseUrl/rest/v1/catalog_items?select=id,variants&order=name.asc"
+        val url = "$supabaseUrl/rest/v1/catalog_variants?select=id,item_id,name,image_url,purchase_pack_unit,consumption_uom,stocktake_uom,qty_decimal_places,cost,units_per_purchase_pack,sku,outlet_order_visible,active"
         val resp = http.get(url) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
         val txt = resp.bodyAsText()
-        val items = relaxedJson
-            .decodeFromString(ListSerializer(CatalogItemVariantsDto.serializer()), txt)
-        return items.flatMap { item ->
-            item.variants.orEmpty().mapNotNull { variant -> toSimpleVariation(item.id, variant) }
-        }
+        val rows = relaxedJson.decodeFromString(ListSerializer(CatalogVariantRow.serializer()), txt)
+        return rows
+            .filter { it.active != false }
+            .mapNotNull { toSimpleVariation(it) }
     }
 
-    private fun toSimpleVariation(productId: String, variant: VariantJson): SimpleVariation? {
-        val keyValue = variant.key?.trim().takeUnless { it.isNullOrEmpty() }
-        val idValue = variant.id?.trim().takeUnless { it.isNullOrEmpty() }
-        val identifier = idValue ?: keyValue ?: return null
-        val uom = variant.uom ?: "unit"
-        val consumption = variant.consumptionUom ?: variant.uom ?: "each"
-        val name = variant.name.ifBlank { "Base" }
+    private fun toSimpleVariation(variant: CatalogVariantRow): SimpleVariation? {
+        val identifier = variant.id.trim().takeUnless { it.isEmpty() } ?: return null
+        val uom = variant.purchasePackUnit ?: "unit"
+        val consumption = variant.consumptionUom ?: variant.purchasePackUnit ?: "each"
+        val name = variant.name?.ifBlank { "Base" } ?: "Base"
         return SimpleVariation(
             id = identifier,
-            key = keyValue ?: idValue,
-            productId = productId,
+            key = identifier,
+            productId = variant.itemId,
             name = name,
             imageUrl = variant.imageUrl,
             uom = uom,
@@ -1522,9 +1555,9 @@ class SupabaseProvider(context: Context) {
             stocktakeUom = variant.stocktakeUom,
             qtyDecimalPlaces = variant.qtyDecimalPlaces,
             cost = variant.cost,
-            packageContains = variant.packageContains,
+            packageContains = variant.unitsPerPurchasePack,
             sku = variant.sku,
-            outletOrderVisible = variant.outletOrderVisible
+            outletOrderVisible = variant.outletOrderVisible ?: true
         )
     }
 
@@ -1810,7 +1843,7 @@ class SupabaseProvider(context: Context) {
         val itemsUrl = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,item_kind,image_url,has_recipe,active,variants")
+            append("?select=id,name,item_kind,image_url,has_recipe,active")
             append("&id=in.(").append(idFilter).append(")")
         }
         val itemsResp = http.get(itemsUrl) {
@@ -1822,10 +1855,11 @@ class SupabaseProvider(context: Context) {
         if (itemsCode !in 200..299) throw IllegalStateException("catalog_items failed: HTTP $itemsCode $itemsTxt")
         val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), itemsTxt)
         val itemMap = items.associateBy { it.id }
+        val variantsByItem = fetchCatalogVariantsLite(jwt, ids)
 
-        fun variantKind(item: CatalogItemLite, variantKey: String?): String? {
+        fun variantKind(itemId: String, variantKey: String?): String? {
             val key = variantKey?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: "base"
-            val variant = item.variants?.firstOrNull { v ->
+            val variant = variantsByItem[itemId]?.firstOrNull { v ->
                 val vKey = v.key?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: v.id?.trim()?.lowercase()
                 vKey == key
             }
@@ -1834,7 +1868,7 @@ class SupabaseProvider(context: Context) {
 
         return outletRows.mapNotNull { row ->
             val item = itemMap[row.itemId] ?: return@mapNotNull null
-            val effectiveKind = variantKind(item, row.variantKey) ?: item.itemKind
+            val effectiveKind = variantKind(item.id, row.variantKey) ?: item.itemKind
             WarehouseStockItem(
                 itemId = row.itemId,
                 itemName = item.name,
@@ -1875,7 +1909,7 @@ class SupabaseProvider(context: Context) {
         val itemsUrl = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,item_kind,image_url,has_recipe,active,variants")
+            append("?select=id,name,item_kind,image_url,has_recipe,active")
             append("&id=in.(").append(idFilter).append(")")
         }
         val itemsResp = http.get(itemsUrl) {
@@ -1887,10 +1921,11 @@ class SupabaseProvider(context: Context) {
         if (itemsCode !in 200..299) throw IllegalStateException("catalog_items failed: HTTP $itemsCode $itemsTxt")
         val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), itemsTxt)
         val itemMap = items.associateBy { it.id }
+        val variantsByItem = fetchCatalogVariantsLite(jwt, ids)
 
-        fun variantKind(item: CatalogItemLite, variantKey: String?): String? {
+        fun variantKind(itemId: String, variantKey: String?): String? {
             val key = variantKey?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: "base"
-            val variant = item.variants?.firstOrNull { v ->
+            val variant = variantsByItem[itemId]?.firstOrNull { v ->
                 val vKey = v.key?.trim()?.lowercase().takeIf { !it.isNullOrBlank() } ?: v.id?.trim()?.lowercase()
                 vKey == key
             }
@@ -1899,7 +1934,7 @@ class SupabaseProvider(context: Context) {
 
         return routeRows.mapNotNull { row ->
             val item = itemMap[row.itemId] ?: return@mapNotNull null
-            val effectiveKind = variantKind(item, row.variantKey) ?: item.itemKind
+            val effectiveKind = variantKind(item.id, row.variantKey) ?: item.itemKind
             WarehouseStockItem(
                 itemId = row.itemId,
                 itemName = item.name,
@@ -1917,7 +1952,7 @@ class SupabaseProvider(context: Context) {
         val url = buildString {
             append(supabaseUrl)
             append("/rest/v1/catalog_items")
-            append("?select=id,name,item_kind,image_url,has_recipe,active,variants")
+            append("?select=id,name,item_kind,image_url,has_recipe,active")
             append("&active=eq.true")
         }
         val resp = http.get(url) {
@@ -1928,6 +1963,7 @@ class SupabaseProvider(context: Context) {
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("catalog_items list failed: HTTP $code $txt")
         val items = relaxedJson.decodeFromString(ListSerializer(CatalogItemLite.serializer()), txt)
+        val variantsByItem = fetchCatalogVariantsLite(jwt, items.map { it.id })
 
         val results = mutableListOf<WarehouseStockItem>()
         items
@@ -1962,7 +1998,7 @@ class SupabaseProvider(context: Context) {
                     )
                 }
 
-                item.variants.orEmpty().forEach { variant ->
+                variantsByItem[item.id].orEmpty().forEach { variant ->
                     val key = variant.key?.trim().takeUnless { it.isNullOrEmpty() }
                         ?: variant.id?.trim().takeUnless { it.isNullOrEmpty() }
                     val normalized = key?.lowercase()

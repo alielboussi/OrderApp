@@ -365,26 +365,33 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
-        const { data, error } = await supabase
-          .from("catalog_items")
-          .select("id,variants,consumption_unit,consumption_uom")
-          .in("id", ids);
+        const [{ data: itemData, error: itemError }, { data: variantData, error: variantError }] = await Promise.all([
+          supabase.from("catalog_items").select("id,consumption_unit,consumption_uom").in("id", ids),
+          supabase.from("catalog_variants").select("id,item_id,name,active").in("item_id", ids),
+        ]);
 
-        if (error) throw error;
+        if (itemError) throw itemError;
+        if (variantError) throw variantError;
         if (!active) return;
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
-        (data || []).forEach((row) => {
+        (itemData || []).forEach((row) => {
           const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? "each";
           if (row.id) uomMap[row.id] = fallbackUom;
-          const variants = Array.isArray(row.variants) ? row.variants : [];
-          variants.forEach((variant: { id?: string; key?: string; name?: string }) => {
-            const name = variant?.name?.trim();
-            if (!name) return;
-            if (variant?.id) map[variant.id] = name;
-            if (variant?.key) map[variant.key] = name;
-          });
+        });
+
+        const normalizeVariantKey = (value?: string | null) => {
+          const trimmed = value?.trim();
+          return trimmed && trimmed.length ? trimmed : "base";
+        };
+
+        (variantData || []).forEach((variant) => {
+          if (variant?.active === false) return;
+          const name = variant?.name?.trim();
+          if (!name || !variant?.id) return;
+          map[variant.id] = name;
+          map[normalizeVariantKey(variant.id)] = name;
         });
 
         setVariantNames(map);

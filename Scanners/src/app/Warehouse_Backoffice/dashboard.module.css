@@ -136,6 +136,7 @@
 .pauseCard { border-color: rgba(251, 113, 133, 0.6); box-shadow: 0 18px 38px rgba(251, 113, 133, 0.22); }
 .bulkCard { border-color: rgba(147, 51, 234, 0.6); box-shadow: 0 18px 38px rgba(147, 51, 234, 0.24); }
 .stockReportsCard { border-color: rgba(16, 185, 129, 0.6); box-shadow: 0 18px 38px rgba(16, 185, 129, 0.24); }
+.suppliersCard { border-color: rgba(248, 113, 113, 0.55); box-shadow: 0 18px 38px rgba(248, 113, 113, 0.22); }
 
 .cardTitle {
   font-size: 15px;
@@ -174,6 +175,10 @@
 
 .stockReportsTitle {
   color: #6ee7b7;
+}
+
+.suppliersTitle {
+  color: #fca5a5;
 }
 
 .reportsTitle {

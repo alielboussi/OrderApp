@@ -23,6 +23,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToReports = () => router.push("/Warehouse_Backoffice/reports");
   const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
+  const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
 
   useEffect(() => {
     if (status !== "ok") {
@@ -168,6 +169,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToVariantBulkUpdate} className={`${styles.actionCard} ${styles.bulkCard}`}>
             <p className={`${styles.cardTitle} ${styles.bulkTitle}`}>Bulk Variant Update</p>
             <p className={styles.cardBody}>Apply a single value to multiple variants in one step.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToSuppliers} className={`${styles.actionCard} ${styles.suppliersCard}`}>
+            <p className={`${styles.cardTitle} ${styles.suppliersTitle}`}>Suppliers</p>
+            <p className={styles.cardBody}>Create supplier contacts for purchase intake and scanner logs.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

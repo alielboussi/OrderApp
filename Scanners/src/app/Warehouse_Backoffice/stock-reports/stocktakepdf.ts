@@ -150,6 +150,8 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
             margin-top: 12px;
             border: 2px solid #b91c1c;
           }
+          thead { display: table-header-group; }
+          tfoot { display: table-row-group; }
           th, td {
             border-bottom: 1px solid #f2b6b6;
             padding: 10px 8px;
@@ -190,6 +192,7 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
             <div class="subheader">
               <div><strong>Warehouse:</strong> ${escapeHtml(warehouseText)}</div>
               <div><strong>Period:</strong> ${escapeHtml(periodText)}</div>
+              <div><strong>Rows:</strong> ${rows.length.toLocaleString()}</div>
             </div>
             <table>
               <thead>
