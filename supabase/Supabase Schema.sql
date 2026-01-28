@@ -4598,6 +4598,18 @@
           "roles": [
             "authenticated"
           ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_warehouses",
+          "policy_name": "outlet_warehouses_select_backoffice",
+          "table_schema": "public",
+          "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
           "command": "ALL",
           "permissive": "PERMISSIVE",
           "table_name": "outlets",
@@ -4946,6 +4958,18 @@
           "roles": [
             "authenticated"
           ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouse_stock_periods",
+          "policy_name": "warehouse_stock_periods_select_backoffice",
+          "table_schema": "public",
+          "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
           "command": "ALL",
           "permissive": "PERMISSIVE",
           "table_name": "warehouse_transfer_items",
@@ -4977,6 +5001,18 @@
           "table_schema": "public",
           "using_expression": "is_admin(auth.uid())",
           "with_check_expression": "is_admin(auth.uid())"
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouses",
+          "policy_name": "warehouses_select_backoffice",
+          "table_schema": "public",
+          "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+          "with_check_expression": null
         },
         {
           "roles": [

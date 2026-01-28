@@ -19,7 +19,7 @@ type StockPeriod = {
   closed_at: string | null;
   note: string | null;
   stocktake_number: string | null;
-  outlets?: { name: string | null } | null;
+  outlets?: Array<{ name: string | null }> | null;
 };
 
 type WhoAmIRoles = { outlets: Array<{ outlet_id: string; outlet_name: string }> | null };
@@ -288,7 +288,7 @@ export default function StockReportsPage() {
                 {openPeriods.map((period) => (
                   <article key={period.id} className={styles.card}>
                     <h3 className={styles.cardTitle}>{period.stocktake_number || period.id.slice(0, 8)}</h3>
-                    <p className={styles.cardMeta}>Outlet: {period.outlets?.name || "—"}</p>
+                    <p className={styles.cardMeta}>Outlet: {period.outlets?.[0]?.name || "—"}</p>
                     <p className={styles.cardMeta}>Status: {period.status}</p>
                     <p className={styles.cardMeta}>Opened: {formatStamp(period.opened_at)}</p>
                     <p className={styles.cardMeta}>Closed: {formatStamp(period.closed_at)}</p>
@@ -306,7 +306,7 @@ export default function StockReportsPage() {
                 {closedPeriods.map((period) => (
                   <article key={period.id} className={styles.card}>
                     <h3 className={styles.cardTitle}>{period.stocktake_number || period.id.slice(0, 8)}</h3>
-                    <p className={styles.cardMeta}>Outlet: {period.outlets?.name || "—"}</p>
+                    <p className={styles.cardMeta}>Outlet: {period.outlets?.[0]?.name || "—"}</p>
                     <p className={styles.cardMeta}>Status: {period.status}</p>
                     <p className={styles.cardMeta}>Opened: {formatStamp(period.opened_at)}</p>
                     <p className={styles.cardMeta}>Closed: {formatStamp(period.closed_at)}</p>
