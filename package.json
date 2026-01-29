@@ -1,7 +1,9 @@
 {
   "name": "afterten-orderapp",
   "private": true,
-  "workspaces": ["Scanners"],
+  "workspaces": [
+    "Scanners"
+  ],
   "scripts": {
     "dev": "npm run dev --workspace Scanners",
     "build": "npm run build --workspace Scanners",
@@ -11,6 +13,7 @@
   },
   "devDependencies": {
     "babel-plugin-react-compiler": "1.0.0",
-    "next": "16.0.7"
+    "baseline-browser-mapping": "^2.9.19",
+    "next": "^16.1.6"
   }
 }
