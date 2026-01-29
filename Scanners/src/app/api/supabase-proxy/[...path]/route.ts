@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const PROJECT_URL = process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? "";
 const ANON_KEY = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ?? "";
@@ -22,7 +22,7 @@ function stripHopByHopHeaders(headers: Headers) {
   return cloned;
 }
 
-async function proxy(request: Request, params: { path?: string[] } | Promise<{ path?: string[] }>) {
+async function proxy(request: NextRequest, params: Promise<{ path: string[] }>) {
   if (!PROJECT_URL) {
     return NextResponse.json({ error: "Supabase URL is not configured" }, { status: 500 });
   }
@@ -69,26 +69,26 @@ async function proxy(request: Request, params: { path?: string[] } | Promise<{ p
   });
 }
 
-export async function GET(request: Request, context: { params: { path?: string[] } }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return proxy(request, context.params);
 }
 
-export async function POST(request: Request, context: { params: { path?: string[] } }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return proxy(request, context.params);
 }
 
-export async function PUT(request: Request, context: { params: { path?: string[] } }) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return proxy(request, context.params);
 }
 
-export async function PATCH(request: Request, context: { params: { path?: string[] } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return proxy(request, context.params);
 }
 
-export async function DELETE(request: Request, context: { params: { path?: string[] } }) {
+export async function DELETE(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return proxy(request, context.params);
 }
 
-export async function OPTIONS(request: Request, context: { params: { path?: string[] } }) {
+export async function OPTIONS(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return proxy(request, context.params);
 }
