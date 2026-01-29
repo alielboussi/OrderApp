@@ -284,6 +284,13 @@ function createHtml(config: {
       flex-direction: column;
       gap: 10px;
     }
+    .console-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .logout-button {
+      min-width: 140px;
+    }
     .console-sticky .brand-header {
       margin-bottom: 4px;
     }
@@ -889,34 +896,34 @@ function createHtml(config: {
     .purchase-inline-keyboard {
       position: fixed;
       left: 50%;
-      bottom: 140px;
-      top: auto;
-      transform: translateX(-50%);
-      width: min(620px, calc(100vw - 32px));
-      max-width: 620px;
+      top: 90px !important;
+      bottom: auto !important;
+      transform: translateX(-50%) !important;
+      width: min(520px, calc(100vw - 32px));
+      max-width: 520px;
       z-index: 35;
     }
     .purchase-inline-numpad {
       position: fixed;
       left: 50%;
-      bottom: 140px;
-      top: auto;
-      transform: translateX(-50%);
+      top: 90px !important;
+      bottom: auto !important;
+      transform: translateX(-50%) !important;
       z-index: 60;
     }
     .purchase-inline-keyboard {
-      padding: 12px;
-      gap: 8px;
+      padding: 8px;
+      gap: 6px;
     }
     .purchase-inline-keyboard button {
-      min-height: 46px;
-      font-size: 0.95rem;
-      padding: 10px 8px;
+      min-height: 38px;
+      font-size: 0.82rem;
+      padding: 8px 6px;
     }
     .purchase-inline-numpad button {
-      min-height: 44px;
-      font-size: 0.95rem;
-      padding: 10px 8px;
+      min-height: 38px;
+      font-size: 0.82rem;
+      padding: 8px 6px;
     }
     .purchase-timestamp-hint {
       margin: 0;
@@ -1424,6 +1431,9 @@ function createHtml(config: {
         <header class="console-headline">
           <h1>Warehouse Transfer Console</h1>
         </header>
+        <div class="console-actions">
+          <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
+        </div>
         <article class="panel route-locker">
           <div class="two-cols">
             <div class="locked-pill">
@@ -1769,6 +1779,7 @@ function createHtml(config: {
           <div class="purchase-actions">
             <a id="purchase-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
+            <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
           </div>
         </div>
       </form>
@@ -1874,6 +1885,7 @@ function createHtml(config: {
           <div class="damage-actions">
             <a id="damage-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
+            <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
           </div>
         </div>
       </form>
@@ -1883,8 +1895,16 @@ function createHtml(config: {
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
   <script>
     (function () {
-    const SUPABASE_URL = ${JSON.stringify(PROJECT_URL)};
+    const SUPABASE_URL_RAW = ${JSON.stringify(PROJECT_URL)};
     const SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY)};
+    const SUPABASE_PROXY_PATH = '/api/supabase-proxy';
+    const SUPABASE_URL = (() => {
+      const host = window.location.hostname;
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return window.location.origin + SUPABASE_PROXY_PATH;
+      }
+      return SUPABASE_URL_RAW;
+    })();
     const STOCK_VIEW_NAME = ${JSON.stringify(STOCK_VIEW_NAME)};
     const MULTIPLY_QTY_BY_PACKAGE = ${JSON.stringify(MULTIPLY_QTY_BY_PACKAGE)};
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
@@ -2147,6 +2167,7 @@ function createHtml(config: {
       const operatorPasswordInput = document.getElementById('operator-passcode-input');
       const operatorModalError = document.getElementById('operator-modal-error');
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
+      const logoutButtons = document.querySelectorAll('[data-logout="true"]');
 
       const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
 
@@ -3317,6 +3338,24 @@ function createHtml(config: {
           showResult(formatOperatorLabel(context) + ' locked.', false);
         }
         syncDestinationPillLabel();
+      }
+
+      async function handleLogout() {
+        clearOperatorSession('transfer', false);
+        clearOperatorSession('purchase', false);
+        clearOperatorSession('damage', false);
+        state.session = null;
+        state.operatorProfile = null;
+        try {
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.warn('Logout failed', error);
+        }
+        showResult('Logged out.', false);
+        applyViewState('transfer');
+        window.setTimeout(() => {
+          window.location.href = window.location.pathname;
+        }, 50);
       }
 
       function setOperatorSession(context, operator) {
@@ -5677,6 +5716,13 @@ function createHtml(config: {
       operatorModalCancel?.addEventListener('click', (event) => {
         event.preventDefault();
         cancelPendingOperatorSelection();
+      });
+
+      logoutButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          handleLogout();
+        });
       });
 
       loginWedge?.addEventListener('input', () => {
