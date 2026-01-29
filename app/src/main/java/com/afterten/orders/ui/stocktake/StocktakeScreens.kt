@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -825,6 +826,8 @@ fun StocktakeCountScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundBlack)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -971,8 +974,9 @@ fun StocktakeCountScreen(
                     variantDialogOpen = true
                 },
                 modifier = Modifier
+                    .padding(4.dp)
                     .fillMaxWidth()
-                    .aspectRatio(1f),
+                    .aspectRatio(0.95f),
                 colors = ButtonDefaults.buttonColors(containerColor = surfaceBlack, contentColor = Color.White),
                 border = BorderStroke(1.dp, primaryRed),
                 shape = RoundedCornerShape(12.dp)
@@ -1087,6 +1091,8 @@ fun StocktakeCountScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundBlack)
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -1126,7 +1132,7 @@ fun StocktakeCountScreen(
                 val verticalSpacing = 12.dp
                 val columns = 2
                 val availableWidth = (configuration.screenWidthDp.dp - 32.dp).coerceAtLeast(0.dp)
-                val cardSize = (availableWidth - horizontalSpacing) / columns
+                val cardSize = ((availableWidth - horizontalSpacing) / columns) * 0.94f
                 val imageSize = minOf(140.dp, cardSize * 0.4f)
 
                 LazyVerticalGrid(

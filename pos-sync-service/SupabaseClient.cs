@@ -150,36 +150,48 @@ public sealed class SupabaseClient
     public async Task<bool> IsSyncPausedAsync(CancellationToken cancellationToken)
     {
         var client = CreateClient();
-        var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/rest/v1/counter_values?select=last_value&counter_key=eq.pos_sync_paused&scope_id=eq.{GlobalScopeId}"
-        );
+        var scopeIds = _outlet.Id == Guid.Empty
+            ? new[] { GlobalScopeId }
+            : new[] { GlobalScopeId, _outlet.Id };
 
         try
         {
-            var response = await client.SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            foreach (var scopeId in scopeIds)
             {
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Supabase pause flag check failed {Status}: {Body}", (int)response.StatusCode, body);
-                return true;
+                var request = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"/rest/v1/counter_values?select=last_value&counter_key=eq.pos_sync_paused&scope_id=eq.{scopeId}"
+                );
+
+                var response = await client.SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogWarning("Supabase pause flag check failed {Status}: {Body}", (int)response.StatusCode, body);
+                    return true;
+                }
+
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+                {
+                    continue;
+                }
+
+                var entry = doc.RootElement[0];
+                if (!entry.TryGetProperty("last_value", out var lastValueProp))
+                {
+                    continue;
+                }
+
+                var lastValue = lastValueProp.GetInt64();
+                if (lastValue > 0)
+                {
+                    return true;
+                }
             }
 
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
-            {
-                return true;
-            }
-
-            var entry = doc.RootElement[0];
-            if (!entry.TryGetProperty("last_value", out var lastValueProp))
-            {
-                return true;
-            }
-
-            var lastValue = lastValueProp.GetInt64();
-            return lastValue > 0;
+            return false;
         }
         catch (Exception ex)
         {
