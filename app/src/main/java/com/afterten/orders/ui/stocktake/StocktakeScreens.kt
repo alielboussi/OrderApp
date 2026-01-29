@@ -698,8 +698,6 @@ fun StocktakeCountScreen(
     val backgroundBlack = Color(0xFF0B0B0B)
     val surfaceBlack = Color(0xFF121212)
     val warehouseLabel = ui.warehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name ?: "Warehouse"
-    val outletNames = ui.selectedWarehouseOutlets.mapNotNull { it.name.ifBlank { null } }
-    val outletLabel = if (outletNames.isEmpty()) "None" else outletNames.joinToString(", ")
     val outlinedFieldColors = TextFieldDefaults.colors(
         focusedIndicatorColor = primaryRed,
         unfocusedIndicatorColor = primaryRed,
@@ -881,13 +879,6 @@ fun StocktakeCountScreen(
                         "Warehouse: $warehouseLabel",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.85f)
-                    )
-                    Text(
-                        "Linked outlets: $outletLabel",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.85f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         "Tap an ingredient, variant group, or recipe item to enter counts.",

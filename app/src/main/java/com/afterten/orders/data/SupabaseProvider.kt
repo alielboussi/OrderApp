@@ -1049,22 +1049,55 @@ class SupabaseProvider(context: Context) {
         if (unique.isEmpty()) return emptyList()
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
-        val url = buildString {
-            append(supabaseUrl)
-            append("/rest/v1/outlet_warehouses?select=warehouse_id,show_in_stocktake&outlet_id=in.$encoded")
-            if (showInStocktakeOnly) {
-                append("&show_in_stocktake=eq.true")
+
+        fun fetchMappings(includeStocktakeFilter: Boolean): List<OutletWarehouseMapRow> {
+            val url = buildString {
+                append(supabaseUrl)
+                append("/rest/v1/outlet_warehouses?select=warehouse_id,show_in_stocktake&outlet_id=in.$encoded")
+                if (includeStocktakeFilter) {
+                    append("&show_in_stocktake=eq.true")
+                }
             }
+            val resp = http.get(url) {
+                header("apikey", supabaseAnonKey)
+                header(HttpHeaders.Authorization, "Bearer $jwt")
+            }
+            val code = resp.status.value
+            val txt = resp.bodyAsText()
+            if (code !in 200..299) throw IllegalStateException("listWarehouseIdsForOutlets failed: HTTP $code $txt")
+            return relaxedJson.decodeFromString(ListSerializer(OutletWarehouseMapRow.serializer()), txt)
         }
-        val resp = http.get(url) {
+
+        val rows = fetchMappings(showInStocktakeOnly)
+        val mappedIds = rows.mapNotNull { it.warehouseId?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+        if (mappedIds.isNotEmpty()) return mappedIds
+
+        if (showInStocktakeOnly) {
+            val anyRows = fetchMappings(false)
+            if (anyRows.isNotEmpty()) return emptyList()
+        }
+
+        val outletUrl = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/outlets")
+            append("?select=default_sales_warehouse_id,default_receiving_warehouse_id")
+            append("&id=in.")
+            append(encoded)
+        }
+        val outletResp = http.get(outletUrl) {
             header("apikey", supabaseAnonKey)
             header(HttpHeaders.Authorization, "Bearer $jwt")
         }
-        val code = resp.status.value
-        val txt = resp.bodyAsText()
-        if (code !in 200..299) throw IllegalStateException("listWarehouseIdsForOutlets failed: HTTP $code $txt")
-        val rows = relaxedJson.decodeFromString(ListSerializer(OutletWarehouseMapRow.serializer()), txt)
-        return rows.mapNotNull { it.warehouseId?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+        val outletCode = outletResp.status.value
+        val outletTxt = outletResp.bodyAsText()
+        if (outletCode !in 200..299) throw IllegalStateException("listWarehouseIdsForOutlets outlets fallback failed: HTTP $outletCode $outletTxt")
+        val defaultRows = relaxedJson.decodeFromString(ListSerializer(OutletDefaultsRow.serializer()), outletTxt)
+        return defaultRows
+            .flatMap { row ->
+                listOf(row.defaultSalesWarehouseId, row.defaultReceivingWarehouseId)
+            }
+            .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            .distinct()
     }
 
     suspend fun listOutletsForWarehouse(

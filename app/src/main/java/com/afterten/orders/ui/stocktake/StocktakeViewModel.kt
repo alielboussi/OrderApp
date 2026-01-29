@@ -139,7 +139,7 @@ class StocktakeViewModel(
             fun summarize(t: Throwable?): String? = t?.message?.take(140)
             val errorMessage = when {
                 whErr != null -> "Unable to load warehouses: ${summarize(whErr) ?: "unknown error"}"
-                warehouses.isEmpty() -> "No mapped warehouses found for your outlet."
+                warehouses.isEmpty() -> "No mapped warehouses found."
                 else -> null
             }
 
