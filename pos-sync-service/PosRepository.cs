@@ -11,14 +11,17 @@ public sealed class PosRepository
 {
     private readonly PosDbOptions _options;
     private readonly OutletOptions _outlet;
+    private readonly SyncOptions _syncOptions;
     private readonly ILogger<PosRepository> _logger;
 
     public PosRepository(IOptions<PosDbOptions> options,
                          IOptions<OutletOptions> outlet,
+                         IOptions<SyncOptions> syncOptions,
                          ILogger<PosRepository> logger)
     {
         _options = options.Value;
         _outlet = outlet.Value;
+        _syncOptions = syncOptions.Value;
         _logger = logger;
     }
 
@@ -48,7 +51,8 @@ SELECT TOP (@Batch)
     s.branchid    AS BranchId
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
-WHERE bt.uploadStatus IS NULL OR bt.uploadStatus = 'Pending'
+WHERE (bt.uploadStatus IS NULL OR bt.uploadStatus = 'Pending')
+    AND (@MinDate IS NULL OR s.Date >= @MinDate)
 ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
@@ -61,6 +65,8 @@ ORDER BY bt.id ASC;";
             CommandType = CommandType.Text
         };
         cmd.Parameters.AddWithValue("@Batch", batchSize);
+        var minDate = _syncOptions.MinSaleDateUtc?.Date;
+        cmd.Parameters.AddWithValue("@MinDate", (object?)minDate ?? DBNull.Value);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

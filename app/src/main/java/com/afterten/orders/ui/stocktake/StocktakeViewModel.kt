@@ -79,6 +79,13 @@ class StocktakeViewModel(
         val generatedAt: String
     )
 
+    data class CountInput(
+        val itemId: String,
+        val qty: Double,
+        val variantKey: String,
+        val kind: String
+    )
+
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
@@ -99,7 +106,16 @@ class StocktakeViewModel(
                     addAll(repo.listWhoamiOutlets(jwt).mapNotNull { it.outletId.takeIf(String::isNotBlank) })
                 }
             }
+            Log.d(TAG, "stocktake fetchWarehouses outlets=${outletIds.size} ids=$outletIds")
+            if (outletIds.isEmpty()) {
+                Log.e(TAG, "stocktake fetchWarehouses: no outlet ids from session or whoami.")
+            }
             val warehouseIds = repo.listWarehouseIdsForOutlets(jwt, outletIds, true)
+            if (warehouseIds.isEmpty()) {
+                Log.w(TAG, "stocktake fetchWarehouses: outlet_warehouses returned 0 rows (RLS or missing mappings).")
+            } else {
+                Log.d(TAG, "stocktake fetchWarehouses warehouses=${warehouseIds.size} ids=$warehouseIds")
+            }
             repo.listWarehousesByIds(jwt, warehouseIds)
         }
         val warehouses = result.getOrElse { emptyList<SupabaseProvider.Warehouse>() }
@@ -110,10 +126,12 @@ class StocktakeViewModel(
     fun bindSession(session: OutletSession?) {
         this.session = session
         if (session == null) {
+            Log.e(TAG, "stocktake bindSession: session is null")
             _ui.value = UiState()
             return
         }
         viewModelScope.launch {
+            Log.e(TAG, "stocktake bindSession: start user=${session.userId} outlet=${session.outletId}")
             pushDebug("bindSession: start")
             _ui.value = _ui.value.copy(loading = true, error = null)
 
@@ -133,6 +151,7 @@ class StocktakeViewModel(
             if (warehouses.isNotEmpty()) {
                 pushDebug("Warehouses loaded count=${warehouses.size}")
             } else {
+                Log.e(TAG, "stocktake: No mapped warehouses returned")
                 pushDebug("No mapped warehouses returned")
             }
 
@@ -258,8 +277,15 @@ class StocktakeViewModel(
         val jwt = session?.token ?: return
         val periodId = _ui.value.openPeriod?.id ?: return
         val warehouseId = _ui.value.selectedWarehouseId ?: return
+        val normalizedVariant = variantKey.ifBlank { "base" }
+        val key = "${itemId}|${normalizedVariant}"
         pushDebug("recordCount period=$periodId item=$itemId qty=$qty variant=$variantKey kind=$kind")
-        _ui.value = _ui.value.copy(loading = true, error = null)
+        _ui.value = _ui.value.copy(
+            loading = true,
+            error = null,
+            openingLockedKeys = if (kind == "opening") _ui.value.openingLockedKeys + key else _ui.value.openingLockedKeys,
+            closingLockedKeys = if (kind == "closing") _ui.value.closingLockedKeys + key else _ui.value.closingLockedKeys
+        )
         viewModelScope.launch {
             runCatching { repo.recordCount(jwt, periodId, itemId, qty, variantKey, kind) }
                 .onSuccess { count ->
@@ -275,6 +301,44 @@ class StocktakeViewModel(
                     pushDebug("recordCount failed: ${err.message}")
                     _ui.value = _ui.value.copy(loading = false, error = null)
                 }
+        }
+    }
+
+    fun recordCountsBatch(entries: List<CountInput>) {
+        if (entries.isEmpty()) return
+        val jwt = session?.token ?: return
+        val periodId = _ui.value.openPeriod?.id ?: return
+        val warehouseId = _ui.value.selectedWarehouseId ?: return
+        val openingKeys = entries
+            .filter { it.kind == "opening" }
+            .map { "${it.itemId}|${it.variantKey.ifBlank { "base" }}" }
+        val closingKeys = entries
+            .filter { it.kind == "closing" }
+            .map { "${it.itemId}|${it.variantKey.ifBlank { "base" }}" }
+        _ui.value = _ui.value.copy(
+            loading = true,
+            error = null,
+            openingLockedKeys = _ui.value.openingLockedKeys + openingKeys,
+            closingLockedKeys = _ui.value.closingLockedKeys + closingKeys
+        )
+        viewModelScope.launch {
+            var last: StocktakeRepository.StockCount? = null
+            var hadFailure = false
+            entries.forEach { entry ->
+                runCatching {
+                    repo.recordCount(jwt, periodId, entry.itemId, entry.qty, entry.variantKey, entry.kind)
+                }.onSuccess { count ->
+                    last = count
+                }.onFailure { err ->
+                    hadFailure = true
+                    Log.e(TAG, "recordCount batch failed", err)
+                    pushDebug("recordCount batch failed: ${err.message}")
+                }
+            }
+            _ui.value = _ui.value.copy(lastCount = last, loading = false, error = if (hadFailure) "Some counts failed to save." else null)
+            loadItems(warehouseId)
+            refreshOpeningLocks(periodId)
+            refreshClosingLocks(periodId)
         }
     }
 

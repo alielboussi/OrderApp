@@ -49,6 +49,9 @@ import com.afterten.orders.data.RoleGuards
 import kotlin.text.Charsets
 
 class SupabaseProvider(context: Context) {
+    companion object {
+        private const val TAG = "SupabaseProvider"
+    }
     // Allow overriding the default Orders backend with the warehouse backoffice endpoint when provided.
     val supabaseUrl: String = BuildConfig.WAREHOUSE_BACKOFFICE_URL.takeIf { it.isNotBlank() }
         ?: BuildConfig.SUPABASE_URL
@@ -1001,7 +1004,12 @@ class SupabaseProvider(context: Context) {
         }.getOrElse { emptyList() }
 
         val outlets = rolesList.firstOrNull()?.outlets ?: emptyList()
-        if (outlets.isNotEmpty()) return outlets
+        if (outlets.isNotEmpty()) {
+            Log.e(TAG, "whoami_roles outlets=${outlets.size}")
+            return outlets
+        }
+
+        Log.e(TAG, "whoami_roles returned 0 outlets. raw=${rolesText.take(400)}")
 
         val whoText = http.post("$supabaseUrl/rest/v1/rpc/whoami_outlet") {
             header("apikey", supabaseAnonKey)
@@ -1015,6 +1023,7 @@ class SupabaseProvider(context: Context) {
         }.getOrElse { emptyList() }
 
         val fallback = whoList.firstOrNull()
+        Log.e(TAG, "whoami_outlet rows=${whoList.size} raw=${whoText.take(400)}")
         return if (fallback != null) listOf(OutletRoleInfoLite(fallback.outletId, fallback.outletName)) else emptyList()
     }
 
@@ -1050,7 +1059,7 @@ class SupabaseProvider(context: Context) {
         val filter = "(${unique.joinToString(",")})"
         val encoded = java.net.URLEncoder.encode(filter, Charsets.UTF_8.name())
 
-        fun fetchMappings(includeStocktakeFilter: Boolean): List<OutletWarehouseMapRow> {
+        suspend fun fetchMappings(includeStocktakeFilter: Boolean): List<OutletWarehouseMapRow> {
             val url = buildString {
                 append(supabaseUrl)
                 append("/rest/v1/outlet_warehouses?select=warehouse_id,show_in_stocktake&outlet_id=in.$encoded")

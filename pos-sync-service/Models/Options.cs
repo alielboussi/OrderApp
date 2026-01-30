@@ -21,4 +21,5 @@ public sealed class SyncOptions
     public int PollSeconds { get; init; } = 60;
     public int BatchSize { get; init; } = 50;
     public string SourceSystem { get; init; } = "afterten-pos";
+    public DateTime? MinSaleDateUtc { get; init; }
 }

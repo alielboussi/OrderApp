@@ -90,9 +90,24 @@ import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.RoleGuards
 import com.afterten.orders.data.hasRole
 import com.afterten.orders.ui.components.AccessDeniedCard
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.pow
 import kotlin.math.round
+
+private fun formatUtcIso(value: String?): String? {
+    val raw = value?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+    val normalized = raw.replace(" ", "T")
+    val candidate = if (normalized.endsWith("Z") || normalized.contains("+")) normalized else "${normalized}Z"
+    return runCatching {
+        OffsetDateTime.parse(candidate)
+            .withOffsetSameInstant(ZoneOffset.UTC)
+            .format(DateTimeFormatter.ISO_INSTANT)
+    }.getOrElse { raw }
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,12 +155,12 @@ fun StocktakeDashboardScreen(
         disabledContainerColor = surfaceBlack
     )
 
-    var note by remember { mutableStateOf("") }
     var warehouseMenu by remember { mutableStateOf(false) }
 
     val warehouseLabel = ui.warehouses.firstOrNull { it.id == ui.selectedWarehouseId }?.name
         ?: "Select warehouse"
     val warehouseEnabled = ui.warehouses.isNotEmpty()
+    val cutoffUtc = formatUtcIso(ui.openPeriod?.openedAt)
 
     Column(
         modifier = Modifier
@@ -207,13 +222,6 @@ fun StocktakeDashboardScreen(
                     Text("No mapped warehouses available", color = Color.White)
                 }
 
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Note (optional)") },
-                    colors = outlinedFieldColors
-                )
                 ui.error?.let {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = surfaceBlack),
@@ -228,7 +236,7 @@ fun StocktakeDashboardScreen(
                 }
                 Button(
                     enabled = !hasOpenPeriod && ui.selectedWarehouseId != null && !ui.loading,
-                    onClick = { vm.startStocktake(note.takeIf { it.isNotBlank() }) },
+                    onClick = { vm.startStocktake(null) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
                 ) {
@@ -248,6 +256,10 @@ fun StocktakeDashboardScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(period.stocktakeNumber ?: "In-progress", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
                     Text("Status: ${period.status}", color = Color.White)
+                    cutoffUtc?.let {
+                        Text("Sync cutoff (UTC): $it", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                        Text("Use this exact time in the tray app.", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                    }
                     period.note?.takeIf { it.isNotBlank() }?.let { Text("Note: $it", color = Color.White) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
@@ -894,19 +906,18 @@ fun StocktakeCountScreen(
                         Button(
                             onClick = {
                                 var hadError = false
-                                val entries = dialogQty.toMap()
-                                entries.forEach { (qtyKey, rawValue) ->
-                                    val row = allItemsByItemId[qtyKey.substringBefore("|")].orEmpty()
-                                        .firstOrNull { itemRow ->
-                                            val key = itemRow.variantKey?.ifBlank { "base" } ?: "base"
-                                            "${itemRow.itemId}|$key" == qtyKey
-                                        } ?: return@forEach
+                                val batch = mutableListOf<StocktakeViewModel.CountInput>()
+                                val sourceItems = if (ui.allItems.isNotEmpty()) ui.allItems else ui.items
+                                val seenKeys = mutableSetOf<String>()
+                                sourceItems.forEach { row ->
                                     val key = row.variantKey?.ifBlank { "base" } ?: "base"
+                                    val qtyKey = "${row.itemId}|$key"
+                                    if (!seenKeys.add(qtyKey)) return@forEach
                                     val openingLocked = ui.openingLockedKeys.contains(qtyKey)
                                     val closingLocked = ui.closingLockedKeys.contains(qtyKey)
                                     val entryMode = if (openingLocked) "closing" else "opening"
                                     if (entryMode == "closing" && closingLocked) return@forEach
-                                    val rawText = rawValue.trim()
+                                    val rawText = dialogQty[qtyKey].orEmpty().trim()
                                     val parsed = if (rawText.isBlank()) 0.0 else rawText.toDoubleOrNull()
                                     if (parsed == null || parsed < 0) {
                                         hadError = true
@@ -920,9 +931,12 @@ fun StocktakeCountScreen(
                                     val rowDecimals = resolveDecimals(row.itemId, key, uom)
                                     val factor = 10.0.pow(rowDecimals.coerceIn(0, 6).toDouble())
                                     val rounded = round(parsed * factor) / factor
-                                    vm.recordCount(row.itemId, rounded, key, entryMode)
+                                    batch.add(StocktakeViewModel.CountInput(row.itemId, rounded, key, entryMode))
                                 }
                                 inputError = if (hadError) "Enter a non-negative number" else null
+                                if (!hadError && batch.isNotEmpty()) {
+                                    vm.recordCountsBatch(batch)
+                                }
                             },
                             enabled = dialogQty.isNotEmpty() && !ui.loading,
                             modifier = Modifier.weight(1f),

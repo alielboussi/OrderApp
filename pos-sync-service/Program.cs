@@ -10,6 +10,7 @@ using PosSyncService.Models;
 var builder = Host.CreateApplicationBuilder(args);
 var runAsService = args.Any(static a => string.Equals(a, "--run-as-service", StringComparison.OrdinalIgnoreCase));
 var runStatusUi = args.Any(static a => string.Equals(a, "--status-ui", StringComparison.OrdinalIgnoreCase)) || !runAsService;
+var runTrayUi = args.Any(static a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
 
 builder.Services.AddOptions<PosDbOptions>()
     .Bind(builder.Configuration.GetSection("PosDb"))
@@ -35,6 +36,7 @@ builder.Services.AddSingleton<PosRepository>();
 builder.Services.AddSingleton<SupabaseClient>();
 builder.Services.AddSingleton<SyncRunner>();
 builder.Services.AddSingleton<StatusUi>();
+builder.Services.AddSingleton<TrayUi>();
 builder.Services.AddHttpClient("Supabase");
 builder.Services.AddHostedService<PosSyncWorker>();
 
@@ -56,7 +58,13 @@ builder.Services.AddLogging(logging =>
 
 using var host = builder.Build();
 
-if (runStatusUi)
+if (runTrayUi)
+{
+    using var scope = host.Services.CreateScope();
+    var tray = scope.ServiceProvider.GetRequiredService<TrayUi>();
+    tray.Run();
+}
+else if (runStatusUi)
 {
     using var scope = host.Services.CreateScope();
     var ui = scope.ServiceProvider.GetRequiredService<StatusUi>();

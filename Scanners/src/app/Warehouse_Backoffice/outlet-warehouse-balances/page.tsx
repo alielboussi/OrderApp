@@ -26,14 +26,15 @@ type StockItem = {
   item_kind: "raw" | "ingredient" | "finished" | string | null;
 };
 
-type OutletStockRow = {
-  outlet_id: string | null;
+type WarehouseVarianceRow = {
+  period_id: string | null;
+  warehouse_id: string | null;
   item_id: string;
   item_name: string | null;
   variant_key: string | null;
-  sent_units: number | null;
-  consumed_units: number | null;
-  on_hand_units: number | null;
+  opening_qty: number | null;
+  movement_qty: number | null;
+  expected_qty: number | null;
 };
 
 type WhoAmIRoles = {
@@ -251,37 +252,36 @@ export default function OutletWarehouseBalancesPage() {
 
         const searchValue = search.trim() || null;
 
-        const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
-          .from("outlet_warehouses")
-          .select("outlet_id")
+        const { data: periodRows, error: periodError } = await supabase
+          .from("warehouse_stock_periods")
+          .select("id,warehouse_id,status")
           .in("warehouse_id", warehouseIds)
-          .in("outlet_id", selectedOutletIds)
-          .eq("show_in_stocktake", true);
+          .eq("status", "open");
 
-        if (outletWarehouseError) throw outletWarehouseError;
+        if (periodError) throw periodError;
 
-        const outletIds = Array.from(
-          new Set((outletWarehouseRows ?? []).map((row) => row?.outlet_id).filter(Boolean))
-        ) as string[];
-
-        if (outletIds.length === 0) {
-          if (active) setItems([]);
+        const periodIds = Array.from(new Set((periodRows ?? []).map((row) => row?.id).filter(Boolean))) as string[];
+        if (periodIds.length === 0) {
+          if (active) {
+            setItems([]);
+            setError("No open stock period for the selected warehouse(s). Start a stocktake to view opening balances.");
+          }
           return;
         }
 
-        let balancesQuery = supabase
-          .from("outlet_stock_summary")
-          .select("outlet_id,item_id,item_name,variant_key,sent_units,consumed_units,on_hand_units")
-          .in("outlet_id", outletIds);
+        let varianceQuery = supabase
+          .from("warehouse_stock_variances")
+          .select("period_id,warehouse_id,item_id,item_name,variant_key,opening_qty,movement_qty,expected_qty")
+          .in("period_id", periodIds);
 
         if (searchValue) {
-          balancesQuery = balancesQuery.ilike("item_name", `%${searchValue}%`);
+          varianceQuery = varianceQuery.ilike("item_name", `%${searchValue}%`);
         }
 
-        const { data: balanceRows, error: balanceError } = await balancesQuery;
-        if (balanceError) throw balanceError;
+        const { data: varianceRows, error: varianceError } = await varianceQuery;
+        if (varianceError) throw varianceError;
 
-        const rows = (balanceRows as OutletStockRow[]) || [];
+        const rows = (varianceRows as WarehouseVarianceRow[]) || [];
         const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
 
         const { data: itemRows, error: itemError } = await supabase
@@ -305,11 +305,16 @@ export default function OutletWarehouseBalancesPage() {
 
           const key = `${row.item_id}::${vKey}::${kind}`;
           const existing = map.get(key);
-          const soldUnits = parseQty(row.consumed_units);
-          const onHandUnits = parseQty(row.on_hand_units);
+          const openingUnits = parseQty(row.opening_qty);
+          const movementUnits = parseQty(row.movement_qty);
+          const onHandUnits = parseQty(row.expected_qty);
+          const isZeroOpening = Math.abs(openingUnits) < 1e-9;
+          const isZeroMovement = Math.abs(movementUnits) < 1e-9;
+          const isZeroNet = Math.abs(onHandUnits) < 1e-9;
+          if (isZeroOpening && isZeroMovement && isZeroNet) return;
 
           if (existing) {
-            existing.sold_units = (existing.sold_units ?? 0) + soldUnits;
+            existing.sold_units = (existing.sold_units ?? 0) + movementUnits;
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;
           } else {
             map.set(key, {
@@ -317,7 +322,7 @@ export default function OutletWarehouseBalancesPage() {
               item_name: row.item_name,
               variant_key: row.variant_key,
               item_kind: kind,
-              sold_units: soldUnits,
+              sold_units: movementUnits,
               net_units: onHandUnits,
             });
           }
@@ -551,7 +556,6 @@ export default function OutletWarehouseBalancesPage() {
               <span>Item</span>
               <span>Variant</span>
               <span>Kind</span>
-              <span className={styles.alignRight}>Sold Units</span>
               <span className={styles.alignRight}>Net Units</span>
             </div>
 
@@ -560,9 +564,6 @@ export default function OutletWarehouseBalancesPage() {
                 <span>{item.item_name || item.item_id}</span>
                 <span>{variantNames[item.variant_key ?? ""] || item.variant_key || "base"}</span>
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
-                <span className={styles.alignRight}>
-                  {formatQty(item.sold_units ?? 0)}
-                </span>
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {
                     const formatted = formatQtyWithUom(item.net_units, itemUoms[item.item_id]);
