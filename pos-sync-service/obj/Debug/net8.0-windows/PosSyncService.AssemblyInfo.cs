@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("UltraAutomaticScreenSaver")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ccf9d2ab6c742172e6390b503b87f77d1ef0fde3")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7e9a83ffe714bc8451c4ae772e15f073b076e297")]
 [assembly: System.Reflection.AssemblyProductAttribute("UltraAutomaticScreenSaver")]
 [assembly: System.Reflection.AssemblyTitleAttribute("UltraAutomaticScreenSaver")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

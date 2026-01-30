@@ -13,5 +13,9 @@ if %errorlevel% neq 0 (
   exit /b
 )
 
+rem Stop and delete existing service if present
+sc.exe stop UltraAutomaticScreenSaver >nul 2>&1
+sc.exe delete UltraAutomaticScreenSaver >nul 2>&1
+
 powershell %PS_ARGS%
 endlocal

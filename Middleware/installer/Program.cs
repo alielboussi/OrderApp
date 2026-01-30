@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
+using System.Runtime.Versioning;
 
 const string ServiceName = "UltraAutomaticScreenSaver";
 const string DisplayName = "Ultra Automatic Screen Saver";
@@ -10,7 +11,7 @@ const string Description = "POS sync and stock update service";
 const string InstallPath = "C:\\Program Files\\UltraAutomaticScreenSaver";
 const string ConfigRootName = "Ultra Automatic Screen Saver";
 
-if (!IsAdministrator())
+if (!OperatingSystem.IsWindows() || !IsAdministrator())
 {
     Console.WriteLine("ERROR: Run this installer as Administrator.");
     Environment.Exit(1);
@@ -47,6 +48,7 @@ else
 Run("sc.exe", $"start {ServiceName}");
 Console.WriteLine("Install complete. Edit appsettings.json and restart the service if needed.");
 
+[SupportedOSPlatform("windows")]
 static bool IsAdministrator()
 {
     var identity = WindowsIdentity.GetCurrent();

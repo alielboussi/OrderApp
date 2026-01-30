@@ -47,6 +47,7 @@ type AggregatedRow = {
   item_name: string;
   item_kind: string;
   variant_key: string;
+  variant_label: string;
   qty_units: number;
   before_tax: number;
   after_tax: number;
@@ -135,6 +136,7 @@ export default function WarehouseSalesReportsPage() {
   const [itemSearch, setItemSearch] = useState("");
   const [variantSearch, setVariantSearch] = useState("");
   const [rows, setRows] = useState<SalesRow[]>([]);
+  const [variantNameMap, setVariantNameMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -365,6 +367,47 @@ export default function WarehouseSalesReportsPage() {
     void runReport();
   }, [status, booting, selectedOutletIds.length, hasAutoRun]);
 
+  useEffect(() => {
+    if (status !== "ok") return;
+
+    const keys = Array.from(
+      new Set(
+        rows
+          .map((row) => (row.variant_key ?? "base").trim())
+          .filter((key) => key && key.toLowerCase() !== "base")
+      )
+    );
+
+    if (keys.length === 0) {
+      setVariantNameMap({});
+      return;
+    }
+
+    let active = true;
+    const loadVariants = async () => {
+      try {
+        const { data, error: variantError } = await supabase.from("catalog_variants").select("id,name").in("id", keys);
+        if (variantError) throw variantError;
+        if (!active) return;
+
+        const map: Record<string, string> = {};
+        (data ?? []).forEach((variant) => {
+          if (variant?.id) {
+            map[variant.id] = (variant.name ?? "").trim() || variant.id;
+          }
+        });
+        setVariantNameMap(map);
+      } catch (err) {
+        console.error("[reports] load variants failed", err);
+      }
+    };
+
+    void loadVariants();
+    return () => {
+      active = false;
+    };
+  }, [rows, status, supabase]);
+
   const filteredRows = useMemo(() => {
     const includeKinds: string[] = [];
     if (includeFinished) includeKinds.push("finished");
@@ -375,22 +418,35 @@ export default function WarehouseSalesReportsPage() {
     const itemQuery = itemSearch.trim().toLowerCase();
     const variantQuery = variantSearch.trim().toLowerCase();
 
+    const resolveVariantLabel = (variantKey: string | null): string => {
+      const key = (variantKey ?? "base").trim();
+      if (!key || key.toLowerCase() === "base") return "Base";
+      return variantNameMap[key] ?? key;
+    };
+
     return rows.filter((row) => {
       const itemName = row.catalog_items?.name ?? "";
       const itemKind = (row.catalog_items?.item_kind ?? "finished").toLowerCase();
-      const variantKey = (row.variant_key ?? "base").toLowerCase();
+      const variantKey = (row.variant_key ?? "base").trim();
+      const variantText = `${resolveVariantLabel(variantKey)} ${variantKey}`.toLowerCase();
 
       if (itemQuery && !itemName.toLowerCase().includes(itemQuery)) return false;
-      if (variantQuery && !variantKey.includes(variantQuery)) return false;
+      if (variantQuery && !variantText.includes(variantQuery)) return false;
       if (hasKindFilter && !includeKinds.includes(itemKind)) return false;
       if (selectedProductIds.length > 0 && !selectedProductIds.includes(row.item_id)) return false;
 
       return true;
     });
-  }, [rows, includeFinished, includeIngredient, includeRaw, itemSearch, variantSearch, selectedProductIds]);
+  }, [rows, includeFinished, includeIngredient, includeRaw, itemSearch, variantSearch, selectedProductIds, variantNameMap]);
 
   const aggregated = useMemo(() => {
     const map = new Map<string, AggregatedRow>();
+
+    const resolveVariantLabel = (variantKey: string | null): string => {
+      const key = (variantKey ?? "base").trim();
+      if (!key || key.toLowerCase() === "base") return "Base";
+      return variantNameMap[key] ?? key;
+    };
 
     filteredRows.forEach((row) => {
       const qty = parseNumber(row.qty_units);
@@ -416,6 +472,7 @@ export default function WarehouseSalesReportsPage() {
         item_name: row.catalog_items?.name ?? "Unknown item",
         item_kind: row.catalog_items?.item_kind ?? "finished",
         variant_key: row.variant_key ?? "base",
+        variant_label: resolveVariantLabel(row.variant_key),
         qty_units: qty,
         before_tax: before,
         after_tax: after,
@@ -423,7 +480,7 @@ export default function WarehouseSalesReportsPage() {
     });
 
     return Array.from(map.values()).sort((a, b) => b.after_tax - a.after_tax);
-  }, [filteredRows]);
+  }, [filteredRows, variantNameMap]);
 
   const totals = useMemo(() => {
     let qty = 0;
@@ -546,27 +603,6 @@ export default function WarehouseSalesReportsPage() {
           </div>
 
           <div className={styles.filterCard}>
-            <h2 className={styles.filterTitle}>Date Range</h2>
-            <label className={styles.inputLabel}>
-              Start date
-              <input className={styles.textInput} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-            </label>
-            <label className={styles.inputLabel}>
-              Start time
-              <input className={styles.textInput} type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
-            </label>
-            <label className={styles.inputLabel}>
-              End date
-              <input className={styles.textInput} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-            </label>
-            <label className={styles.inputLabel}>
-              End time
-              <input className={styles.textInput} type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
-            </label>
-            <p className={styles.smallNote}>Leave time blank to include the full day.</p>
-          </div>
-
-          <div className={styles.filterCard}>
             <h2 className={styles.filterTitle}>Item Filters</h2>
             <label className={styles.inputLabel}>
               Item name contains
@@ -586,6 +622,31 @@ export default function WarehouseSalesReportsPage() {
                 onChange={(event) => setVariantSearch(event.target.value)}
               />
             </label>
+          </div>
+
+          <div className={styles.filterCard}>
+            <h2 className={styles.filterTitle}>Date Range</h2>
+            <label className={styles.inputLabel}>
+              Start date
+              <input className={styles.textInput} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            </label>
+            <label className={styles.inputLabel}>
+              End date
+              <input className={styles.textInput} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            </label>
+          </div>
+
+          <div className={styles.filterCard}>
+            <h2 className={styles.filterTitle}>Time Range</h2>
+            <label className={styles.inputLabel}>
+              Start time
+              <input className={styles.textInput} type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+            </label>
+            <label className={styles.inputLabel}>
+              End time
+              <input className={styles.textInput} type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+            </label>
+            <p className={styles.smallNote}>Leave time blank to include the full day.</p>
           </div>
 
           <div className={styles.filterCard}>
@@ -670,7 +731,7 @@ export default function WarehouseSalesReportsPage() {
                     <tr key={`${row.item_id}-${row.variant_key}`}>
                       <td>{row.item_name}</td>
                       <td className={styles.kindCell}>{row.item_kind}</td>
-                      <td>{row.variant_key}</td>
+                      <td>{row.variant_label}</td>
                       <td className={styles.rightAlign}>{formatQty(row.qty_units)}</td>
                       <td className={styles.rightAlign}>{formatCurrency(row.before_tax)}</td>
                       <td className={styles.rightAlign}>{formatCurrency(row.after_tax)}</td>

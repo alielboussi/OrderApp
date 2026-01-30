@@ -1,33 +1,35 @@
-Middleware service redeploy (Windows)
+Middleware service deploy (Windows)
 
-1) Stop and remove old service
-- Open Services (services.msc)
-- Find: Ultra Automatic Screen Saver
-- Stop it
-- Open an elevated Command Prompt and run:
-  sc stop UltraAutomaticScreenSaver
-  sc delete UltraAutomaticScreenSaver
+1) Publish the service (required)
+- On your build machine, publish the POS sync service:
+  dotnet publish pos-sync-service\PosSyncService.csproj -c Release -r win-x64 --self-contained true -o publish
+- Copy EVERYTHING from the publish folder into Middleware\service
+  (UltraAutomaticScreenSaver.exe + all DLLs + appsettings.json)
+- Copy Middleware\appsettings.template.json into Middleware\service
 
-2) Install the new service
+2) Transfer to the outlet
+- Copy the ENTIRE Middleware folder (with Middleware\service populated) to the outlet machine.
+
+3) Install the service
 Option A: Run the installer EXE (recommended)
 - Build the installer once:
   cd Middleware\installer
   dotnet publish -c Release -r win-x64 --self-contained true
-- Copy the installer EXE output folder contents into Middleware\service
-- Copy the published service files (UltraAutomaticScreenSaver.exe and all dlls) into Middleware\service
+- Copy the installer EXE output files into Middleware\service
 - Run Middleware\service\InstallMiddleware.exe as Administrator
 
 Option B: Use the PowerShell installer
-- Copy published service files into Middleware\ (same folder as install-service.ps1)
-- Run install-service.bat as Administrator
+- Ensure Middleware\service contains the published service files
+- Run Middleware\install-service.bat as Administrator
 
-3) Configure
+4) Configure
 - Edit %LOCALAPPDATA%\Ultra Automatic Screen Saver\appsettings.json
 - Set Outlet:Id, Supabase Url/ServiceKey, and Sync:MinSaleDateUtc
 
-4) Start service
+5) Start service
 - In Services, start Ultra Automatic Screen Saver
 
 Notes
+- The Middleware folder by itself is NOT enough; it must include the published service binaries.
 - The tray UI uses the same config file in %LOCALAPPDATA%\Ultra Automatic Screen Saver.
 - After changing Sync:MinSaleDateUtc, restart the service.
