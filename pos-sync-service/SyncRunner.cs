@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PosSyncService.Models;
 
@@ -11,19 +12,22 @@ namespace PosSyncService;
 
 public sealed class SyncRunner
 {
-    private readonly SyncOptions _syncOptions;
+    private readonly IOptionsMonitor<SyncOptions> _syncOptions;
     private readonly PosRepository _repository;
     private readonly SupabaseClient _supabaseClient;
+    private readonly string _contentRoot;
     private readonly ILogger<SyncRunner> _logger;
 
-    public SyncRunner(IOptions<SyncOptions> syncOptions,
+    public SyncRunner(IOptionsMonitor<SyncOptions> syncOptions,
                       PosRepository repository,
                       SupabaseClient supabaseClient,
+                      IHostEnvironment hostEnvironment,
                       ILogger<SyncRunner> logger)
     {
-        _syncOptions = syncOptions.Value;
+        _syncOptions = syncOptions;
         _repository = repository;
         _supabaseClient = supabaseClient;
+        _contentRoot = hostEnvironment.ContentRootPath;
         _logger = logger;
     }
 
@@ -32,6 +36,8 @@ public sealed class SyncRunner
         var failures = new List<SyncFailure>();
         var processed = 0;
 
+        await ApplyRemoteCutoffAsync(cancellationToken);
+
         var isPaused = await _supabaseClient.IsSyncPausedAsync(cancellationToken);
         if (isPaused)
         {
@@ -39,7 +45,7 @@ public sealed class SyncRunner
             return new SyncRunResult(0, failures);
         }
 
-        var pending = await _repository.ReadPendingOrdersAsync(_syncOptions.BatchSize, cancellationToken);
+        var pending = await _repository.ReadPendingOrdersAsync(_syncOptions.CurrentValue.BatchSize, cancellationToken);
         if (pending.Count == 0)
         {
             return new SyncRunResult(0, failures);
@@ -97,5 +103,30 @@ public sealed class SyncRunner
         }
 
         return new SyncRunResult(processed, failures);
+    }
+
+    private async Task ApplyRemoteCutoffAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var remoteCutoffUtc = await _supabaseClient.GetPosSyncCutoffUtcAsync(cancellationToken);
+            if (!remoteCutoffUtc.HasValue)
+            {
+                return;
+            }
+
+            var current = _syncOptions.CurrentValue.MinSaleDateUtc;
+            if (current.HasValue && current.Value.ToUniversalTime() >= remoteCutoffUtc.Value)
+            {
+                return;
+            }
+
+            ConfigStore.SaveMinSaleDateUtc(_contentRoot, remoteCutoffUtc.Value);
+            _logger.LogInformation("Updated POS sync cutoff from stocktake to {CutoffUtc:O}", remoteCutoffUtc.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to apply remote POS sync cutoff");
+        }
     }
 }

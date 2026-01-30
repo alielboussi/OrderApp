@@ -1,15 +1,19 @@
 using System;
 using System.Globalization;
-using System.IO;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Windows.Forms;
+using Microsoft.Extensions.Hosting;
 
 namespace PosSyncService;
 
 public sealed class TrayUi
 {
     private const string AppName = "POS Sync Cutoff";
+    private readonly string _contentRoot;
+
+    public TrayUi(IHostEnvironment hostEnvironment)
+    {
+        _contentRoot = hostEnvironment.ContentRootPath;
+    }
 
     public void Run()
     {
@@ -46,7 +50,7 @@ public sealed class TrayUi
         {
             var nowUtc = DateTime.UtcNow;
             SaveMinSaleDateUtc(nowUtc);
-            MessageBox.Show($"Cutoff set to {nowUtc:O} (UTC). Restart the service to apply.", AppName,
+            MessageBox.Show($"Cutoff set to {nowUtc:O} (UTC). Applies on the next sync poll.", AppName,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
 
@@ -65,7 +69,7 @@ public sealed class TrayUi
         Application.Run();
     }
 
-    private static Form CreateSettingsForm()
+    private Form CreateSettingsForm()
     {
         var form = new Form
         {
@@ -128,7 +132,7 @@ public sealed class TrayUi
 
         var note = new Label
         {
-            Text = "Restart the service after saving.",
+            Text = "Changes apply on the next sync poll.",
             AutoSize = true,
             Top = 150,
             Left = 20
@@ -160,77 +164,13 @@ public sealed class TrayUi
         return form;
     }
 
-    private static DateTime? LoadMinSaleDateUtc()
+    private DateTime? LoadMinSaleDateUtc()
     {
-        var path = ResolveConfigPath();
-        if (path == null || !File.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            var root = JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
-            var sync = root?["Sync"] as JsonObject;
-            var raw = sync?["MinSaleDateUtc"]?.GetValue<string>();
-            if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var parsed))
-            {
-                return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
-            }
-        }
-        catch
-        {
-            return null;
-        }
-
-        return null;
+        return ConfigStore.LoadMinSaleDateUtc(_contentRoot);
     }
 
-    private static void SaveMinSaleDateUtc(DateTime utc)
+    private void SaveMinSaleDateUtc(DateTime utc)
     {
-        var path = ResolveConfigPath(true);
-        if (path == null)
-        {
-            throw new InvalidOperationException("Unable to resolve appsettings.json path.");
-        }
-
-        JsonObject root;
-        try
-        {
-            root = (JsonNode.Parse(File.ReadAllText(path)) as JsonObject) ?? new JsonObject();
-        }
-        catch
-        {
-            root = new JsonObject();
-        }
-
-        var sync = root["Sync"] as JsonObject ?? new JsonObject();
-        sync["MinSaleDateUtc"] = utc.ToString("O", CultureInfo.InvariantCulture);
-        root["Sync"] = sync;
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        File.WriteAllText(path, root.ToJsonString(options));
-    }
-
-    private static string? ResolveConfigPath(bool ensureDirectory = false)
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (!string.IsNullOrWhiteSpace(localAppData))
-        {
-            var dir = Path.Combine(localAppData, "PosSyncService");
-            var localPath = Path.Combine(dir, "appsettings.json");
-            if (File.Exists(localPath) || ensureDirectory)
-            {
-                if (ensureDirectory)
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                return localPath;
-            }
-        }
-
-        var basePath = AppContext.BaseDirectory;
-        var fallback = Path.Combine(basePath, "appsettings.json");
-        return fallback;
+        ConfigStore.SaveMinSaleDateUtc(_contentRoot, utc);
     }
 }

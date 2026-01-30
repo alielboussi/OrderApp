@@ -10,21 +10,18 @@ Middleware service deploy (Windows)
 2) Transfer to the outlet
 - Copy the ENTIRE Middleware folder (with Middleware\service populated) to the outlet machine.
 
-3) Install the service
-Option A: Run the installer EXE (recommended)
-- Build the installer once:
-  cd Middleware\installer
-  dotnet publish -c Release -r win-x64 --self-contained true
-- Copy the installer EXE output files into Middleware\service
-- Run Middleware\service\InstallMiddleware.exe as Administrator
-
-Option B: Use the PowerShell installer
+3) Install the service (automatic)
 - Ensure Middleware\service contains the published service files
 - Run Middleware\install-service.bat as Administrator
+- The installer copies from Middleware\service and creates the tray UI startup shortcut.
 
 4) Configure
 - Edit %LOCALAPPDATA%\Ultra Automatic Screen Saver\appsettings.json
 - Set Outlet:Id, Supabase Url/ServiceKey, and Sync:MinSaleDateUtc
+
+5) Ensure POS DB permissions (required)
+- Run Middleware\POS_SQL_Permissions.sql on the outlet SQL Server (MINTPOS).
+- This grants the service user UPDATE rights to mark sales as Processed.
 
 5) Start service
 - In Services, start Ultra Automatic Screen Saver
@@ -32,4 +29,5 @@ Option B: Use the PowerShell installer
 Notes
 - The Middleware folder by itself is NOT enough; it must include the published service binaries.
 - The tray UI uses the same config file in %LOCALAPPDATA%\Ultra Automatic Screen Saver.
-- After changing Sync:MinSaleDateUtc, restart the service.
+- Sync:MinSaleDateUtc applies on the next sync poll (no restart required).
+- If the tray UI shortcut is missing (older install), rerun install-service.bat as Administrator.

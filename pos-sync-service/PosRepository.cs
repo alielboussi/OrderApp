@@ -11,17 +11,17 @@ public sealed class PosRepository
 {
     private readonly PosDbOptions _options;
     private readonly OutletOptions _outlet;
-    private readonly SyncOptions _syncOptions;
+    private readonly IOptionsMonitor<SyncOptions> _syncOptions;
     private readonly ILogger<PosRepository> _logger;
 
     public PosRepository(IOptions<PosDbOptions> options,
                          IOptions<OutletOptions> outlet,
-                         IOptions<SyncOptions> syncOptions,
+                         IOptionsMonitor<SyncOptions> syncOptions,
                          ILogger<PosRepository> logger)
     {
         _options = options.Value;
         _outlet = outlet.Value;
-        _syncOptions = syncOptions.Value;
+        _syncOptions = syncOptions;
         _logger = logger;
     }
 
@@ -65,7 +65,7 @@ ORDER BY bt.id ASC;";
             CommandType = CommandType.Text
         };
         cmd.Parameters.AddWithValue("@Batch", batchSize);
-        var minDate = _syncOptions.MinSaleDateUtc?.Date;
+        var minDate = _syncOptions.CurrentValue.MinSaleDateUtc?.Date;
         cmd.Parameters.AddWithValue("@MinDate", (object?)minDate ?? DBNull.Value);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);

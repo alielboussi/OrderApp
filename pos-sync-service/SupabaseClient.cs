@@ -200,6 +200,58 @@ public sealed class SupabaseClient
         }
     }
 
+    public async Task<DateTime?> GetPosSyncCutoffUtcAsync(CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return null;
+        }
+
+        var client = CreateClient();
+
+        try
+        {
+            var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/rest/v1/counter_values?select=last_value&counter_key=eq.pos_sync_cutoff&scope_id=eq.{_outlet.Id}&limit=1"
+            );
+
+            var response = await client.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning("Supabase cutoff check failed {Status}: {Body}", (int)response.StatusCode, body);
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            var entry = doc.RootElement[0];
+            if (!entry.TryGetProperty("last_value", out var lastValueProp))
+            {
+                return null;
+            }
+
+            var lastValue = lastValueProp.GetInt64();
+            if (lastValue <= 0)
+            {
+                return null;
+            }
+
+            return DateTimeOffset.FromUnixTimeSeconds(lastValue).UtcDateTime;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking POS sync cutoff");
+            return null;
+        }
+    }
+
     private HttpClient CreateClient()
     {
         var client = _clientFactory.CreateClient("Supabase");

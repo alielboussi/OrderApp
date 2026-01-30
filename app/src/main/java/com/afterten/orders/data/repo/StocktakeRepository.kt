@@ -204,6 +204,19 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         return json.decodeFromString(StockPeriod.serializer(), text)
     }
 
+    suspend fun setPosSyncCutoffForWarehouse(jwt: String, warehouseId: String, cutoffUtc: String) {
+        val payload = mapOf(
+            "p_warehouse_id" to warehouseId,
+            "p_cutoff" to cutoffUtc
+        )
+        val (code, body) = supabase.postWithJwt(
+            pathAndQuery = "/rest/v1/rpc/set_pos_sync_cutoff_for_warehouse",
+            jwt = jwt,
+            bodyObj = payload
+        )
+        if (code !in 200..299) throw IllegalStateException("set_pos_sync_cutoff_for_warehouse failed: HTTP ${code} ${body ?: ""}")
+    }
+
     suspend fun fetchVariances(jwt: String, periodId: String): List<VarianceRow> {
         val select = encode("period_id,warehouse_id,outlet_id,item_id,item_name,variant_key,opening_qty,movement_qty,closing_qty,expected_qty,variance_qty,unit_cost,variance_cost")
         val path = "/rest/v1/warehouse_stock_variances?select=${select}&period_id=eq.${periodId}&order=item_id.asc"

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 class StocktakeViewModel(
     private val repo: StocktakeRepository
@@ -352,6 +353,13 @@ class StocktakeViewModel(
             runCatching { repo.closePeriod(jwt, periodId) }
                 .onSuccess { period ->
                     pushDebug("closePeriod success id=${period.id}")
+                    val cutoffUtc = period.closedAt ?: Instant.now().toString()
+                    runCatching { repo.setPosSyncCutoffForWarehouse(jwt, period.warehouseId, cutoffUtc) }
+                        .onSuccess { pushDebug("pos sync cutoff updated for warehouse=${period.warehouseId} cutoff=$cutoffUtc") }
+                        .onFailure { err ->
+                            Log.e(TAG, "setPosSyncCutoffForWarehouse failed", err)
+                            pushDebug("setPosSyncCutoffForWarehouse failed: ${err.message}")
+                        }
                     _ui.value = _ui.value.copy(
                         openPeriod = null,
                         openingLockedKeys = emptySet(),
