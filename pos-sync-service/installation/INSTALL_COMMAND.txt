@@ -1,0 +1,3 @@
+Run this from Windows PowerShell (Administrator):
+
+powershell -ExecutionPolicy Bypass -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\Program Files\UltraAutomaticScreenSaver" -ConfigRoot "%LOCALAPPDATA%\Ultra Automatic Screen Saver"
