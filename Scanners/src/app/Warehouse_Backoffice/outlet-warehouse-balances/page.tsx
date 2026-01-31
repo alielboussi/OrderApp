@@ -101,6 +101,7 @@ export default function OutletWarehouseBalancesPage() {
   const [includeRaw, setIncludeRaw] = useState(true);
   const [includeFinished, setIncludeFinished] = useState(false);
   const [baseOnly, setBaseOnly] = useState(false);
+  const [showZeroOrNegative, setShowZeroOrNegative] = useState(false);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -311,7 +312,8 @@ export default function OutletWarehouseBalancesPage() {
           const isZeroOpening = Math.abs(openingUnits) < 1e-9;
           const isZeroMovement = Math.abs(movementUnits) < 1e-9;
           const isZeroNet = Math.abs(onHandUnits) < 1e-9;
-          if (isZeroOpening && isZeroMovement && isZeroNet) return;
+          if (!showZeroOrNegative && isZeroOpening && isZeroMovement && isZeroNet) return;
+          if (showZeroOrNegative && onHandUnits > 0 && !(isZeroOpening && isZeroMovement && isZeroNet)) return;
 
           if (existing) {
             existing.sold_units = (existing.sold_units ?? 0) + movementUnits;
@@ -353,6 +355,7 @@ export default function OutletWarehouseBalancesPage() {
     includeRaw,
     includeFinished,
     baseOnly,
+    showZeroOrNegative,
     search,
     selectedOutletIds,
     supabase,
@@ -531,6 +534,14 @@ export default function OutletWarehouseBalancesPage() {
                 onChange={(event) => setBaseOnly(event.target.checked)}
               />
               Base only
+            </label>
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={showZeroOrNegative}
+                onChange={(event) => setShowZeroOrNegative(event.target.checked)}
+              />
+              Show zero/negative
             </label>
           </div>
         </section>
