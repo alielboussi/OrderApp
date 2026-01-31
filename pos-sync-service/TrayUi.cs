@@ -7,7 +7,7 @@ namespace PosSyncService;
 
 public sealed class TrayUi
 {
-    private const string AppName = "POS Sync Cutoff";
+    private const string AppName = "Shutdown Timer";
     private readonly string _contentRoot;
 
     public TrayUi(IHostEnvironment hostEnvironment)
