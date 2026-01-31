@@ -22,4 +22,5 @@ public sealed class SyncOptions
     public int BatchSize { get; init; } = 50;
     public string SourceSystem { get; init; } = "afterten-pos";
     public DateTime? MinSaleDateUtc { get; init; }
+    public DateTime? MaxSaleDateUtc { get; init; }
 }

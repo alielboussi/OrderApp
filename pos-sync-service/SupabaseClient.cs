@@ -202,6 +202,16 @@ public sealed class SupabaseClient
 
     public async Task<DateTime?> GetPosSyncCutoffUtcAsync(CancellationToken cancellationToken)
     {
+        return await GetCounterUtcAsync("pos_sync_cutoff", "cutoff", cancellationToken);
+    }
+
+    public async Task<DateTime?> GetPosSyncOpeningUtcAsync(CancellationToken cancellationToken)
+    {
+        return await GetCounterUtcAsync("pos_sync_opening", "opening", cancellationToken);
+    }
+
+    private async Task<DateTime?> GetCounterUtcAsync(string counterKey, string label, CancellationToken cancellationToken)
+    {
         if (_outlet.Id == Guid.Empty)
         {
             return null;
@@ -213,14 +223,14 @@ public sealed class SupabaseClient
         {
             var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                $"/rest/v1/counter_values?select=last_value&counter_key=eq.pos_sync_cutoff&scope_id=eq.{_outlet.Id}&limit=1"
+                $"/rest/v1/counter_values?select=last_value&counter_key=eq.{counterKey}&scope_id=eq.{_outlet.Id}&limit=1"
             );
 
             var response = await client.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Supabase cutoff check failed {Status}: {Body}", (int)response.StatusCode, body);
+                _logger.LogWarning("Supabase {Label} check failed {Status}: {Body}", label, (int)response.StatusCode, body);
                 return null;
             }
 
@@ -247,7 +257,7 @@ public sealed class SupabaseClient
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error checking POS sync cutoff");
+            _logger.LogWarning(ex, "Error checking POS sync {Label}", label);
             return null;
         }
     }

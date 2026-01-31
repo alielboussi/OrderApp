@@ -257,6 +257,13 @@ class StocktakeViewModel(
             if (existing != null) {
                 Log.d(TAG, "startStocktake: open period exists id=${existing.id}")
                 pushDebug("Open period already exists id=${existing.id}")
+                val openedUtc = existing.openedAt ?: Instant.now().toString()
+                runCatching { repo.setPosSyncOpeningForWarehouse(jwt, existing.warehouseId, openedUtc) }
+                    .onSuccess { pushDebug("pos sync opening updated for warehouse=${existing.warehouseId} opened=$openedUtc") }
+                    .onFailure { err ->
+                        Log.e(TAG, "setPosSyncOpeningForWarehouse failed", err)
+                        pushDebug("setPosSyncOpeningForWarehouse failed: ${err.message}")
+                    }
                 _ui.value = _ui.value.copy(openPeriod = existing, loading = false, error = null)
                 return@launch
             }
@@ -264,6 +271,13 @@ class StocktakeViewModel(
                 .onSuccess { period ->
                     Log.d(TAG, "startStocktake: started id=${period.id} number=${period.stocktakeNumber}")
                     pushDebug("Started period id=${period.id} number=${period.stocktakeNumber}")
+                    val openedUtc = period.openedAt ?: Instant.now().toString()
+                    runCatching { repo.setPosSyncOpeningForWarehouse(jwt, period.warehouseId, openedUtc) }
+                        .onSuccess { pushDebug("pos sync opening updated for warehouse=${period.warehouseId} opened=$openedUtc") }
+                        .onFailure { err ->
+                            Log.e(TAG, "setPosSyncOpeningForWarehouse failed", err)
+                            pushDebug("setPosSyncOpeningForWarehouse failed: ${err.message}")
+                        }
                     _ui.value = _ui.value.copy(openPeriod = period, loading = false, error = null)
                 }
                 .onFailure { err ->

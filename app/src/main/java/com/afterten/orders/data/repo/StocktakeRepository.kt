@@ -204,6 +204,19 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         return json.decodeFromString(StockPeriod.serializer(), text)
     }
 
+    suspend fun setPosSyncOpeningForWarehouse(jwt: String, warehouseId: String, openedUtc: String) {
+        val payload = mapOf(
+            "p_warehouse_id" to warehouseId,
+            "p_opened" to openedUtc
+        )
+        val (code, body) = supabase.postWithJwt(
+            pathAndQuery = "/rest/v1/rpc/set_pos_sync_opening_for_warehouse",
+            jwt = jwt,
+            bodyObj = payload
+        )
+        if (code !in 200..299) throw IllegalStateException("set_pos_sync_opening_for_warehouse failed: HTTP ${code} ${body ?: ""}")
+    }
+
     suspend fun setPosSyncCutoffForWarehouse(jwt: String, warehouseId: String, cutoffUtc: String) {
         val payload = mapOf(
             "p_warehouse_id" to warehouseId,

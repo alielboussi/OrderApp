@@ -36,7 +36,7 @@ public sealed class SyncRunner
         var failures = new List<SyncFailure>();
         var processed = 0;
 
-        await ApplyRemoteCutoffAsync(cancellationToken);
+        await ApplyRemoteSyncWindowAsync(cancellationToken);
 
         var isPaused = await _supabaseClient.IsSyncPausedAsync(cancellationToken);
         if (isPaused)
@@ -105,28 +105,63 @@ public sealed class SyncRunner
         return new SyncRunResult(processed, failures);
     }
 
-    private async Task ApplyRemoteCutoffAsync(CancellationToken cancellationToken)
+    private async Task ApplyRemoteSyncWindowAsync(CancellationToken cancellationToken)
     {
         try
         {
+            var remoteOpeningUtc = await _supabaseClient.GetPosSyncOpeningUtcAsync(cancellationToken);
             var remoteCutoffUtc = await _supabaseClient.GetPosSyncCutoffUtcAsync(cancellationToken);
-            if (!remoteCutoffUtc.HasValue)
+
+            var currentMin = _syncOptions.CurrentValue.MinSaleDateUtc?.ToUniversalTime();
+            var currentMax = _syncOptions.CurrentValue.MaxSaleDateUtc?.ToUniversalTime();
+
+            var shouldUpdate = false;
+            var shouldClearMax = false;
+            if (remoteOpeningUtc.HasValue && (!currentMin.HasValue || currentMin.Value != remoteOpeningUtc.Value))
+            {
+                shouldUpdate = true;
+            }
+
+            if (remoteCutoffUtc.HasValue && (!currentMax.HasValue || currentMax.Value != remoteCutoffUtc.Value))
+            {
+                shouldUpdate = true;
+            }
+
+            if (remoteOpeningUtc.HasValue && !remoteCutoffUtc.HasValue && currentMax.HasValue)
+            {
+                shouldClearMax = true;
+                shouldUpdate = true;
+            }
+
+            if (!shouldUpdate)
             {
                 return;
             }
 
-            var current = _syncOptions.CurrentValue.MinSaleDateUtc;
-            if (current.HasValue && current.Value.ToUniversalTime() >= remoteCutoffUtc.Value)
+            if (shouldClearMax)
             {
-                return;
+                ConfigStore.ClearMaxSaleDateUtc(_contentRoot);
             }
 
-            ConfigStore.SaveMinSaleDateUtc(_contentRoot, remoteCutoffUtc.Value);
-            _logger.LogInformation("Updated POS sync cutoff from stocktake to {CutoffUtc:O}", remoteCutoffUtc.Value);
+            ConfigStore.SaveSyncWindow(_contentRoot, remoteOpeningUtc, remoteCutoffUtc);
+
+            if (remoteOpeningUtc.HasValue)
+            {
+                _logger.LogInformation("Updated POS sync opening from stocktake to {OpenedUtc:O}", remoteOpeningUtc.Value);
+            }
+
+            if (remoteCutoffUtc.HasValue)
+            {
+                _logger.LogInformation("Updated POS sync cutoff from stocktake to {CutoffUtc:O}", remoteCutoffUtc.Value);
+            }
+            else if (shouldClearMax)
+            {
+                _logger.LogInformation("Cleared POS sync cutoff after new opening period");
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to apply remote POS sync cutoff");
+            _logger.LogWarning(ex, "Failed to apply remote POS sync window");
         }
     }
 }

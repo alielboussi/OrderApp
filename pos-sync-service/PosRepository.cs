@@ -52,7 +52,8 @@ SELECT TOP (@Batch)
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
 WHERE (bt.uploadStatus IS NULL OR bt.uploadStatus = 'Pending')
-    AND (@MinDate IS NULL OR s.Date >= @MinDate)
+    AND (@MinOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, s.time), s.Date) END) >= @MinOccurredAt)
+    AND (@MaxOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, s.time), s.Date) END) <= @MaxOccurredAt)
 ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
@@ -65,8 +66,10 @@ ORDER BY bt.id ASC;";
             CommandType = CommandType.Text
         };
         cmd.Parameters.AddWithValue("@Batch", batchSize);
-        var minDate = _syncOptions.CurrentValue.MinSaleDateUtc?.Date;
-        cmd.Parameters.AddWithValue("@MinDate", (object?)minDate ?? DBNull.Value);
+        var minOccurredAt = _syncOptions.CurrentValue.MinSaleDateUtc;
+        var maxOccurredAt = _syncOptions.CurrentValue.MaxSaleDateUtc;
+        cmd.Parameters.AddWithValue("@MinOccurredAt", (object?)minOccurredAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MaxOccurredAt", (object?)maxOccurredAt ?? DBNull.Value);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
