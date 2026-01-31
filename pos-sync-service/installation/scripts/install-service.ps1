@@ -1,7 +1,7 @@
 param(
     [string]$PublishOutput = (Resolve-Path (Join-Path $PSScriptRoot "..") -ErrorAction SilentlyContinue).Path,
     [string]$InstallPath = "C:\\Program Files\\UltraAutomaticScreenSaver",
-    [string]$ConfigRoot = (Join-Path $env:LOCALAPPDATA "Ultra Automatic Screen Saver"),
+    [string]$ConfigRoot = (Join-Path $env:ProgramData "Ultra Automatic Screen Saver"),
     [switch]$SkipPublish
 )
 
@@ -93,9 +93,9 @@ if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
     }
 }
 
-$svcExe = Join-Path $InstallPath "PosSyncService.exe"
+$svcExe = Join-Path $InstallPath "UltraAutomaticScreenSaver.exe"
 if (-not (Test-Path $svcExe)) {
-    $svcExe = Join-Path $InstallPath "UltraAutomaticScreenSaver.exe"
+    $svcExe = Join-Path $InstallPath "PosSyncService.exe"
 }
 if (-not (Test-Path $svcExe)) {
     throw "Service executable not found in $InstallPath"
