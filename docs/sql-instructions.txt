@@ -1,0 +1,5 @@
+SQL Instructions
+
+- Always create a .sql file for functions, helpers, and queries.
+- Do NOT paste SQL into chat or canvas.
+- Provide only the .sql file path for execution.

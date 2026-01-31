@@ -1,7 +1,7 @@
 param(
     [string]$PublishOutput = (Resolve-Path (Join-Path $PSScriptRoot "..") -ErrorAction SilentlyContinue).Path,
     [string]$InstallPath = "C:\\Program Files\\UltraAutomaticScreenSaver",
-    [string]$ConfigRoot = (Join-Path $env:LOCALAPPDATA "Ultra Automatic Screen Saver"),
+    [string]$ConfigRoot = (Join-Path $env:ProgramData "Ultra Automatic Screen Saver"),
     [switch]$SkipPublish
 )
 

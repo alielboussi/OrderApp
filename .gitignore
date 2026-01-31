@@ -18,6 +18,9 @@ local.properties
 /captures/
 .externalNativeBuild/
 **/obj/
+**/bin/
+pos-sync-service/installation/
+pos-sync-service/installation.rar
 
 # IDEs
 .idea/

@@ -8,7 +8,14 @@ using Microsoft.Extensions.Logging;
 using PosSyncService;
 using PosSyncService.Models;
 
-var builder = Host.CreateApplicationBuilder(args);
+var settings = new HostApplicationBuilderSettings { Args = args };
+var contentRoot = GetArgValue(args, "--contentRoot");
+if (!string.IsNullOrWhiteSpace(contentRoot))
+{
+    settings.ContentRootPath = contentRoot;
+}
+
+var builder = Host.CreateApplicationBuilder(settings);
 var runAsService = args.Any(static a => string.Equals(a, "--run-as-service", StringComparison.OrdinalIgnoreCase));
 var runTrayUi = args.Any(static a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
 var runStatusUi = args.Any(static a => string.Equals(a, "--status-ui", StringComparison.OrdinalIgnoreCase)) || (!runAsService && !runTrayUi);
@@ -75,6 +82,25 @@ else if (runStatusUi)
 else
 {
     await host.RunAsync();
+}
+
+static string? GetArgValue(string[] args, string name)
+{
+    for (var i = 0; i < args.Length; i++)
+    {
+        var arg = args[i];
+        if (string.Equals(arg, name, StringComparison.OrdinalIgnoreCase))
+        {
+            return i + 1 < args.Length ? args[i + 1] : null;
+        }
+
+        if (arg.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))
+        {
+            return arg.Substring(name.Length + 1);
+        }
+    }
+
+    return null;
 }
 
 static class ConsoleWindowHelper
