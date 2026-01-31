@@ -17,6 +17,7 @@ local.properties
 **/.idea/caches/
 /captures/
 .externalNativeBuild/
+**/obj/
 
 # IDEs
 .idea/
