@@ -12,6 +12,7 @@ export default function WarehouseBackofficeDashboard() {
   const [outlets, setOutlets] = useState<Array<{ id: string; name: string; code: string | null }>>([]);
   const [selectedOutletId, setSelectedOutletId] = useState<string>("");
   const [pausedOutletIds, setPausedOutletIds] = useState<Set<string>>(new Set());
+  const [globalPaused, setGlobalPaused] = useState(false);
   const [pauseLoading, setPauseLoading] = useState(false);
   const [pauseError, setPauseError] = useState<string | null>(null);
 
@@ -30,7 +31,7 @@ export default function WarehouseBackofficeDashboard() {
     () => outlets.find((outlet) => outlet.id === selectedOutletId),
     [outlets, selectedOutletId]
   );
-  const selectedPaused = selectedOutletId ? pausedOutletIds.has(selectedOutletId) : false;
+  const selectedPaused = globalPaused || (selectedOutletId ? pausedOutletIds.has(selectedOutletId) : false);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -40,12 +41,13 @@ export default function WarehouseBackofficeDashboard() {
         setPauseError(null);
         const [outletRes, pauseRes] = await Promise.all([
           fetchJson<{ outlets: Array<{ id: string; name: string; code: string | null }> }>("/api/outlets"),
-          fetchJson<{ pausedOutletIds: string[] }>("/api/pos-sync-pause"),
+          fetchJson<{ pausedOutletIds: string[]; globalPaused?: boolean }>("/api/pos-sync-pause"),
         ]);
         if (!active) return;
         const outletList = outletRes.outlets ?? [];
         setOutlets(outletList);
         setPausedOutletIds(new Set(pauseRes.pausedOutletIds ?? []));
+        setGlobalPaused(Boolean(pauseRes.globalPaused));
         if (!selectedOutletId && outletList.length > 0) {
           setSelectedOutletId(outletList[0].id);
         }
@@ -130,15 +132,18 @@ export default function WarehouseBackofficeDashboard() {
               <button
                 className={styles.pauseButton}
                 onClick={handleTogglePause}
-                disabled={!selectedOutletId || pauseLoading}
+                disabled={!selectedOutletId || pauseLoading || globalPaused}
               >
                 {selectedPaused ? "Resume sync" : "Pause sync"}
               </button>
               <span className={styles.pauseState}>
                 {selectedOutlet ? `${selectedOutlet.name || selectedOutlet.code || "Outlet"}: ` : ""}
-                {selectedPaused ? "Paused" : "Active"}
+                {globalPaused ? "Paused (global)" : selectedPaused ? "Paused" : "Active"}
               </span>
             </div>
+            {globalPaused && (
+              <p className={styles.pauseError}>Global pause is enabled. Clear the global pause to resume outlet sync.</p>
+            )}
             {pauseError && <p className={styles.pauseError}>{pauseError}</p>}
           </div>
         </header>

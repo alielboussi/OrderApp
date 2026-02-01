@@ -52,8 +52,8 @@ SELECT TOP (@Batch)
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
 WHERE (bt.uploadStatus IS NULL OR bt.uploadStatus = 'Pending')
-    AND (@MinOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, s.time), s.Date) END) >= @MinOccurredAt)
-    AND (@MaxOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, s.time), s.Date) END) <= @MaxOccurredAt)
+    AND (@MinOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, CAST(s.time AS time)), s.Date) END) >= @MinOccurredAt)
+    AND (@MaxOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, CAST(s.time AS time)), s.Date) END) <= @MaxOccurredAt)
 ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
