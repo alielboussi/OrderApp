@@ -308,15 +308,22 @@ export default function OutletWarehouseBalancesPage() {
           const existing = map.get(key);
           const openingUnits = parseQty(row.opening_qty);
           const movementUnits = parseQty(row.movement_qty);
-          const onHandUnits = parseQty(row.expected_qty);
-          const isZeroOpening = Math.abs(openingUnits) < 1e-9;
-          const isZeroMovement = Math.abs(movementUnits) < 1e-9;
+          const hasOpening = row.opening_qty !== null;
+          let onHandUnits = parseQty(row.expected_qty);
+          if (!hasOpening) {
+            onHandUnits = movementUnits < 0 ? movementUnits : 0;
+          }
           const isZeroNet = Math.abs(onHandUnits) < 1e-9;
-          if (!showZeroOrNegative && isZeroOpening && isZeroMovement && isZeroNet) return;
-          if (showZeroOrNegative && onHandUnits > 0 && !(isZeroOpening && isZeroMovement && isZeroNet)) return;
+          if (showZeroOrNegative) {
+            if (onHandUnits >= 0 || isZeroNet) return;
+          } else {
+            if (onHandUnits <= 0 || isZeroNet) return;
+          }
+
+          const effectiveSoldUnits = hasOpening ? movementUnits : Math.min(0, movementUnits);
 
           if (existing) {
-            existing.sold_units = (existing.sold_units ?? 0) + movementUnits;
+            existing.sold_units = (existing.sold_units ?? 0) + effectiveSoldUnits;
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;
           } else {
             map.set(key, {
@@ -324,7 +331,7 @@ export default function OutletWarehouseBalancesPage() {
               item_name: row.item_name,
               variant_key: row.variant_key,
               item_kind: kind,
-              sold_units: movementUnits,
+              sold_units: effectiveSoldUnits,
               net_units: onHandUnits,
             });
           }

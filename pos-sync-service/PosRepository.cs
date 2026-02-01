@@ -51,9 +51,13 @@ SELECT TOP (@Batch)
     s.branchid    AS BranchId
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
-WHERE (bt.uploadStatus IS NULL OR bt.uploadStatus = 'Pending')
-    AND (@MinOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, CAST(s.time AS time)), s.Date) END) >= @MinOccurredAt)
-    AND (@MaxOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(SECOND, DATEDIFF(SECOND, 0, CAST(s.time AS time)), s.Date) END) <= @MaxOccurredAt)
+WHERE (
+    bt.uploadStatus IS NULL
+    OR bt.uploadStatus = 'Pending'
+    OR (@IncludeProcessed = 1 AND bt.uploadStatus = 'Processed')
+)
+    AND (@MinOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(DAY, DATEDIFF(DAY, 0, s.Date), CAST(s.time AS datetime)) END) >= @MinOccurredAt)
+    AND (@MaxOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(DAY, DATEDIFF(DAY, 0, s.Date), CAST(s.time AS datetime)) END) <= @MaxOccurredAt)
 ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
@@ -70,6 +74,7 @@ ORDER BY bt.id ASC;";
         var maxOccurredAt = _syncOptions.CurrentValue.MaxSaleDateUtc;
         cmd.Parameters.AddWithValue("@MinOccurredAt", (object?)minOccurredAt ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@MaxOccurredAt", (object?)maxOccurredAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@IncludeProcessed", _syncOptions.CurrentValue.IncludeProcessed ? 1 : 0);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

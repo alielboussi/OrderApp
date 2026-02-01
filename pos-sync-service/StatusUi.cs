@@ -71,5 +71,7 @@ public sealed class StatusUi
 
         Console.WriteLine();
         Console.WriteLine("Done.");
+        Console.WriteLine("Press Enter to close...");
+        Console.ReadLine();
     }
 }

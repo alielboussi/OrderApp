@@ -23,4 +23,5 @@ public sealed class SyncOptions
     public string SourceSystem { get; init; } = "afterten-pos";
     public DateTime? MinSaleDateUtc { get; init; }
     public DateTime? MaxSaleDateUtc { get; init; }
+    public bool IncludeProcessed { get; init; } = false;
 }
