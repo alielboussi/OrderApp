@@ -59,24 +59,24 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     data class VarianceRow(
         @SerialName("period_id") val periodId: String,
         @SerialName("warehouse_id") val warehouseId: String,
-        @SerialName("outlet_id") val outletId: String,
+        @SerialName("outlet_id") val outletId: String? = null,
         @SerialName("item_id") val itemId: String,
         @SerialName("item_name") val itemName: String? = null,
         @SerialName("variant_key") val variantKey: String? = "base",
-        @SerialName("opening_qty") val openingQty: Double = 0.0,
-        @SerialName("movement_qty") val movementQty: Double = 0.0,
-        @SerialName("closing_qty") val closingQty: Double = 0.0,
-        @SerialName("expected_qty") val expectedQty: Double = 0.0,
-        @SerialName("variance_qty") val varianceQty: Double = 0.0,
-        @SerialName("unit_cost") val unitCost: Double = 0.0,
-        @SerialName("variance_cost") val varianceCost: Double = 0.0
+        @SerialName("opening_qty") val openingQty: Double? = null,
+        @SerialName("movement_qty") val movementQty: Double? = null,
+        @SerialName("closing_qty") val closingQty: Double? = null,
+        @SerialName("expected_qty") val expectedQty: Double? = null,
+        @SerialName("variance_qty") val varianceQty: Double? = null,
+        @SerialName("unit_cost") val unitCost: Double? = null,
+        @SerialName("variance_cost") val varianceCost: Double? = null
     )
 
     @Serializable
     data class StockLedgerRow(
         @SerialName("item_id") val itemId: String,
         @SerialName("variant_key") val variantKey: String? = "base",
-        @SerialName("delta_units") val deltaUnits: Double = 0.0,
+        @SerialName("delta_units") val deltaUnits: Double? = null,
         val reason: String? = null
     )
 

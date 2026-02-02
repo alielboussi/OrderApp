@@ -542,6 +542,34 @@ fun StocktakePeriodCountsScreen(
 
     fun formatQty(value: Double): String = String.format("%.2f", value)
 
+    data class CombinedCountRow(
+        val itemName: String,
+        val variantName: String,
+        val openingQty: Double,
+        val closingQty: Double,
+        val varianceQty: Double
+    )
+
+    val combinedRows = remember(ui.periodOpeningCounts, ui.periodClosingCounts) {
+        val openingMap = ui.periodOpeningCounts.associateBy {
+            "${it.itemId}|${it.variantKey}".lowercase()
+        }
+        val closingMap = ui.periodClosingCounts.associateBy {
+            "${it.itemId}|${it.variantKey}".lowercase()
+        }
+        val keys = (openingMap.keys + closingMap.keys).toSet()
+        keys.mapNotNull { key ->
+            val opening = openingMap[key]
+            val closing = closingMap[key]
+            val itemName = opening?.itemName ?: closing?.itemName ?: return@mapNotNull null
+            val variantName = opening?.variantName ?: closing?.variantName ?: "Base"
+            val openingQty = opening?.qty ?: 0.0
+            val closingQty = closing?.qty ?: 0.0
+            val varianceQty = closingQty - openingQty
+            CombinedCountRow(itemName, variantName, openingQty, closingQty, varianceQty)
+        }.sortedWith(compareBy({ it.itemName.lowercase() }, { it.variantName.lowercase() }))
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -566,9 +594,10 @@ fun StocktakePeriodCountsScreen(
             }
         }
 
-        if (ui.periodOpeningCounts.isNotEmpty()) {
-            Text("Opening counts", fontWeight = FontWeight.Bold, color = Color.White)
-            ui.periodOpeningCounts.forEach { row ->
+        if (combinedRows.isNotEmpty()) {
+            Text("Opening / Closing / Variance", fontWeight = FontWeight.Bold, color = Color.White)
+            combinedRows.forEach { row ->
+                val varianceColor = if (row.varianceQty < 0) primaryRed else Color(0xFF2E7D32)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = surfaceBlack),
@@ -577,30 +606,15 @@ fun StocktakePeriodCountsScreen(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(row.itemName, fontWeight = FontWeight.Bold, color = Color.White)
                         Text("Variant: ${row.variantName}", color = Color.White)
-                        Text("Qty: ${formatQty(row.qty)}", color = Color.White)
+                        Text("Opening: ${formatQty(row.openingQty)}", color = Color.White)
+                        Text("Closing: ${formatQty(row.closingQty)}", color = Color.White)
+                        Text("Variance: ${formatQty(row.varianceQty)}", color = varianceColor)
                     }
                 }
             }
         }
 
-        if (ui.periodClosingCounts.isNotEmpty()) {
-            Text("Closing counts", fontWeight = FontWeight.Bold, color = Color.White)
-            ui.periodClosingCounts.forEach { row ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = surfaceBlack),
-                    border = BorderStroke(1.dp, primaryRed)
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(row.itemName, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text("Variant: ${row.variantName}", color = Color.White)
-                        Text("Qty: ${formatQty(row.qty)}", color = Color.White)
-                    }
-                }
-            }
-        }
-
-        if (!ui.periodCountsLoading && ui.periodOpeningCounts.isEmpty() && ui.periodClosingCounts.isEmpty()) {
+        if (!ui.periodCountsLoading && combinedRows.isEmpty()) {
             Text("No counts recorded for this period.", color = Color.White)
         }
     }
@@ -1319,6 +1333,7 @@ fun StocktakeVarianceScreen(
     }
     val ui by vm.ui.collectAsState()
 
+    fun safe(value: Double?): Double = value ?: 0.0
     fun fmt(value: Double): String = String.format("%.2f", value)
 
     val allowedVariance = remember(ui.items, ui.variance) {
@@ -1376,16 +1391,16 @@ fun StocktakeVarianceScreen(
             allowedVariance.forEach { row ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val varianceColor = if (row.varianceQty < 0) primaryRed else Color(0xFF2E7D32)
+                        val varianceColor = if (safe(row.varianceQty) < 0) primaryRed else Color(0xFF2E7D32)
                         Text(row.itemName ?: row.itemId, fontWeight = FontWeight.Bold)
                         Text(row.itemId, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         Text("Variant: ${row.variantKey ?: "base"}", style = MaterialTheme.typography.labelSmall)
-                        Text("Opening: ${fmt(row.openingQty)}  Movement: ${fmt(row.movementQty)}", style = MaterialTheme.typography.bodySmall)
-                        Text("Expected: ${fmt(row.expectedQty)}", style = MaterialTheme.typography.bodySmall)
-                        Text("Counted: ${fmt(row.closingQty)}", style = MaterialTheme.typography.bodySmall)
-                        Text("Variance: ${fmt(row.varianceQty)}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
-                        if (row.unitCost > 0.0) {
-                            Text("Variance value: ${fmt(row.varianceCost)}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                        Text("Opening: ${fmt(safe(row.openingQty))}  Movement: ${fmt(safe(row.movementQty))}", style = MaterialTheme.typography.bodySmall)
+                        Text("Expected: ${fmt(safe(row.expectedQty))}", style = MaterialTheme.typography.bodySmall)
+                        Text("Counted: ${fmt(safe(row.closingQty))}", style = MaterialTheme.typography.bodySmall)
+                        Text("Variance: ${fmt(safe(row.varianceQty))}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
+                        if (safe(row.unitCost) > 0.0) {
+                            Text("Variance value: ${fmt(safe(row.varianceCost))}", style = MaterialTheme.typography.bodySmall, color = varianceColor)
                         }
                     }
                 }

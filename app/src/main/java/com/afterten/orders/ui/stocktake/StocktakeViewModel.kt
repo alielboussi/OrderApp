@@ -550,6 +550,8 @@ class StocktakeViewModel(
         val closedAt = period.closedAt ?: java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
             .toString()
 
+        fun safe(value: Double?): Double = value ?: 0.0
+
         val varianceRows = repo.fetchVariances(jwt, periodId)
         val openingCounts = repo.listCountsForPeriod(jwt, periodId, "opening")
         val closingCounts = repo.listCountsForPeriod(jwt, periodId, "closing")
@@ -564,15 +566,16 @@ class StocktakeViewModel(
 
         ledgerRows.forEach { row ->
             val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+            val delta = safe(row.deltaUnits)
             when (row.reason?.lowercase()) {
                 "warehouse_transfer" -> {
-                    transfersByKey[key] = (transfersByKey[key] ?: 0.0) + row.deltaUnits
+                    transfersByKey[key] = (transfersByKey[key] ?: 0.0) + delta
                 }
                 "damage" -> {
-                    damagesByKey[key] = (damagesByKey[key] ?: 0.0) + row.deltaUnits
+                    damagesByKey[key] = (damagesByKey[key] ?: 0.0) + delta
                 }
                 "outlet_sale" -> {
-                    salesByKey[key] = (salesByKey[key] ?: 0.0) + kotlin.math.abs(row.deltaUnits)
+                    salesByKey[key] = (salesByKey[key] ?: 0.0) + kotlin.math.abs(delta)
                 }
             }
         }
@@ -605,8 +608,9 @@ class StocktakeViewModel(
                 val transfers = transfersByKey[key] ?: 0.0
                 val damages = damagesByKey[key] ?: 0.0
                 val sales = salesByKey[key] ?: 0.0
-                val expected = row.openingQty + transfers + damages - sales
-                val closing = row.closingQty
+                val opening = safe(row.openingQty)
+                val closing = safe(row.closingQty)
+                val expected = opening + transfers + damages - sales
                 val varianceQty = expected - closing
                 val sellingPrice = priceMap[row.itemId] ?: 0.0
                 val varianceAmount = varianceQty * sellingPrice
@@ -614,7 +618,7 @@ class StocktakeViewModel(
                     itemId = row.itemId,
                     variantKey = variantKey,
                     itemLabel = label,
-                    openingQty = row.openingQty,
+                    openingQty = opening,
                     transfersQty = transfers,
                     damagesQty = damages,
                     salesQty = sales,

@@ -56,8 +56,8 @@ WHERE (
     OR bt.uploadStatus = 'Pending'
     OR (@IncludeProcessed = 1 AND bt.uploadStatus = 'Processed')
 )
-    AND (@MinOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(DAY, DATEDIFF(DAY, 0, s.Date), CAST(s.time AS datetime)) END) >= @MinOccurredAt)
-    AND (@MaxOccurredAt IS NULL OR (CASE WHEN s.time IS NULL THEN s.Date ELSE DATEADD(DAY, DATEDIFF(DAY, 0, s.Date), CAST(s.time AS datetime)) END) <= @MaxOccurredAt)
+    AND (@MinOccurredAt IS NULL OR s.Date >= CAST(@MinOccurredAt AS date))
+    AND (@MaxOccurredAt IS NULL OR s.Date <= CAST(@MaxOccurredAt AS date))
 ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
