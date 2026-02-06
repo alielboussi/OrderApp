@@ -48,7 +48,6 @@ function escapeHtml(value: string): string {
 function serializeForScript(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
-
 function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallback: string): string {
   if (!warehouse) return fallback;
   const base = warehouse.name ?? fallback;
@@ -139,18 +138,14 @@ function createHtml(config: {
       height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
-      border: none !important;
-      box-shadow: none !important;
       overflow: hidden !important;
-    }
-    body[data-view="purchase"] #purchase-page,
-    body[data-view="damage"] #damage-page {
-      display: flex;
+      position: absolute !important;
+      pointer-events: none !important;
     }
     main {
-      width: 900px;
-      max-width: 900px;
-      min-width: 900px;
+      width: 960px;
+      max-width: 960px;
+      min-width: 960px;
       min-height: auto;
       margin: 0 auto;
       background: rgba(0, 0, 0, 0.85);
@@ -161,27 +156,6 @@ function createHtml(config: {
       display: flex;
       flex-direction: column;
       gap: 14px;
-    }
-    h1 {
-      margin-top: 0;
-      font-size: 1.8rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-    p.subtitle {
-      margin-top: 4px;
-      color: #b5b5b5;
-      font-size: 0.95rem;
-    }
-    button, input, select, textarea {
-      font: inherit;
-    }
-    .panel {
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 16px;
-      border: 1px solid rgba(255, 43, 72, 0.25);
-      padding: clamp(12px, 2.2vw, 18px);
-      margin-top: 10px;
     }
     label {
       display: flex;
@@ -469,19 +443,22 @@ function createHtml(config: {
       font-size: clamp(1.45rem, 2.6vw, 2.1rem);
     }
     .locked-pill--destination {
-      text-align: left;
+      text-align: center;
       display: flex;
       flex-direction: column;
       gap: 8px;
+      align-items: center;
     }
     .destination-select-grid {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+      width: 100%;
     }
     .destination-pill-select {
       display: block;
       text-align: center;
+      width: 100%;
     }
     .destination-pill-select .destination-pill-hint {
       display: block;
@@ -496,7 +473,7 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 12px 16px;
       color: #ff5d73;
-      font-size: 1.7rem;
+      font-size: 1.5rem;
       font-weight: 600;
       letter-spacing: 0.02em;
       text-transform: uppercase;
@@ -582,7 +559,7 @@ function createHtml(config: {
       border-radius: 18px;
       padding: 14px 18px;
       color: #ff5d73;
-      font-size: 1.5rem;
+      font-size: 1.7rem;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -597,10 +574,9 @@ function createHtml(config: {
     .operator-select-label select option {
       background: #050505;
       color: #ff5d73;
-      font-size: 1.35rem;
+      font-size: 1.55rem;
       text-transform: uppercase;
       padding: 12px 10px;
-    }
     }
     .operator-auth-hint {
       margin: 0;
@@ -677,58 +653,6 @@ function createHtml(config: {
       margin: 0;
       display: none;
     }
-    .qty-cost-field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 0.9rem;
-    }
-      position: static;
-      background: rgba(5, 5, 5, 0.92);
-      padding: 10px 12px 14px;
-      text-transform: uppercase;
-      font-size: 0.75rem;
-      letter-spacing: 0.05em;
-      color: #f7a8b7;
-      z-index: 1;
-    }
-    .cart-table th,
-    .cart-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      text-align: left;
-      font-size: 0.9rem;
-    }
-    .cart-table tbody td {
-      padding-top: 14px;
-      background: transparent;
-    }
-    #cart-empty {
-      margin: 12px 0;
-      color: #c4c4c4;
-      font-size: 0.9rem;
-    }
-    .cart-row-actions button {
-      background: transparent;
-      border: 1px solid rgba(255, 97, 136, 0.6);
-      color: #ff97b6;
-      padding: 6px 12px;
-      border-radius: 999px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .cart-row-actions button:hover {
-      border-color: #ff6b94;
-      color: #ff6b94;
-    }
-    #cart-count {
-      font-size: 0.85rem;
-      color: #f1c1cf;
-    }
     #qty-modal {
       position: fixed;
       inset: 0;
@@ -739,6 +663,18 @@ function createHtml(config: {
       z-index: 1000;
     }
     #variant-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1005;
+    }
+    .qty-cost-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.85);
@@ -1009,8 +945,9 @@ function createHtml(config: {
     }
     .purchase-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(3, minmax(240px, 1fr));
       gap: clamp(12px, 2vw, 18px);
+      align-items: end;
     }
     .purchase-grid label {
       display: flex;
@@ -1031,6 +968,10 @@ function createHtml(config: {
     #purchase-reference {
       text-transform: uppercase;
       letter-spacing: 0.08em;
+    }
+    #purchase-supplier,
+    #purchase-supplier option {
+      font-size: 24px;
     }
     .purchase-grid label textarea {
       min-height: 88px;
@@ -1608,13 +1549,13 @@ function createHtml(config: {
                 <label class="destination-pill-select">
                   <span class="destination-pill-hint">Outlets</span>
                   <select id="console-destination-select">
-                    <option value="">Select outlet</option>
+                    <option value="">Select...</option>
                   </select>
                 </label>
                 <label class="destination-pill-select">
                   <span class="destination-pill-hint">Homes</span>
                   <select id="console-homes-select">
-                    <option value="">Select home</option>
+                    <option value="">Select...</option>
                   </select>
                 </label>
               </div>
@@ -1639,65 +1580,8 @@ function createHtml(config: {
           </section>
           <div class="search-field">
             <label>Search products
-              <div class="search-input-row">
-                <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
-                <button type="button" id="search-keyboard-toggle" class="keyboard-trigger">ABC</button>
-                <button type="button" id="search-numpad-toggle" class="keyboard-trigger">123</button>
-                <button type="button" id="search-enter" class="keyboard-trigger">Enter</button>
-              </div>
+              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
             </label>
-            <div class="search-keyboards">
-              <div id="search-numpad" class="virtual-numpad" aria-hidden="true">
-                <button type="button" data-key="7">7</button>
-                <button type="button" data-key="8">8</button>
-                <button type="button" data-key="9">9</button>
-                <button type="button" data-key="4">4</button>
-                <button type="button" data-key="5">5</button>
-                <button type="button" data-key="6">6</button>
-                <button type="button" data-key="1">1</button>
-                <button type="button" data-key="2">2</button>
-                <button type="button" data-key="3">3</button>
-                <button type="button" data-action="clear">CLR</button>
-                <button type="button" data-key="0">0</button>
-                <button type="button" data-action="delete">DEL</button>
-                <button type="button" data-action="enter" class="wide-3">ENTER</button>
-                <button type="button" data-action="close" class="wide-3">CLOSE</button>
-              </div>
-              <div id="search-keyboard" class="virtual-keyboard" aria-hidden="true">
-                <button type="button" data-key="Q">Q</button>
-                <button type="button" data-key="W">W</button>
-                <button type="button" data-key="E">E</button>
-                <button type="button" data-key="R">R</button>
-                <button type="button" data-key="T">T</button>
-                <button type="button" data-key="Y">Y</button>
-                <button type="button" data-key="U">U</button>
-                <button type="button" data-key="I">I</button>
-                <button type="button" data-key="O">O</button>
-                <button type="button" data-key="P">P</button>
-                <button type="button" data-key="A">A</button>
-                <button type="button" data-key="S">S</button>
-                <button type="button" data-key="D">D</button>
-                <button type="button" data-key="F">F</button>
-                <button type="button" data-key="G">G</button>
-                <button type="button" data-key="H">H</button>
-                <button type="button" data-key="J">J</button>
-                <button type="button" data-key="K">K</button>
-                <button type="button" data-key="L">L</button>
-                <button type="button" data-key="/">/</button>
-                <button type="button" data-key="Z">Z</button>
-                <button type="button" data-key="X">X</button>
-                <button type="button" data-key="C">C</button>
-                <button type="button" data-key="V">V</button>
-                <button type="button" data-key="B">B</button>
-                <button type="button" data-key="N">N</button>
-                <button type="button" data-key="M">M</button>
-                <button type="button" data-action="backspace" class="wide-2">BACK</button>
-                <button type="button" data-action="space" class="wide-3">SPACE</button>
-                <button type="button" data-action="clear" class="wide-2">CLR</button>
-                <button type="button" data-action="enter" class="wide-2">ENTER</button>
-                <button type="button" data-action="close" class="wide-2">CLOSE</button>
-              </div>
-            </div>
           </div>
           <section id="cart-section">
             <div class="cart-head">
@@ -1723,7 +1607,6 @@ function createHtml(config: {
             </table>
             <p id="cart-empty">No items scanned yet.</p>
           </section>
-
 
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
@@ -1823,140 +1706,11 @@ function createHtml(config: {
             </label>
             <label class="search-field">Item search
               <input id="purchase-item-search" type="text" placeholder="Search items or scan barcode" autocomplete="off" />
-              <div class="purchase-field-actions">
-                <button type="button" id="purchase-search-keyboard-toggle" class="keyboard-toggle">Keyboard</button>
-                <button type="button" id="purchase-search-numpad-toggle" class="keyboard-toggle">Numpad</button>
-              </div>
-              <div id="purchase-search-keyboard" class="virtual-keyboard purchase-inline-keyboard" aria-hidden="true">
-                <button type="button" data-key="1">1</button>
-                <button type="button" data-key="2">2</button>
-                <button type="button" data-key="3">3</button>
-                <button type="button" data-key="4">4</button>
-                <button type="button" data-key="5">5</button>
-                <button type="button" data-key="6">6</button>
-                <button type="button" data-key="7">7</button>
-                <button type="button" data-key="8">8</button>
-                <button type="button" data-key="9">9</button>
-                <button type="button" data-key="0">0</button>
-                <button type="button" data-key="-" aria-label="Dash">-</button>
-                <button type="button" data-key="/" aria-label="Slash">/</button>
-                <button type="button" data-key="Q">Q</button>
-                <button type="button" data-key="W">W</button>
-                <button type="button" data-key="E">E</button>
-                <button type="button" data-key="R">R</button>
-                <button type="button" data-key="T">T</button>
-                <button type="button" data-key="Y">Y</button>
-                <button type="button" data-key="U">U</button>
-                <button type="button" data-key="I">I</button>
-                <button type="button" data-key="O">O</button>
-                <button type="button" data-key="P">P</button>
-                <button type="button" data-key="A">A</button>
-                <button type="button" data-key="S">S</button>
-                <button type="button" data-key="D">D</button>
-                <button type="button" data-key="F">F</button>
-                <button type="button" data-key="G">G</button>
-                <button type="button" data-key="H">H</button>
-                <button type="button" data-key="J">J</button>
-                <button type="button" data-key="K">K</button>
-                <button type="button" data-key="L">L</button>
-                <button type="button" data-key=";" aria-label="Semicolon">;</button>
-                <button type="button" data-key="Z">Z</button>
-                <button type="button" data-key="X">X</button>
-                <button type="button" data-key="C">C</button>
-                <button type="button" data-key="V">V</button>
-                <button type="button" data-key="B">B</button>
-                <button type="button" data-key="N">N</button>
-                <button type="button" data-key="M">M</button>
-                <button type="button" data-key="," aria-label="Comma">,</button>
-                <button type="button" data-key="." aria-label="Period">.</button>
-                <button type="button" data-key="'" aria-label="Apostrophe">'</button>
-                <button type="button" class="wide-5" data-action="space">Space</button>
-                <button type="button" class="wide-3" data-action="delete">Backspace</button>
-                <button type="button" class="wide-3" data-action="enter">Enter</button>
-                <button type="button" class="wide-5" data-action="clear">Clear</button>
-                <button type="button" class="wide-5" data-action="close">Close</button>
-              </div>
-              <div id="purchase-search-numpad" class="virtual-numpad purchase-inline-numpad" aria-hidden="true">
-                <button type="button" data-key="7">7</button>
-                <button type="button" data-key="8">8</button>
-                <button type="button" data-key="9">9</button>
-                <button type="button" data-key="4">4</button>
-                <button type="button" data-key="5">5</button>
-                <button type="button" data-key="6">6</button>
-                <button type="button" data-key="1">1</button>
-                <button type="button" data-key="2">2</button>
-                <button type="button" data-key="3">3</button>
-                <button type="button" data-action="clear">CLR</button>
-                <button type="button" data-key="0">0</button>
-                <button type="button" data-action="enter">Enter</button>
-                <button type="button" data-action="delete">DEL</button>
-                <button type="button" data-key="-">-</button>
-                <button type="button" data-key="/">/</button>
-                <button type="button" data-action="close">Close</button>
-              </div>
             </label>
             <div class="reference-field">
               <label>Reference / Invoice #
                 <input type="text" id="purchase-reference" placeholder="INV-12345" required />
               </label>
-              <div class="reference-actions">
-                <button type="button" id="reference-keyboard-toggle" class="keyboard-toggle">Keyboard</button>
-                <button type="button" id="reference-numpad-toggle" class="keyboard-toggle">Numpad</button>
-              </div>
-              <div id="reference-numpad" class="virtual-keyboard purchase-inline-keyboard" aria-hidden="true">
-                <!-- Digits Row -->
-                <button type="button" data-key="1">1</button>
-                <button type="button" data-key="2">2</button>
-                <button type="button" data-key="3">3</button>
-                <button type="button" data-key="4">4</button>
-                <button type="button" data-key="5">5</button>
-                <button type="button" data-key="6">6</button>
-                <button type="button" data-key="7">7</button>
-                <button type="button" data-key="8">8</button>
-                <button type="button" data-key="9">9</button>
-                <button type="button" data-key="0">0</button>
-                <button type="button" data-key="-" aria-label="Dash">-</button>
-                <button type="button" data-key="/" aria-label="Slash">/</button>
-                <!-- Row 1 -->
-                <button type="button" data-key="Q">Q</button>
-                <button type="button" data-key="W">W</button>
-                <button type="button" data-key="E">E</button>
-                <button type="button" data-key="R">R</button>
-                <button type="button" data-key="T">T</button>
-                <button type="button" data-key="Y">Y</button>
-                <button type="button" data-key="U">U</button>
-                <button type="button" data-key="I">I</button>
-                <button type="button" data-key="O">O</button>
-                <button type="button" data-key="P">P</button>
-                <!-- Row 2 -->
-                <button type="button" data-key="A">A</button>
-                <button type="button" data-key="S">S</button>
-                <button type="button" data-key="D">D</button>
-                <button type="button" data-key="F">F</button>
-                <button type="button" data-key="G">G</button>
-                <button type="button" data-key="H">H</button>
-                <button type="button" data-key="J">J</button>
-                <button type="button" data-key="K">K</button>
-                <button type="button" data-key="L">L</button>
-                <button type="button" data-key=";" aria-label="Semicolon">;</button>
-                <!-- Row 3 -->
-                <button type="button" data-key="Z">Z</button>
-                <button type="button" data-key="X">X</button>
-                <button type="button" data-key="C">C</button>
-                <button type="button" data-key="V">V</button>
-                <button type="button" data-key="B">B</button>
-                <button type="button" data-key="N">N</button>
-                <button type="button" data-key="M">M</button>
-                <button type="button" data-key="," aria-label="Comma">,</button>
-                <button type="button" data-key="." aria-label="Period">.</button>
-                <button type="button" data-key="'" aria-label="Apostrophe">'</button>
-                <!-- Row 4 -->
-                <button type="button" class="wide-5" data-action="space">Space</button>
-                <button type="button" class="wide-3" data-action="delete">Backspace</button>
-                <button type="button" class="wide-3" data-action="enter">Enter</button>
-                <button type="button" class="wide-5" data-action="clear">Clear</button>
-                <button type="button" class="wide-5" data-action="close">Close</button>
-              </div>
               <div id="reference-numpad-digits" class="virtual-numpad purchase-inline-numpad" aria-hidden="true">
                 <button type="button" data-key="7">7</button>
                 <button type="button" data-key="8">8</button>
@@ -2040,6 +1794,11 @@ function createHtml(config: {
             <p class="operator-auth-hint">Damages stay locked until an operator signs in. Auto-lock after 20 minutes.</p>
           </section>
           <h3>Log Damages</h3>
+          <div class="search-field">
+            <label>Search products
+              <input id="damage-item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+            </label>
+          </div>
           <div class="cart-head">
             <div>
               <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Damages Cart</h3>
@@ -2139,6 +1898,8 @@ function createHtml(config: {
     const DESTINATION_CHOICES = ${destinationChoicesJson};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
+    const SCANNER_NAME = 'Beverages';
+    const SCANNER_ID = 'cec719a1-1d1e-4078-b7f2-7536538aa2b5';
     const SESSION_STORAGE_KEY = 'beverage-kiosk-session-v2';
     const PASSWORD_STORAGE_KEY = 'beverage-password-verifier-v2';
     const REQUIRED_ROLE = 'supervisor';
@@ -2322,6 +2083,7 @@ function createHtml(config: {
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
+      const damageItemSearchInput = document.getElementById('damage-item-search');
       const searchKeyboardToggle = document.getElementById('search-keyboard-toggle');
       const searchNumpadToggle = document.getElementById('search-numpad-toggle');
       const searchEnterButton = document.getElementById('search-enter');
@@ -2363,12 +2125,6 @@ function createHtml(config: {
       const purchaseSupplier = document.getElementById('purchase-supplier');
       const purchaseReference = document.getElementById('purchase-reference');
       const purchaseItemSearchInput = document.getElementById('purchase-item-search');
-      const purchaseSearchKeyboard = document.getElementById('purchase-search-keyboard');
-      const purchaseSearchNumpad = document.getElementById('purchase-search-numpad');
-      const purchaseSearchKeyboardToggle = document.getElementById('purchase-search-keyboard-toggle');
-      const purchaseSearchNumpadToggle = document.getElementById('purchase-search-numpad-toggle');
-      const referenceKeyboardToggle = document.getElementById('reference-keyboard-toggle');
-      const referenceNumpadToggle = document.getElementById('reference-numpad-toggle');
       const referenceNumpadDigits = document.getElementById('reference-numpad-digits');
       const purchaseSummaryList = document.getElementById('purchase-summary-list');
       const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
@@ -2379,7 +2135,6 @@ function createHtml(config: {
       const purchaseCartBody = document.getElementById('purchase-cart-body');
       const purchaseCartEmpty = document.getElementById('purchase-cart-empty');
       const purchaseCartCount = document.getElementById('purchase-cart-count');
-      const referenceNumpad = document.getElementById('reference-numpad');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
       const operatorSelects = {
@@ -2854,6 +2609,7 @@ function createHtml(config: {
         if (active === purchaseReference) return true;
         if (active === damageNote) return true;
         if (active === itemSearchInput) return true;
+        if (active === damageItemSearchInput) return true;
         if (active === purchaseItemSearchInput) return true;
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
           return true;
@@ -3622,16 +3378,7 @@ function createHtml(config: {
       }
 
       function showReferenceNumpad() {
-        if (!referenceNumpad) return;
-        window.clearTimeout(referenceNumpadHideTimeoutId);
-        referenceNumpad.style.display = 'grid';
-        referenceNumpad.classList.add('active');
-        referenceNumpad.setAttribute('aria-hidden', 'false');
-        if (referenceNumpadDigits) {
-          referenceNumpadDigits.style.display = 'none';
-          referenceNumpadDigits.classList.remove('active');
-          referenceNumpadDigits.setAttribute('aria-hidden', 'true');
-        }
+        showReferenceNumpadDigits();
       }
 
       function showReferenceNumpadDigits() {
@@ -3640,23 +3387,13 @@ function createHtml(config: {
         referenceNumpadDigits.style.display = 'grid';
         referenceNumpadDigits.classList.add('active');
         referenceNumpadDigits.setAttribute('aria-hidden', 'false');
-        if (referenceNumpad) {
-          referenceNumpad.style.display = 'none';
-          referenceNumpad.classList.remove('active');
-          referenceNumpad.setAttribute('aria-hidden', 'true');
-        }
       }
 
       function hideReferenceNumpad() {
-        if (!referenceNumpad) return;
-        referenceNumpad.style.display = 'none';
-        referenceNumpad.classList.remove('active');
-        referenceNumpad.setAttribute('aria-hidden', 'true');
-        if (referenceNumpadDigits) {
-          referenceNumpadDigits.style.display = 'none';
-          referenceNumpadDigits.classList.remove('active');
-          referenceNumpadDigits.setAttribute('aria-hidden', 'true');
-        }
+        if (!referenceNumpadDigits) return;
+        referenceNumpadDigits.style.display = 'none';
+        referenceNumpadDigits.classList.remove('active');
+        referenceNumpadDigits.setAttribute('aria-hidden', 'true');
       }
 
       function forceCloseReferenceNumpad(event) {
@@ -3671,7 +3408,7 @@ function createHtml(config: {
         window.clearTimeout(referenceNumpadHideTimeoutId);
         referenceNumpadHideTimeoutId = window.setTimeout(() => {
           const active = document.activeElement;
-          if (referenceNumpad?.contains(active)) return;
+          if (referenceNumpadDigits?.contains(active)) return;
           hideReferenceNumpad();
         }, 120);
       }
@@ -3725,77 +3462,6 @@ function createHtml(config: {
         input.setSelectionRange(newStart, newStart);
         syncReferenceValue(next);
         input.focus();
-      }
-
-      function showPurchaseSearchKeyboard() {
-        if (!purchaseSearchKeyboard) return;
-        purchaseSearchKeyboard.style.display = 'grid';
-        purchaseSearchKeyboard.classList.add('active');
-        purchaseSearchKeyboard.setAttribute('aria-hidden', 'false');
-        if (purchaseSearchNumpad) {
-          purchaseSearchNumpad.style.display = 'none';
-          purchaseSearchNumpad.classList.remove('active');
-          purchaseSearchNumpad.setAttribute('aria-hidden', 'true');
-        }
-      }
-
-      function showPurchaseSearchNumpad() {
-        if (!purchaseSearchNumpad) return;
-        purchaseSearchNumpad.style.display = 'grid';
-        purchaseSearchNumpad.classList.add('active');
-        purchaseSearchNumpad.setAttribute('aria-hidden', 'false');
-        if (purchaseSearchKeyboard) {
-          purchaseSearchKeyboard.style.display = 'none';
-          purchaseSearchKeyboard.classList.remove('active');
-          purchaseSearchKeyboard.setAttribute('aria-hidden', 'true');
-        }
-      }
-
-      function hidePurchaseSearchKeyboards() {
-        if (purchaseSearchKeyboard) {
-          purchaseSearchKeyboard.style.display = 'none';
-          purchaseSearchKeyboard.classList.remove('active');
-          purchaseSearchKeyboard.setAttribute('aria-hidden', 'true');
-        }
-        if (purchaseSearchNumpad) {
-          purchaseSearchNumpad.style.display = 'none';
-          purchaseSearchNumpad.classList.remove('active');
-          purchaseSearchNumpad.setAttribute('aria-hidden', 'true');
-        }
-      }
-
-      function insertPurchaseSearchText(text) {
-        if (!purchaseItemSearchInput || !text) return;
-        const input = purchaseItemSearchInput;
-        const start = input.selectionStart ?? input.value.length;
-        const end = input.selectionEnd ?? input.value.length;
-        const current = input.value ?? '';
-        const next = current.slice(0, start) + text + current.slice(end);
-        input.value = next;
-        const caret = start + text.length;
-        input.setSelectionRange(caret, caret);
-        input.focus();
-      }
-
-      function deletePurchaseSearchChar() {
-        if (!purchaseItemSearchInput) return;
-        const input = purchaseItemSearchInput;
-        const start = input.selectionStart ?? input.value.length;
-        const end = input.selectionEnd ?? input.value.length;
-        const current = input.value ?? '';
-        if (start === 0 && end === 0) return;
-        const nextStart = start === end ? Math.max(start - 1, 0) : start;
-        const next = current.slice(0, nextStart) + current.slice(end);
-        input.value = next;
-        input.setSelectionRange(nextStart, nextStart);
-        input.focus();
-      }
-
-      function submitPurchaseSearch() {
-        if (!purchaseItemSearchInput) return;
-        const value = (purchaseItemSearchInput.value ?? '').trim();
-        if (!value) return;
-        searchProductsWithScan(value);
       }
 
       // Damage note virtual keyboard (kept ASCII-clean)
@@ -4092,6 +3758,11 @@ function createHtml(config: {
       function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
         const entry = buildEntry(product, variation);
+        const isDamage = context === 'damage';
+        if (isDamage) {
+          entry.packageSize = 1;
+          entry.packUom = entry.uom;
+        }
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
@@ -4101,7 +3772,7 @@ function createHtml(config: {
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = 'Supplier pack unit: ' + (entry.packUom ?? entry.uom ?? 'UNIT');
+        qtyUom.textContent = (isDamage ? 'Consumption unit: ' : 'Supplier pack unit: ') + (entry.packUom ?? entry.uom ?? 'UNIT');
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -4174,6 +3845,11 @@ function createHtml(config: {
 
         uniqueRows.forEach((row) => {
           const entry = buildEntry(product, row.variation);
+          const isDamage = context === 'damage';
+          if (isDamage) {
+            entry.packageSize = 1;
+            entry.packUom = entry.uom;
+          }
           const wrapper = document.createElement('div');
           wrapper.className = 'variant-row';
 
@@ -4189,7 +3865,7 @@ function createHtml(config: {
 
           const packUnit = document.createElement('div');
           packUnit.className = 'variant-pack-unit';
-          packUnit.textContent = 'Supplier pack unit';
+          packUnit.textContent = isDamage ? 'Consumption unit' : 'Supplier pack unit';
           const packUnitValue = document.createElement('span');
           packUnitValue.textContent = entry.packUom ?? entry.uom ?? 'UNIT';
           packUnit.appendChild(packUnitValue);
@@ -4284,12 +3960,16 @@ function createHtml(config: {
         const target = cart[index];
         if (!target) return;
         state.pendingEntry = { ...target };
+        if (context === 'damage') {
+          state.pendingEntry.packageSize = 1;
+          state.pendingEntry.packUom = state.pendingEntry.uom;
+        }
         state.pendingEditIndex = index;
         state.pendingContext = context;
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = 'Supplier pack unit: ' + (target.packUom ?? target.uom ?? 'UNIT');
+        qtyUom.textContent = (context === 'damage' ? 'Consumption unit: ' : 'Supplier pack unit: ') + (target.packUom ?? target.uom ?? 'UNIT');
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4556,6 +4236,17 @@ function createHtml(config: {
           console.warn('Supplier fetch: network offline (skipping direct Supabase queries)');
         }
 
+        const matchesScannerArea = (supplier) => supplier?.scanner_id === SCANNER_ID;
+
+        const linkTableSelect = (withScanner) =>
+          withScanner
+            ? 'supplier:suppliers(id,name,contact_name,contact_phone,contact_email,active,scanner_id,scanner:scanners(name))'
+            : 'supplier:suppliers(id,name,contact_name,contact_phone,contact_email,active)';
+        const supplierSelect = (withScanner) =>
+          withScanner
+            ? 'id,name,contact_name,contact_phone,contact_email,active,scanner_id,scanner:scanners(name)'
+            : 'id,name,contact_name,contact_phone,contact_email,active';
+
         const loadViaRpc = async (warehouseId) => {
           if (!warehouseId) return [];
           const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
@@ -4570,27 +4261,38 @@ function createHtml(config: {
 
         const loadViaLinkTable = async (warehouseId) => {
           if (!warehouseId) return [];
-          const { data, error, status } = await supabase
+          let { data, error, status } = await supabase
             .from('product_supplier_links')
-            .select('supplier:suppliers(id,name,contact_name,contact_phone,contact_email,active)')
+            .select(linkTableSelect(true))
             .eq('warehouse_id', warehouseId)
             .eq('active', true);
+          if (error && (error.message?.includes('scanner') || error.message?.includes('scanners'))) {
+            ({ data, error, status } = await supabase
+              .from('product_supplier_links')
+              .select(linkTableSelect(false))
+              .eq('warehouse_id', warehouseId)
+              .eq('active', true));
+          }
           if (error) {
             const wrapped = new Error(error.message ?? 'product_supplier_links fetch failed');
             wrapped.status = status;
             wrapped.code = error.code;
             throw wrapped;
           }
-          return (Array.isArray(data) ? data : [])
-            .map((row) => row?.supplier)
-            .filter(Boolean);
+          return (Array.isArray(data) ? data : []).map((row) => row?.supplier).filter(Boolean);
         };
 
         const loadAllSuppliers = async () => {
-          const { data, error, status } = await supabase
+          let { data, error, status } = await supabase
             .from('suppliers')
-            .select('id,name,contact_name,contact_phone,contact_email,active')
+            .select(supplierSelect(true))
             .eq('active', true);
+          if (error && (error.message?.includes('scanner') || error.message?.includes('scanners'))) {
+            ({ data, error, status } = await supabase
+              .from('suppliers')
+              .select(supplierSelect(false))
+              .eq('active', true));
+          }
           if (error) {
             const wrapped = new Error(error.message ?? 'suppliers fetch failed');
             wrapped.status = status;
@@ -4664,7 +4366,7 @@ function createHtml(config: {
         }
 
         const merged = mergeSuppliers(list, apiList);
-        state.suppliers = merged.filter((s) => s && s.active !== false);
+        state.suppliers = merged.filter((s) => s && s.active !== false && matchesScannerArea(s));
         renderSupplierOptions();
 
         if (!state.suppliers.length && lastError) {
@@ -5365,9 +5067,23 @@ function createHtml(config: {
         triggerSearchFromField();
       });
 
+      damageItemSearchInput?.addEventListener('focus', () => {
+        state.mode = 'damage';
+      });
+
+      damageItemSearchInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const value = (damageItemSearchInput.value ?? '').trim();
+        if (!value) return;
+        searchProductsWithScan(value);
+        window.setTimeout(() => {
+          damageItemSearchInput.select();
+        }, 10);
+      });
+
       purchaseItemSearchInput?.addEventListener('focus', () => {
         state.mode = 'purchase';
-        showPurchaseSearchKeyboard();
       });
 
       purchaseItemSearchInput?.addEventListener('keydown', (event) => {
@@ -5381,83 +5097,6 @@ function createHtml(config: {
         }, 10);
       });
 
-      purchaseSearchKeyboardToggle?.addEventListener('click', () => {
-        showPurchaseSearchKeyboard();
-        purchaseItemSearchInput?.focus();
-      });
-
-      purchaseSearchNumpadToggle?.addEventListener('click', () => {
-        showPurchaseSearchNumpad();
-        purchaseItemSearchInput?.focus();
-      });
-
-      purchaseSearchKeyboard?.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const key = target.dataset.key;
-        const action = target.dataset.action;
-        if (key) {
-          insertPurchaseSearchText(key);
-          return;
-        }
-        if (action === 'space') {
-          insertPurchaseSearchText(' ');
-          return;
-        }
-        if (action === 'delete') {
-          deletePurchaseSearchChar();
-          return;
-        }
-        if (action === 'enter') {
-          submitPurchaseSearch();
-          hidePurchaseSearchKeyboards();
-          return;
-        }
-        if (action === 'clear') {
-          if (purchaseItemSearchInput) {
-            purchaseItemSearchInput.value = '';
-            purchaseItemSearchInput.focus();
-          }
-          return;
-        }
-        if (action === 'close') {
-          hidePurchaseSearchKeyboards();
-        }
-      });
-
-      purchaseSearchNumpad?.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const key = target.dataset.key;
-        const action = target.dataset.action;
-        if (key) {
-          insertPurchaseSearchText(key);
-          return;
-        }
-        if (action === 'delete') {
-          deletePurchaseSearchChar();
-          return;
-        }
-        if (action === 'clear') {
-          if (purchaseItemSearchInput) {
-            purchaseItemSearchInput.value = '';
-            purchaseItemSearchInput.focus();
-          }
-          return;
-        }
-        if (action === 'enter') {
-          submitPurchaseSearch();
-          hidePurchaseSearchKeyboards();
-          return;
-        }
-        if (action === 'close') {
-          hidePurchaseSearchKeyboards();
-        }
-      });
 
       searchEnterButton?.addEventListener('click', () => {
         triggerSearchFromField();
@@ -5628,24 +5267,10 @@ function createHtml(config: {
         showReferenceNumpad();
       });
 
-      referenceKeyboardToggle?.addEventListener('click', () => {
-        showReferenceNumpad();
-        purchaseReference?.focus();
-      });
-
-      referenceNumpadToggle?.addEventListener('click', () => {
-        showReferenceNumpadDigits();
-        purchaseReference?.focus();
-      });
 
       purchaseReference?.addEventListener('pointerdown', (event) => {
         event.stopPropagation();
         showReferenceNumpad();
-      });
-
-      referenceNumpad?.addEventListener('mousedown', (event) => {
-        // Prevent focus from leaving the input while clicking the on-screen keyboard.
-        event.preventDefault();
       });
 
       referenceNumpadDigits?.addEventListener('mousedown', (event) => {
@@ -5662,14 +5287,9 @@ function createHtml(config: {
           target === purchaseReference ||
           purchaseReference?.contains(target) ||
           (target instanceof HTMLElement && target.closest('.reference-field'));
-        const interactingWithReferenceNumpad =
-          referenceNumpad?.contains(target) || referenceNumpadDigits?.contains(target);
+        const interactingWithReferenceNumpad = referenceNumpadDigits?.contains(target);
         const interactingWithPurchaseSearch =
-          target === purchaseItemSearchInput ||
-          purchaseItemSearchInput?.contains(target) ||
-          purchaseSearchKeyboard?.contains(target) ||
-          purchaseSearchNumpad?.contains(target) ||
-          (target instanceof HTMLElement && target.closest('.purchase-field-actions'));
+          target === purchaseItemSearchInput || purchaseItemSearchInput?.contains(target);
         if (interactingWithReferenceInput || interactingWithReferenceNumpad) {
           // Keep the keyboard open while interacting with it or its source input.
           window.clearTimeout(referenceNumpadHideTimeoutId);
@@ -5680,44 +5300,6 @@ function createHtml(config: {
           return;
         }
         hideReferenceNumpad();
-        hidePurchaseSearchKeyboards();
-      });
-
-      referenceNumpad?.addEventListener('click', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const key = target.dataset.key;
-        const action = target.dataset.action;
-        if (key) {
-          insertReferenceText(key.toUpperCase());
-          return;
-        }
-        if (!action) return;
-        if (action === 'clear') {
-          syncReferenceValue('');
-          if (purchaseReference) {
-            purchaseReference.value = '';
-            purchaseReference.focus();
-          }
-          return;
-        }
-        if (action === 'space') {
-          insertReferenceText(' ');
-          purchaseReference?.focus();
-          return;
-        }
-        if (action === 'enter') {
-          hideReferenceNumpad();
-          purchaseReference?.blur();
-          return;
-        }
-        if (action === 'delete') {
-          deleteReferenceChar();
-          return;
-        }
-        if (action === 'close') {
-          forceCloseReferenceNumpad(event);
-        }
       });
 
       referenceNumpadDigits?.addEventListener('click', (event) => {
@@ -5753,19 +5335,13 @@ function createHtml(config: {
       });
 
       // Close buttons should always hide the keyboard even if focus stays inside.
-      referenceNumpad?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
+      referenceNumpadDigits?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
         btn.addEventListener('click', (event) => {
           forceCloseReferenceNumpad(event);
         });
         btn.addEventListener('pointerdown', (event) => {
           forceCloseReferenceNumpad(event);
         });
-      });
-
-      referenceNumpad?.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-          forceCloseReferenceNumpad(event);
-        }
       });
 
       qtyForm?.addEventListener('submit', (event) => {
@@ -5821,7 +5397,7 @@ function createHtml(config: {
       document.addEventListener('click', (event) => {
         const target = event.target;
         const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
-        const clickedReferenceNumpad = referenceNumpad?.contains(target);
+        const clickedReferenceNumpad = referenceNumpadDigits?.contains(target);
         const interactingWithDamageNotes =
           target === damageNote || damageNote?.contains(target) || damageNotesKeyboard?.contains(target);
         const interactingWithSupplier = target === purchaseSupplier || purchaseSupplier?.contains(target);
