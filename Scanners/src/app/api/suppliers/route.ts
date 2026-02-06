@@ -38,20 +38,24 @@ function cleanUuid(value: unknown): string | null {
 export async function GET() {
   try {
     const supabase = getServiceClient();
-    let { data, error } = await supabase
+    const primary = await supabase
       .from("suppliers")
       .select("id,name,contact_name,contact_phone,contact_email,whatsapp_number,notes,active,scanner_id,scanner:scanners(id,name)")
       .order("name", { ascending: true });
-    if (error?.message?.includes("scanner")) {
-      ({ data, error } = await supabase
+    if (primary.error?.message?.includes("scanner")) {
+      const fallback = await supabase
         .from("suppliers")
         .select("id,name,contact_name,contact_phone,contact_email,whatsapp_number,notes,active")
-        .order("name", { ascending: true }));
+        .order("name", { ascending: true });
+
+      if (fallback.error) throw fallback.error;
+
+      return NextResponse.json({ suppliers: fallback.data ?? [] });
     }
 
-    if (error) throw error;
+    if (primary.error) throw primary.error;
 
-    return NextResponse.json({ suppliers: data ?? [] });
+    return NextResponse.json({ suppliers: primary.data ?? [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load suppliers";
     return NextResponse.json({ error: message }, { status: 500 });
