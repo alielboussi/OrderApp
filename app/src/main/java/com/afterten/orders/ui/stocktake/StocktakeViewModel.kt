@@ -580,7 +580,7 @@ class StocktakeViewModel(
                     damagesByKey[key] = (damagesByKey[key] ?: 0.0) + delta
                 }
                 "outlet_sale" -> {
-                    salesByKey[key] = (salesByKey[key] ?: 0.0) + kotlin.math.abs(delta)
+                    salesByKey[key] = (salesByKey[key] ?: 0.0) + delta
                 }
             }
         }
@@ -619,8 +619,8 @@ class StocktakeViewModel(
                 val sales = salesByKey[key] ?: 0.0
                 val opening = safe(row.openingQty)
                 val closing = safe(row.closingQty)
-                val expected = opening + transfers + damages - sales
-                val varianceQty = expected - closing
+                val expected = opening + transfers + damages + sales
+                val varianceQty = closing - expected
                 val costKey = "${row.itemId}|${variantKey}".lowercase()
                 val unitCost = variationCostMap[costKey]?.cost ?: costMap[row.itemId] ?: 0.0
                 val varianceAmount = varianceQty * unitCost
