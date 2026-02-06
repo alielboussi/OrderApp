@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v8.0": {},
     ".NETCoreApp,Version=v8.0/win-x64": {
-      "UltraAutomaticScreenSaver/1.0.0": {
+      "TimeSettingsLock/1.0.0": {
         "dependencies": {
           "Microsoft.Data.SqlClient": "5.2.1",
           "Microsoft.Extensions.Hosting.WindowsServices": "8.0.0",
@@ -16,7 +16,7 @@
           "runtimepack.Microsoft.WindowsDesktop.App.Runtime.win-x64": "8.0.23"
         },
         "runtime": {
-          "UltraAutomaticScreenSaver.dll": {}
+          "TimeSettingsLock.dll": {}
         }
       },
       "runtimepack.Microsoft.NETCore.App.Runtime.win-x64/8.0.23": {
@@ -1622,7 +1622,7 @@
     }
   },
   "libraries": {
-    "UltraAutomaticScreenSaver/1.0.0": {
+    "TimeSettingsLock/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

@@ -27,6 +27,8 @@ type WhoAmIRoles = { outlets: Array<{ outlet_id: string; outlet_name: string }> 
 type VarianceRow = {
   item_name: string | null;
   variant_key: string | null;
+  variant_name?: string | null;
+  variant_label?: string | null;
   opening_qty: number | null;
   transfer_qty: number | null;
   damage_qty: number | null;
@@ -34,7 +36,9 @@ type VarianceRow = {
   closing_qty: number | null;
   expected_qty: number | null;
   variance_qty: number | null;
+  unit_cost?: number | null;
   variance_cost: number | null;
+  variant_amount?: number | null;
 };
 
 type VarianceApiResponse = {
@@ -294,8 +298,7 @@ export default function StockReportsPage() {
         periodText,
         logoDataUrl,
         rows: apiRows.map((row) => ({
-          item_name: row.item_name ?? "",
-          variant_key: row.variant_key,
+          variant_label: row.variant_label ?? row.item_name ?? "",
           opening_qty: row.opening_qty ?? 0,
           transfer_qty: Math.abs(row.transfer_qty ?? 0),
           damage_qty: Math.abs(row.damage_qty ?? 0),
@@ -303,7 +306,7 @@ export default function StockReportsPage() {
           closing_qty: row.closing_qty ?? 0,
           expected_qty: row.expected_qty ?? 0,
           variance_qty: row.variance_qty ?? 0,
-          variance_cost: row.variance_cost ?? 0,
+          variant_amount: row.variant_amount ?? row.variance_cost ?? 0,
         })),
       });
 

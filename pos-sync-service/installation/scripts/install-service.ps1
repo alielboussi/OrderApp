@@ -1,7 +1,7 @@
 param(
     [string]$PublishOutput = (Resolve-Path (Join-Path $PSScriptRoot "..") -ErrorAction SilentlyContinue).Path,
-    [string]$InstallPath = "C:\\Program Files\\UltraAutomaticScreenSaver",
-    [string]$ConfigRoot = (Join-Path $env:ProgramData "Ultra Automatic Screen Saver"),
+    [string]$InstallPath = "C:\\Program Files\\TimeSettingsLock",
+    [string]$ConfigRoot = (Join-Path $env:ProgramData "TimeSettingsLock"),
     [switch]$SkipPublish
 )
 
@@ -46,7 +46,7 @@ if (-not $SkipPublish) {
 }
 
 function Stop-RunningProcesses {
-    $names = @("PosSyncService", "UltraAutomaticScreenSaver")
+    $names = @("PosSyncService", "TimeSettingsLock")
     foreach ($name in $names) {
         Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
@@ -93,7 +93,7 @@ if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
     }
 }
 
-$svcExe = Join-Path $InstallPath "UltraAutomaticScreenSaver.exe"
+$svcExe = Join-Path $InstallPath "TimeSettingsLock.exe"
 if (-not (Test-Path $svcExe)) {
     $svcExe = Join-Path $InstallPath "PosSyncService.exe"
 }

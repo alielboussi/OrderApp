@@ -6,6 +6,11 @@ function parseQty(value: number | null): number {
   return value;
 }
 
+function normalizeVariantKey(value?: string | null): string {
+  const raw = (value ?? "").trim().toLowerCase();
+  return raw.length ? raw : "base";
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const periodId = searchParams.get("period_id");
@@ -44,8 +49,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: countError.message }, { status: 500 });
   }
 
-  const toKey = (itemId: string, variantKey?: string | null) =>
-    `${itemId}::${(variantKey ?? "base").toLowerCase()}`;
+  const toKey = (itemId: string, variantKey?: string | null) => `${itemId}::${normalizeVariantKey(variantKey)}`;
 
   const openingMap = new Map<string, number>();
   const closingMap = new Map<string, number>();
@@ -117,9 +121,26 @@ export async function GET(request: Request) {
     itemMap.set(row.id, { name: row.name ?? null, cost });
   });
 
+  const { data: variantRows, error: variantError } = await supabase
+    .from("catalog_variants")
+    .select("id,item_id,name,cost,active")
+    .in("item_id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (variantError) {
+    return NextResponse.json({ error: variantError.message }, { status: 500 });
+  }
+
+  const variantMap = new Map<string, { name: string | null; cost: number }>();
+  (variantRows ?? []).forEach((row) => {
+    if (!row?.id || !row?.item_id) return;
+    if (row.active === false) return;
+    const key = `${row.item_id}::${normalizeVariantKey(row.id)}`;
+    variantMap.set(key, { name: row.name ?? null, cost: parseQty(row.cost) });
+  });
+
   const rows = Array.from(keys)
     .map((key) => {
-      const [itemId, variantKey] = key.split("::");
+      const [itemId, variantKeyRaw] = key.split("::");
       const openingQty = openingMap.get(key) ?? 0;
       const closingQty = closingMap.get(key) ?? 0;
       const transferQty = transferMap.get(key) ?? 0;
@@ -127,11 +148,22 @@ export async function GET(request: Request) {
       const salesQty = salesMap.get(key) ?? 0;
       const expectedQty = openingQty + transferQty + damageQty + salesQty;
       const varianceQty = closingQty - expectedQty;
-      const cost = itemMap.get(itemId)?.cost ?? 0;
+      const itemName = itemMap.get(itemId)?.name ?? itemId;
+      const variantKey = normalizeVariantKey(variantKeyRaw);
+      const variantInfo = variantMap.get(`${itemId}::${variantKey}`);
+      const variantName = variantKey === "base" ? itemName : variantInfo?.name ?? variantKey;
+      const variantLabel = variantKey === "base" ? itemName : `${itemName} - ${variantName}`;
+      const unitCost = variantInfo?.cost ?? itemMap.get(itemId)?.cost ?? 0;
+      const hasActivity = [openingQty, transferQty, damageQty, salesQty, closingQty].some(
+        (value) => Math.abs(value) > 0.0000001
+      );
+      if (!hasActivity) return null;
       return {
         item_id: itemId,
-        item_name: itemMap.get(itemId)?.name ?? itemId,
-        variant_key: variantKey ?? "base",
+        item_name: itemName,
+        variant_key: variantKey,
+        variant_name: variantName,
+        variant_label: variantLabel,
         opening_qty: openingQty,
         transfer_qty: transferQty,
         damage_qty: damageQty,
@@ -139,10 +171,13 @@ export async function GET(request: Request) {
         closing_qty: closingQty,
         expected_qty: expectedQty,
         variance_qty: varianceQty,
-        variance_cost: varianceQty * cost,
+        unit_cost: unitCost,
+        variance_cost: varianceQty * unitCost,
+        variant_amount: varianceQty * unitCost,
       };
     })
-    .sort((a, b) => (a.item_name ?? "").localeCompare(b.item_name ?? ""));
+    .filter((row) => row !== null)
+    .sort((a, b) => (a!.variant_label ?? "").localeCompare(b!.variant_label ?? ""));
 
   return NextResponse.json({
     period: {

@@ -69,6 +69,60 @@ private fun drawWatermark(canvas: Canvas, text: String, pageWidth: Int, pageHeig
     canvas.restore()
 }
 
+private fun drawFooter(
+    canvas: Canvas,
+    pageWidth: Int,
+    pageHeight: Int,
+    margin: Int
+): Int {
+    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF111827.toInt()
+        textSize = 10f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        textAlign = Paint.Align.LEFT
+    }
+    val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFB91C1C.toInt()
+        strokeWidth = 1.2f
+        style = Paint.Style.STROKE
+    }
+    val disclaimerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF374151.toInt()
+        textSize = 9f
+        textAlign = Paint.Align.CENTER
+    }
+
+    val boxSize = 48f
+    val labelGap = 6f
+    val stackGap = 18f
+    val footerHeight = (labelPaint.textSize + labelGap + boxSize) * 2 + stackGap + 18f
+    val top = pageHeight - margin - footerHeight
+
+    val leftX = margin.toFloat()
+    val nameLineWidth = 90f
+    val nameLineY1 = top + 14f
+    canvas.drawText("Managers Name:", leftX, nameLineY1, labelPaint)
+    canvas.drawLine(leftX + 110f, nameLineY1 + 2f, leftX + 110f + nameLineWidth, nameLineY1 + 2f, linePaint)
+    val box1Top = nameLineY1 + labelGap
+    canvas.drawRect(leftX, box1Top, leftX + boxSize, box1Top + boxSize, linePaint)
+
+    val nameLineY2 = box1Top + boxSize + stackGap + labelPaint.textSize
+    canvas.drawText("Stocktaker's Name:", leftX, nameLineY2, labelPaint)
+    canvas.drawLine(leftX + 130f, nameLineY2 + 2f, leftX + 130f + nameLineWidth, nameLineY2 + 2f, linePaint)
+    val box2Top = nameLineY2 + labelGap
+    canvas.drawRect(leftX, box2Top, leftX + boxSize, box2Top + boxSize, linePaint)
+
+    val disclaimerY = box2Top + boxSize + 14f
+    canvas.drawText(
+        "P.S “The above signatures state that the provided data is accurate and valid.”",
+        (pageWidth / 2f),
+        disclaimerY,
+        disclaimerPaint
+    )
+
+    return top.toInt()
+}
+
 private fun drawHeader(
     canvas: Canvas,
     pageWidth: Int,
@@ -79,25 +133,25 @@ private fun drawHeader(
 ): Int {
     val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF111827.toInt()
-        textSize = 18f
+        textSize = 15f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF374151.toInt()
-        textSize = 11f
+        textSize = 9.5f
     }
-    var y = margin + 18
+    var y = margin + 14
     logo?.let {
-        val target = Rect(margin, margin, margin + 56, margin + 56)
+        val target = Rect(margin, margin, margin + 48, margin + 48)
         canvas.drawBitmap(it, null, target, null)
     }
     canvas.drawText(title, (pageWidth / 2f) - (headerPaint.measureText(title) / 2f), y.toFloat(), headerPaint)
-    y += 14
+    y += 12
     subLines.forEach {
         canvas.drawText(it, (pageWidth / 2f) - (subPaint.measureText(it) / 2f), y.toFloat(), subPaint)
-        y += 13
+        y += 11
     }
-    return y + 6
+    return y + 4
 }
 
 private fun drawTableHeader(
@@ -109,7 +163,7 @@ private fun drawTableHeader(
 ): Float {
     val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF6B7280.toInt()
-        textSize = 10f
+        textSize = 9f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     var x = left
@@ -151,7 +205,7 @@ private fun drawRow(
 ) {
     val rowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF111827.toInt()
-        textSize = 11f
+        textSize = 9.5f
     }
     var x = left
     columns.forEachIndexed { index, col ->
@@ -175,20 +229,20 @@ fun generateStocktakeVariancePdf(
 ): File {
     val pageWidth = 595
     val pageHeight = 842
-    val margin = 24
+    val margin = 14
     val doc = PdfDocument()
     val logo = loadAppLogo(context, 56)
 
     val columns = listOf(
-        PdfColumn("Item Name", 0.26f),
-        PdfColumn("Opening Stock Qty", 0.09f, alignRight = true),
-        PdfColumn("Transfers", 0.09f, alignRight = true),
-        PdfColumn("Damages", 0.08f, alignRight = true),
-        PdfColumn("Sales", 0.08f, alignRight = true),
-        PdfColumn("Expected Stock", 0.10f, alignRight = true),
-        PdfColumn("Actual Closing Stock", 0.10f, alignRight = true),
-        PdfColumn("Variance Qty", 0.10f, alignRight = true),
-        PdfColumn("Variance Amount", 0.10f, alignRight = true)
+        PdfColumn("Variant", 0.30f),
+        PdfColumn("Opening", 0.08f, alignRight = true),
+        PdfColumn("Transfers", 0.08f, alignRight = true),
+        PdfColumn("Damages", 0.07f, alignRight = true),
+        PdfColumn("Sales", 0.07f, alignRight = true),
+        PdfColumn("Expected", 0.09f, alignRight = true),
+        PdfColumn("Closing", 0.08f, alignRight = true),
+        PdfColumn("Variance", 0.08f, alignRight = true),
+        PdfColumn("Variant Amount", 0.15f, alignRight = true)
     )
 
     val openedAt = formatStamp(report.period.openedAt)
@@ -207,14 +261,14 @@ fun generateStocktakeVariancePdf(
     var pageNumber = 1
     val tableLeft = margin.toFloat()
     val tableWidth = (pageWidth - margin * 2).toFloat()
-    val rowHeight = 18f
+    val rowHeight = 14f
 
     while (rowIndex < report.rows.size || rowIndex == 0) {
         val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
         val page = doc.startPage(pageInfo)
         val canvas = page.canvas
 
-        drawWatermark(canvas, "Afterten Takeaway & Restaurant", pageWidth, pageHeight)
+        drawWatermark(canvas, "Afterten Takeaway & Restaurant Ltd", pageWidth, pageHeight)
         drawBorder(canvas, pageWidth, pageHeight, margin)
 
         var cursorY = drawHeader(
@@ -229,7 +283,8 @@ fun generateStocktakeVariancePdf(
         val headerY = cursorY.toFloat()
         cursorY = drawTableHeader(canvas, columns, tableLeft, headerY, tableWidth).toInt()
 
-        val maxY = pageHeight - margin - 20
+        val footerTop = drawFooter(canvas, pageWidth, pageHeight, margin)
+        val maxY = footerTop - 56
         while (rowIndex < report.rows.size && cursorY + rowHeight < maxY) {
             val row = report.rows[rowIndex]
             drawRow(

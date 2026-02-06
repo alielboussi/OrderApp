@@ -36,6 +36,7 @@ class StocktakeViewModel(
         val stocktakeUoms: Map<String, String> = emptyMap(),
         val qtyDecimals: Map<String, Int> = emptyMap(),
         val productPrices: Map<String, Double> = emptyMap(),
+        val productCosts: Map<String, Double> = emptyMap(),
         val selectedWarehouseId: String? = null,
         val selectedWarehouseOutlets: List<SupabaseProvider.Outlet> = emptyList(),
         val openPeriod: StocktakeRepository.StockPeriod? = null,
@@ -203,6 +204,9 @@ class StocktakeViewModel(
         val productPrices = products.associate { product ->
             product.id to (product.sellingPrice ?: 0.0)
         }
+        val productCosts = products.associate { product ->
+            product.id to (product.cost ?: 0.0)
+        }
         fun decimalKey(itemId: String, variantKey: String?) = "${itemId}|${variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
         val qtyDecimals = mutableMapOf<String, Int>()
         products.forEach { product ->
@@ -218,7 +222,8 @@ class StocktakeViewModel(
             productUoms = productUoms,
             stocktakeUoms = stocktakeUoms,
             qtyDecimals = qtyDecimals,
-            productPrices = productPrices
+            productPrices = productPrices,
+            productCosts = productCosts
         )
     }
 
@@ -592,7 +597,11 @@ class StocktakeViewModel(
             return variant?.name?.ifBlank { variantKey } ?: variantKey
         }
 
-        val priceMap = _ui.value.productPrices
+        val costMap = _ui.value.productCosts
+        val variationCostMap = _ui.value.variations
+            .associateBy { variation ->
+                "${variation.productId}|${variation.key?.ifBlank { variation.id } ?: variation.id}".lowercase()
+            }
 
         val rows = varianceRows
             .filter { row ->
@@ -612,8 +621,12 @@ class StocktakeViewModel(
                 val closing = safe(row.closingQty)
                 val expected = opening + transfers + damages - sales
                 val varianceQty = expected - closing
-                val sellingPrice = priceMap[row.itemId] ?: 0.0
-                val varianceAmount = varianceQty * sellingPrice
+                val costKey = "${row.itemId}|${variantKey}".lowercase()
+                val unitCost = variationCostMap[costKey]?.cost ?: costMap[row.itemId] ?: 0.0
+                val varianceAmount = varianceQty * unitCost
+                val hasActivity = listOf(opening, transfers, damages, sales, closing)
+                    .any { kotlin.math.abs(it) > 0.0000001 }
+                if (!hasActivity) return@map null
                 VarianceReportRow(
                     itemId = row.itemId,
                     variantKey = variantKey,
@@ -628,6 +641,7 @@ class StocktakeViewModel(
                     varianceAmount = varianceAmount
                 )
             }
+            .filterNotNull()
             .sortedBy { it.itemLabel.lowercase() }
 
         val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
