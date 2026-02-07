@@ -266,6 +266,12 @@
   font-size: 13px;
 }
 
+.variantSupplierSku {
+  margin: 2px 0 0;
+  color: #9fb1ff;
+  font-size: 12px;
+}
+
 .empty {
   margin: 0;
   color: #9aa5c4;

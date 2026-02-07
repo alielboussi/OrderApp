@@ -21,6 +21,7 @@ type Variant = {
   item_id: string;
   name: string;
   sku?: string | null;
+  supplier_sku?: string | null;
   active?: boolean | null;
   has_recipe?: boolean | null;
 };
@@ -245,6 +246,9 @@ export default function CatalogMenuPage() {
                                 <div>
                                   <p className={styles.variantName}>{variant.name}</p>
                                   {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
+                                  {variant.supplier_sku && (
+                                    <p className={styles.variantSupplierSku}>Supplier SKU: {variant.supplier_sku}</p>
+                                  )}
                                 </div>
                                 <div className={styles.variantActions}>
                                   <span
