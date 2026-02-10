@@ -2719,6 +2719,12 @@ function createHtml(config: {
                 productsWithWarehouseVariations.add(home.item_id);
               }
             }
+            if (home?.storage_warehouse_id === lockedSourceId && home?.item_id) {
+              sourceIds.add(home.item_id);
+              if (home.normalized_variant_key && home.normalized_variant_key !== 'base') {
+                productsWithWarehouseVariations.add(home.item_id);
+              }
+            }
           });
 
           (outletRouteResult.data ?? []).forEach((route) => {

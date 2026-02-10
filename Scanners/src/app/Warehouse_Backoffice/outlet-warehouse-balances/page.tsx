@@ -95,6 +95,7 @@ export default function OutletWarehouseBalancesPage() {
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const [search, setSearch] = useState("");
   const [includeIngredients, setIncludeIngredients] = useState(true);
@@ -105,6 +106,12 @@ export default function OutletWarehouseBalancesPage() {
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    const timer = setInterval(() => setRefreshTick((value) => value + 1), 30000);
+    return () => clearInterval(timer);
+  }, [status]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -306,13 +313,7 @@ export default function OutletWarehouseBalancesPage() {
 
           const key = `${row.item_id}::${vKey}::${kind}`;
           const existing = map.get(key);
-          const openingUnits = parseQty(row.opening_qty);
-          const movementUnits = parseQty(row.movement_qty);
-          const hasOpening = row.opening_qty !== null;
-          let onHandUnits = parseQty(row.expected_qty);
-          if (!hasOpening) {
-            onHandUnits = movementUnits < 0 ? movementUnits : 0;
-          }
+          const onHandUnits = parseQty(row.expected_qty);
           const isZeroNet = Math.abs(onHandUnits) < 1e-9;
           if (showZeroOrNegative) {
             if (onHandUnits >= 0 || isZeroNet) return;
@@ -320,10 +321,7 @@ export default function OutletWarehouseBalancesPage() {
             if (onHandUnits <= 0 || isZeroNet) return;
           }
 
-          const effectiveSoldUnits = hasOpening ? movementUnits : Math.min(0, movementUnits);
-
           if (existing) {
-            existing.sold_units = (existing.sold_units ?? 0) + effectiveSoldUnits;
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;
           } else {
             map.set(key, {
@@ -331,7 +329,6 @@ export default function OutletWarehouseBalancesPage() {
               item_name: row.item_name,
               variant_key: row.variant_key,
               item_kind: kind,
-              sold_units: effectiveSoldUnits,
               net_units: onHandUnits,
             });
           }
@@ -365,6 +362,7 @@ export default function OutletWarehouseBalancesPage() {
     showZeroOrNegative,
     search,
     selectedOutletIds,
+    refreshTick,
     supabase,
   ]);
 
@@ -562,6 +560,7 @@ export default function OutletWarehouseBalancesPage() {
                 {selectedWarehouseId === "all" && linkedWarehouseIds.length > 0
                   ? ` · Summed across ${linkedWarehouseIds.length} warehouses`
                   : ""}
+                {" · Auto-refreshes every 30s"}
               </p>
             </div>
             {loading && <span className={styles.loadingTag}>Refreshing…</span>}

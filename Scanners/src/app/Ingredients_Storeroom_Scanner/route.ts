@@ -2388,9 +2388,10 @@ function createHtml(config: {
           });
 
           latestStorageHomes.forEach((home) => {
-            if (home?.item_id && home?.normalized_variant_key && home.normalized_variant_key !== 'base') {
+            if (!home?.item_id) return;
+            productIds.add(home.item_id);
+            if (home?.normalized_variant_key && home.normalized_variant_key !== 'base') {
               productsWithWarehouseVariations.add(home.item_id);
-              productIds.add(home.item_id);
             }
           });
 
