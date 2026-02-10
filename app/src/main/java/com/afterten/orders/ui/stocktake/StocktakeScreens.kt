@@ -53,6 +53,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
@@ -65,6 +66,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -274,13 +276,6 @@ fun StocktakeDashboardScreen(
                             border = BorderStroke(1.dp, primaryRed)
                         ) { Text("View variance") }
                     }
-                    OutlinedButton(
-                        onClick = { onOpenCounts(period.id) },
-                        enabled = period.status == "open" && !ui.loading,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        border = BorderStroke(1.dp, primaryRed)
-                    ) { Text("Close period") }
                 }
             }
         }
@@ -654,6 +649,9 @@ fun StocktakeCountScreen(
     var dialogItemName by remember { mutableStateOf("") }
     var dialogItemKind by remember { mutableStateOf<String?>(null) }
     val dialogQty = remember { mutableStateMapOf<String, String>() }
+    val unsavedKeys = remember { mutableStateMapOf<String, Boolean>() }
+    var showLeaveDialog by remember { mutableStateOf(false) }
+    var leaveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     fun formatQty(value: Double?, decimals: Int): String {
         val safe = decimals.coerceIn(0, 6)
@@ -826,6 +824,65 @@ fun StocktakeCountScreen(
         }
     }
 
+    val hasUnsaved = unsavedKeys.isNotEmpty()
+
+    LaunchedEffect(ui.lastBatchSavedKeys) {
+        if (ui.lastBatchSavedKeys.isNotEmpty()) {
+            ui.lastBatchSavedKeys.forEach { key ->
+                unsavedKeys.remove(key)
+            }
+        }
+    }
+
+    fun requestLeave(action: () -> Unit) {
+        if (hasUnsaved) {
+            leaveAction = action
+            showLeaveDialog = true
+        } else {
+            action()
+        }
+    }
+
+    BackHandler(enabled = showLeaveDialog) {
+        showLeaveDialog = false
+    }
+
+    BackHandler(enabled = hasUnsaved && !showLeaveDialog) {
+        requestLeave { onBack() }
+    }
+
+    fun buildBatchForRows(rows: List<com.afterten.orders.data.SupabaseProvider.WarehouseStockItem>): List<StocktakeViewModel.CountInput>? {
+        var hadError = false
+        val batch = mutableListOf<StocktakeViewModel.CountInput>()
+        val seenKeys = mutableSetOf<String>()
+        rows.forEach { row ->
+            val key = row.variantKey?.ifBlank { "base" } ?: "base"
+            val qtyKey = "${row.itemId}|$key"
+            if (!seenKeys.add(qtyKey)) return@forEach
+            val openingLocked = ui.openingLockedKeys.contains(qtyKey)
+            val closingLocked = ui.closingLockedKeys.contains(qtyKey)
+            val entryMode = if (openingLocked) "closing" else "opening"
+            if (entryMode == "closing" && closingLocked) return@forEach
+            val rawText = dialogQty[qtyKey].orEmpty().trim()
+            val parsed = if (rawText.isBlank()) 0.0 else rawText.toDoubleOrNull()
+            if (parsed == null || parsed < 0) {
+                hadError = true
+                return@forEach
+            }
+            val uom = variantStocktakeUomMap[key] ?: variantStocktakeUomMap[key.lowercase()]
+                ?: ui.stocktakeUoms[row.itemId]
+                ?: variantUomMap[key] ?: variantUomMap[key.lowercase()]
+                ?: ui.productUoms[row.itemId]
+                ?: "each"
+            val rowDecimals = resolveDecimals(row.itemId, key, uom)
+            val factor = 10.0.pow(rowDecimals.coerceIn(0, 6).toDouble())
+            val rounded = round(parsed * factor) / factor
+            batch.add(StocktakeViewModel.CountInput(row.itemId, rounded, key, entryMode))
+        }
+        if (hadError) return null
+        return batch
+    }
+
     val recipeTargets = remember(filteredBaseItems, allItemsByItemId) {
         filteredBaseItems.mapNotNull { row ->
             val rows = allItemsByItemId[row.itemId].orEmpty()
@@ -858,7 +915,9 @@ fun StocktakeCountScreen(
     ) {
         item(span = { GridItemSpan(columns) }) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+                IconButton(onClick = { requestLeave { onBack() } }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(stocktakeNumber ?: ui.openPeriod?.stocktakeNumber ?: "Stocktake", fontWeight = FontWeight.Bold, color = Color.White)
                     Text(periodId.take(8) + "…", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
@@ -916,60 +975,6 @@ fun StocktakeCountScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.8f)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = {
-                                var hadError = false
-                                val batch = mutableListOf<StocktakeViewModel.CountInput>()
-                                val sourceItems = if (ui.allItems.isNotEmpty()) ui.allItems else ui.items
-                                val seenKeys = mutableSetOf<String>()
-                                sourceItems.forEach { row ->
-                                    val key = row.variantKey?.ifBlank { "base" } ?: "base"
-                                    val qtyKey = "${row.itemId}|$key"
-                                    if (!seenKeys.add(qtyKey)) return@forEach
-                                    val openingLocked = ui.openingLockedKeys.contains(qtyKey)
-                                    val closingLocked = ui.closingLockedKeys.contains(qtyKey)
-                                    val entryMode = if (openingLocked) "closing" else "opening"
-                                    if (entryMode == "closing" && closingLocked) return@forEach
-                                    val rawText = dialogQty[qtyKey].orEmpty().trim()
-                                    val parsed = if (rawText.isBlank()) 0.0 else rawText.toDoubleOrNull()
-                                    if (parsed == null || parsed < 0) {
-                                        hadError = true
-                                        return@forEach
-                                    }
-                                    val uom = variantStocktakeUomMap[key] ?: variantStocktakeUomMap[key.lowercase()]
-                                        ?: ui.stocktakeUoms[row.itemId]
-                                        ?: variantUomMap[key] ?: variantUomMap[key.lowercase()]
-                                        ?: ui.productUoms[row.itemId]
-                                        ?: "each"
-                                    val rowDecimals = resolveDecimals(row.itemId, key, uom)
-                                    val factor = 10.0.pow(rowDecimals.coerceIn(0, 6).toDouble())
-                                    val rounded = round(parsed * factor) / factor
-                                    batch.add(StocktakeViewModel.CountInput(row.itemId, rounded, key, entryMode))
-                                }
-                                inputError = if (hadError) "Enter a non-negative number" else null
-                                if (!hadError && batch.isNotEmpty()) {
-                                    vm.recordCountsBatch(batch)
-                                }
-                            },
-                            enabled = dialogQty.isNotEmpty() && !ui.loading,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Save all")
-                        }
-                        OutlinedButton(
-                            onClick = { vm.closePeriod() },
-                            enabled = ui.openPeriod?.status == "open" && !ui.loading,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                            border = BorderStroke(1.dp, primaryRed)
-                        ) {
-                            Text("Close period")
-                        }
-                    }
                     inputError?.let {
                         Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall)
                     }
@@ -1250,6 +1255,7 @@ fun StocktakeCountScreen(
                                                     val parsed = currentQty.toDoubleOrNull() ?: 0.0
                                                     val next = (parsed - step).coerceAtLeast(0.0)
                                                     dialogQty[qtyKey] = formatQty(next, rowDecimals)
+                                                    unsavedKeys[qtyKey] = true
                                                 },
                                                 modifier = Modifier.size(32.dp),
                                                 enabled = !isLocked
@@ -1259,7 +1265,10 @@ fun StocktakeCountScreen(
                                             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                                 BasicTextField(
                                                     value = currentQty,
-                                                    onValueChange = { dialogQty[qtyKey] = sanitizeQtyInput(it, rowDecimals) },
+                                                    onValueChange = {
+                                                        dialogQty[qtyKey] = sanitizeQtyInput(it, rowDecimals)
+                                                        unsavedKeys[qtyKey] = true
+                                                    },
                                                     singleLine = true,
                                                     keyboardOptions = KeyboardOptions(keyboardType = if (rowDecimals > 0) KeyboardType.Decimal else KeyboardType.Number),
                                                     textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontSize = 20.sp, lineHeight = 22.sp, color = fieldText),
@@ -1279,6 +1288,7 @@ fun StocktakeCountScreen(
                                                     val parsed = currentQty.toDoubleOrNull() ?: 0.0
                                                     val next = parsed + step
                                                     dialogQty[qtyKey] = formatQty(next, rowDecimals)
+                                                    unsavedKeys[qtyKey] = true
                                                 },
                                                 modifier = Modifier.size(32.dp),
                                                 enabled = !isLocked
@@ -1302,19 +1312,69 @@ fun StocktakeCountScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = { variantDialogOpen = false },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        val dialogKeys = displayRows.map { row ->
+                            val vKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                            "${row.itemId}|$vKey"
+                        }
+                        val dialogHasUnsaved = dialogKeys.any { unsavedKeys[it] == true }
+                        if (dialogHasUnsaved) {
+                            requestLeave { variantDialogOpen = false }
+                        } else {
+                            variantDialogOpen = false
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
                 ) {
                     Text("Back")
                 }
+                Button(
+                    onClick = {
+                        val batch = buildBatchForRows(displayRows)
+                        inputError = if (batch == null) "Enter a non-negative number" else null
+                        if (batch != null && batch.isNotEmpty()) {
+                            vm.recordCountsBatch(batch)
+                        }
+                    },
+                    enabled = !ui.loading && displayRows.any { row ->
+                        val vKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                        val key = "${row.itemId}|$vKey"
+                        unsavedKeys[key] == true
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = Color.White)
+                ) {
+                    Text("Save item")
+                }
             }
             Text(
-                "Use Save all on the main stocktake page to lock counts.",
+                "Use Save item to lock counts before leaving.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.7f)
             )
         }
+    }
+
+    if (showLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text("Unsaved counts") },
+            text = { Text("You have unsaved counts. Leave without saving?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLeaveDialog = false
+                    leaveAction?.invoke()
+                }) {
+                    Text("Leave")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text("Stay")
+                }
+            }
+        )
     }
 }
 

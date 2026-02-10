@@ -44,6 +44,7 @@ class StocktakeViewModel(
         val periodsLoading: Boolean = false,
         val periodsError: String? = null,
         val variance: List<StocktakeRepository.VarianceRow> = emptyList(),
+        val lastBatchSavedKeys: Set<String> = emptySet(),
         val openingLockedKeys: Set<String> = emptySet(),
         val closingLockedKeys: Set<String> = emptySet(),
         val lastCount: StocktakeRepository.StockCount? = null,
@@ -344,18 +345,26 @@ class StocktakeViewModel(
         viewModelScope.launch {
             var last: StocktakeRepository.StockCount? = null
             var hadFailure = false
+            val savedKeys = mutableSetOf<String>()
             entries.forEach { entry ->
                 runCatching {
                     repo.recordCount(jwt, periodId, entry.itemId, entry.qty, entry.variantKey, entry.kind)
                 }.onSuccess { count ->
                     last = count
+                    val key = "${entry.itemId}|${entry.variantKey.ifBlank { "base" }}"
+                    savedKeys.add(key)
                 }.onFailure { err ->
                     hadFailure = true
                     Log.e(TAG, "recordCount batch failed", err)
                     pushDebug("recordCount batch failed: ${err.message}")
                 }
             }
-            _ui.value = _ui.value.copy(lastCount = last, loading = false, error = if (hadFailure) "Some counts failed to save." else null)
+            _ui.value = _ui.value.copy(
+                lastCount = last,
+                lastBatchSavedKeys = savedKeys,
+                loading = false,
+                error = if (hadFailure) "Some counts failed to save." else null
+            )
             loadItems(warehouseId)
             refreshOpeningLocks(periodId)
             refreshClosingLocks(periodId)
