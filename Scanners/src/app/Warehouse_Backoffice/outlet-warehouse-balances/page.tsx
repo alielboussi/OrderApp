@@ -100,7 +100,7 @@ export default function OutletWarehouseBalancesPage() {
   const [search, setSearch] = useState("");
   const [includeIngredients, setIncludeIngredients] = useState(true);
   const [includeRaw, setIncludeRaw] = useState(true);
-  const [includeFinished, setIncludeFinished] = useState(false);
+  const [includeFinished, setIncludeFinished] = useState(true);
   const [baseOnly, setBaseOnly] = useState(false);
   const [showZeroOrNegative, setShowZeroOrNegative] = useState(false);
 

@@ -14,7 +14,7 @@
         },
         {
           "view_name": "warehouse_stock_variances",
-          "definition": " WITH opening AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS opening_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'opening'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), closing AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS closing_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'closing'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), movement AS (\n         SELECT wsp_1.id AS period_id,\n            sl.item_id,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) AS movement_qty\n           FROM (warehouse_stock_periods wsp_1\n             LEFT JOIN stock_ledger sl ON (((sl.warehouse_id = wsp_1.warehouse_id) AND (sl.location_type = 'warehouse'::text) AND (sl.item_id IS NOT NULL) AND (sl.occurred_at >= wsp_1.opened_at) AND ((wsp_1.closed_at IS NULL) OR (sl.occurred_at <= COALESCE(wsp_1.closed_at, now()))) AND (sl.reason = ANY (ARRAY['warehouse_transfer'::stock_reason, 'outlet_sale'::stock_reason, 'damage'::stock_reason])))))\n          GROUP BY wsp_1.id, sl.item_id, (normalize_variant_key(sl.variant_key))\n        ), keys AS (\n         SELECT opening.period_id,\n            opening.item_id,\n            opening.variant_key\n           FROM opening\n        UNION\n         SELECT closing.period_id,\n            closing.item_id,\n            closing.variant_key\n           FROM closing\n        UNION\n         SELECT movement.period_id,\n            movement.item_id,\n            movement.variant_key\n           FROM movement\n        )\n SELECT k.period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    k.item_id,\n    k.variant_key,\n    COALESCE(o.opening_qty, (0)::numeric) AS opening_qty,\n    COALESCE(m.movement_qty, (0)::numeric) AS movement_qty,\n    COALESCE(c.closing_qty, (0)::numeric) AS closing_qty,\n    (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric)) AS expected_qty,\n    (COALESCE(c.closing_qty, (0)::numeric) - (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric))) AS variance_qty,\n    ci.name AS item_name,\n    COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n    ((COALESCE(c.closing_qty, (0)::numeric) - (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric))) * COALESCE(ci.cost, (0)::numeric)) AS variance_cost\n   FROM (((((keys k\n     JOIN warehouse_stock_periods wsp ON ((wsp.id = k.period_id)))\n     LEFT JOIN opening o ON (((o.period_id = k.period_id) AND (o.item_id = k.item_id) AND (o.variant_key = k.variant_key))))\n     LEFT JOIN closing c ON (((c.period_id = k.period_id) AND (c.item_id = k.item_id) AND (c.variant_key = k.variant_key))))\n     LEFT JOIN movement m ON (((m.period_id = k.period_id) AND (m.item_id = k.item_id) AND (m.variant_key = k.variant_key))))\n     LEFT JOIN catalog_items ci ON ((ci.id = k.item_id)));",
+          "definition": " WITH opening AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS opening_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'opening'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), closing AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS closing_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'closing'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), movement AS (\n         SELECT wsp_1.id AS period_id,\n            sl.item_id,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) AS movement_qty\n           FROM (warehouse_stock_periods wsp_1\n             LEFT JOIN stock_ledger sl ON (((sl.warehouse_id = wsp_1.warehouse_id) AND (sl.location_type = 'warehouse'::text) AND (sl.item_id IS NOT NULL) AND (sl.occurred_at >= wsp_1.opened_at) AND ((wsp_1.closed_at IS NULL) OR (sl.occurred_at <= COALESCE(wsp_1.closed_at, now()))) AND (sl.reason = ANY (ARRAY['warehouse_transfer'::stock_reason, 'outlet_sale'::stock_reason, 'damage'::stock_reason, 'recipe_consumption'::stock_reason])))))\n          GROUP BY wsp_1.id, sl.item_id, (normalize_variant_key(sl.variant_key))\n        ), keys AS (\n         SELECT opening.period_id,\n            opening.item_id,\n            opening.variant_key\n           FROM opening\n        UNION\n         SELECT closing.period_id,\n            closing.item_id,\n            closing.variant_key\n           FROM closing\n        UNION\n         SELECT movement.period_id,\n            movement.item_id,\n            movement.variant_key\n           FROM movement\n        )\n SELECT k.period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    k.item_id,\n    k.variant_key,\n    COALESCE(o.opening_qty, (0)::numeric) AS opening_qty,\n    COALESCE(m.movement_qty, (0)::numeric) AS movement_qty,\n    COALESCE(c.closing_qty, (0)::numeric) AS closing_qty,\n    (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric)) AS expected_qty,\n    (COALESCE(c.closing_qty, (0)::numeric) - (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric))) AS variance_qty,\n    ci.name AS item_name,\n    COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n    ((COALESCE(c.closing_qty, (0)::numeric) - (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric))) * COALESCE(ci.cost, (0)::numeric)) AS variance_cost\n   FROM (((((keys k\n     JOIN warehouse_stock_periods wsp ON ((wsp.id = k.period_id)))\n     LEFT JOIN opening o ON (((o.period_id = k.period_id) AND (o.item_id = k.item_id) AND (o.variant_key = k.variant_key))))\n     LEFT JOIN closing c ON (((c.period_id = k.period_id) AND (c.item_id = k.item_id) AND (c.variant_key = k.variant_key))))\n     LEFT JOIN movement m ON (((m.period_id = k.period_id) AND (m.item_id = k.item_id) AND (m.variant_key = k.variant_key))))\n     LEFT JOIN catalog_items ci ON ((ci.id = k.item_id)));",
           "view_schema": "public"
         }
       ],
@@ -4604,42 +4604,6 @@
           "table_schema": "public",
           "using_expression": "true",
           "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "INSERT",
-          "permissive": "PERMISSIVE",
-          "table_name": "counter_values",
-          "policy_name": "counter_values_pos_sync_pause_insert",
-          "table_schema": "public",
-          "using_expression": null,
-          "with_check_expression": "((counter_key = 'pos_sync_paused'::text) AND (scope_id = '00000000-0000-0000-0000-000000000000'::uuid) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))))"
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "counter_values",
-          "policy_name": "counter_values_pos_sync_pause_select",
-          "table_schema": "public",
-          "using_expression": "((counter_key = 'pos_sync_paused'::text) AND (scope_id = '00000000-0000-0000-0000-000000000000'::uuid) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "UPDATE",
-          "permissive": "PERMISSIVE",
-          "table_name": "counter_values",
-          "policy_name": "counter_values_pos_sync_pause_update",
-          "table_schema": "public",
-          "using_expression": "((counter_key = 'pos_sync_paused'::text) AND (scope_id = '00000000-0000-0000-0000-000000000000'::uuid) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))))",
-          "with_check_expression": "((counter_key = 'pos_sync_paused'::text) AND (scope_id = '00000000-0000-0000-0000-000000000000'::uuid) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))))"
         },
         {
           "roles": [

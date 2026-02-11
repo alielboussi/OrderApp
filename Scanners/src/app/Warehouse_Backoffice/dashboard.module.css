@@ -90,66 +90,6 @@
   cursor: pointer;
 }
 
-.heroControl {
-  width: 320px;
-  min-height: 140px;
-  border-radius: 20px;
-  border: 1px solid rgba(251, 113, 133, 0.4);
-  background: rgba(9, 14, 30, 0.65);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.pauseKicker {
-  margin: 0;
-  font-size: 11px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: rgba(251, 113, 133, 0.9);
-}
-
-.pauseTitleSmall {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--wb-strong);
-}
-
-.pauseField {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--wb-muted);
-}
-
-.pauseSelect {
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(7, 11, 24, 0.85);
-  color: var(--wb-text);
-  padding: 8px 10px;
-  font-size: 13px;
-}
-
-.pauseButton {
-  border-radius: 999px;
-  border: 1px solid rgba(251, 113, 133, 0.6);
-  background: rgba(251, 113, 133, 0.18);
-  color: #ffe4e6;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pauseButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
 .grow {
   flex: 1;
@@ -224,7 +164,6 @@
 .balanceCard { border-color: rgba(94, 234, 212, 0.6); box-shadow: 0 18px 38px rgba(94, 234, 212, 0.22); }
 .assignmentsCard { border-color: rgba(56, 189, 248, 0.6); box-shadow: 0 18px 38px rgba(56, 189, 248, 0.25); }
 .reportsCard { border-color: rgba(251, 191, 36, 0.5); box-shadow: 0 18px 38px rgba(251, 191, 36, 0.22); }
-.pauseCard { border-color: rgba(251, 113, 133, 0.6); box-shadow: 0 18px 38px rgba(251, 113, 133, 0.22); }
 .bulkCard { border-color: rgba(147, 51, 234, 0.6); box-shadow: 0 18px 38px rgba(147, 51, 234, 0.24); }
 .stockReportsCard { border-color: rgba(16, 185, 129, 0.6); box-shadow: 0 18px 38px rgba(16, 185, 129, 0.24); }
 .suppliersCard { border-color: rgba(248, 113, 113, 0.55); box-shadow: 0 18px 38px rgba(248, 113, 113, 0.22); }
@@ -276,9 +215,6 @@
   color: #fbbf24;
 }
 
-.pauseTitle {
-  color: #fb7185;
-}
 
 .cardBody {
   margin: 0 0 10px;
@@ -298,74 +234,7 @@
   bottom: 10px;
 }
 
-.pauseRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: auto;
-}
 
-.toggleSwitch {
-  position: relative;
-  width: 46px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.toggleInput {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-
-.toggleTrack {
-  width: 100%;
-  height: 100%;
-  background: rgba(148, 163, 184, 0.25);
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  border-radius: 999px;
-  position: relative;
-  transition: background 150ms ease, border-color 150ms ease;
-}
-
-.toggleTrack::after {
-  content: "";
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #e2e8f0;
-  top: 2px;
-  left: 2px;
-  transition: transform 150ms ease, background 150ms ease;
-}
-
-.toggleInput:checked + .toggleTrack {
-  background: rgba(251, 113, 133, 0.28);
-  border-color: rgba(251, 113, 133, 0.7);
-}
-
-.toggleInput:checked + .toggleTrack::after {
-  transform: translateX(22px);
-  background: #fb7185;
-}
-
-.toggleInput:disabled + .toggleTrack {
-  opacity: 0.6;
-}
-
-.pauseState {
-  font-size: 12px;
-  color: var(--wb-muted);
-}
-
-.pauseError {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: #fca5a5;
-}
 
 .actionCard:hover {
   transform: translateY(-2px);

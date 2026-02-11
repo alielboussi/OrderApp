@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 import styles from "./dashboard.module.css";
@@ -9,12 +9,6 @@ export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
 
-  const [outlets, setOutlets] = useState<Array<{ id: string; name: string; code: string | null }>>([]);
-  const [selectedOutletId, setSelectedOutletId] = useState<string>("");
-  const [pausedOutletIds, setPausedOutletIds] = useState<Set<string>>(new Set());
-  const [globalPaused, setGlobalPaused] = useState(false);
-  const [pauseLoading, setPauseLoading] = useState(false);
-  const [pauseError, setPauseError] = useState<string | null>(null);
   const [posAlertCount, setPosAlertCount] = useState<number | null>(null);
   const [posAlertSamples, setPosAlertSamples] = useState<Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>>([]);
   const [posFailureCount, setPosFailureCount] = useState<number | null>(null);
@@ -32,44 +26,25 @@ export default function WarehouseBackofficeDashboard() {
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
   const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
 
-  const selectedOutlet = useMemo(
-    () => outlets.find((outlet) => outlet.id === selectedOutletId),
-    [outlets, selectedOutletId]
-  );
-  const selectedPaused = globalPaused || (selectedOutletId ? pausedOutletIds.has(selectedOutletId) : false);
-
   useEffect(() => {
     if (status !== "ok") return;
     let active = true;
     const load = async () => {
       try {
-        setPauseError(null);
-        const [outletRes, pauseRes, alertRes] = await Promise.all([
-          fetchJson<{ outlets: Array<{ id: string; name: string; code: string | null }> }>("/api/outlets"),
-          fetchJson<{ pausedOutletIds: string[]; globalPaused?: boolean }>("/api/pos-sync-pause"),
-          fetchJson<{
-            mappingMismatchCount: number;
-            mappingMismatchSamples?: Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>;
-            syncFailureCount: number;
-            syncFailureSamples?: Array<{ outlet_id: string | null; source_event_id: string | null; stage: string; error_message: string }>;
-          }>("/api/pos-sync-alert"),
-        ]);
+        const alertRes = await fetchJson<{
+          mappingMismatchCount: number;
+          mappingMismatchSamples?: Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>;
+          syncFailureCount: number;
+          syncFailureSamples?: Array<{ outlet_id: string | null; source_event_id: string | null; stage: string; error_message: string }>;
+        }>("/api/pos-sync-alert");
         if (!active) return;
-        const outletList = outletRes.outlets ?? [];
-        setOutlets(outletList);
-        setPausedOutletIds(new Set(pauseRes.pausedOutletIds ?? []));
-        setGlobalPaused(Boolean(pauseRes.globalPaused));
         setPosAlertCount(typeof alertRes.mappingMismatchCount === "number" ? alertRes.mappingMismatchCount : 0);
         setPosAlertSamples(Array.isArray(alertRes.mappingMismatchSamples) ? alertRes.mappingMismatchSamples : []);
         setPosFailureCount(typeof alertRes.syncFailureCount === "number" ? alertRes.syncFailureCount : 0);
         setPosFailureSamples(Array.isArray(alertRes.syncFailureSamples) ? alertRes.syncFailureSamples : []);
         setPosAlertError(null);
-        if (!selectedOutletId && outletList.length > 0) {
-          setSelectedOutletId(outletList[0].id);
-        }
       } catch (err) {
         if (!active) return;
-        setPauseError(err instanceof Error ? err.message : "Unable to load POS sync pause state");
         setPosAlertError("Unable to load POS mapping alerts");
       }
     };
@@ -77,37 +52,7 @@ export default function WarehouseBackofficeDashboard() {
     return () => {
       active = false;
     };
-  }, [status, selectedOutletId]);
-
-  const handleTogglePause = async () => {
-    if (!selectedOutletId) {
-      setPauseError("Select an outlet first.");
-      return;
-    }
-    try {
-      setPauseError(null);
-      setPauseLoading(true);
-      const nextPaused = !pausedOutletIds.has(selectedOutletId);
-      await fetchJson<{ ok: boolean }>("/api/pos-sync-pause", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outlet_id: selectedOutletId, paused: nextPaused }),
-      });
-      setPausedOutletIds((prev) => {
-        const next = new Set(prev);
-        if (nextPaused) {
-          next.add(selectedOutletId);
-        } else {
-          next.delete(selectedOutletId);
-        }
-        return next;
-      });
-    } catch (err) {
-      setPauseError(err instanceof Error ? err.message : "Unable to update pause state");
-    } finally {
-      setPauseLoading(false);
-    }
-  };
+  }, [status]);
 
 
   if (status !== "ok") {
@@ -125,43 +70,6 @@ export default function WarehouseBackofficeDashboard() {
               Configure outlet defaults, per-item routing, and POS match against the new warehouse schema. Operate inventory without legacy outlet-warehouse tables.
             </p>
             <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
-          </div>
-          <div className={styles.heroControl}>
-            <p className={styles.pauseKicker}>POS Sync Control</p>
-            <p className={styles.pauseTitleSmall}>Pause outlet sync</p>
-            <label className={styles.pauseField}>
-              Outlet
-              <select
-                className={styles.pauseSelect}
-                value={selectedOutletId}
-                onChange={(event) => setSelectedOutletId(event.target.value)}
-                disabled={pauseLoading || outlets.length === 0}
-              >
-                {outlets.length === 0 && <option value="">No outlets</option>}
-                {outlets.map((outlet) => (
-                  <option key={outlet.id} value={outlet.id}>
-                    {outlet.name || outlet.code || outlet.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className={styles.pauseRow}>
-              <button
-                className={styles.pauseButton}
-                onClick={handleTogglePause}
-                disabled={!selectedOutletId || pauseLoading || globalPaused}
-              >
-                {selectedPaused ? "Resume sync" : "Pause sync"}
-              </button>
-              <span className={styles.pauseState}>
-                {selectedOutlet ? `${selectedOutlet.name || selectedOutlet.code || "Outlet"}: ` : ""}
-                {globalPaused ? "Paused (global)" : selectedPaused ? "Paused" : "Active"}
-              </span>
-            </div>
-            {globalPaused && (
-              <p className={styles.pauseError}>Global pause is enabled. Clear the global pause to resume outlet sync.</p>
-            )}
-            {pauseError && <p className={styles.pauseError}>{pauseError}</p>}
           </div>
         </header>
 
