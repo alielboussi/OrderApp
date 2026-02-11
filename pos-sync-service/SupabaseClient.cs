@@ -15,6 +15,12 @@ public sealed class SupabaseClient
     private readonly ILogger<SupabaseClient> _logger;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly Guid GlobalScopeId = Guid.Empty;
+    private static readonly TimeSpan[] RetryDelays =
+    {
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10)
+    };
 
     public SupabaseClient(IOptions<SupabaseOptions> options,
                           IOptions<OutletOptions> outlet,
@@ -38,14 +44,15 @@ public sealed class SupabaseClient
         var client = CreateClient();
         var payload = BuildPayload(order);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/validate_pos_order")
-        {
-            Content = JsonContent.Create(new { payload }, options: JsonOptions)
-        };
-
         try
         {
-            var response = await client.SendAsync(request, cancellationToken);
+            var response = await SendWithRetryAsync(
+                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/validate_pos_order")
+                {
+                    Content = JsonContent.Create(new { payload }, options: JsonOptions)
+                },
+                cancellationToken
+            );
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -122,15 +129,16 @@ public sealed class SupabaseClient
         var client = CreateClient();
         var payload = BuildPayload(order);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/sync_pos_order")
-        {
-            // PostgREST expects RPC arguments by name; wrap the payload under the function parameter key
-            Content = JsonContent.Create(new { payload }, options: JsonOptions)
-        };
-
         try
         {
-            var response = await client.SendAsync(request, cancellationToken);
+            var response = await SendWithRetryAsync(
+                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/sync_pos_order")
+                {
+                    // PostgREST expects RPC arguments by name; wrap the payload under the function parameter key
+                    Content = JsonContent.Create(new { payload }, options: JsonOptions)
+                },
+                cancellationToken
+            );
             if (response.IsSuccessStatusCode)
             {
                 return new SupabaseResult(true);
@@ -273,6 +281,44 @@ public sealed class SupabaseClient
         }
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return client;
+    }
+
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        Func<HttpRequestMessage> requestFactory,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt <= RetryDelays.Length; attempt++)
+        {
+            try
+            {
+                using var request = requestFactory();
+                var response = await CreateClient().SendAsync(request, cancellationToken);
+                if (response.IsSuccessStatusCode || !IsTransientStatus(response.StatusCode) || attempt == RetryDelays.Length)
+                {
+                    return response;
+                }
+
+                response.Dispose();
+            }
+            catch (HttpRequestException) when (attempt < RetryDelays.Length)
+            {
+                // Retry transient network errors.
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < RetryDelays.Length)
+            {
+                // Retry timeouts.
+            }
+
+            await Task.Delay(RetryDelays[attempt], cancellationToken);
+        }
+
+        throw new InvalidOperationException("Supabase request retry loop exited unexpectedly.");
+    }
+
+    private static bool IsTransientStatus(System.Net.HttpStatusCode statusCode)
+    {
+        var code = (int)statusCode;
+        return code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
     }
 
     private object BuildPayload(PosOrder order)

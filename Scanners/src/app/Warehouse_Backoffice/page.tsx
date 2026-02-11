@@ -15,6 +15,11 @@ export default function WarehouseBackofficeDashboard() {
   const [globalPaused, setGlobalPaused] = useState(false);
   const [pauseLoading, setPauseLoading] = useState(false);
   const [pauseError, setPauseError] = useState<string | null>(null);
+  const [posAlertCount, setPosAlertCount] = useState<number | null>(null);
+  const [posAlertSamples, setPosAlertSamples] = useState<Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>>([]);
+  const [posFailureCount, setPosFailureCount] = useState<number | null>(null);
+  const [posFailureSamples, setPosFailureSamples] = useState<Array<{ outlet_id: string | null; source_event_id: string | null; stage: string; error_message: string }>>([]);
+  const [posAlertError, setPosAlertError] = useState<string | null>(null);
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
@@ -39,21 +44,33 @@ export default function WarehouseBackofficeDashboard() {
     const load = async () => {
       try {
         setPauseError(null);
-        const [outletRes, pauseRes] = await Promise.all([
+        const [outletRes, pauseRes, alertRes] = await Promise.all([
           fetchJson<{ outlets: Array<{ id: string; name: string; code: string | null }> }>("/api/outlets"),
           fetchJson<{ pausedOutletIds: string[]; globalPaused?: boolean }>("/api/pos-sync-pause"),
+          fetchJson<{
+            mappingMismatchCount: number;
+            mappingMismatchSamples?: Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>;
+            syncFailureCount: number;
+            syncFailureSamples?: Array<{ outlet_id: string | null; source_event_id: string | null; stage: string; error_message: string }>;
+          }>("/api/pos-sync-alert"),
         ]);
         if (!active) return;
         const outletList = outletRes.outlets ?? [];
         setOutlets(outletList);
         setPausedOutletIds(new Set(pauseRes.pausedOutletIds ?? []));
         setGlobalPaused(Boolean(pauseRes.globalPaused));
+        setPosAlertCount(typeof alertRes.mappingMismatchCount === "number" ? alertRes.mappingMismatchCount : 0);
+        setPosAlertSamples(Array.isArray(alertRes.mappingMismatchSamples) ? alertRes.mappingMismatchSamples : []);
+        setPosFailureCount(typeof alertRes.syncFailureCount === "number" ? alertRes.syncFailureCount : 0);
+        setPosFailureSamples(Array.isArray(alertRes.syncFailureSamples) ? alertRes.syncFailureSamples : []);
+        setPosAlertError(null);
         if (!selectedOutletId && outletList.length > 0) {
           setSelectedOutletId(outletList[0].id);
         }
       } catch (err) {
         if (!active) return;
         setPauseError(err instanceof Error ? err.message : "Unable to load POS sync pause state");
+        setPosAlertError("Unable to load POS mapping alerts");
       }
     };
     load();
@@ -147,6 +164,49 @@ export default function WarehouseBackofficeDashboard() {
             {pauseError && <p className={styles.pauseError}>{pauseError}</p>}
           </div>
         </header>
+
+        {posAlertError ? (
+          <section className={styles.alertBanner}>
+            <div>
+              <p className={styles.alertTitle}>POS mapping alert unavailable</p>
+              <p className={styles.alertBody}>{posAlertError}</p>
+            </div>
+          </section>
+        ) : (posAlertCount && posAlertCount > 0) || (posFailureCount && posFailureCount > 0) ? (
+          <section className={styles.alertBanner}>
+            <div>
+              <p className={styles.alertTitle}>POS sync attention needed</p>
+              {posAlertCount && posAlertCount > 0 && (
+                <p className={styles.alertBody}>
+                  Mapping mismatches: {posAlertCount} line{posAlertCount === 1 ? "" : "s"} in the last 7 days had a POS
+                  item/flavour combination with no mapping.
+                </p>
+              )}
+              {posAlertSamples.length > 0 && (
+                <p className={styles.alertBody}>
+                  Example mapping: outlet {posAlertSamples[0].outlet_id}, item {posAlertSamples[0].pos_item_id}
+                  {posAlertSamples[0].pos_flavour_id ? `, flavour ${posAlertSamples[0].pos_flavour_id}` : ", flavour (none)"}
+                </p>
+              )}
+              {posFailureCount && posFailureCount > 0 && (
+                <p className={styles.alertBody}>
+                  Sync failures: {posFailureCount} event{posFailureCount === 1 ? "" : "s"} in the last 7 days failed to
+                  validate or sync.
+                </p>
+              )}
+              {posFailureSamples.length > 0 && (
+                <p className={styles.alertBody}>
+                  Example failure: {posFailureSamples[0].stage} ({posFailureSamples[0].error_message})
+                </p>
+              )}
+            </div>
+            <div className={styles.alertActions}>
+              <button className={styles.alertButton} onClick={goToPosMatch}>
+                Review POS mappings
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <section className={styles.actionsGrid}>
           <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>

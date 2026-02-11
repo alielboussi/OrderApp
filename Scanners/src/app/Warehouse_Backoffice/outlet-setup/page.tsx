@@ -457,7 +457,7 @@ export default function OutletSetupPage() {
     const loadRecipeIngredients = async () => {
       setRecipeIngredientsLoading(true);
       try {
-        const keys = selectedVariantKeys.length ? selectedVariantKeys : ["base"];
+        const keys = selectedRoutingVariantKeys.length ? selectedRoutingVariantKeys : ["base"];
         const results = await Promise.all(
           keys.map(async (key) => {
             const res = await fetch(
@@ -482,7 +482,7 @@ export default function OutletSetupPage() {
     return () => {
       active = false;
     };
-  }, [selectedProductId, selectedVariantKeys]);
+  }, [selectedProductId, selectedRoutingVariantKeys]);
 
   useEffect(() => {
     if (status !== "ok") return;

@@ -65,6 +65,21 @@ public sealed class SyncRunner
                 var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
                 if (!validation.IsSuccess)
                 {
+                    if (IsIgnorableMappingFailure(validation.ErrorMessage))
+                    {
+                        _logger.LogInformation("Skipping order {OrderId}: no mappable POS items.", order.PosOrderId);
+                        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
+
+                        var inventoryIds = order.Inventory.Select(ic => ic.PosId).ToArray();
+                        if (inventoryIds.Length > 0)
+                        {
+                            await _repository.MarkInventoryProcessedAsync(inventoryIds, cancellationToken);
+                        }
+
+                        processed++;
+                        continue;
+                    }
+
                     var failure = new SyncFailure(order.PosOrderId, validation.ErrorMessage);
                     failures.Add(failure);
                     _logger.LogWarning("Validation failed for order {OrderId}: {Error}", order.PosOrderId, validation.ErrorMessage ?? "Unknown error");
@@ -103,6 +118,16 @@ public sealed class SyncRunner
         }
 
         return new SyncRunResult(processed, failures);
+    }
+
+    private static bool IsIgnorableMappingFailure(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return false;
+        }
+
+        return errorMessage.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ApplyRemoteSyncWindowAsync(CancellationToken cancellationToken)

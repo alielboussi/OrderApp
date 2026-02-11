@@ -48,6 +48,48 @@
   box-shadow: var(--wb-shadow);
 }
 
+.alertBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  background: rgba(30, 21, 6, 0.75);
+  padding: 18px 20px;
+  box-shadow: 0 18px 40px rgba(251, 191, 36, 0.18);
+}
+
+.alertTitle {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fde68a;
+}
+
+.alertBody {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(253, 230, 138, 0.88);
+  line-height: 1.5;
+}
+
+.alertActions {
+  display: flex;
+  align-items: center;
+}
+
+.alertButton {
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.65);
+  background: rgba(251, 191, 36, 0.2);
+  color: #fffbeb;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .heroControl {
   width: 320px;
   min-height: 140px;

@@ -45,7 +45,10 @@ builder.Services.AddSingleton<SupabaseClient>();
 builder.Services.AddSingleton<SyncRunner>();
 builder.Services.AddSingleton<StatusUi>();
 builder.Services.AddSingleton<TrayUi>();
-builder.Services.AddHttpClient("Supabase");
+builder.Services.AddHttpClient("Supabase", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(180);
+});
 builder.Services.AddHostedService<PosSyncWorker>();
 
 builder.Services.AddWindowsService(options =>
