@@ -2412,9 +2412,28 @@ function createHtml(config: {
             defaultVariants = Array.isArray(variantData) ? variantData : [];
           }
 
+          let warehouseVariants = [];
+          if (lockedSourceId) {
+            const { data: warehouseVariantData, error: warehouseVariantError } = await supabase
+              .from('catalog_variants')
+              .select('item_id,default_warehouse_id,locked_from_warehouse_id,active')
+              .or(`default_warehouse_id.eq.${lockedSourceId},locked_from_warehouse_id.eq.${lockedSourceId}`);
+            if (warehouseVariantError) throw warehouseVariantError;
+            warehouseVariants = Array.isArray(warehouseVariantData) ? warehouseVariantData : [];
+          }
+
           defaultVariants.forEach((variant) => {
             const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
             const variantActive = variant?.active !== false;
+            if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
+              productsWithWarehouseVariations.add(variant.item_id);
+              productIds.add(variant.item_id);
+            }
+          });
+
+          warehouseVariants.forEach((variant) => {
+            const variantActive = variant?.active !== false;
+            const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
             if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
               productsWithWarehouseVariations.add(variant.item_id);
               productIds.add(variant.item_id);

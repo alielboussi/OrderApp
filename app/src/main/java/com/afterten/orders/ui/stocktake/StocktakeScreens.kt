@@ -652,6 +652,8 @@ fun StocktakeCountScreen(
     val unsavedKeys = remember { mutableStateMapOf<String, Boolean>() }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var leaveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showCloseDialog by remember { mutableStateOf(false) }
+    var closeRequested by remember { mutableStateOf(false) }
 
     fun formatQty(value: Double?, decimals: Int): String {
         val safe = decimals.coerceIn(0, 6)
@@ -825,6 +827,7 @@ fun StocktakeCountScreen(
     }
 
     val hasUnsaved = unsavedKeys.isNotEmpty()
+    val hasOpenPeriod = ui.openPeriod?.status == "open"
 
     LaunchedEffect(ui.lastBatchSavedKeys) {
         if (ui.lastBatchSavedKeys.isNotEmpty()) {
@@ -849,6 +852,13 @@ fun StocktakeCountScreen(
 
     BackHandler(enabled = hasUnsaved && !showLeaveDialog) {
         requestLeave { onBack() }
+    }
+
+    LaunchedEffect(ui.openPeriod, ui.loading, closeRequested) {
+        if (closeRequested && !ui.loading && ui.openPeriod == null) {
+            closeRequested = false
+            onBack()
+        }
     }
 
     fun buildBatchForRows(rows: List<com.afterten.orders.data.SupabaseProvider.WarehouseStockItem>): List<StocktakeViewModel.CountInput>? {
@@ -975,6 +985,26 @@ fun StocktakeCountScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.8f)
                     )
+                    if (hasOpenPeriod) {
+                        OutlinedButton(
+                            onClick = { showCloseDialog = true },
+                            enabled = !ui.loading && !hasUnsaved,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                            border = BorderStroke(1.dp, primaryRed)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Close period")
+                        }
+                        if (hasUnsaved) {
+                            Text(
+                                "Save items before closing the period.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                     inputError?.let {
                         Text(it, color = primaryRed, style = MaterialTheme.typography.labelSmall)
                     }
@@ -1372,6 +1402,28 @@ fun StocktakeCountScreen(
             dismissButton = {
                 TextButton(onClick = { showLeaveDialog = false }) {
                     Text("Stay")
+                }
+            }
+        )
+    }
+
+    if (showCloseDialog) {
+        AlertDialog(
+            onDismissRequest = { showCloseDialog = false },
+            title = { Text("Close stocktake period") },
+            text = { Text("Closing will lock this period so a new one can start. Continue?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCloseDialog = false
+                    closeRequested = true
+                    vm.closePeriod()
+                }) {
+                    Text("Close")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloseDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )

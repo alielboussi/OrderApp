@@ -2628,7 +2628,7 @@ function createHtml(config: {
         return Array.from(visited);
       }
 
-      let latestStorageHomes: { item_id: string; normalized_variant_key: string; storage_warehouse_id: string }[] = [];
+      let latestStorageHomes = [];
 
       async function fetchProductsForWarehouse(warehouseIds) {
         if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
@@ -2835,7 +2835,7 @@ function createHtml(config: {
         const activeDestId = state.destinationSelection;
         const allowedVariantWarehouses = new Set([lockedSourceId, activeDestId].filter(Boolean));
 
-        const storageHomeMap = new Map<string, string>();
+        const storageHomeMap = new Map();
         latestStorageHomes.forEach((home) => {
           if (home?.item_id && home?.normalized_variant_key && home?.storage_warehouse_id) {
             storageHomeMap.set(home.item_id + '::' + home.normalized_variant_key, home.storage_warehouse_id);
@@ -4783,7 +4783,7 @@ function createHtml(config: {
             .map((row) => row?.ingredient?.id)
             .filter((id) => typeof id === 'string');
 
-          const storageHomeMap = new Map<string, string>();
+          const storageHomeMap = new Map();
           if (lockedSourceId && ingredientIds.length) {
             const { data: storageRows, error: storageErr } = await supabase
               .from('item_storage_homes')
