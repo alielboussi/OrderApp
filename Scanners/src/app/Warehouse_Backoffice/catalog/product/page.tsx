@@ -33,11 +33,14 @@ type FormState = {
   consumption_unit: string;
   purchase_pack_unit: string;
   units_per_purchase_pack: string;
+  transfer_unit: string;
+  transfer_quantity: string;
   consumption_qty_per_base: string;
   qty_decimal_places: string;
   stocktake_uom: string;
   storage_unit: string;
   storage_weight: string;
+  storage_home_id: string;
   cost: string;
   selling_price: string;
   has_variations: boolean;
@@ -55,11 +58,14 @@ const defaultForm: FormState = {
   consumption_unit: "each",
   purchase_pack_unit: "each",
   units_per_purchase_pack: "1",
+  transfer_unit: "each",
+  transfer_quantity: "1",
   consumption_qty_per_base: "1",
   qty_decimal_places: "0",
   stocktake_uom: "",
   storage_unit: "",
   storage_weight: "",
+  storage_home_id: "",
   cost: "0",
   selling_price: "0",
   has_variations: false,
@@ -77,12 +83,14 @@ function ProductCreatePage() {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loadingItem, setLoadingItem] = useState(false);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string | null }[]>([]);
 
   const editingId = searchParams?.get("id")?.trim() || "";
 
   const disableVariantControlled = form.has_variations;
   const isFinished = form.item_kind === "finished";
   const isIngredient = form.item_kind === "ingredient";
+  const isIngredientOrRaw = form.item_kind === "ingredient" || form.item_kind === "raw";
   const vatExcludedPrice = useMemo(() => {
     const parsed = Number(form.selling_price);
     if (!Number.isFinite(parsed) || parsed <= 0) return "";
@@ -107,11 +115,14 @@ function ProductCreatePage() {
             consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
             purchase_pack_unit: item.purchase_pack_unit ?? item.storage_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
             units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
+            transfer_unit: item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
+            transfer_quantity: (item.transfer_quantity ?? 1).toString(),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
             qty_decimal_places: (item.qty_decimal_places ?? 0).toString(),
             stocktake_uom: item.stocktake_uom ?? "",
             storage_unit: item.storage_unit ?? "",
             storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
+            storage_home_id: item.storage_home_id ?? item.default_warehouse_id ?? "",
             cost: (item.cost ?? 0).toString(),
             selling_price: (item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
@@ -131,6 +142,21 @@ function ProductCreatePage() {
 
     if (editingId) loadItem(editingId);
   }, [editingId]);
+
+  useEffect(() => {
+    async function loadWarehouses() {
+      try {
+        const res = await fetch("/api/warehouses");
+        if (!res.ok) throw new Error("Failed to load warehouses");
+        const json = await res.json().catch(() => ({}));
+        const rows = Array.isArray(json) ? json : json.warehouses ?? json.data ?? [];
+        setWarehouses(rows.map((row: { id: string; name?: string | null }) => ({ id: row.id, name: row.name ?? null })));
+      } catch (error) {
+        console.error("warehouse load failed", error);
+      }
+    }
+    loadWarehouses();
+  }, []);
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
     setForm((prev) => {
@@ -170,11 +196,14 @@ function ProductCreatePage() {
         consumption_unit: form.consumption_unit,
         purchase_pack_unit: form.purchase_pack_unit || form.storage_unit || form.consumption_unit,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
+        transfer_unit: form.transfer_unit || form.consumption_unit,
+        transfer_quantity: toNumber(form.transfer_quantity, 1),
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
         qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0)))),
         stocktake_uom: form.stocktake_uom || null,
         storage_unit: form.storage_unit || null,
         storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
+        storage_home_id: form.storage_home_id || null,
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
         has_variations: form.has_variations,
@@ -298,6 +327,66 @@ function ProductCreatePage() {
                       min="1"
                     />
                   </>
+                )}
+                {isIngredientOrRaw && !form.has_variations && (
+                    <div className={styles.ingredientCardGrid}>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Units Inside One Supplier Pack</h3>
+                        <p className={styles.sectionHint}>How many base units are inside one supplier pack.</p>
+                      </div>
+                      <Field
+                        type="number"
+                        label="Units inside one supplier pack"
+                        hint="Used for ingredient/raw transfers and damages."
+                        value={form.units_per_purchase_pack}
+                        onChange={(v) => handleChange("units_per_purchase_pack", v)}
+                        step="1"
+                        min="1"
+                      />
+                      </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Transfer Unit</h3>
+                        <p className={styles.sectionHint}>Unit used for transfers and stock movements.</p>
+                      </div>
+                      <Select
+                        label="Transfer unit"
+                        hint="Shown on scanner qty prompts."
+                        value={form.transfer_unit}
+                        onChange={(v) => handleChange("transfer_unit", v)}
+                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                      />
+                    </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Quantity Per Transfer Line</h3>
+                        <p className={styles.sectionHint}>Default quantity per transfer line.</p>
+                      </div>
+                      <Field
+                        type="number"
+                        label="Quantity per transfer line"
+                        hint="Used when entering transfer quantities."
+                        value={form.transfer_quantity}
+                        onChange={(v) => handleChange("transfer_quantity", v)}
+                        step="1"
+                        min="1"
+                      />
+                    </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Storage Home</h3>
+                        <p className={styles.sectionHint}>Where this ingredient/raw item is stored.</p>
+                      </div>
+                      <Select
+                        label="Storage home"
+                        hint="Pick the warehouse that holds this item."
+                        value={form.storage_home_id}
+                        onChange={(v) => handleChange("storage_home_id", v)}
+                        options={[{ value: "", label: "Select storage home" }, ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id }))]}
+                      />
+                    </div>
+                  </div>
                 )}
                 <Field
                   type="number"

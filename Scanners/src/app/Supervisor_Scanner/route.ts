@@ -7,7 +7,21 @@ const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
 const DESTINATION_CHOICES = [] as const;
 const LOCKED_DEST_ID = '';
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_layer_stock';
+const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
+const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
+  ? STOCK_VIEW_ENV
+  : 'warehouse_stock_items';
+const ALLOWED_DESTINATION_IDS = [
+  'c77376f7-1ede-4518-8180-b3efeecda128',
+  '0cdfba88-b3b9-43d5-a2a8-4e852bf9300b'
+] as const;
+const STORAGE_HOME_ALLOWED_IDS = [
+  '89e4a592-1385-4b40-9685-2178f124a9da',
+  '94f86655-bed8-404c-8614-007a846f89f2',
+  '9d0a3a83-1fea-45a8-8771-25cc1db9f07e',
+  'd829d739-7311-4647-af91-cad33c21280e',
+  '587fcdb9-c998-42d6-b88e-bbcd1a66b088'
+] as const;
 const MULTIPLY_QTY_BY_PACKAGE = true;
 const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
 (globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
@@ -247,6 +261,64 @@ function createHtml(config: {
     }
     .search-field {
       margin-top: 8px;
+    }
+    .ingredient-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 43, 72, 0.25);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .ingredient-head h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .ingredient-head p {
+      margin: 4px 0 0;
+      color: #b9b9b9;
+      font-size: 0.85rem;
+    }
+    .ingredient-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .ingredient-card {
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 10px;
+      background: rgba(10, 10, 12, 0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .ingredient-card:hover {
+      border-color: rgba(255, 43, 72, 0.6);
+      transform: translateY(-1px);
+    }
+    .ingredient-card-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: #fff;
+    }
+    .ingredient-card-meta {
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      color: #ff9fb1;
+      text-transform: uppercase;
+    }
+    .ingredient-empty {
+      margin: 0;
+      color: #c4c4c4;
+      font-size: 0.85rem;
+      display: none;
     }
     #auth-section,
     #app-section {
@@ -1488,11 +1560,14 @@ function createHtml(config: {
             </label>
             <p class="operator-auth-hint">Transfers stay locked until a valid operator signs in. Sessions auto-expire after 20 minutes.</p>
           </section>
-          <div class="search-field">
-            <label>Search products
-              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
-            </label>
-          </div>
+          <section class="ingredient-panel">
+            <div class="ingredient-head">
+              <h3>Ingredients</h3>
+              <p>Tap an ingredient or variant to enter quantity.</p>
+            </div>
+            <div id="ingredient-grid" class="ingredient-grid" aria-live="polite"></div>
+            <p id="ingredient-empty" class="ingredient-empty">No ingredients available.</p>
+          </section>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -1704,11 +1779,14 @@ function createHtml(config: {
             <p class="operator-auth-hint">Damages stay locked until an operator signs in. Auto-lock after 20 minutes.</p>
           </section>
           <h3>Log Damages</h3>
-          <div class="search-field">
-            <label>Search products
-              <input id="damage-item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
-            </label>
-          </div>
+          <section class="ingredient-panel">
+            <div class="ingredient-head">
+              <h3>Ingredients</h3>
+              <p>Tap an ingredient to log damages.</p>
+            </div>
+            <div id="damage-ingredient-grid" class="ingredient-grid" aria-live="polite"></div>
+            <p id="damage-ingredient-empty" class="ingredient-empty">No ingredients available.</p>
+          </section>
           <div class="cart-head">
             <div>
               <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Damages Cart</h3>
@@ -1806,6 +1884,8 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
+    const ALLOWED_DESTINATION_IDS = ${serializeForScript(ALLOWED_DESTINATION_IDS)};
+    const STORAGE_HOME_ALLOWED_IDS = ${serializeForScript(STORAGE_HOME_ALLOWED_IDS)};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SCANNER_NAME = 'Supervisor';
@@ -1878,6 +1958,7 @@ function createHtml(config: {
         session: null,
         warehouses: initialWarehouses,
         products: [],
+        ingredients: [],
         variations: new Map(),
         variationIndex: new Map(),
         mode: 'transfer',
@@ -1989,6 +2070,10 @@ function createHtml(config: {
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
+      const ingredientGrid = document.getElementById('ingredient-grid');
+      const ingredientEmpty = document.getElementById('ingredient-empty');
+      const damageIngredientGrid = document.getElementById('damage-ingredient-grid');
+      const damageIngredientEmpty = document.getElementById('damage-ingredient-empty');
       const damageItemSearchInput = document.getElementById('damage-item-search');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
@@ -2061,7 +2146,7 @@ function createHtml(config: {
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
       const logoutButtons = document.querySelectorAll('[data-logout="true"]');
 
-      const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
+      const VALID_VIEWS = ['transfer', 'damage'];
 
       function syncViewQuery(view) {
         if (typeof window === 'undefined' || !window.history?.replaceState) return;
@@ -2076,7 +2161,7 @@ function createHtml(config: {
       }
 
       function syncViewVisibility(view) {
-        const isPurchase = view === 'purchase';
+        const isPurchase = false;
         const isDamage = view === 'damage';
         const isTransfer = view === 'transfer';
         if (mainShell) {
@@ -2086,9 +2171,9 @@ function createHtml(config: {
           appSection.style.display = isTransfer ? '' : 'none';
         }
         if (purchasePage) {
-          purchasePage.hidden = !isPurchase;
-          purchasePage.style.display = isPurchase ? 'flex' : 'none';
-          purchasePage.setAttribute('aria-hidden', isPurchase ? 'false' : 'true');
+          purchasePage.hidden = true;
+          purchasePage.style.display = 'none';
+          purchasePage.setAttribute('aria-hidden', 'true');
         }
         if (damagePage) {
           damagePage.hidden = !isDamage;
@@ -2104,19 +2189,14 @@ function createHtml(config: {
         const view = VALID_VIEWS.includes(next) ? next : 'transfer';
         document.body.dataset.view = view;
         document.body.setAttribute('data-view', view);
-        document.body.classList.toggle('view-purchase', view === 'purchase');
+        document.body.classList.toggle('view-purchase', false);
         document.body.classList.toggle('view-damage', view === 'damage');
         syncViewVisibility(view);
         syncViewQuery(view);
         setMode(view);
-        if (view === 'purchase' && state.suppliers.length === 0) {
-          fetchSuppliers().catch((error) => {
-            console.warn('Supplier prefetch failed on view change', error);
-          });
-        }
       }
 
-      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
+      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : 'transfer');
 
       function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options) {
         const opts = options || {};
@@ -2356,12 +2436,17 @@ function createHtml(config: {
 
       function buildEntryForProduct(product, variation) {
         const packageSize = resolvePackageSize(product, variation);
+        const stockUom = (variation?.transfer_unit || variation?.uom || product.transfer_unit || product.uom || 'unit').toString();
+        const consumptionUom = (variation?.consumption_uom || product.consumption_uom || product.uom || stockUom).toString();
         return {
           productId: product.id,
           productName: product.name ?? 'Product',
+          itemKind: product.item_kind ?? 'finished',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: (variation?.transfer_unit || variation?.uom || product.transfer_unit || product.uom || 'unit').toUpperCase(),
+          uom: stockUom.toUpperCase(),
+          stockUom: stockUom.toUpperCase(),
+          consumptionUom: consumptionUom.toUpperCase(),
           packageSize,
           unitCost: null
         };
@@ -2402,7 +2487,7 @@ function createHtml(config: {
             name.textContent = ingredient.name ?? 'Ingredient';
             const uom = document.createElement('div');
             uom.className = 'variant-uom';
-            uom.textContent = entry.uom;
+            uom.textContent = formatUomPair(entry);
             header.appendChild(name);
             header.appendChild(uom);
 
@@ -2493,7 +2578,7 @@ function createHtml(config: {
             name.textContent = row.label;
             const uom = document.createElement('div');
             uom.className = 'variant-uom';
-            uom.textContent = entry.uom;
+            uom.textContent = formatUomPair(entry);
             header.appendChild(name);
             header.appendChild(uom);
 
@@ -2960,6 +3045,13 @@ function createHtml(config: {
         return formattedQty + ' ' + unit;
       }
 
+      function formatUomPair(entry) {
+        const stock = (entry?.stockUom || entry?.uom || 'UNIT').toString().toUpperCase();
+        const cons = (entry?.consumptionUom || entry?.uom || 'UNIT').toString().toUpperCase();
+        if (stock === cons) return stock;
+        return 'STOCK: ' + stock + ' / CONS: ' + cons;
+      }
+
       function formatAmount(value) {
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) return null;
@@ -3013,14 +3105,16 @@ function createHtml(config: {
         if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
           return null;
         }
-        const multiplier = MULTIPLY_QTY_BY_PACKAGE ? entry.packageSize ?? 1 : 1;
+        const isIngredient = isIngredientLike(entry);
+        const multiplier = MULTIPLY_QTY_BY_PACKAGE && isIngredient ? entry.packageSize ?? 1 : 1;
         return qtyNumber * multiplier;
       }
 
       function describeQty(entry, baseQty, effectiveQty) {
         const unitLabel = entry.uom ?? 'UNIT';
-        if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
-          return baseQty + ' case(s) -> ' + effectiveQty + ' ' + unitLabel;
+        const isIngredient = isIngredientLike(entry);
+        if (MULTIPLY_QTY_BY_PACKAGE && isIngredient && entry.packageSize > 1) {
+          return baseQty + ' pack(s) -> ' + effectiveQty + ' ' + unitLabel;
         }
         return effectiveQty + ' ' + unitLabel;
       }
@@ -3097,7 +3191,7 @@ function createHtml(config: {
       }
 
       function setMode(next) {
-        const target = ['transfer', 'purchase', 'damage'].includes(next) ? next : 'transfer';
+        const target = ['transfer', 'damage'].includes(next) ? next : 'transfer';
         state.mode = target;
         document.body.dataset.mode = target;
         transferPanelEl?.classList.toggle('active-mode', target === 'transfer');
@@ -3679,28 +3773,9 @@ function createHtml(config: {
         }
       }
 
-      function enterPurchaseMode() {
-        setMode('purchase');
-        applyViewState('purchase');
-        updatePurchaseSummary();
-        renderCart('purchase');
-        if (purchaseSupplier) {
-          purchaseSupplier.value = state.purchaseForm.supplierId ?? '';
-          purchaseSupplier.disabled = state.suppliers.length === 0;
-        }
-        if (purchaseReference) {
-          purchaseReference.value = state.purchaseForm.referenceCode ?? '';
-        }
-        hideReferenceNumpad();
-        focusActiveScanner();
-      }
+      function enterPurchaseMode() {}
 
-      function exitPurchaseMode() {
-        applyViewState('transfer');
-        setMode('transfer');
-        hideReferenceNumpad();
-        focusActiveScanner();
-      }
+      function exitPurchaseMode() {}
 
       function enterDamageMode() {
         setMode('damage');
@@ -3913,7 +3988,7 @@ function createHtml(config: {
           qtyTitle.textContent = variation?.name
             ? (product.name ?? 'Product') + ' - ' + variation.name
             : product.name ?? 'Product';
-          qtyUom.textContent = entry.uom;
+          qtyUom.textContent = formatUomPair(entry);
           qtyInput.step = '0.01';
         }
 
@@ -3953,7 +4028,7 @@ function createHtml(config: {
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' - ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = target.uom ?? 'UNIT';
+        qtyUom.textContent = formatUomPair(target);
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4077,6 +4152,57 @@ function createHtml(config: {
         }
       }
 
+      function isIngredientLike(product) {
+        const kind = (product?.item_kind || product?.itemKind || '').toString().toLowerCase();
+        return kind === 'ingredient';
+      }
+
+      function resolveIngredientList() {
+        const all = Array.isArray(state.ingredients) ? state.ingredients : [];
+        return all.filter((product) => isIngredientLike(product));
+      }
+
+      function renderIngredientGrid(context) {
+        const grid = context === 'damage' ? damageIngredientGrid : ingredientGrid;
+        const empty = context === 'damage' ? damageIngredientEmpty : ingredientEmpty;
+        if (!grid || !empty) return;
+        grid.innerHTML = '';
+        const list = resolveIngredientList();
+        if (!list.length) {
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.forEach((product) => {
+          if (!product?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'ingredient-card';
+
+          const name = document.createElement('div');
+          name.className = 'ingredient-card-name';
+          name.textContent = product.name ?? 'Ingredient';
+
+          const entry = buildEntryForProduct(product, null);
+          const meta = document.createElement('div');
+          meta.className = 'ingredient-card-meta';
+          meta.textContent = formatUomPair(entry);
+
+          card.appendChild(name);
+          card.appendChild(meta);
+
+          card.addEventListener('click', () => {
+            if (product.has_variations) {
+              openVariantModal(product, null, context, null);
+              return;
+            }
+            promptQuantity(product, null, context, null);
+          });
+
+          grid.appendChild(card);
+        });
+      }
+
       async function fetchWarehousesMetadata() {
         const lockedIds = Array.from(new Set([lockedSourceId].filter(Boolean)));
 
@@ -4135,34 +4261,28 @@ function createHtml(config: {
         };
 
         try {
-          return await loadViaRpc();
-        } catch (error) {
-          markOfflineIfNetworkError(error);
-          console.warn('console_locked_warehouses rpc failed, attempting service API fallback', error);
+          return await loadViaServiceApi();
+        } catch (apiError) {
+          markOfflineIfNetworkError(apiError);
+          console.warn('warehouses API fallback failed, falling back to direct table', apiError);
           try {
-            return await loadViaServiceApi();
-          } catch (apiError) {
-            markOfflineIfNetworkError(apiError);
-            console.warn('warehouses API fallback failed, falling back to direct table', apiError);
-            try {
-              return await loadViaTable();
-            } catch (tableError) {
-              markOfflineIfNetworkError(tableError);
-              console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
-              if (Array.isArray(state.warehouses) && state.warehouses.length) {
-                return state.warehouses;
-              }
-              const fallbackList = lockedIds.map((id) => {
-                const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
-                return {
-                  id,
-                  name: choice?.label || 'Warehouse',
-                  parent_warehouse_id: null,
-                  active: true
-                };
-              });
-              return fallbackList;
+            return await loadViaTable();
+          } catch (tableError) {
+            markOfflineIfNetworkError(tableError);
+            console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
+            if (Array.isArray(state.warehouses) && state.warehouses.length) {
+              return state.warehouses;
             }
+            const fallbackList = lockedIds.map((id) => {
+              const choice = (DESTINATION_CHOICES || []).find((opt) => opt?.id === id);
+              return {
+                id,
+                name: choice?.label || 'Warehouse',
+                parent_warehouse_id: null,
+                active: true
+              };
+            });
+            return fallbackList;
           }
         }
       }
@@ -4371,6 +4491,28 @@ function createHtml(config: {
         }
       }
 
+      async function fetchIngredientCatalog() {
+        if (state.networkOffline) {
+          console.warn('Skipping ingredient catalog fetch: network offline');
+          return [];
+        }
+        const storageHomeIds = Array.isArray(STORAGE_HOME_ALLOWED_IDS) ? STORAGE_HOME_ALLOWED_IDS : [];
+        const url = new URL('/api/ingredient-catalog', window.location.origin);
+        storageHomeIds.forEach((id) => url.searchParams.append('storage_home_id', id));
+
+        const response = await fetch(url.toString(), {
+          headers: { Accept: 'application/json' }
+        });
+        if (!response.ok) {
+          const payload = await response.text();
+          const error = new Error(payload || 'Failed to load ingredient catalog');
+          error.status = response.status;
+          throw error;
+        }
+        const payload = await response.json();
+        return Array.isArray(payload?.items) ? payload.items : [];
+      }
+
       async function refreshMetadata() {
         try {
           const warehouses = await fetchWarehousesMetadata();
@@ -4378,8 +4520,14 @@ function createHtml(config: {
           state.warehouses = warehouses ?? [];
           const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
           state.lockedSource = sourceWarehouse;
+          const allowedDestSet = new Set(ALLOWED_DESTINATION_IDS);
           const hydratedDestinations = (state.warehouses || [])
-            .filter((warehouse) => warehouse?.id && warehouse.id !== lockedSourceId && warehouse.active !== false)
+            .filter((warehouse) =>
+              warehouse?.id &&
+              warehouse.id !== lockedSourceId &&
+              warehouse.active !== false &&
+              allowedDestSet.has(warehouse.id)
+            )
             .map((warehouse) => ({
               id: warehouse.id,
               label: warehouse.name ?? 'Destination warehouse'
@@ -4423,7 +4571,20 @@ function createHtml(config: {
 
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
-        await safePreloadVariations(state.products.map((p) => p.id));
+        try {
+          state.ingredients = await fetchIngredientCatalog();
+        } catch (error) {
+          markOfflineIfNetworkError(error);
+          console.warn('Ingredient catalog fetch failed', error);
+          state.ingredients = [];
+        }
+        const variationIds = Array.from(new Set([
+          ...state.products.map((p) => p.id),
+          ...state.ingredients.map((p) => p.id)
+        ]));
+        await safePreloadVariations(variationIds);
+        renderIngredientGrid('transfer');
+        renderIngredientGrid('damage');
         try {
           await fetchSuppliers();
         } catch (error) {
@@ -5283,7 +5444,7 @@ function createHtml(config: {
       });
 
       // Close buttons should always hide the keyboard even if focus stays inside.
-      referenceNumpad?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
+      referenceNumpadDigits?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
         btn.addEventListener('click', (event) => {
           forceCloseReferenceNumpad(event);
         });
@@ -5378,7 +5539,7 @@ function createHtml(config: {
       document.addEventListener('click', (event) => {
         const target = event.target;
         const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
-        const clickedReferenceNumpad = referenceNumpad?.contains(target);
+        const clickedReferenceNumpad = referenceNumpadDigits?.contains(target);
         const interactingWithDamageNotes =
           target === damageNote || damageNote?.contains(target) || damageNotesKeyboard?.contains(target);
         const interactingWithSupplier = target === purchaseSupplier || purchaseSupplier?.contains(target);

@@ -197,6 +197,18 @@
   gap: 12px;
 }
 
+.ingredientCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+  grid-column: 1 / -1;
+}
+
+.ingredientCard {
+  height: 100%;
+}
+
 .callout {
   border: 1px solid;
   border-radius: 12px;
