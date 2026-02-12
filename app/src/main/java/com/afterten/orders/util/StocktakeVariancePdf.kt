@@ -123,6 +123,19 @@ private fun drawFooter(
     return top.toInt()
 }
 
+private fun computeFooterTop(pageHeight: Int, margin: Int): Int {
+    val labelSize = 10f
+    val labelGap = 6f
+    val boxSize = 48f
+    val stackGap = 18f
+    val footerHeight = (labelSize + labelGap + boxSize) * 2 + stackGap + 18f
+    return (pageHeight - margin - footerHeight).toInt()
+}
+
+private fun computeHeaderBottom(margin: Int, subLineCount: Int): Int {
+    return margin + 30 + (subLineCount * 11)
+}
+
 private fun drawHeader(
     canvas: Canvas,
     pageWidth: Int,
@@ -262,6 +275,15 @@ fun generateStocktakeVariancePdf(
     val tableLeft = margin.toFloat()
     val tableWidth = (pageWidth - margin * 2).toFloat()
     val rowHeight = 14f
+    val headerBottom = computeHeaderBottom(margin, headerLines.size)
+    val footerTop = computeFooterTop(pageHeight, margin)
+    val tableHeaderHeight = 18f
+    val maxY = footerTop - 56
+    val startY = headerBottom + tableHeaderHeight
+    val rowsPerPageMax = kotlin.math.max(1, ((maxY - startY) / rowHeight).toInt())
+    val totalRows = report.rows.size
+    val totalPages = kotlin.math.max(1, kotlin.math.ceil(totalRows / rowsPerPageMax.toDouble()).toInt())
+    val rowsPerPage = kotlin.math.max(1, kotlin.math.ceil(totalRows / totalPages.toDouble()).toInt())
 
     while (rowIndex < report.rows.size || rowIndex == 0) {
         val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
@@ -283,9 +305,10 @@ fun generateStocktakeVariancePdf(
         val headerY = cursorY.toFloat()
         cursorY = drawTableHeader(canvas, columns, tableLeft, headerY, tableWidth).toInt()
 
-        val footerTop = drawFooter(canvas, pageWidth, pageHeight, margin)
-        val maxY = footerTop - 56
-        while (rowIndex < report.rows.size && cursorY + rowHeight < maxY) {
+        drawFooter(canvas, pageWidth, pageHeight, margin)
+        val rowsThisPage = kotlin.math.min(rowsPerPage, report.rows.size - rowIndex)
+        var drawn = 0
+        while (rowIndex < report.rows.size && drawn < rowsThisPage && cursorY + rowHeight < maxY) {
             val row = report.rows[rowIndex]
             drawRow(
                 canvas = canvas,
@@ -306,6 +329,7 @@ fun generateStocktakeVariancePdf(
                 )
             )
             rowIndex += 1
+            drawn += 1
             cursorY += rowHeight.toInt()
         }
 
@@ -313,7 +337,7 @@ fun generateStocktakeVariancePdf(
             color = 0xFF374151.toInt()
             textSize = 9f
         }
-        val footerText = "Page $pageNumber"
+        val footerText = "Page $pageNumber of $totalPages"
         canvas.drawText(footerText, pageWidth - margin - footerPaint.measureText(footerText), (pageHeight - margin / 2).toFloat(), footerPaint)
 
         doc.finishPage(page)

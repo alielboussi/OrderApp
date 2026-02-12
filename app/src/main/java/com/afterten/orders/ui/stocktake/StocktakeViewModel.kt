@@ -622,7 +622,7 @@ class StocktakeViewModel(
                 val key = "${row.itemId}|${variantKey}".lowercase()
                 val baseName = row.itemName ?: row.itemId
                 val variant = variantLabel(row.itemId, variantKey)
-                val label = if (variant.isBlank()) baseName else "$baseName ($variant)"
+                val label = if (variant.isBlank()) baseName else variant
                 val transfers = transfersByKey[key] ?: 0.0
                 val damages = damagesByKey[key] ?: 0.0
                 val sales = salesByKey[key] ?: 0.0
