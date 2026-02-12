@@ -25,10 +25,13 @@ type StockPeriod = {
 type WhoAmIRoles = { outlets: Array<{ outlet_id: string; outlet_name: string }> | null };
 
 type VarianceRow = {
+  item_id?: string | null;
   item_name: string | null;
   variant_key: string | null;
   variant_name?: string | null;
   variant_label?: string | null;
+  item_kind?: string | null;
+  is_variant?: boolean | null;
   opening_qty: number | null;
   transfer_qty: number | null;
   damage_qty: number | null;
@@ -293,12 +296,26 @@ export default function StockReportsPage() {
       const dateRange = `${formatStamp(openedAt)} → ${formatStamp(closedAt)}`;
       const periodText = `${periodLabel} · ${dateRange}`;
 
+      const filteredRows = apiRows.filter((row) => {
+        const kind = (row.item_kind ?? "").toLowerCase();
+        const hasVariant = row.is_variant ?? false;
+        const variantKey = (row.variant_key ?? "").trim().toLowerCase();
+        const itemKey = (row.item_id ?? "").trim().toLowerCase();
+        const label = (row.variant_label ?? "").trim().toLowerCase();
+        const itemName = (row.item_name ?? "").trim().toLowerCase();
+        const isBaseKey = !variantKey || variantKey === "base" || (itemKey && variantKey === itemKey);
+        const isBaseLabel = !!itemName && label === itemName;
+        return kind === "ingredient" || kind === "raw" || (hasVariant && !isBaseKey && !isBaseLabel);
+      });
+
       const html = buildStocktakeVariancePdfHtml({
         warehouseText: warehouseName,
         periodText,
         logoDataUrl,
-        rows: apiRows.map((row) => ({
-          variant_label: row.variant_label ?? row.item_name ?? "",
+        rows: filteredRows.map((row) => ({
+          variant_label: row.is_variant
+            ? row.variant_name ?? row.variant_label ?? row.item_name ?? ""
+            : row.variant_label ?? row.item_name ?? "",
           opening_qty: row.opening_qty ?? 0,
           transfer_qty: Math.abs(row.transfer_qty ?? 0),
           damage_qty: Math.abs(row.damage_qty ?? 0),

@@ -52,10 +52,18 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
     logoDataUrl,
     watermarkText = "Afterten Takeaway & Restaurant",
   } = options;
+  const maxRowsPerPage = 26;
+  const totalRows = rows.length;
+  const pageCount = totalRows ? Math.ceil(totalRows / maxRowsPerPage) : 1;
+  const rowsPerPage = totalRows ? Math.ceil(totalRows / pageCount) : 0;
+  const rowChunks = totalRows
+    ? Array.from({ length: pageCount }, (_, index) => rows.slice(index * rowsPerPage, (index + 1) * rowsPerPage))
+    : [[]];
 
-  const rowsHtml = rows
-    .map(
-      (row) => `
+  const renderRowsHtml = (pageRows: ReportRow[]) =>
+    pageRows
+      .map(
+        (row) => `
         <tr>
           <td>${escapeHtml(row.item_name)}</td>
           <td>${formatQty(row.qty_units)}</td>
@@ -63,8 +71,8 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
           <td>${formatWholeCurrency(row.after_tax)}</td>
         </tr>
       `
-    )
-    .join("");
+      )
+      .join("");
 
   const watermarkSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='420' height='220'>
     <style>
@@ -98,8 +106,12 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
             position: relative;
             border: 2mm solid #b91c1c;
             padding: 12mm 10mm 16mm;
-            min-height: 100vh;
+            min-height: 277mm;
+            display: flex;
+            flex-direction: column;
+            page-break-after: always;
           }
+          .page:last-child { page-break-after: auto; }
           .watermark {
             position: fixed;
             inset: 0;
@@ -134,6 +146,9 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
           .content {
             position: relative;
             z-index: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
           }
           .header {
             display: grid;
@@ -207,7 +222,7 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
             gap: 12px;
           }
           .page-number {
-            position: fixed;
+            position: absolute;
             bottom: 8mm;
             right: 12mm;
             font-size: 10px;
@@ -217,6 +232,10 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
         </style>
       </head>
       <body>
+        ${rowChunks
+          .map((pageRows, index) => {
+            const isLastPage = index === rowChunks.length - 1;
+            return `
         <div class="watermark"></div>
         <div class="watermark-text">
           ${Array.from({ length: 20 })
@@ -245,8 +264,9 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
                 </tr>
               </thead>
               <tbody>
-                ${rowsHtml || `<tr><td colspan="4">No data for selected filters.</td></tr>`}
+                ${pageRows.length ? renderRowsHtml(pageRows) : `<tr><td colspan="4">No data for selected filters.</td></tr>`}
               </tbody>
+              ${isLastPage ? `
               <tfoot>
                 <tr>
                   <td>Total</td>
@@ -255,7 +275,9 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
                   <td>${formatWholeCurrency(totals.after)}</td>
                 </tr>
               </tfoot>
+              ` : ""}
             </table>
+            ${isLastPage ? `
             <div class="totals">
               <div>
                 <div class="label">Sales Before Tax</div>
@@ -270,9 +292,12 @@ export function buildReportPdfHtml(options: ReportPdfOptions): string {
                 <div class="value">${formatQty(totals.qty)}</div>
               </div>
             </div>
+            ` : ""}
           </div>
-        </div>
-        <div class="page-number">Page 1 of 1</div>
+          <div class="page-number">Page ${index + 1} of ${rowChunks.length}</div>
+        </div>`;
+          })
+          .join("")}
         <script>
           window.onload = () => {
             setTimeout(() => window.print(), 300);

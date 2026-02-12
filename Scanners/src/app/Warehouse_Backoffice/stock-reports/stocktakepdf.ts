@@ -38,7 +38,8 @@ function formatCurrency(value: number): string {
 }
 
 export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): string {
-  const { warehouseText, periodText, rows, logoDataUrl, watermarkText = "Afterten Takeaway & Restaurant Ltd" } = options;
+  const { warehouseText, periodText, rows, logoDataUrl } = options;
+  const rowChunks = [rows];
 
   const totals = rows.reduce(
     (acc, row) => {
@@ -55,10 +56,11 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
     { opening: 0, transfer: 0, damage: 0, sales: 0, closing: 0, expected: 0, variance: 0, varianceCost: 0 }
   );
 
-  const rowsHtml = rows.length
-    ? rows
-        .map(
-          (row) => `
+  const renderRowsHtml = (pageRows: VarianceRow[]) =>
+    pageRows.length
+      ? pageRows
+          .map(
+            (row) => `
         <tr>
           <td>${escapeHtml(row.variant_label)}</td>
           <td>${formatQty(row.opening_qty)}</td>
@@ -71,28 +73,13 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
           <td>${formatCurrency(row.variant_amount)}</td>
         </tr>
       `
-        )
-        .join("")
-    : `
+          )
+          .join("")
+      : `
         <tr>
           <td colspan="9">No variance rows found for this period.</td>
         </tr>
       `;
-
-  const watermarkSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='520' height='360'>
-    <style>
-      text { font-family: Arial, sans-serif; font-size: 20px; fill: #111827; }
-    </style>
-    <g transform='rotate(-28 260 180)'>
-      <text x='-40' y='60'>${watermarkText}</text>
-      <text x='-40' y='140'>${watermarkText}</text>
-      <text x='-40' y='220'>${watermarkText}</text>
-      <text x='-40' y='300'>${watermarkText}</text>
-      <text x='220' y='100'>${watermarkText}</text>
-      <text x='220' y='180'>${watermarkText}</text>
-      <text x='220' y='260'>${watermarkText}</text>
-    </g>
-  </svg>`;
 
   return `
     <!doctype html>
@@ -114,18 +101,24 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
             position: relative;
             border: 1.5mm solid #b91c1c;
             padding: 6mm 6mm 8mm;
+            min-height: 277mm;
+            display: flex;
+            flex-direction: column;
+            page-break-after: always;
           }
-          .watermark {
-            position: fixed;
-            inset: 0;
-            opacity: 0.12;
-            z-index: 0;
-            background-image: url("data:image/svg+xml;utf8,${encodeURIComponent(watermarkSvg)}");
-            background-repeat: repeat;
-            background-size: 520px 360px;
-            pointer-events: none;
+          .page:last-child { page-break-after: auto; }
+          .content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
           }
-          .content { position: relative; z-index: 1; }
+          .table-wrap {
+            background: #fff;
+            padding: 2mm;
+            border-radius: 2mm;
+          }
           .header {
             display: grid;
             grid-template-columns: 64px 1fr 64px;
@@ -178,47 +171,21 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
             border-bottom: none;
             background: rgba(185, 28, 28, 0.05);
           }
-          .footer {
-            display: grid;
-            gap: 14px;
-            margin-top: 20mm;
-            font-size: 10.5px;
-            color: #111827;
-            break-inside: avoid;
-            justify-items: start;
-          }
-          .person-block {
-            display: grid;
-            gap: 6px;
-            justify-items: start;
-          }
-          .name-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            justify-content: flex-start;
-          }
-          .name-line {
-            width: 90px;
-            border-bottom: 1px solid #b91c1c;
-            height: 0.9em;
-          }
-          .signature-box {
-            width: 1.8cm;
-            height: 1.8cm;
-            border: 1px solid #b91c1c;
-          }
-          .disclaimer {
-            text-align: center;
+          .page-number {
+            position: absolute;
+            right: 6mm;
+            bottom: 4mm;
             font-size: 10px;
-            color: #374151;
-            margin-top: 6px;
+            color: #6b7280;
           }
           tr, td, th { page-break-inside: avoid; }
         </style>
       </head>
       <body>
-        <div class="watermark"></div>
+        ${rowChunks
+          .map((pageRows, index) => {
+            const isLastPage = index === rowChunks.length - 1;
+            return `
         <div class="page">
           <div class="content">
             <div class="header">
@@ -231,50 +198,46 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
               <div><strong>Period:</strong> ${escapeHtml(periodText)}</div>
               <div><strong>Rows:</strong> ${rows.length.toLocaleString()}</div>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Variant</th>
-                  <th>Opening</th>
-                  <th>Transfers</th>
-                  <th>Damages</th>
-                  <th>Sales</th>
-                  <th>Closing</th>
-                  <th>Expected</th>
-                  <th>Variance</th>
-                  <th>Variant Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rowsHtml}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>Totals</td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td>${formatCurrency(totals.varianceCost)}</td>
-                </tr>
-              </tfoot>
-            </table>
-            <div class="footer">
-              <div class="person-block">
-                <div class="name-row"><span>Managers Name:</span><span class="name-line"></span></div>
-                <div class="signature-box"></div>
-              </div>
-              <div class="person-block">
-                <div class="name-row"><span>Stocktaker's Name:</span><span class="name-line"></span></div>
-                <div class="signature-box"></div>
-              </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Opening</th>
+                    <th>Transfers</th>
+                    <th>Damages</th>
+                    <th>Sales</th>
+                    <th>Closing</th>
+                    <th>Expected</th>
+                    <th>Variance</th>
+                    <th>Variant Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${renderRowsHtml(pageRows)}
+                </tbody>
+                ${isLastPage ? `
+                <tfoot>
+                  <tr>
+                    <td>Totals</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td>${formatCurrency(totals.varianceCost)}</td>
+                  </tr>
+                </tfoot>
+                ` : ""}
+              </table>
             </div>
-            <div class="disclaimer">P.S “The above signatures state that the provided data is accurate and valid.”</div>
           </div>
-        </div>
+          <div class="page-number">Page ${index + 1} of ${rowChunks.length}</div>
+        </div>`;
+          })
+          .join("")}
       </body>
     </html>
   `;

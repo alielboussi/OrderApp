@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     .eq("warehouse_id", warehouseId)
     .gte("occurred_at", openedAt)
     .lte("occurred_at", closedAt)
-    .in("reason", ["warehouse_transfer", "damage", "outlet_sale"]);
+    .in("reason", ["warehouse_transfer", "damage", "outlet_sale", "recipe_consumption"]);
 
   if (ledgerError) {
     return NextResponse.json({ error: ledgerError.message }, { status: 500 });
@@ -107,18 +107,18 @@ export async function GET(request: Request) {
 
   const { data: itemRows, error: itemError } = await supabase
     .from("catalog_items")
-    .select("id,name,cost")
+    .select("id,name,cost,item_kind")
     .in("id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"]);
 
   if (itemError) {
     return NextResponse.json({ error: itemError.message }, { status: 500 });
   }
 
-  const itemMap = new Map<string, { name: string | null; cost: number }>();
+  const itemMap = new Map<string, { name: string | null; cost: number; item_kind: string | null }>();
   (itemRows ?? []).forEach((row) => {
     if (!row?.id) return;
     const cost = parseQty(row.cost);
-    itemMap.set(row.id, { name: row.name ?? null, cost });
+    itemMap.set(row.id, { name: row.name ?? null, cost, item_kind: row.item_kind ?? null });
   });
 
   const { data: variantRows, error: variantError } = await supabase
@@ -149,8 +149,10 @@ export async function GET(request: Request) {
       const expectedQty = openingQty + transferQty + damageQty + salesQty;
       const varianceQty = closingQty - expectedQty;
       const itemName = itemMap.get(itemId)?.name ?? itemId;
+      const itemKind = itemMap.get(itemId)?.item_kind ?? null;
       const variantKey = normalizeVariantKey(variantKeyRaw);
       const variantInfo = variantMap.get(`${itemId}::${variantKey}`);
+      const isVariant = variantKey !== "base" && !!variantInfo;
       const variantName = variantKey === "base" ? itemName : variantInfo?.name ?? variantKey;
       const variantLabel = variantKey === "base" ? itemName : `${itemName} - ${variantName}`;
       const unitCost = variantInfo?.cost ?? itemMap.get(itemId)?.cost ?? 0;
@@ -161,7 +163,9 @@ export async function GET(request: Request) {
       return {
         item_id: itemId,
         item_name: itemName,
+        item_kind: itemKind,
         variant_key: variantKey,
+        is_variant: isVariant,
         variant_name: variantName,
         variant_label: variantLabel,
         opening_qty: openingQty,

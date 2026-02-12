@@ -262,18 +262,34 @@ export default function WarehouseSalesReportsPage() {
     const timeText = startTime || endTime ? `${startTime || "00:00"} to ${endTime || "23:59"}` : "All day";
     const logoDataUrl = await loadLogoDataUrl();
 
+    const filteredForPdf = aggregated.filter((row) => {
+      const kind = (row.item_kind ?? "").toLowerCase();
+      const variantKey = (row.variant_key ?? "").trim().toLowerCase();
+      const hasVariant = variantKey && variantKey !== "base";
+      return kind === "ingredient" || kind === "raw" || hasVariant;
+    });
+
     const html = buildReportPdfHtml({
       outletText,
       rangeText,
       timeText,
       logoDataUrl,
-      rows: aggregated.map((row) => ({
-        item_name: row.item_name,
+      rows: filteredForPdf.map((row) => ({
+        item_name: row.variant_key && row.variant_key.toLowerCase() !== "base"
+          ? `${row.item_name} - ${row.variant_label}`
+          : row.item_name,
         qty_units: row.qty_units,
         before_tax: row.before_tax,
         after_tax: row.after_tax,
       })),
-      totals,
+      totals: filteredForPdf.reduce(
+        (acc, row) => ({
+          qty: acc.qty + row.qty_units,
+          before: acc.before + row.before_tax,
+          after: acc.after + row.after_tax,
+        }),
+        { qty: 0, before: 0, after: 0 }
+      ),
     });
 
     const frame = document.createElement("iframe");
@@ -428,10 +444,12 @@ export default function WarehouseSalesReportsPage() {
       const itemName = row.catalog_items?.name ?? "";
       const itemKind = (row.catalog_items?.item_kind ?? "finished").toLowerCase();
       const variantKey = (row.variant_key ?? "base").trim();
+      const isBase = !variantKey || variantKey.toLowerCase() === "base";
       const variantText = `${resolveVariantLabel(variantKey)} ${variantKey}`.toLowerCase();
 
       if (itemQuery && !itemName.toLowerCase().includes(itemQuery)) return false;
       if (variantQuery && !variantText.includes(variantQuery)) return false;
+      if (itemKind === "finished" && isBase) return false;
       if (hasKindFilter && !includeKinds.includes(itemKind)) return false;
       if (selectedProductIds.length > 0 && !selectedProductIds.includes(row.item_id)) return false;
 
