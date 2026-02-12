@@ -2417,7 +2417,7 @@ function createHtml(config: {
             const { data: warehouseVariantData, error: warehouseVariantError } = await supabase
               .from('catalog_variants')
               .select('item_id,default_warehouse_id,locked_from_warehouse_id,active')
-              .or(`default_warehouse_id.eq.${lockedSourceId},locked_from_warehouse_id.eq.${lockedSourceId}`);
+              .or('default_warehouse_id.eq.' + lockedSourceId + ',locked_from_warehouse_id.eq.' + lockedSourceId);
             if (warehouseVariantError) throw warehouseVariantError;
             warehouseVariants = Array.isArray(warehouseVariantData) ? warehouseVariantData : [];
           }
