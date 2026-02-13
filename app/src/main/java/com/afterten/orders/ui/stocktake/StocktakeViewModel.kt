@@ -93,6 +93,7 @@ class StocktakeViewModel(
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     private var session: OutletSession? = null
+    private val autoImportAttemptedPeriods = mutableSetOf<String>()
 
     private fun pushDebug(message: String) {
         val next = (_ui.value.debug + "[${System.currentTimeMillis()}] $message").takeLast(80)
@@ -542,14 +543,25 @@ class StocktakeViewModel(
         val jwt = session?.token ?: return
         pushDebug("loadPeriodCounts period=$periodId")
         _ui.value = _ui.value.copy(periodCountsLoading = true, periodCountsError = null)
+        data class PeriodCountsPayload(
+            val period: StocktakeRepository.StockPeriod?,
+            val opening: List<StocktakeRepository.StockCountRow>,
+            val closing: List<StocktakeRepository.StockCountRow>,
+            val catalog: List<SupabaseProvider.WarehouseStockItem>
+        )
         viewModelScope.launch {
             runCatching {
+                val period = repo.fetchPeriodById(jwt, periodId)
                 val opening = repo.listCountsForPeriod(jwt, periodId, "opening")
                 val closing = repo.listCountsForPeriod(jwt, periodId, "closing")
                 val catalog = repo.listCatalogItemsForStocktake(jwt)
-                Triple(opening, closing, catalog)
+                PeriodCountsPayload(period, opening, closing, catalog)
             }
-                .onSuccess { (opening, closing, catalog) ->
+                .onSuccess { payload ->
+                    val period = payload.period
+                    val opening = payload.opening
+                    val closing = payload.closing
+                    val catalog = payload.catalog
                     val itemNameMap = catalog.associate { it.itemId to (it.itemName ?: "Item") }
                     val variantMap = _ui.value.variations
                         .groupBy { it.productId }
@@ -599,11 +611,126 @@ class StocktakeViewModel(
                         periodCountsLoading = false,
                         periodCountsError = null
                     )
+
+                    if (period?.status == "open" && opening.isEmpty()) {
+                        importPreviousClosingIntoOpening(
+                            periodId = period.id,
+                            warehouseId = period.warehouseId,
+                            includeZeros = true,
+                            auto = true
+                        )
+                    }
                 }
                 .onFailure { err ->
                     pushDebug("loadPeriodCounts failed: ${err.message}")
                     _ui.value = _ui.value.copy(periodCountsLoading = false, periodCountsError = err.message)
                 }
+        }
+    }
+
+    fun importPreviousClosingIntoOpening(
+        periodId: String,
+        warehouseId: String,
+        includeZeros: Boolean = true,
+        auto: Boolean = false
+    ) {
+        val jwt = session?.token ?: return
+        if (auto) {
+            if (autoImportAttemptedPeriods.contains(periodId)) return
+            autoImportAttemptedPeriods.add(periodId)
+        }
+        pushDebug("importPreviousClosingIntoOpening period=$periodId auto=$auto")
+        _ui.value = _ui.value.copy(periodCountsLoading = true, periodCountsError = null)
+        viewModelScope.launch {
+            val currentOpening = runCatching { repo.listCountsForPeriod(jwt, periodId, "opening") }
+                .getOrElse { emptyList() }
+            if (auto && currentOpening.isNotEmpty()) {
+                _ui.value = _ui.value.copy(periodCountsLoading = false)
+                return@launch
+            }
+
+            val previousPeriod = runCatching { repo.listPeriods(jwt, warehouseId) }
+                .getOrElse { emptyList() }
+                .firstOrNull { it.status == "closed" && it.id != periodId }
+            if (previousPeriod == null) {
+                _ui.value = _ui.value.copy(
+                    periodCountsLoading = false,
+                    periodCountsError = "No previous closed period found to import."
+                )
+                return@launch
+            }
+
+            val closingCounts = runCatching { repo.listCountsForPeriod(jwt, previousPeriod.id, "closing") }
+                .getOrElse { emptyList() }
+
+            val allItems = if (includeZeros) {
+                if (_ui.value.allItems.isNotEmpty()) {
+                    _ui.value.allItems
+                } else {
+                    runCatching {
+                        val fetched = repo.listWarehouseItems(jwt, warehouseId, null, null)
+                        val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
+                            .onFailure { pushDebug("import: warehouse_stock_items failed: ${it.message}") }
+                            .getOrElse { emptyList() }
+                        (fetched + direct).distinctBy { it.itemId to (it.variantKey ?: "base") }
+                    }.getOrElse { emptyList() }
+                }
+            } else {
+                emptyList()
+            }
+
+            var hadSeedFailure = false
+            val seededKeys = mutableSetOf<String>()
+            closingCounts.forEach { row ->
+                val variant = row.variantKey?.ifBlank { "base" } ?: "base"
+                val key = "${row.itemId}|${variant}".lowercase()
+                runCatching {
+                    repo.recordCount(
+                        jwt = jwt,
+                        periodId = periodId,
+                        itemId = row.itemId,
+                        qty = row.countedQty,
+                        variantKey = variant,
+                        kind = "opening",
+                        context = mapOf("auto_seed" to auto.toString(), "from_period" to previousPeriod.id)
+                    )
+                }.onFailure { err ->
+                    hadSeedFailure = true
+                    Log.e(TAG, "import: seed opening count failed", err)
+                    pushDebug("import: seed opening count failed: ${err.message}")
+                }
+                seededKeys.add(key)
+            }
+
+            if (includeZeros) {
+                allItems.forEach { item ->
+                    val variant = item.variantKey?.ifBlank { "base" } ?: "base"
+                    val key = "${item.itemId}|${variant}".lowercase()
+                    if (seededKeys.contains(key)) return@forEach
+                    runCatching {
+                        repo.recordCount(
+                            jwt = jwt,
+                            periodId = periodId,
+                            itemId = item.itemId,
+                            qty = 0.0,
+                            variantKey = variant,
+                            kind = "opening",
+                            context = mapOf("auto_seed" to auto.toString(), "from_period" to previousPeriod.id)
+                        )
+                    }.onFailure { err ->
+                        hadSeedFailure = true
+                        Log.e(TAG, "import: seed opening zero failed", err)
+                        pushDebug("import: seed opening zero failed: ${err.message}")
+                    }
+                    seededKeys.add(key)
+                }
+            }
+
+            _ui.value = _ui.value.copy(
+                periodCountsLoading = false,
+                periodCountsError = if (hadSeedFailure) "Some opening counts failed to import." else null
+            )
+            loadPeriodCounts(periodId)
         }
     }
 

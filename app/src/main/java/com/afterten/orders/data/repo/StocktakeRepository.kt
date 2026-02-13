@@ -273,7 +273,7 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
             "&item_id=not.is.null" +
             "&occurred_at=gte.${opened}" +
             "&occurred_at=lte.${closed}" +
-            "&reason=in.(warehouse_transfer,outlet_sale,damage)"
+            "&reason=in.(warehouse_transfer,outlet_sale,damage,recipe_consumption)"
         val text = supabase.getWithJwt(path, jwt)
         return json.decodeFromString(ListSerializer(StockLedgerRow.serializer()), text)
     }

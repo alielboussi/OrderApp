@@ -572,9 +572,13 @@ fun StocktakePeriodCountsScreen(
     val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
     LaunchedEffect(session?.token) { vm.bindSession(session) }
     LaunchedEffect(periodId, session?.token) {
-        if (periodId.isNotBlank()) vm.loadPeriodCounts(periodId)
+        if (periodId.isNotBlank()) {
+            vm.loadPeriod(periodId)
+            vm.loadPeriodCounts(periodId)
+        }
     }
     val ui by vm.ui.collectAsState()
+    var showImportDialog by remember { mutableStateOf(false) }
 
     if (session != null && !session.hasRole(RoleGuards.Stocktake)) {
         AccessDeniedCard(
@@ -644,6 +648,16 @@ fun StocktakePeriodCountsScreen(
             }
         }
 
+        val canImport = ui.openPeriod?.id == periodId && ui.openPeriod?.status == "open" && !ui.periodCountsLoading
+        if (canImport) {
+            OutlinedButton(
+                onClick = { showImportDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, primaryRed)
+            ) { Text("Import previous closing as opening") }
+        }
+
         if (combinedRows.isNotEmpty()) {
             Text("Opening / Closing / Variance", fontWeight = FontWeight.Bold, color = Color.White)
             combinedRows.forEach { row ->
@@ -666,6 +680,35 @@ fun StocktakePeriodCountsScreen(
 
         if (!ui.periodCountsLoading && combinedRows.isEmpty()) {
             Text("No counts recorded for this period.", color = Color.White)
+        }
+
+        if (showImportDialog) {
+            AlertDialog(
+                onDismissRequest = { showImportDialog = false },
+                title = { Text("Import previous closing counts") },
+                text = {
+                    Text(
+                        "This will overwrite opening counts for this period using the previous period's closing counts. Items with no previous count will be set to 0."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showImportDialog = false
+                            val warehouseId = ui.openPeriod?.warehouseId ?: return@TextButton
+                            vm.importPreviousClosingIntoOpening(
+                                periodId = periodId,
+                                warehouseId = warehouseId,
+                                includeZeros = true,
+                                auto = false
+                            )
+                        }
+                    ) { Text("Import") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showImportDialog = false }) { Text("Cancel") }
+                }
+            )
         }
     }
 }
