@@ -83,8 +83,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import android.content.ActivityNotFoundException
-import android.content.Intent
+import android.app.DownloadManager
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import com.afterten.orders.util.generateStocktakeVariancePdf
@@ -386,20 +386,21 @@ fun StocktakePeriodsScreen(
                     expiresInSeconds = 3600,
                     downloadName = fileName
                 )
-
-                val chromeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                    setPackage("com.android.chrome")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val downloadManager = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+                if (downloadManager == null) {
+                    Toast.makeText(ctx, "Download manager unavailable", Toast.LENGTH_LONG).show()
+                    return@launch
                 }
-                try {
-                    ctx.startActivity(chromeIntent)
-                } catch (_: ActivityNotFoundException) {
-                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    ctx.startActivity(fallback)
-                }
-                Toast.makeText(ctx, "Opening download in Chrome", Toast.LENGTH_LONG).show()
+                val request = DownloadManager.Request(Uri.parse(url))
+                    .setTitle(fileName)
+                    .setDescription("Stocktake variance PDF")
+                    .setMimeType("application/pdf")
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setAllowedOverMetered(true)
+                    .setAllowedOverRoaming(true)
+                    .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+                downloadManager.enqueue(request)
+                Toast.makeText(ctx, "Downloading variance PDF", Toast.LENGTH_LONG).show()
             } catch (err: Throwable) {
                 Toast.makeText(ctx, err.message ?: "Failed to export PDF", Toast.LENGTH_LONG).show()
             }
