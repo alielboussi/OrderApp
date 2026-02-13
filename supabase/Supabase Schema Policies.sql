@@ -708,5 +708,25 @@
     "command": "INSERT",
     "using_expression": null,
     "with_check_expression": "((bucket_id = 'signatures'::text) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM unnest(member_outlet_ids(auth.uid())) oid(oid)\n  WHERE (objects.path_tokens[1] = (oid.oid)::text)))) AND (name ~ '^[0-9a-fA-F-]+/.+'::text))"
+  },
+  {
+    "schema_name": "storage",
+    "table_name": "objects",
+    "policy_name": "stocktake_read_variance_pdf",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "command": "SELECT",
+    "using_expression": "((bucket_id = 'orders'::text) AND (name ~~ 'stocktake/variance/%'::text))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "storage",
+    "table_name": "objects",
+    "policy_name": "stocktake_upload_variance_pdf",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "((bucket_id = 'orders'::text) AND (name ~~ 'stocktake/variance/%'::text))"
   }
 ]

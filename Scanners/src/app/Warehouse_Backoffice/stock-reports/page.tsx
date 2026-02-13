@@ -7,8 +7,6 @@ import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./stock-reports.module.css";
 import { buildStocktakeVariancePdfHtml } from "./stocktakepdf";
 
-type OutletOption = { id: string; name: string };
-
 type WarehouseOption = { id: string; name: string | null; code: string | null; active?: boolean | null };
 
 type StockPeriod = {
@@ -99,7 +97,6 @@ export default function StockReportsPage() {
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
-  const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
@@ -135,30 +132,26 @@ export default function StockReportsPage() {
         const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
         if (whoamiError) throw whoamiError;
 
-        const mapped: OutletOption[] = [];
+        const mapped: string[] = [];
         const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
         const outletList = record?.outlets ?? [];
-        mapped.push(
-          ...outletList
-            .filter((outlet) => outlet?.outlet_id)
-            .map((outlet) => ({ id: outlet.outlet_id, name: outlet.outlet_name }))
-        );
+        mapped.push(...outletList.filter((outlet) => outlet?.outlet_id).map((outlet) => outlet.outlet_id));
 
         if (mapped.length === 0) {
           const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
           if (fallbackError) throw fallbackError;
           const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
           if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
+            mapped.push(fallbackOutlet.outlet_id);
           }
         }
 
         if (!active) return;
 
-        setOutlets(mapped);
-        if (selectedOutletIds.length === 0 && mapped.length > 0) {
-          setSelectedOutletIds(mapped.map((outlet) => outlet.id));
-        }
+        setSelectedOutletIds((prev) => {
+          if (prev.length === mapped.length && mapped.every((id) => prev.includes(id))) return prev;
+          return mapped;
+        });
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -170,7 +163,7 @@ export default function StockReportsPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletIds.length]);
+  }, [status, supabase]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -384,38 +377,13 @@ export default function StockReportsPage() {
 
         <section className={styles.filtersCard}>
           <div className={styles.filterRow}>
-            <div className={styles.filterLabel}>
-              Outlet
-              <div className={styles.outletList}>
-                {outlets.length === 0 ? (
-                  <span className={styles.emptyNote}>No outlets found</span>
-                ) : (
-                  outlets.map((outlet) => (
-                    <label key={outlet.id} className={styles.outletRow}>
-                      <input
-                        type="checkbox"
-                        checked={selectedOutletIds.includes(outlet.id)}
-                        onChange={() => {
-                          setSelectedOutletIds((prev) =>
-                            prev.includes(outlet.id) ? prev.filter((value) => value !== outlet.id) : [...prev, outlet.id]
-                          );
-                          setSelectedWarehouseId("");
-                        }}
-                      />
-                      <span>{outlet.name}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-            </div>
-
             <label className={styles.filterLabel}>
               Warehouse
               <select
                 className={styles.select}
                 value={selectedWarehouseId}
                 onChange={(event) => setSelectedWarehouseId(event.target.value)}
-                disabled={selectedOutletIds.length === 0}
+                disabled={warehouses.length === 0}
               >
                 {warehouses.length === 0 ? (
                   <option value="">No warehouses found</option>
@@ -427,6 +395,9 @@ export default function StockReportsPage() {
                   ))
                 )}
               </select>
+              {selectedOutletIds.length === 0 ? (
+                <span className={styles.emptyNote}>No outlets linked to this account.</span>
+              ) : null}
             </label>
           </div>
         </section>
