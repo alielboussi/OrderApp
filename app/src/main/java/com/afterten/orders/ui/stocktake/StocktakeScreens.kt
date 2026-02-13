@@ -83,10 +83,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import android.os.Environment
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import com.afterten.orders.util.generateStocktakeVariancePdf
-import java.io.File
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.launch
 import com.afterten.orders.RootViewModel
 import com.afterten.orders.data.RoleGuards
@@ -349,14 +351,52 @@ fun StocktakePeriodsScreen(
     fun downloadVariancePdf(period: com.afterten.orders.data.repo.StocktakeRepository.StockPeriod) {
         scope.launch {
             try {
+                val activeSession = session
+                if (activeSession == null) {
+                    Toast.makeText(ctx, "Sign in required to export PDF", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
                 val report = vm.buildVarianceReport(period.id)
                 val pdfFile = generateStocktakeVariancePdf(ctx.cacheDir, ctx, report)
-                val dir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: ctx.cacheDir
                 val safeName = period.stocktakeNumber?.ifBlank { null } ?: period.id.take(8)
-                val outFile = File(dir, "stocktake-variance-$safeName.pdf")
-                pdfFile.copyTo(outFile, overwrite = true)
+                val fileName = "stocktake-variance-$safeName.pdf"
+                val storagePath = "stocktake/variance/$fileName"
+                val pdfBytes = pdfFile.readBytes()
                 pdfFile.delete()
-                Toast.makeText(ctx, "Saved to ${outFile.absolutePath}", Toast.LENGTH_LONG).show()
+
+                val uploadResp = root.supabaseProvider.uploadToStorage(
+                    jwt = activeSession.token,
+                    bucket = "PriceLabels",
+                    path = storagePath,
+                    bytes = pdfBytes,
+                    contentType = "application/pdf",
+                    upsert = true
+                )
+                val uploadCode = uploadResp.status.value
+                if (uploadCode !in 200..299) {
+                    val detail = runCatching { uploadResp.bodyAsText() }.getOrNull().orEmpty()
+                    throw IllegalStateException("Upload failed: HTTP $uploadCode $detail")
+                }
+
+                val url = root.supabaseProvider.publicStorageUrl(
+                    bucket = "PriceLabels",
+                    path = storagePath,
+                    downloadName = fileName
+                )
+
+                val chromeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    setPackage("com.android.chrome")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    ctx.startActivity(chromeIntent)
+                } catch (_: ActivityNotFoundException) {
+                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    ctx.startActivity(fallback)
+                }
+                Toast.makeText(ctx, "Opening download in Chrome", Toast.LENGTH_LONG).show()
             } catch (err: Throwable) {
                 Toast.makeText(ctx, err.message ?: "Failed to export PDF", Toast.LENGTH_LONG).show()
             }
