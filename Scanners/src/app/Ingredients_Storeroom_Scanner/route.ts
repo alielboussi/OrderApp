@@ -1581,6 +1581,20 @@ function createHtml(config: {
         <button type="button" id="variant-modal-close">Close</button>
       </div>
       <div id="variant-modal-body" class="variant-modal-body"></div>
+      <div class="numpad" id="variant-numpad" aria-label="Variant quantity keypad">
+        <button type="button" data-key="7">7</button>
+        <button type="button" data-key="8">8</button>
+        <button type="button" data-key="9">9</button>
+        <button type="button" data-key="4">4</button>
+        <button type="button" data-key="5">5</button>
+        <button type="button" data-key="6">6</button>
+        <button type="button" data-key="1">1</button>
+        <button type="button" data-key="2">2</button>
+        <button type="button" data-key="3">3</button>
+        <button type="button" data-action="clear">CLR</button>
+        <button type="button" data-key="0">0</button>
+        <button type="button" data-action="enter">Enter</button>
+      </div>
     </div>
   </div>
 
@@ -2051,6 +2065,9 @@ function createHtml(config: {
       const variantModal = document.getElementById('variant-modal');
       const variantModalBody = document.getElementById('variant-modal-body');
       const variantModalTitle = document.getElementById('variant-modal-title');
+      const variantNumpad = document.getElementById('variant-numpad');
+      let activeVariantQtyInput = null;
+      let activeVariantAddButton = null;
 
       referenceNumpadDigits?.addEventListener('mousedown', (event) => {
         event.preventDefault();
@@ -2269,6 +2286,12 @@ function createHtml(config: {
         }
       }
 
+      function submitVariantQty() {
+        if (activeVariantAddButton instanceof HTMLButtonElement) {
+          activeVariantAddButton.click();
+        }
+      }
+
       function appendQtyDigit(digit) {
         if (!qtyInput) return;
         qtyInput.value = (qtyInput.value ?? '') + digit;
@@ -2279,6 +2302,18 @@ function createHtml(config: {
         if (!qtyInput) return;
         qtyInput.value = '';
         qtyInput.focus();
+      }
+
+      function appendVariantQtyDigit(digit) {
+        if (!activeVariantQtyInput) return;
+        activeVariantQtyInput.value = (activeVariantQtyInput.value ?? '') + digit;
+        activeVariantQtyInput.focus();
+      }
+
+      function resetVariantQtyInput() {
+        if (!activeVariantQtyInput) return;
+        activeVariantQtyInput.value = '';
+        activeVariantQtyInput.focus();
       }
 
       if (qtyNumpad) {
@@ -2297,6 +2332,26 @@ function createHtml(config: {
           }
           if (action === 'enter' && qtyInput && qtyInput.value !== '') {
             submitQtyForm();
+          }
+        });
+      }
+
+      if (variantNumpad) {
+        variantNumpad.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLButtonElement)) return;
+          const digit = target.dataset.key;
+          const action = target.dataset.action;
+          if (digit !== undefined) {
+            appendVariantQtyDigit(digit);
+            return;
+          }
+          if (action === 'clear') {
+            resetVariantQtyInput();
+            return;
+          }
+          if (action === 'enter' && activeVariantQtyInput && activeVariantQtyInput.value !== '') {
+            submitVariantQty();
           }
         });
       }
@@ -3673,6 +3728,8 @@ function createHtml(config: {
         if (!variantModal) return;
         variantModal.style.display = 'none';
         variantModal.setAttribute('aria-hidden', 'true');
+        activeVariantQtyInput = null;
+        activeVariantAddButton = null;
         focusActiveScanner();
       }
 
@@ -3697,6 +3754,8 @@ function createHtml(config: {
         state.pendingContext = context;
         state.pendingEntry = null;
         state.pendingEditIndex = null;
+        activeVariantQtyInput = null;
+        activeVariantAddButton = null;
         variantModalTitle.textContent = product.name ?? 'Product';
         variantModalBody.innerHTML = '';
 
@@ -3748,6 +3807,15 @@ function createHtml(config: {
           incBtn.className = 'variant-qty-button';
           incBtn.textContent = '+';
 
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'variant-add-button';
+          addBtn.textContent = 'Add';
+          const activateRow = () => {
+            activeVariantQtyInput = qtyInput;
+            activeVariantAddButton = addBtn;
+          };
+
           const setQty = (value) => {
             const numeric = Number(value);
             qtyInput.value = Number.isFinite(numeric) ? numeric.toString() : '0';
@@ -3758,22 +3826,21 @@ function createHtml(config: {
           }
 
           decBtn.addEventListener('click', () => {
+            activateRow();
             const current = Number(qtyInput.value || 0);
             setQty(Math.max(0, current - 1));
           });
           incBtn.addEventListener('click', () => {
+            activateRow();
             const current = Number(qtyInput.value || 0);
             setQty(current + 1);
           });
+          qtyInput.addEventListener('focus', activateRow);
+          qtyInput.addEventListener('click', activateRow);
 
           controls.appendChild(decBtn);
           controls.appendChild(qtyInput);
           controls.appendChild(incBtn);
-
-          const addBtn = document.createElement('button');
-          addBtn.type = 'button';
-          addBtn.className = 'variant-add-button';
-          addBtn.textContent = 'Add';
           addBtn.addEventListener('click', () => {
             const rawQty = Number(qtyInput.value || 0);
             const effectiveQty = computeEffectiveQty(rawQty, entry);
@@ -3789,6 +3856,10 @@ function createHtml(config: {
             qtyInput.value = '';
           });
 
+          if (!activeVariantQtyInput) {
+            activateRow();
+          }
+
           wrapper.appendChild(header);
           wrapper.appendChild(controls);
           wrapper.appendChild(addBtn);
@@ -3801,6 +3872,14 @@ function createHtml(config: {
 
       function closeQtyPrompt() {
         if (!qtyModal) return;
+        const context = state.pendingContext || state.mode;
+        if (context === 'purchase') {
+          if (purchaseItemSearchInput) purchaseItemSearchInput.value = '';
+        } else if (context === 'damage') {
+          if (damageItemSearchInput) damageItemSearchInput.value = '';
+        } else {
+          if (itemSearchInput) itemSearchInput.value = '';
+        }
         qtyModal.style.display = 'none';
         state.pendingEntry = null;
         state.pendingEditIndex = null;
