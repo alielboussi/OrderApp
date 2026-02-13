@@ -87,6 +87,7 @@ import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.widget.Toast
+import android.util.Log
 import com.afterten.orders.util.generateStocktakeVariancePdf
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.launch
@@ -351,12 +352,15 @@ fun StocktakePeriodsScreen(
     fun downloadVariancePdf(period: com.afterten.orders.data.repo.StocktakeRepository.StockPeriod) {
         scope.launch {
             try {
+                Log.d("Stocktake", "variance pdf: start periodId=${period.id}")
                 val activeSession = session
                 if (activeSession == null) {
+                    Log.e("Stocktake", "variance pdf: no active session")
                     Toast.makeText(ctx, "Sign in required to export PDF", Toast.LENGTH_LONG).show()
                     return@launch
                 }
                 val report = vm.buildVarianceReport(period.id)
+                Log.d("Stocktake", "variance pdf: report rows=${report.rows.size}")
                 val pdfFile = generateStocktakeVariancePdf(ctx.cacheDir, ctx, report)
                 val safeName = period.stocktakeNumber?.ifBlank { null } ?: period.id.take(8)
                 val fileName = "stocktake-variance-$safeName.pdf"
@@ -365,6 +369,7 @@ fun StocktakePeriodsScreen(
                 pdfFile.delete()
 
                 val bucket = "orders"
+                Log.d("Stocktake", "variance pdf: upload bucket=$bucket path=$storagePath size=${pdfBytes.size}")
                 val uploadResp = root.supabaseProvider.uploadToStorage(
                     jwt = activeSession.token,
                     bucket = bucket,
@@ -376,8 +381,10 @@ fun StocktakePeriodsScreen(
                 val uploadCode = uploadResp.status.value
                 if (uploadCode !in 200..299) {
                     val detail = runCatching { uploadResp.bodyAsText() }.getOrNull().orEmpty()
+                    Log.e("Stocktake", "variance pdf: upload failed code=$uploadCode detail=$detail")
                     throw IllegalStateException("Upload failed: HTTP $uploadCode $detail")
                 }
+                Log.d("Stocktake", "variance pdf: upload ok code=$uploadCode")
 
                 val url = root.supabaseProvider.createSignedUrl(
                     jwt = activeSession.token,
@@ -386,8 +393,10 @@ fun StocktakePeriodsScreen(
                     expiresInSeconds = 3600,
                     downloadName = fileName
                 )
+                Log.d("Stocktake", "variance pdf: signed url=$url")
                 val downloadManager = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
                 if (downloadManager == null) {
+                    Log.e("Stocktake", "variance pdf: DownloadManager unavailable")
                     Toast.makeText(ctx, "Download manager unavailable", Toast.LENGTH_LONG).show()
                     return@launch
                 }
@@ -399,9 +408,11 @@ fun StocktakePeriodsScreen(
                     .setAllowedOverMetered(true)
                     .setAllowedOverRoaming(true)
                     .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
-                downloadManager.enqueue(request)
+                val downloadId = downloadManager.enqueue(request)
+                Log.d("Stocktake", "variance pdf: enqueue downloadId=$downloadId fileName=$fileName")
                 Toast.makeText(ctx, "Downloading variance PDF", Toast.LENGTH_LONG).show()
             } catch (err: Throwable) {
+                Log.e("Stocktake", "variance pdf: failed", err)
                 Toast.makeText(ctx, err.message ?: "Failed to export PDF", Toast.LENGTH_LONG).show()
             }
         }

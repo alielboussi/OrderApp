@@ -388,15 +388,112 @@ class StocktakeViewModel(
                             Log.e(TAG, "setPosSyncCutoffForWarehouse failed", err)
                             pushDebug("setPosSyncCutoffForWarehouse failed: ${err.message}")
                         }
+                    val closingCounts = runCatching {
+                        repo.listCountsForPeriod(jwt, period.id, "closing")
+                    }.onFailure { err ->
+                        Log.e(TAG, "closePeriod: failed to load closing counts", err)
+                        pushDebug("closePeriod: load closing counts failed: ${err.message}")
+                    }.getOrElse { emptyList() }
+
+                    val allItems = if (_ui.value.allItems.isNotEmpty()) {
+                        _ui.value.allItems
+                    } else {
+                        runCatching {
+                            val fetched = repo.listWarehouseItems(jwt, warehouseId, null, null)
+                            val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
+                                .onFailure { pushDebug("closePeriod: warehouse_stock_items failed: ${it.message}") }
+                                .getOrElse { emptyList() }
+                            (fetched + direct).distinctBy { it.itemId to (it.variantKey ?: "base") }
+                        }.onFailure { err ->
+                            Log.e(TAG, "closePeriod: failed to load warehouse items", err)
+                            pushDebug("closePeriod: load warehouse items failed: ${err.message}")
+                        }.getOrElse { emptyList() }
+                    }
+
+                    val newPeriod = runCatching {
+                        repo.startPeriod(jwt, warehouseId, "Auto-opened from ${period.stocktakeNumber ?: period.id}")
+                    }.onFailure { err ->
+                        Log.e(TAG, "closePeriod: startPeriod failed", err)
+                        pushDebug("closePeriod: startPeriod failed: ${err.message}")
+                    }.getOrNull()
+
+                    if (newPeriod == null) {
+                        _ui.value = _ui.value.copy(
+                            openPeriod = null,
+                            openingLockedKeys = emptySet(),
+                            closingLockedKeys = emptySet(),
+                            lastCount = null,
+                            loading = false,
+                            error = "Closed period but failed to start a new one."
+                        )
+                        refreshOpenPeriod(warehouseId)
+                        loadItems(warehouseId)
+                        return@onSuccess
+                    }
+
+                    val openedUtc = newPeriod.openedAt ?: Instant.now().toString()
+                    runCatching { repo.setPosSyncOpeningForWarehouse(jwt, newPeriod.warehouseId, openedUtc) }
+                        .onSuccess { pushDebug("pos sync opening updated for warehouse=${newPeriod.warehouseId} opened=$openedUtc") }
+                        .onFailure { err ->
+                            Log.e(TAG, "setPosSyncOpeningForWarehouse failed", err)
+                            pushDebug("setPosSyncOpeningForWarehouse failed: ${err.message}")
+                        }
+
+                    var hadSeedFailure = false
+                    val seededKeys = mutableSetOf<String>()
+                    closingCounts.forEach { row ->
+                        val variant = row.variantKey?.ifBlank { "base" } ?: "base"
+                        val key = "${row.itemId}|${variant}".lowercase()
+                        runCatching {
+                            repo.recordCount(
+                                jwt = jwt,
+                                periodId = newPeriod.id,
+                                itemId = row.itemId,
+                                qty = row.countedQty,
+                                variantKey = variant,
+                                kind = "opening",
+                                context = mapOf("auto_seed" to "true", "from_period" to period.id)
+                            )
+                        }.onFailure { err ->
+                            hadSeedFailure = true
+                            Log.e(TAG, "closePeriod: seed opening count failed", err)
+                            pushDebug("closePeriod: seed opening count failed: ${err.message}")
+                        }
+                        seededKeys.add(key)
+                    }
+
+                    allItems.forEach { item ->
+                        val variant = item.variantKey?.ifBlank { "base" } ?: "base"
+                        val key = "${item.itemId}|${variant}".lowercase()
+                        if (seededKeys.contains(key)) return@forEach
+                        runCatching {
+                            repo.recordCount(
+                                jwt = jwt,
+                                periodId = newPeriod.id,
+                                itemId = item.itemId,
+                                qty = 0.0,
+                                variantKey = variant,
+                                kind = "opening",
+                                context = mapOf("auto_seed" to "true", "from_period" to period.id)
+                            )
+                        }.onFailure { err ->
+                            hadSeedFailure = true
+                            Log.e(TAG, "closePeriod: seed opening zero failed", err)
+                            pushDebug("closePeriod: seed opening zero failed: ${err.message}")
+                        }
+                        seededKeys.add(key)
+                    }
+
                     _ui.value = _ui.value.copy(
-                        openPeriod = null,
+                        openPeriod = newPeriod,
                         openingLockedKeys = emptySet(),
                         closingLockedKeys = emptySet(),
                         lastCount = null,
                         loading = false,
-                        error = null
+                        error = if (hadSeedFailure) "New period opened, but some opening counts failed to copy." else null
                     )
-                    refreshOpenPeriod(warehouseId)
+                    refreshOpeningLocks(newPeriod.id)
+                    refreshClosingLocks(newPeriod.id)
                     loadItems(warehouseId)
                 }
                 .onFailure { err ->
