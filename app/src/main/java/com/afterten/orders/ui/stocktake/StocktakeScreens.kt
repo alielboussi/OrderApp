@@ -364,9 +364,10 @@ fun StocktakePeriodsScreen(
                 val pdfBytes = pdfFile.readBytes()
                 pdfFile.delete()
 
+                val bucket = "orders"
                 val uploadResp = root.supabaseProvider.uploadToStorage(
                     jwt = activeSession.token,
-                    bucket = "PriceLabels",
+                    bucket = bucket,
                     path = storagePath,
                     bytes = pdfBytes,
                     contentType = "application/pdf",
@@ -378,9 +379,11 @@ fun StocktakePeriodsScreen(
                     throw IllegalStateException("Upload failed: HTTP $uploadCode $detail")
                 }
 
-                val url = root.supabaseProvider.publicStorageUrl(
-                    bucket = "PriceLabels",
+                val url = root.supabaseProvider.createSignedUrl(
+                    jwt = activeSession.token,
+                    bucket = bucket,
                     path = storagePath,
+                    expiresInSeconds = 3600,
                     downloadName = fileName
                 )
 
