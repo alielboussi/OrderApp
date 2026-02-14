@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
@@ -46,7 +46,7 @@ export default function OutletWarehouseAssignmentsPage() {
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -70,12 +70,12 @@ export default function OutletWarehouseAssignmentsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
     if (status !== "ok") return;
     void load();
-  }, [status]);
+  }, [status, load]);
 
   const outletLabelById = useMemo(() => {
     const map = new Map<string, string>();

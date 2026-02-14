@@ -218,7 +218,11 @@ export default function CatalogManagePage() {
               </label>
               <label className={styles.label}>
                 Type
-                <select className={styles.select} value={productKind} onChange={(e) => setProductKind(e.target.value as any)}>
+                <select
+                  className={styles.select}
+                  value={productKind}
+                  onChange={(e) => setProductKind(e.target.value as "finished" | "ingredient" | "raw")}
+                >
                   <option value="finished">Finished</option>
                   <option value="ingredient">Ingredient</option>
                   <option value="raw">Raw</option>

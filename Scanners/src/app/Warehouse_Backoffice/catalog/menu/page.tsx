@@ -83,7 +83,7 @@ export default function CatalogMenuPage() {
         setLoading(false);
       }
     },
-    [load]
+    [load, deleteDisabled]
   );
 
   const handleDeleteVariant = useCallback(
@@ -114,7 +114,7 @@ export default function CatalogMenuPage() {
         setLoading(false);
       }
     },
-    [load]
+    [load, deleteDisabled]
   );
 
   useEffect(() => {

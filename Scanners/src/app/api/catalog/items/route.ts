@@ -6,6 +6,12 @@ const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle"
 
 type ItemKind = (typeof ITEM_KINDS)[number];
 type QtyUnit = (typeof QTY_UNITS)[number];
+type SupabaseError = { code?: string; message?: string } | null;
+type ItemRecord = Record<string, unknown> & {
+  id?: string;
+  default_warehouse_id?: string | null;
+  has_recipe?: boolean | null;
+};
 
 type ItemPayload = {
   name: string;
@@ -124,11 +130,6 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
-const normalizeVariantKey = (value?: string | null) => {
-  const normalized = value?.trim();
-  return normalized && normalized.length ? normalized : "base";
-};
-
 async function upsertBaseStorageHome(
   supabase: ReturnType<typeof getServiceClient>,
   itemId: string,
@@ -162,9 +163,9 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim() || null;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-    let optional = [...OPTIONAL_COLUMNS];
+    const optional = [...OPTIONAL_COLUMNS];
     let data: unknown;
-    let error: any;
+    let error: SupabaseError = null;
     let single = false;
 
     while (true) {
@@ -239,26 +240,33 @@ export async function GET(request: Request) {
 
     if (single) {
       if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      const item = data as Record<string, unknown>;
-      const baseCount = recipeCountByItemVariant[`${item.id as string}::base`] || 0;
-      const storageHomeId = storageHomeByItem[item.id as string] ?? (item as any).default_warehouse_id ?? null;
+      const item = data as ItemRecord;
+      const itemId = typeof item.id === "string" ? item.id : "";
+      const baseCount = recipeCountByItemVariant[`${itemId}::base`] || 0;
+      const defaultWarehouseId = typeof item.default_warehouse_id === "string" ? item.default_warehouse_id : null;
+      const storageHomeId = storageHomeByItem[itemId] ?? defaultWarehouseId;
+      const hasRecipe = typeof item.has_recipe === "boolean" ? item.has_recipe : recipeCountByItem[itemId] > 0;
       return NextResponse.json({
         item: {
           ...item,
           storage_home_id: storageHomeId,
-          has_recipe: (item as any).has_recipe ?? recipeCountByItem[item.id as string] > 0,
+          has_recipe: hasRecipe,
           base_recipe_count: baseCount,
         },
       });
     }
 
     const enriched = itemsArray.map((item) => {
-      const baseCount = recipeCountByItemVariant[`${item.id as string}::base`] || 0;
-      const storageHomeId = storageHomeByItem[item.id as string] ?? (item as any).default_warehouse_id ?? null;
+      const typed = item as ItemRecord;
+      const itemId = typeof typed.id === "string" ? typed.id : "";
+      const baseCount = recipeCountByItemVariant[`${itemId}::base`] || 0;
+      const defaultWarehouseId = typeof typed.default_warehouse_id === "string" ? typed.default_warehouse_id : null;
+      const storageHomeId = storageHomeByItem[itemId] ?? defaultWarehouseId;
+      const hasRecipe = typeof typed.has_recipe === "boolean" ? typed.has_recipe : recipeCountByItem[itemId] > 0;
       return {
         ...item,
         storage_home_id: storageHomeId,
-        has_recipe: (item as any).has_recipe ?? recipeCountByItem[item.id as string] > 0,
+        has_recipe: hasRecipe,
         base_recipe_count: baseCount,
       };
     });
@@ -365,21 +373,24 @@ export async function POST(request: Request) {
 
     const supabase = getServiceClient();
     let attemptPayload: Partial<ItemPayload> = payload;
-    let optionalKeys = [...OPTIONAL_COLUMNS];
-    let data;
-    let error: any;
+    const optionalKeys = [...OPTIONAL_COLUMNS];
+    let data: { id?: string } | null = null;
+    let error: SupabaseError = null;
 
     while (true) {
-      ({ data, error } = await supabase
+      const result = await supabase
         .from("catalog_items")
         .insert([attemptPayload])
         .select("id,name,sku,item_kind")
-        .single());
+        .single();
+      data = (result.data as { id?: string } | null) ?? null;
+      error = (result.error as SupabaseError) ?? null;
 
       if (error?.code === "42703" && optionalKeys.length) {
         const removeKey = optionalKeys.shift();
         if (removeKey) {
-          const { [removeKey]: _removed, ...rest } = attemptPayload as Record<string, unknown>;
+          const { [removeKey]: removed, ...rest } = attemptPayload as Record<string, unknown>;
+          void removed;
           attemptPayload = rest as Partial<ItemPayload>;
           continue;
         }
@@ -502,22 +513,25 @@ export async function PUT(request: Request) {
 
     const supabase = getServiceClient();
     let attemptPayload: Partial<ItemPayload> = payload;
-    let optionalKeys = [...OPTIONAL_COLUMNS];
-    let data;
-    let error: any;
+    const optionalKeys = [...OPTIONAL_COLUMNS];
+    let data: { id?: string } | null = null;
+    let error: SupabaseError = null;
 
     while (true) {
-      ({ data, error } = await supabase
+      const result = await supabase
         .from("catalog_items")
         .update(attemptPayload)
         .eq("id", id)
         .select("id,name,sku,item_kind")
-        .single());
+        .single();
+      data = (result.data as { id?: string } | null) ?? null;
+      error = (result.error as SupabaseError) ?? null;
 
       if (error?.code === "42703" && optionalKeys.length) {
         const removeKey = optionalKeys.shift();
         if (removeKey) {
-          const { [removeKey]: _removed, ...rest } = attemptPayload as Record<string, unknown>;
+          const { [removeKey]: removed, ...rest } = attemptPayload as Record<string, unknown>;
+          void removed;
           attemptPayload = rest as Partial<ItemPayload>;
           continue;
         }

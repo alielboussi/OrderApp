@@ -135,7 +135,7 @@ function VariantCreatePage() {
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [loadingVariant, setLoadingVariant] = useState(false);
+  const [, setLoadingVariant] = useState(false);
 
   const editingId = searchParams?.get("id")?.trim() || "";
   const incomingItemId = searchParams?.get("item_id")?.trim() || "";

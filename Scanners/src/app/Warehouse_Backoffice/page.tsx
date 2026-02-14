@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 import styles from "./dashboard.module.css";
@@ -8,12 +7,6 @@ import styles from "./dashboard.module.css";
 export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
-
-  const [posAlertCount, setPosAlertCount] = useState<number | null>(null);
-  const [posAlertSamples, setPosAlertSamples] = useState<Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>>([]);
-  const [posFailureCount, setPosFailureCount] = useState<number | null>(null);
-  const [posFailureSamples, setPosFailureSamples] = useState<Array<{ outlet_id: string | null; source_event_id: string | null; stage: string; error_message: string }>>([]);
-  const [posAlertError, setPosAlertError] = useState<string | null>(null);
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
@@ -25,34 +18,6 @@ export default function WarehouseBackofficeDashboard() {
   const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
   const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
-
-  useEffect(() => {
-    if (status !== "ok") return;
-    let active = true;
-    const load = async () => {
-      try {
-        const alertRes = await fetchJson<{
-          mappingMismatchCount: number;
-          mappingMismatchSamples?: Array<{ outlet_id: string; pos_item_id: string; pos_flavour_id: string | null }>;
-          syncFailureCount: number;
-          syncFailureSamples?: Array<{ outlet_id: string | null; source_event_id: string | null; stage: string; error_message: string }>;
-        }>("/api/pos-sync-alert");
-        if (!active) return;
-        setPosAlertCount(typeof alertRes.mappingMismatchCount === "number" ? alertRes.mappingMismatchCount : 0);
-        setPosAlertSamples(Array.isArray(alertRes.mappingMismatchSamples) ? alertRes.mappingMismatchSamples : []);
-        setPosFailureCount(typeof alertRes.syncFailureCount === "number" ? alertRes.syncFailureCount : 0);
-        setPosFailureSamples(Array.isArray(alertRes.syncFailureSamples) ? alertRes.syncFailureSamples : []);
-        setPosAlertError(null);
-      } catch (err) {
-        if (!active) return;
-        setPosAlertError("Unable to load POS mapping alerts");
-      }
-    };
-    load();
-    return () => {
-      active = false;
-    };
-  }, [status]);
 
 
   if (status !== "ok") {
@@ -72,49 +37,6 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
           </div>
         </header>
-
-        {posAlertError ? (
-          <section className={styles.alertBanner}>
-            <div>
-              <p className={styles.alertTitle}>POS mapping alert unavailable</p>
-              <p className={styles.alertBody}>{posAlertError}</p>
-            </div>
-          </section>
-        ) : (posAlertCount && posAlertCount > 0) || (posFailureCount && posFailureCount > 0) ? (
-          <section className={styles.alertBanner}>
-            <div>
-              <p className={styles.alertTitle}>POS sync attention needed</p>
-              {posAlertCount && posAlertCount > 0 && (
-                <p className={styles.alertBody}>
-                  Mapping mismatches: {posAlertCount} line{posAlertCount === 1 ? "" : "s"} in the last 7 days had a POS
-                  item/flavour combination with no mapping.
-                </p>
-              )}
-              {posAlertSamples.length > 0 && (
-                <p className={styles.alertBody}>
-                  Example mapping: outlet {posAlertSamples[0].outlet_id}, item {posAlertSamples[0].pos_item_id}
-                  {posAlertSamples[0].pos_flavour_id ? `, flavour ${posAlertSamples[0].pos_flavour_id}` : ", flavour (none)"}
-                </p>
-              )}
-              {posFailureCount && posFailureCount > 0 && (
-                <p className={styles.alertBody}>
-                  Sync failures: {posFailureCount} event{posFailureCount === 1 ? "" : "s"} in the last 7 days failed to
-                  validate or sync.
-                </p>
-              )}
-              {posFailureSamples.length > 0 && (
-                <p className={styles.alertBody}>
-                  Example failure: {posFailureSamples[0].stage} ({posFailureSamples[0].error_message})
-                </p>
-              )}
-            </div>
-            <div className={styles.alertActions}>
-              <button className={styles.alertButton} onClick={goToPosMatch}>
-                Review POS mappings
-              </button>
-            </div>
-          </section>
-        ) : null}
 
         <section className={styles.actionsGrid}>
           <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
@@ -196,12 +118,3 @@ button:hover {
   transform: translateY(-2px);
 }
 `;
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed (${response.status})`);
-  }
-  return (await response.json()) as T;
-}

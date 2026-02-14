@@ -38,6 +38,8 @@ type RecipeRow = {
   finished_variant_key: string | null;
 };
 
+type SupabaseError = { code?: string; message?: string } | null;
+
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function isUuid(value: unknown): value is string {
@@ -247,7 +249,7 @@ export async function GET(request: Request) {
     let itemIds: string[] = [];
     if (itemId) {
       let itemRow: { id?: string; active?: boolean | null } | null = null;
-      let itemError: any = null;
+      let itemError: SupabaseError = null;
       const primary = await supabase.from("catalog_items").select("id,active").eq("id", itemId).maybeSingle();
       itemRow = (primary.data as typeof itemRow) ?? null;
       itemError = primary.error;
@@ -264,7 +266,7 @@ export async function GET(request: Request) {
       itemIds = [itemId];
     } else {
       let itemRows: { id?: string }[] | null = null;
-      let itemsError: any = null;
+      let itemsError: SupabaseError = null;
       const primary = await supabase.from("catalog_items").select("id").eq("active", true);
       itemRows = (primary.data as typeof itemRows) ?? null;
       itemsError = primary.error;
@@ -274,16 +276,16 @@ export async function GET(request: Request) {
         itemsError = fallback.error;
       }
       if (itemsError) throw itemsError;
-      itemIds = (itemRows ?? []).map((row: any) => row.id).filter(Boolean);
+      itemIds = (itemRows ?? []).map((row) => row.id).filter(Boolean) as string[];
     }
 
     if (itemIds.length === 0 && !id) {
       return NextResponse.json({ variants: [] });
     }
 
-    let optional = [...VARIANT_OPTIONAL_FIELDS];
+    const optional = [...VARIANT_OPTIONAL_FIELDS];
     let variantRows: Partial<CatalogVariantRow>[] | null = null;
-    let variantError: any = null;
+    let variantError: SupabaseError = null;
 
     while (true) {
       let variantQuery = supabase.from("catalog_variants").select(selectVariantFields(optional));
@@ -292,7 +294,7 @@ export async function GET(request: Request) {
 
       const result = (await variantQuery) as {
         data: Partial<CatalogVariantRow>[] | null;
-        error: any | null;
+        error: SupabaseError;
       };
       variantRows = result.data;
       variantError = result.error;
@@ -309,7 +311,7 @@ export async function GET(request: Request) {
     const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
 
     let recipeRows: RecipeRow[] | null = null;
-    let recipeError: any = null;
+    let recipeError: SupabaseError = null;
     while (true) {
       let recipeQuery = supabase.from("recipes").select("finished_item_id, finished_variant_key");
       if (itemIds.length) recipeQuery = recipeQuery.in("finished_item_id", itemIds);
@@ -360,7 +362,7 @@ export async function GET(request: Request) {
         variant_key?: string | null;
         storage_warehouse_id?: string | null;
       }[] = [];
-      let storageErr: any = null;
+      let storageErr: SupabaseError = null;
 
       const primary = await supabase
         .from("item_storage_homes")
@@ -410,7 +412,7 @@ export async function GET(request: Request) {
       ? variantsWithStorage.filter((variant) => {
           const name = variant.name?.toLowerCase?.() ?? "";
           const sku = variant.sku?.toLowerCase?.() ?? "";
-          const supplierSku = (variant as any).supplier_sku?.toLowerCase?.() ?? "";
+          const supplierSku = (variant as { supplier_sku?: string | null }).supplier_sku?.toLowerCase?.() ?? "";
           return name.includes(search) || sku.includes(search) || supplierSku.includes(search);
         })
       : variantsWithStorage;
@@ -648,8 +650,8 @@ export async function PUT(request: Request) {
     }
 
     let updatePayload: Partial<VariantPayload> = { ...update };
-    let optionalKeys = VARIANT_OPTIONAL_FIELDS.filter((key) => key in updatePayload);
-    let updateError: any = null;
+    const optionalKeys = VARIANT_OPTIONAL_FIELDS.filter((key) => key in updatePayload);
+    let updateError: SupabaseError = null;
 
     while (true) {
       const result = await supabase
@@ -662,7 +664,8 @@ export async function PUT(request: Request) {
       if (updateError?.code === "42703" && optionalKeys.length) {
         const removeKey = optionalKeys.pop();
         if (removeKey) {
-          const { [removeKey]: _removed, ...rest } = updatePayload as Record<string, unknown>;
+          const { [removeKey]: removed, ...rest } = updatePayload as Record<string, unknown>;
+          void removed;
           updatePayload = rest as Partial<VariantPayload>;
           if (Object.keys(updatePayload).length === 0) {
             return NextResponse.json(

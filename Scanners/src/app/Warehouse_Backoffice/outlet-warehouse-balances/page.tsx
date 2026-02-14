@@ -51,11 +51,6 @@ function toErrorMessage(error: unknown): string {
   }
 }
 
-function formatQty(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return "-";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
-}
-
 function parseQty(value: number | null): number {
   if (typeof value !== "number" || Number.isNaN(value)) return 0;
   return value;

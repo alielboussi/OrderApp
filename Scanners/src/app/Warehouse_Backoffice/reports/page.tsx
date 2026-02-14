@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
@@ -325,7 +325,7 @@ export default function WarehouseSalesReportsPage() {
     }, 400);
   };
 
-  const runReport = async () => {
+  const runReport = useCallback(async () => {
     if (status !== "ok") return;
 
     try {
@@ -375,13 +375,13 @@ export default function WarehouseSalesReportsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [status, supabase, selectedOutletIds, startDate, startTime, endDate, endTime]);
 
   useEffect(() => {
     if (status !== "ok" || booting || selectedOutletIds.length === 0 || hasAutoRun) return;
     setHasAutoRun(true);
     void runReport();
-  }, [status, booting, selectedOutletIds.length, hasAutoRun]);
+  }, [status, booting, selectedOutletIds.length, hasAutoRun, runReport]);
 
   useEffect(() => {
     if (status !== "ok") return;

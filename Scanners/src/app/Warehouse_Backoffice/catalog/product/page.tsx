@@ -82,7 +82,7 @@ function ProductCreatePage() {
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [loadingItem, setLoadingItem] = useState(false);
+  const [, setLoadingItem] = useState(false);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string | null }[]>([]);
 
   const editingId = searchParams?.get("id")?.trim() || "";

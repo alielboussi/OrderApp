@@ -23,8 +23,10 @@ const STORAGE_HOME_ALLOWED_IDS = [
   '587fcdb9-c998-42d6-b88e-bbcd1a66b088'
 ] as const;
 const MULTIPLY_QTY_BY_PACKAGE = true;
-const OPERATOR_SESSION_TTL_MS = (globalThis as any).OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
-(globalThis as any).OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
+type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
+const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;
+const OPERATOR_SESSION_TTL_MS = globalWithOperatorSession.OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
+globalWithOperatorSession.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
 const OPERATOR_CONTEXT_LABELS = {
   transfer: 'Transfers',
   purchase: 'Purchases',
@@ -1324,115 +1326,6 @@ function createHtml(config: {
       box-shadow: none;
       transform: translateY(-1px);
     }
-    #print-root {
-      display: none;
-    }
-    .receipt {
-      font-family: 'Inter', system-ui, sans-serif;
-      color: #000;
-      background: #fff;
-      width: 55mm;
-      padding: 6mm 4mm;
-      margin: 0 auto;
-    }
-    .receipt-header {
-      text-align: center;
-      margin-bottom: 6mm;
-    }
-    .receipt-logo {
-      max-width: 40mm;
-      margin: 0 auto 2mm;
-      display: block;
-    }
-    .receipt-meta {
-      font-size: 0.78rem;
-      margin: 2px 0;
-    }
-    .receipt-title {
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 0.85rem;
-      margin: 0 0 2mm 0;
-    }
-    .receipt-lines {
-      list-style: none;
-      padding: 0;
-      margin: 4mm 0;
-    }
-    .receipt-product {
-      padding: 2mm 0;
-    }
-    .receipt-product + .receipt-product {
-      border-top: 1px dashed #999;
-    }
-    .receipt-line {
-      display: flex;
-      align-items: baseline;
-      gap: 3px;
-      font-size: 0.8rem;
-    }
-    .receipt-line .bullet {
-      font-weight: 700;
-    }
-    .receipt-line .qty {
-      margin-left: auto;
-      font-weight: 600;
-    }
-    .receipt-product.has-variations .product-name {
-      text-decoration: underline;
-    }
-    .variation-list {
-      list-style: none;
-      margin: 1mm 0 0 7px;
-      padding: 0 0 0 6px;
-    }
-    .variation-list .receipt-line {
-      font-size: 0.78rem;
-    }
-    .receipt-footer {
-      text-align: center;
-      font-size: 0.78rem;
-      margin-top: 4mm;
-      border-top: 1px solid #000;
-      padding-top: 2mm;
-    }
-    .receipt-meta-line {
-      font-size: 0.78rem;
-      margin: 1mm 0;
-      text-align: left;
-    }
-    .receipt-purchase-line {
-      display: flex;
-      flex-direction: column;
-      gap: 1mm;
-      font-size: 0.78rem;
-    }
-    .receipt-purchase-line span {
-      display: block;
-    }
-    @media print {
-      @page {
-        size: 55mm auto;
-        margin: 4mm;
-      }
-      body {
-        background: #fff;
-        padding: 0;
-      }
-      body:not(.print-mode) #print-root {
-        display: none;
-      }
-      body.print-mode > *:not(#print-root) {
-        display: none !important;
-      }
-      body.print-mode #print-root {
-        display: flex;
-        justify-content: center;
-        width: 100%;
-        margin: 0 auto;
-      }
-    }
     .toast {
       position: fixed;
       bottom: 32px;
@@ -1605,8 +1498,6 @@ function createHtml(config: {
   </main>
 
   <div id="result-toast" class="toast" role="status" aria-live="polite"></div>
-
-  <div id="print-root" aria-hidden="true"></div>
 
   <div id="qty-modal">
     <form id="qty-form">
@@ -2119,7 +2010,6 @@ function createHtml(config: {
       let activeVariantQtyInput = null;
       let activeVariantAddButton = null;
       const variantModalClose = document.getElementById('variant-modal-close');
-      const printRoot = document.getElementById('print-root');
       const purchaseOpenButton = document.getElementById('purchase-open');
       const damageOpenButton = document.getElementById('damage-open');
       const purchasePage = document.getElementById('purchase-page');
@@ -3876,180 +3766,6 @@ function createHtml(config: {
         focusActiveScanner();
       }
 
-      function renderPrintReceipt(summary, cartSnapshot, options = {}) {
-        if (!printRoot || !Array.isArray(cartSnapshot) || !cartSnapshot.length) return;
-        const context = options.context ?? 'transfer';
-        const isPurchase = context === 'purchase';
-        const groups = groupCartItemsForReceipt(cartSnapshot);
-        const receipt = document.createElement('div');
-        receipt.className = 'receipt';
-        const grossFromOptions = Number(options.totalGross);
-        const computedGross = cartSnapshot.reduce((sum, entry) => {
-          const lineTotal = computeLineTotal(entry);
-          return sum + (lineTotal ?? 0);
-        }, 0);
-        const grossTotal = Number.isFinite(grossFromOptions) ? grossFromOptions : computedGross;
-
-        const header = document.createElement('div');
-        header.className = 'receipt-header';
-        const logo = document.createElement('img');
-        logo.src = '/afterten-logo.png';
-        logo.alt = 'AfterTen logo';
-        logo.className = 'receipt-logo';
-        header.appendChild(logo);
-
-        const title = document.createElement('p');
-        title.className = 'receipt-title';
-        title.textContent = 'Transfer Ticket';
-        header.appendChild(title);
-
-        const metaDate = document.createElement('p');
-        metaDate.className = 'receipt-meta';
-        metaDate.textContent = 'Date: ' + (summary.dateTime ?? new Date().toLocaleString());
-        header.appendChild(metaDate);
-
-        const sourceName = state.lockedSource?.name ?? summary.sourceLabel ?? 'Source warehouse';
-        const destName = state.lockedDest?.name ?? summary.destLabel ?? 'Destination warehouse';
-
-        const metaFrom = document.createElement('p');
-        metaFrom.className = 'receipt-meta';
-        metaFrom.textContent = 'From: ' + sourceName;
-        header.appendChild(metaFrom);
-
-        const metaTo = document.createElement('p');
-        metaTo.className = 'receipt-meta';
-        metaTo.textContent = 'To: ' + destName;
-        header.appendChild(metaTo);
-
-        receipt.appendChild(header);
-
-        const linesList = document.createElement('ul');
-        linesList.className = 'receipt-lines';
-
-        groups.forEach((group) => {
-          const productItem = document.createElement('li');
-          productItem.className = 'receipt-product' + (group.variations.length ? ' has-variations' : '');
-
-          const productLine = document.createElement('div');
-          productLine.className = 'receipt-line';
-          const productBullet = document.createElement('span');
-          productBullet.className = 'bullet';
-          productBullet.textContent = '-';
-          const productName = document.createElement('span');
-          productName.className = 'product-name';
-          productName.textContent = group.productName ?? 'Product';
-          productLine.appendChild(productBullet);
-          productLine.appendChild(productName);
-
-          productItem.appendChild(productLine);
-
-          if (!group.variations.length && !isPurchase) {
-            const totalQty = group.baseItems.reduce((sum, entry) => sum + Number(entry.qty ?? 0), 0);
-            const unit = group.baseItems[0]?.uom ?? 'unit';
-            const qtySpan = document.createElement('span');
-            qtySpan.className = 'qty';
-            qtySpan.textContent = formatQtyLabel(totalQty, unit);
-            productLine.appendChild(qtySpan);
-          }
-
-          const needsDetailList = isPurchase || group.variations.length > 0;
-          if (needsDetailList) {
-            const variationList = document.createElement('ul');
-            variationList.className = 'variation-list';
-            const entries = [];
-            const baseEntries = group.baseItems.length ? group.baseItems : [];
-            if (isPurchase) {
-              baseEntries.forEach((entry) => {
-                entries.push({ ...entry, variationName: entry.variationName ?? 'Base' });
-              });
-            } else if (group.variations.length) {
-              const standaloneBase = baseEntries.filter((entry) => !entry.variationId);
-              standaloneBase.forEach((entry) => {
-                entries.push({ ...entry, variationName: entry.variationName ?? 'Base' });
-              });
-            }
-            const variationEntries = group.variations.map((entry) => ({
-              ...entry,
-              variationName: entry.variationName ?? 'Variation'
-            }));
-            entries.push(...variationEntries);
-
-            entries.forEach((entry) => {
-              const variationItem = document.createElement('li');
-              variationItem.className = 'receipt-variation';
-              const variationLine = document.createElement('div');
-              variationLine.className = 'receipt-line';
-              const bullet = document.createElement('span');
-              bullet.className = 'bullet';
-              bullet.textContent = '-';
-              const label = document.createElement('span');
-              label.className = 'variation-name';
-              label.textContent = entry.variationName ?? 'Variation';
-              const qtySpan = document.createElement('span');
-              qtySpan.className = 'qty';
-              qtySpan.textContent = formatQtyLabel(entry.qty, entry.uom);
-              variationLine.appendChild(bullet);
-              variationLine.appendChild(label);
-              variationLine.appendChild(qtySpan);
-              variationItem.appendChild(variationLine);
-
-              if (isPurchase) {
-                const metaLine = document.createElement('div');
-                metaLine.className = 'receipt-meta-line receipt-purchase-line';
-                const costLabel = formatAmount(entry.unitCost);
-                const lineTotal = computeLineTotal(entry);
-                const lineTotalLabel = formatAmount(lineTotal);
-                const parts = [];
-                const qtyDescriptor = formatQtyLabel(entry.qty, entry.uom);
-                parts.push('Qty: ' + qtyDescriptor);
-                parts.push(costLabel ? 'Cost: ' + costLabel : 'Cost: -');
-                parts.push(lineTotalLabel ? 'Line: ' + lineTotalLabel : 'Line: -');
-                metaLine.textContent = parts.join(' | ');
-                variationItem.appendChild(metaLine);
-              }
-
-              variationList.appendChild(variationItem);
-            });
-
-            if (variationList.childElementCount > 0) {
-              productItem.appendChild(variationList);
-            }
-          }
-
-          linesList.appendChild(productItem);
-        });
-
-        receipt.appendChild(linesList);
-
-        if (isPurchase) {
-          const grossLine = document.createElement('p');
-          grossLine.className = 'receipt-meta-line';
-          const grossLabel = formatAmount(grossTotal) ?? '0.00';
-          grossLine.textContent = 'Gross Total: ' + grossLabel;
-          receipt.appendChild(grossLine);
-        }
-
-        const footer = document.createElement('div');
-        footer.className = 'receipt-footer';
-        footer.textContent = 'Ref: ' + (summary.reference ?? summary.referenceRaw ?? 'N/A');
-        receipt.appendChild(footer);
-
-        printRoot.innerHTML = '';
-        printRoot.appendChild(receipt);
-
-        function triggerPrint() {
-          document.body.classList.add('print-mode');
-          window.setTimeout(() => window.print(), 60);
-        }
-
-        if (logo && !logo.complete) {
-          logo.addEventListener('load', triggerPrint, { once: true });
-          logo.addEventListener('error', triggerPrint, { once: true });
-        } else {
-          triggerPrint();
-        }
-      }
-
       function promptQuantity(product, variation, context = state.mode, recipeComponents = null) {
         if (!qtyModal || !qtyInput) return;
         const entry = buildEntryForProduct(product, variation);
@@ -5095,13 +4811,6 @@ function createHtml(config: {
           focusActiveScanner();
         }, 50);
       });
-      window.addEventListener('afterprint', () => {
-        document.body.classList.remove('print-mode');
-        if (printRoot) {
-          printRoot.innerHTML = '';
-        }
-      });
-
       purchaseOpenButton?.addEventListener('click', async (event) => {
         event.preventDefault();
         try {

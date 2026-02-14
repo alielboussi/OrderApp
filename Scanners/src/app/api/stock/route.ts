@@ -28,6 +28,8 @@ type ProductRecord = {
   name: string | null;
 };
 
+type SupabaseError = { code?: string; message?: string } | null;
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json().catch(() => ({}));
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
     const targetIds = collectDescendantIds(warehouses, warehouseId);
 
     let stockRows: StockRecord[] = [];
-    let stockError: any = null;
+    let stockError: SupabaseError = null;
 
     const primary = await supabase
       .from(STOCK_VIEW_NAME)

@@ -65,8 +65,6 @@ const fieldOptions = [
 
 type FieldOption = (typeof fieldOptions)[number];
 
-type FieldType = FieldOption["type"];
-
 function parseFieldValue(field: FieldOption, raw: string) {
   const trimmed = raw.trim();
   switch (field.type) {

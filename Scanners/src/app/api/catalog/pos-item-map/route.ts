@@ -1,8 +1,23 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
+type PosMapRow = {
+  pos_item_id?: string | null;
+  pos_item_name?: string | null;
+  pos_flavour_id?: string | null;
+  pos_flavour_name?: string | null;
+  catalog_item_id?: string | null;
+  catalog_variant_key?: string | null;
+  normalized_variant_key?: string | null;
+  warehouse_id?: string | null;
+  outlet_id?: string | null;
+};
+
+type CatalogItemRow = { id: string; name?: string | null };
+type CatalogVariantRow = { id: string; item_id: string; name?: string | null };
+
 const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
-  return async (rows: any[]) => {
+  return async (rows: PosMapRow[]) => {
       if (!rows?.length) return [];
 
       const normalizeVariantKey = (value?: string | null) => {
@@ -11,7 +26,7 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
       };
 
       const itemIds = Array.from(new Set((rows ?? []).map((r) => r.catalog_item_id).filter(Boolean)));
-      let catalogById = new Map<string, { name?: string | null; variants?: Map<string, string> }>();
+      const catalogById = new Map<string, { name?: string | null; variants?: Map<string, string> }>();
 
       if (itemIds.length) {
         const [{ data: catalogData, error: catalogError }, { data: variantData, error: variantError }] = await Promise.all([
@@ -27,7 +42,7 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
         }
 
         const variantLabelByItem = new Map<string, Map<string, string>>();
-        (variantData ?? []).forEach((variant: any) => {
+        (variantData as CatalogVariantRow[] | null ?? []).forEach((variant) => {
           if (!variant?.item_id || !variant?.id) return;
           const itemKey = variant.item_id;
           const label = variant.name || variant.id;
@@ -37,7 +52,7 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
           variantLabelByItem.set(itemKey, map);
         });
 
-        (catalogData ?? []).forEach((c: any) => {
+        (catalogData as CatalogItemRow[] | null ?? []).forEach((c) => {
           catalogById.set(c.id, { name: c.name, variants: variantLabelByItem.get(c.id) ?? new Map() });
         });
       }
@@ -48,7 +63,7 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
         return variants.get(trimmed) ?? variants.get(normalizeVariantKey(trimmed)) ?? null;
       };
 
-      return (rows ?? []).map((row: any) => {
+      return (rows ?? []).map((row) => {
         const catalog = catalogById.get(row.catalog_item_id);
         const variantKey = row.catalog_variant_key || row.normalized_variant_key || "base";
         const variantLabel = findVariantLabel(catalog?.variants, variantKey);
@@ -69,7 +84,7 @@ export async function GET() {
     const supabase = getServiceClient();
     const enrichWithCatalog = buildEnricher(supabase);
 
-    const mapWithFallback = (rows: any[]) =>
+    const mapWithFallback = (rows: PosMapRow[]) =>
       rows.map((row) => ({
         ...row,
         pos_item_name: row.pos_item_name ?? row.pos_item_id ?? null,
@@ -123,7 +138,7 @@ export async function GET() {
         const { data, error: legacyError } = await supabase.from("pos_item_map").select(legacyCols);
         if (legacyError) throw legacyError;
         const rows = data ?? [];
-        const mapped = rows.map((row: any) => ({
+        const mapped = (rows as PosMapRow[]).map((row) => ({
           ...row,
           pos_item_name: row.pos_item_id ?? null,
           pos_flavour_name: row.pos_flavour_id ?? null,
@@ -170,7 +185,7 @@ export async function POST(request: Request) {
     }
 
     const supabase = getServiceClient();
-    const basePayload: Record<string, any> = {
+    const basePayload: Record<string, string | null> = {
       pos_item_id,
       pos_flavour_id,
       catalog_item_id,
@@ -204,7 +219,7 @@ export async function POST(request: Request) {
       return Array.isArray(data) && data.length ? data[0] : null;
     };
 
-    const insertAndSelect = async (payload: Record<string, any>, selectCols: string) => {
+    const insertAndSelect = async (payload: Record<string, string | null>, selectCols: string) => {
       const { data, error } = await supabase.from("pos_item_map").insert(payload).select(selectCols).single();
       if (error) {
         const err = error as { code?: string };
@@ -215,7 +230,7 @@ export async function POST(request: Request) {
         throw error;
       }
 
-      const row = data as any;
+      const row = data as PosMapRow;
       let catalogName: string | null = null;
       let catalogVariantLabel: string | null = null;
       if (row?.catalog_item_id) {
@@ -229,10 +244,11 @@ export async function POST(request: Request) {
             .maybeSingle(),
         ]);
         if (!catalogError && catalogItem) {
-          catalogName = (catalogItem as any).name ?? null;
+          catalogName = (catalogItem as CatalogItemRow).name ?? null;
         }
         if (!variantError && variantRow) {
-          catalogVariantLabel = (variantRow as any).name ?? (variantRow as any).id ?? null;
+          const variantTyped = variantRow as CatalogVariantRow;
+          catalogVariantLabel = variantTyped.name ?? variantTyped.id ?? null;
         }
       }
 
@@ -265,7 +281,7 @@ export async function POST(request: Request) {
       }
       const data = await insertAndSelect(basePayload, fullSelect);
       return NextResponse.json({ mapping: data }, { status: 201 });
-    } catch (error: any) {
+    } catch (error) {
       const err = error as { code?: string; message?: unknown };
       if (err?.code === "42703" || (typeof err?.message === "string" && err.message.includes("pos_item_name"))) {
         // DB does not have the name columns yet; retry without them.
@@ -316,7 +332,7 @@ export async function DELETE(request: Request) {
     }
 
     const supabase = getServiceClient();
-    const match: Record<string, any> = {
+    const match: Record<string, string | null> = {
       pos_item_id,
       catalog_item_id,
       outlet_id,
