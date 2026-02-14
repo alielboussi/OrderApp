@@ -1980,6 +1980,7 @@ function createHtml(config: {
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
+      const EXTRA_HOMES_IDS = ${serializeForScript(EXTRA_HOMES_IDS)};
 
       const state = {
         session: null,
@@ -2006,8 +2007,7 @@ function createHtml(config: {
         homesSelection: null,
         purchaseForm: {
           supplierId: '',
-          referenceCode: '',
-          autoWhatsapp: true
+          referenceCode: ''
         },
         purchaseSubmitting: false,
         damageSubmitting: false,
@@ -2875,6 +2875,7 @@ function createHtml(config: {
           productName: item.productName ?? 'Item ' + (index + 1),
           variationName: item.variationName ?? 'Base',
           qty: item.qty,
+          scannedQty: item.scannedQty ?? item.qty,
           unit: item.uom ?? 'unit',
           unitCost: item.unitCost ?? null
         }));
@@ -2923,8 +2924,7 @@ function createHtml(config: {
       function defaultPurchaseFormState() {
         return {
           supplierId: '',
-          referenceCode: '',
-          autoWhatsapp: true
+          referenceCode: ''
         };
       }
 
@@ -4706,13 +4706,9 @@ function createHtml(config: {
             note: null
           };
           showResult('Transfer ' + data + ' submitted successfully.', false);
-          notifyWhatsApp(summary).catch((notifyError) => {
-            console.warn('WhatsApp notification failed', notifyError);
-          });
           notifyTelegram(summary, 'transfer').catch((notifyError) => {
             console.warn('Telegram notification failed', notifyError);
           });
-          renderPrintReceipt(summary, cartSnapshot);
           setCart('transfer', []);
           renderCart('transfer');
         } catch (error) {
@@ -4842,7 +4838,6 @@ function createHtml(config: {
         }
 
         const supplierId = state.purchaseForm.supplierId || null;
-        const autoWhatsapp = true;
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
@@ -4870,8 +4865,7 @@ function createHtml(config: {
             p_supplier_id: supplierId,
             p_reference_code: referenceInput,
             p_items: payloadItems,
-            p_note: null,
-            p_auto_whatsapp: autoWhatsapp
+            p_note: null
           };
           const { data, error } = await supabase.rpc('record_purchase_receipt', payload);
           if (error) throw error;
@@ -4909,15 +4903,9 @@ function createHtml(config: {
           };
 
           showResult('Purchase ' + receiptRef + ' recorded successfully.', false);
-          if (autoWhatsapp) {
-            notifyWhatsApp(summary, 'purchase').catch((notifyError) => {
-              console.warn('Purchase WhatsApp notification failed', notifyError);
-            });
-          }
           notifyTelegram(summary, 'purchase').catch((notifyError) => {
             console.warn('Telegram notification failed', notifyError);
           });
-          renderPrintReceipt(summary, cartSnapshot, { context: 'purchase', totalGross: grossTotal });
           setCart('purchase', []);
           renderCart('purchase');
           resetPurchaseForm();
@@ -4930,23 +4918,6 @@ function createHtml(config: {
             purchaseSubmit.disabled = false;
             purchaseSubmit.textContent = 'Record Purchase';
           }
-        }
-      }
-
-      async function notifyWhatsApp(summary, context = 'transfer') {
-        try {
-          const response = await fetch('/api/notify-whatsapp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ context, summary })
-          });
-          if (!response.ok) {
-            const info = await response.json().catch(() => ({}));
-            throw new Error(info.error || 'Unable to ping WhatsApp API');
-          }
-        } catch (error) {
-          const prefix = context === 'purchase' ? 'Purchase logged' : 'Transfer recorded';
-          showResult(prefix + ' but WhatsApp alert failed: ' + (error.message || error), true);
         }
       }
 
@@ -4975,177 +4946,7 @@ function createHtml(config: {
 
         const findLooseVariation = () => {
           return Array.from(state.variationIndex.values()).find((variation) => {
-            const name = (variation.name ?? '').toLowerCase();
-            const sku = (variation.sku ?? '').toLowerCase();
-            const skuCompact = normalizeKey(variation.sku ?? '');
-            const supplierSku = (variation.supplier_sku ?? '').toLowerCase();
-            const supplierCompact = normalizeKey(variation.supplier_sku ?? '');
-            return (
-              (!!name && name.includes(normalized)) ||
-              (!!sku && sku.includes(normalized)) ||
-              (!!supplierSku && supplierSku.includes(normalized)) ||
-              (compact && ((!!skuCompact && skuCompact === compact) || (!!supplierCompact && supplierCompact === compact)))
-            );
-          });
-        };
-
-        let variationMatch =
-          state.variationIndex.get(value) ||
-          state.variationIndex.get(normalized) ||
-          (compact ? state.variationIndex.get(compact) : null) ||
-          findLooseVariation();
-
-        if (variationMatch) {
-          const product = state.products.find((p) => p.id === variationMatch.product_id);
-          if (product) {
-            openVariantModal(product, variationMatch);
-            showResult('Scan matched variation: ' + (variationMatch.name ?? 'Variation'), false);
             return;
-          }
-        }
-
-        const findLooseProduct = () => {
-          return state.products.find((product) => {
-            if (!product) return false;
-            const productName = (product.name ?? '').toLowerCase();
-            const skuLower = (product.sku ?? '').toLowerCase();
-            const skuCompact = normalizeKey(product.sku ?? '');
-            const supplierSkuLower = (product.supplier_sku ?? '').toLowerCase();
-            const supplierSkuCompact = normalizeKey(product.supplier_sku ?? '');
-            if (productName && productName.includes(normalized)) return true;
-            if (skuLower && skuLower.includes(normalized)) return true;
-            if (supplierSkuLower && supplierSkuLower.includes(normalized)) return true;
-            if (compact && ((skuCompact && skuCompact === compact) || (supplierSkuCompact && supplierSkuCompact === compact))) return true;
-            return false;
-          });
-        };
-
-        const productMatch = state.products.find((product) => {
-          if (!product) return false;
-          const productName = (product.name ?? '').toLowerCase();
-          const skuLower = (product.sku ?? '').toLowerCase();
-          const skuCompact = normalizeKey(product.sku ?? '');
-          const supplierSkuLower = (product.supplier_sku ?? '').toLowerCase();
-          const supplierSkuCompact = normalizeKey(product.supplier_sku ?? '');
-          if (product.id === value || product.id?.toLowerCase() === normalized) return true;
-          if (productName === normalized) return true;
-          if (product.sku) {
-            if (skuLower === normalized) return true;
-            if (compact && skuCompact && skuCompact === compact) return true;
-          }
-          if (product.supplier_sku) {
-            if (supplierSkuLower === normalized) return true;
-            if (compact && supplierSkuCompact && supplierSkuCompact === compact) return true;
-          }
-          return false;
-        }) || findLooseProduct();
-
-        if (productMatch) {
-          openVariantModal(productMatch, null);
-          showResult('Scan matched product: ' + (productMatch.name ?? 'Product'), false);
-          return;
-        }
-
-        showResult('No product matched scan: ' + value, true);
-      }
-
-      function handleProductScan(payload) {
-        if (!payload) return;
-        searchProductsWithScan(payload);
-      }
-
-      function applyLoginScan(raw) {
-        const decoded = raw.trim();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(decoded);
-        } catch (err) {
-          const parts = decoded.split(/[,|;]/);
-          if (parts.length >= 2) {
-            parsed = { email: parts[0], password: parts.slice(1).join('') };
-          }
-        }
-        if (!parsed?.email || !parsed?.password) {
-          loginStatus.textContent = 'Badge scan unreadable. Expect JSON or email|password.';
-          loginStatus.className = 'message error';
-          loginStatus.style.display = 'block';
-          return;
-        }
-        document.getElementById('login-email').value = parsed.email;
-        document.getElementById('login-password').value = parsed.password;
-        loginForm.requestSubmit();
-      }
-
-      async function verifyWarehouseTransfersRole() {
-        const { data, error } = await supabase.rpc('whoami_roles');
-        if (error) {
-          const rpcError = new Error(error.message ?? 'Unable to verify roles');
-          rpcError.code = error.code ?? 'ROLE_LOOKUP_FAILED';
-          throw rpcError;
-        }
-        const record = Array.isArray(data) ? data[0] : data;
-        const baseRoles = Array.isArray(record?.roles) ? record.roles : [];
-        const catalogRoles = Array.isArray(record?.role_catalog)
-          ? record.role_catalog
-              .map((r) => r?.slug ?? r?.normalized_slug ?? r?.name ?? r?.id ?? null)
-              .filter(Boolean)
-          : [];
-        const effectiveRoles = [...baseRoles, ...catalogRoles];
-        if (record?.is_admin === true) {
-          effectiveRoles.push('admin');
-        }
-        console.log('whoami_roles result', { record, effectiveRoles });
-        const recordUserId = record?.user_id ?? record?.auth_user_id ?? record?.id ?? null;
-        if (recordUserId && ALLOWED_USER_IDS.includes(recordUserId)) {
-          return true;
-        }
-        const hasRole = effectiveRoles.some((role) => {
-          if (!role) return false;
-          if (typeof role === 'string') {
-            const trimmed = role.trim();
-            if (!trimmed) return false;
-            if (trimmed === REQUIRED_ROLE_ID || trimmed === ADMIN_ROLE_ID || trimmed === BACKOFFICE_ROLE_ID) return true;
-            return ALLOWED_ROLE_SLUGS.includes(trimmed.toLowerCase());
-          }
-          if (typeof role === 'object') {
-            const roleId = typeof role.id === 'string' ? role.id : null;
-            const slugSource =
-              typeof role.slug === 'string'
-                ? role.slug
-                : typeof role.normalized_slug === 'string'
-                  ? role.normalized_slug
-                  : typeof role.name === 'string'
-                    ? role.name
-                    : null;
-            const slug = slugSource ? slugSource.toLowerCase() : null;
-            return (
-              roleId === REQUIRED_ROLE_ID ||
-              roleId === ADMIN_ROLE_ID ||
-              roleId === BACKOFFICE_ROLE_ID ||
-              (slug !== null && ALLOWED_ROLE_SLUGS.includes(slug))
-            );
-          }
-          return false;
-        });
-        if (!hasRole) {
-          const missingRoleError = new Error('WAREHOUSE_ROLE_REQUIRED');
-          missingRoleError.detail = { roles: effectiveRoles };
-          missingRoleError.code = 'WAREHOUSE_ROLE_REQUIRED';
-          throw missingRoleError;
-        }
-        state.operatorProfile = record ?? null;
-        return record;
-      }
-
-      async function syncSession(session) {
-        // Always proceed without blocking on auth; kiosk runs open.
-        state.session = session ?? { user: { email: 'kiosk@afterten.local' } };
-        document.body.dataset.auth = 'true';
-        loginStatus.style.display = 'none';
-        logAuthDebug('Session ready (kiosk mode) for ' + (state.session.user?.email ?? 'unknown user'), state.session);
-        try {
-          await refreshMetadata();
-        } catch (error) {
           showResult(error.message ?? 'Failed to load metadata', true);
         }
       }

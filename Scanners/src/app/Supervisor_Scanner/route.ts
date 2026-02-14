@@ -1992,8 +1992,7 @@ function createHtml(config: {
         destinationSelection: null,
         purchaseForm: {
           supplierId: '',
-          referenceCode: '',
-          autoWhatsapp: true
+          referenceCode: ''
         },
         purchaseSubmitting: false,
         damageSubmitting: false,
@@ -3207,6 +3206,7 @@ function createHtml(config: {
           productName: item.productName ?? 'Item ' + (index + 1),
           variationName: item.variationName ?? 'Base',
           qty: item.qty,
+          scannedQty: item.scannedQty ?? item.qty,
           unit: item.uom ?? 'unit',
           unitCost: item.unitCost ?? null
         }));
@@ -3255,8 +3255,7 @@ function createHtml(config: {
       function defaultPurchaseFormState() {
         return {
           supplierId: '',
-          referenceCode: '',
-          autoWhatsapp: true
+          referenceCode: ''
         };
       }
 
@@ -4806,10 +4805,6 @@ function createHtml(config: {
             note: null
           };
           showResult('Transfer ' + data + ' submitted successfully.', false);
-          notifyWhatsApp(summary).catch((notifyError) => {
-            console.warn('WhatsApp notification failed', notifyError);
-          });
-          renderPrintReceipt(summary, cartSnapshot);
           setCart('transfer', []);
           renderCart('transfer');
         } catch (error) {
@@ -4911,7 +4906,6 @@ function createHtml(config: {
         }
 
         const supplierId = state.purchaseForm.supplierId || null;
-        const autoWhatsapp = true;
         const cartSnapshot = cart.map((item) => ({ ...item }));
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
@@ -4939,8 +4933,7 @@ function createHtml(config: {
             p_supplier_id: supplierId,
             p_reference_code: referenceInput,
             p_items: payloadItems,
-            p_note: null,
-            p_auto_whatsapp: autoWhatsapp
+            p_note: null
           };
           const { data, error } = await supabase.rpc('record_purchase_receipt', payload);
           if (error) throw error;
@@ -4978,12 +4971,6 @@ function createHtml(config: {
           };
 
           showResult('Purchase ' + receiptRef + ' recorded successfully.', false);
-          if (autoWhatsapp) {
-            notifyWhatsApp(summary, 'purchase').catch((notifyError) => {
-              console.warn('Purchase WhatsApp notification failed', notifyError);
-            });
-          }
-          renderPrintReceipt(summary, cartSnapshot, { context: 'purchase', totalGross: grossTotal });
           setCart('purchase', []);
           renderCart('purchase');
           resetPurchaseForm();
@@ -4999,23 +4986,6 @@ function createHtml(config: {
         }
       }
 
-      async function notifyWhatsApp(summary, context = 'transfer') {
-        try {
-          const response = await fetch('/api/notify-whatsapp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ context, summary })
-          });
-          if (!response.ok) {
-            const info = await response.json().catch(() => ({}));
-            throw new Error(info.error || 'Unable to ping WhatsApp API');
-          }
-        } catch (error) {
-          const prefix = context === 'purchase' ? 'Purchase logged' : 'Transfer recorded';
-          showResult(prefix + ' but WhatsApp alert failed: ' + (error.message || error), true);
-        }
-      }
-
       async function loadRecipeComponents(product, variantKey) {
         if (!product?.id) return [];
         const normalizedVariant = normalizeVariantKeyLocal(variantKey);
@@ -5024,177 +4994,7 @@ function createHtml(config: {
         try {
           const { data, error } = await supabase
             .from('recipes')
-            .select(
-              'ingredient_item_id, qty_per_unit, qty_unit, yield_qty_units, finished_variant_key, recipe_for_kind, active, ingredient:ingredient_item_id (id,name,has_variations,item_kind,default_warehouse_id,locked_from_warehouse_id,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity)'
-            )
-            .eq('finished_item_id', product.id)
-            .eq('active', true);
-          if (error) throw error;
-
-          const ingredientIds = (data ?? [])
-            .map((row) => row?.ingredient?.id)
-            .filter((id) => typeof id === 'string');
-
-          const storageHomeMap = new Map();
-          if (lockedSourceId && ingredientIds.length) {
-            const { data: storageRows, error: storageErr } = await supabase
-              .from('item_storage_homes')
-              .select('item_id, normalized_variant_key, storage_warehouse_id')
-              .eq('storage_warehouse_id', lockedSourceId)
-              .in('item_id', ingredientIds);
-            if (storageErr) throw storageErr;
-            (storageRows ?? []).forEach((row) => {
-              if (row?.item_id && row?.normalized_variant_key && row?.storage_warehouse_id) {
-                storageHomeMap.set(row.item_id + '::' + row.normalized_variant_key, row.storage_warehouse_id);
-              }
-            });
-          }
-
-          return (data ?? [])
-            .filter((row) => {
-              const matchesVariant = normalizeVariantKeyLocal(row.finished_variant_key) === normalizedVariant;
-              const matchesKind = !row.recipe_for_kind
-                ? true
-                : String(row.recipe_for_kind).toLowerCase() === productKind;
-              if (!matchesVariant || !matchesKind) return false;
-              const ing = row.ingredient;
-              if (!ing?.id) return false;
-              const storageHome = storageHomeMap.get(ing.id + '::base');
-              const whMatch = !lockedSourceId || storageHome === lockedSourceId;
-              return whMatch;
-            })
-            .map((row) => ({
-              ingredient: row.ingredient,
-              qtyPerUnit: Number(row.qty_per_unit) || 0,
-              yieldQtyUnits: Number(row.yield_qty_units) || 1,
-              variation: null
-            }));
-        } catch (error) {
-          console.warn('loadRecipeComponents failed', error);
-          return [];
-        }
-      }
-
-      async function handleMatchedProduct(product, variation) {
-        const variantKey = variation?.id ?? variation?.key ?? variation?.variant_key ?? 'base';
-        const recipeComponents = await loadRecipeComponents(product, variantKey);
-        if (recipeComponents.length) {
-          openVariantModal(product, variation ?? null, state.mode, recipeComponents);
-          showResult('Select an ingredient for ' + (product.name ?? 'Product'), false);
-          return;
-        }
-        openVariantModal(product, variation ?? null, state.mode, null);
-        showResult('Scan matched product: ' + (product.name ?? 'Product'), false);
-      }
-
-      async function searchProductsWithScan(raw) {
-        const value = raw.trim();
-        if (!value) return;
-        const normalized = value.toLowerCase();
-        const compact = normalizeKey(value);
-
-        const findLooseVariation = () => {
-          return Array.from(state.variationIndex.values()).find((variation) => {
-            const name = (variation.name ?? '').toLowerCase();
-            const sku = (variation.sku ?? '').toLowerCase();
-            const skuCompact = normalizeKey(variation.sku ?? '');
-            const supplierSku = (variation.supplier_sku ?? '').toLowerCase();
-            const supplierCompact = normalizeKey(variation.supplier_sku ?? '');
-            return (
-              (!!name && name.includes(normalized)) ||
-              (!!sku && sku.includes(normalized)) ||
-              (!!supplierSku && supplierSku.includes(normalized)) ||
-              (compact && ((!!skuCompact && skuCompact === compact) || (!!supplierCompact && supplierCompact === compact)))
-            );
-          });
-        };
-
-        let variationMatch =
-          state.variationIndex.get(value) ||
-          state.variationIndex.get(normalized) ||
-          (compact ? state.variationIndex.get(compact) : null) ||
-          findLooseVariation();
-
-        if (variationMatch) {
-          const product = state.products.find((p) => p.id === variationMatch.product_id);
-          if (product) {
-            await handleMatchedProduct(product, variationMatch);
-            return;
-          }
-        }
-
-        const findLooseProduct = () => {
-          return state.products.find((product) => {
-            if (!product) return false;
-            const productName = (product.name ?? '').toLowerCase();
-            const skuLower = (product.sku ?? '').toLowerCase();
-            const skuCompact = normalizeKey(product.sku ?? '');
-            const supplierSkuLower = (product.supplier_sku ?? '').toLowerCase();
-            const supplierSkuCompact = normalizeKey(product.supplier_sku ?? '');
-            if (productName && productName.includes(normalized)) return true;
-            if (skuLower && skuLower.includes(normalized)) return true;
-            if (supplierSkuLower && supplierSkuLower.includes(normalized)) return true;
-            if (compact && ((skuCompact && skuCompact === compact) || (supplierSkuCompact && supplierSkuCompact === compact))) return true;
-            return false;
-          });
-        };
-
-        const productMatch = state.products.find((product) => {
-          if (!product) return false;
-          const productName = (product.name ?? '').toLowerCase();
-          const skuLower = (product.sku ?? '').toLowerCase();
-          const skuCompact = normalizeKey(product.sku ?? '');
-          const supplierSkuLower = (product.supplier_sku ?? '').toLowerCase();
-          const supplierSkuCompact = normalizeKey(product.supplier_sku ?? '');
-          if (product.id === value || product.id?.toLowerCase() === normalized) return true;
-          if (productName === normalized) return true;
-          if (product.sku) {
-            if (skuLower === normalized) return true;
-            if (compact && skuCompact && skuCompact === compact) return true;
-          }
-          if (product.supplier_sku) {
-            if (supplierSkuLower === normalized) return true;
-            if (compact && supplierSkuCompact && supplierSkuCompact === compact) return true;
-          }
-          return false;
-        }) || findLooseProduct();
-
-        if (productMatch) {
-          await handleMatchedProduct(productMatch, null);
-          return;
-        }
-
-        showResult('No product matched scan: ' + value, true);
-      }
-
-      async function handleProductScan(payload) {
-        if (!payload) return;
-        await searchProductsWithScan(payload);
-      }
-
-      function applyLoginScan(raw) {
-        const decoded = raw.trim();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(decoded);
-        } catch (err) {
-          const parts = decoded.split(/[,|;]/);
-          if (parts.length >= 2) {
-            parsed = { email: parts[0], password: parts.slice(1).join('') };
-          }
-        }
-        if (!parsed?.email || !parsed?.password) {
-          loginStatus.textContent = 'Badge scan unreadable. Expect JSON or email|password.';
-          loginStatus.className = 'message error';
-          loginStatus.style.display = 'block';
-          return;
-        }
-        document.getElementById('login-email').value = parsed.email;
-        document.getElementById('login-password').value = parsed.password;
-        loginForm.requestSubmit();
-      }
-
-      async function verifyWarehouseTransfersRole() {
+              return;
         const { data, error } = await supabase.rpc('whoami_roles');
         if (error) {
           const rpcError = new Error(error.message ?? 'Unable to verify roles');

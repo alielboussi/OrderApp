@@ -11,6 +11,7 @@ type SummaryPayload = {
     productName?: unknown;
     variationName?: unknown;
     qty?: unknown;
+    scannedQty?: unknown;
     unit?: unknown;
   }>;
 };
@@ -43,21 +44,26 @@ function getScannerConfig(scanner: string | null) {
 }
 
 function formatItemsBlock(summary: SummaryPayload) {
-  if (typeof summary.itemsBlock === 'string' && summary.itemsBlock.trim().length > 0) {
-    return summary.itemsBlock.trim();
-  }
   const items = Array.isArray(summary.items) ? summary.items : [];
   const lines = items
     .map((item, index) => {
       const name = String(item.productName ?? `Item ${index + 1}`);
       const variation = item.variationName ? ` (${item.variationName})` : '';
-      const qty = item.qty ?? 0;
+      const qty = item.scannedQty ?? item.qty ?? 0;
       const unit = item.unit ?? 'unit';
       return `• ${name}${variation} — ${qty} ${unit}`.trim();
     })
     .filter(Boolean);
 
-  return lines.length ? lines.join('\n') : '• No line items provided';
+  if (lines.length) {
+    return lines.join('\n');
+  }
+
+  if (typeof summary.itemsBlock === 'string' && summary.itemsBlock.trim().length > 0) {
+    return summary.itemsBlock.trim();
+  }
+
+  return '• No line items provided';
 }
 
 function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage') {
