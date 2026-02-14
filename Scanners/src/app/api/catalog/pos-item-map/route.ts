@@ -64,7 +64,7 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
       };
 
       return (rows ?? []).map((row) => {
-        const catalog = catalogById.get(row.catalog_item_id);
+        const catalog = row.catalog_item_id ? catalogById.get(row.catalog_item_id) : undefined;
         const variantKey = row.catalog_variant_key || row.normalized_variant_key || "base";
         const variantLabel = findVariantLabel(catalog?.variants, variantKey);
 
