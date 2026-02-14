@@ -4170,6 +4170,19 @@ function createHtml(config: {
         showLoginInfo(label);
       }
 
+      async function syncSession(session) {
+        // Always proceed without blocking on auth; kiosk runs open.
+        state.session = session ?? { user: { email: 'kiosk@afterten.local' } };
+        document.body.dataset.auth = 'true';
+        loginStatus.style.display = 'none';
+        logAuthDebug('Session ready (kiosk mode) for ' + (state.session.user?.email ?? 'unknown user'), state.session);
+        try {
+          await refreshMetadata();
+        } catch (error) {
+          showResult(error.message ?? 'Failed to load metadata', true);
+        }
+      }
+
       async function handleLogin(event) {
         event.preventDefault();
         showLoginInfo('Signing in...');
