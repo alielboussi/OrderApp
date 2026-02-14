@@ -7,11 +7,11 @@ const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const HOMES_PARENT_ID = 'c021ea3b-7109-4690-be6c-0c7ae8278a5d';
 const DESTINATION_CHOICES = [
-  { id: '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', label: 'Main Preparation Kitchen' },
-  { id: '0cdfba88-b3b9-43d5-a2a8-4e852bf9300b', label: 'Pastry Kitchen' },
+  { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' },
   { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' }
 ] as const;
-const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c';
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
+const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c'] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -350,19 +350,27 @@ function createHtml(config: {
       align-items: center;
     }
     .destination-select-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      display: flex;
+      flex-wrap: nowrap;
       gap: 8px;
       width: 100%;
     }
     .destination-pill-select {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
+      flex: 1 1 0;
+      min-width: 0;
       text-align: center;
       width: 100%;
     }
     .destination-pill-select .destination-pill-hint {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       margin-bottom: 6px;
+      min-height: 2.1em;
       text-align: center;
     }
     .destination-pill-select select {
@@ -394,6 +402,9 @@ function createHtml(config: {
       color: #f7a8b7;
       letter-spacing: 0.05em;
       text-transform: uppercase;
+    }
+    .destination-pill-hint--two-line {
+      line-height: 1.05;
     }
     .sr-only {
       position: absolute;
@@ -1477,7 +1488,7 @@ function createHtml(config: {
                   </select>
                 </label>
                 <label class="destination-pill-select">
-                  <span class="destination-pill-hint">Homes</span>
+                  <span class="destination-pill-hint destination-pill-hint--two-line">Homes &amp;<br />Departments</span>
                   <select id="console-homes-select">
                     <option value="">Select...</option>
                   </select>
@@ -1899,6 +1910,7 @@ function createHtml(config: {
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
+      const EXTRA_HOMES_IDS = ${serializeForScript(EXTRA_HOMES_IDS)};
 
       const state = {
         session: null,
@@ -2016,6 +2028,7 @@ function createHtml(config: {
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
       const referenceNumpadDigits = document.getElementById('reference-numpad-digits');
+      const referenceNumpad = referenceNumpadDigits;
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
       const damageItemSearchInput = document.getElementById('damage-item-search');
@@ -4346,6 +4359,17 @@ function createHtml(config: {
               homesRows = childRows.map((row) => ({ ...row, active: row?.active ?? true }));
             }
           }
+          const extraHomes = EXTRA_HOMES_IDS
+            .map((id) => state.warehouses.find((row) => row.id === id) ?? null)
+            .filter((row) => row && row.active !== false);
+          if (extraHomes.length) {
+            const existingHomes = new Set(homesRows.map((row) => row.id));
+            extraHomes.forEach((row) => {
+              if (!existingHomes.has(row.id)) {
+                homesRows.push(row);
+              }
+            });
+          }
           state.homesOptions = homesRows
             .filter((row) => row && row.active !== false)
             .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
@@ -4531,6 +4555,9 @@ function createHtml(config: {
           notifyWhatsApp(summary).catch((notifyError) => {
             console.warn('WhatsApp notification failed', notifyError);
           });
+          notifyTelegram(summary, 'transfer').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           renderPrintReceipt(summary, cartSnapshot);
           setCart('transfer', []);
           renderCart('transfer');
@@ -4590,7 +4617,35 @@ function createHtml(config: {
           });
           if (error) throw error;
 
+          const now = new Date();
+          const windowLabel =
+            now.toLocaleDateString('en-US') +
+            ' ' +
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
+          const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
+          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const summary = {
+            reference: 'Damage',
+            referenceRaw: 'Damage',
+            processedBy: state.session?.user?.email ?? 'Unknown operator',
+            operator: state.session?.user?.email ?? 'Unknown operator',
+            sourceLabel: sourceLabel.textContent,
+            destLabel: destLabel.textContent,
+            route:
+              (sourceLabel.textContent ?? 'Unknown source') +
+              ' → ' +
+              (destLabel.textContent ?? 'Unknown destination'),
+            dateTime: windowLabel,
+            window: windowLabel,
+            itemsBlock,
+            items: lineItems,
+            note: noteValue || null
+          };
+
           showResult('Damages logged and deducted.', false);
+          notifyTelegram(summary, 'damage').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           setCart('damage', []);
           renderCart('damage');
           if (damageNote) damageNote.value = '';
@@ -4705,6 +4760,9 @@ function createHtml(config: {
               console.warn('Purchase WhatsApp notification failed', notifyError);
             });
           }
+          notifyTelegram(summary, 'purchase').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           renderPrintReceipt(summary, cartSnapshot, { context: 'purchase', totalGross: grossTotal });
           setCart('purchase', []);
           renderCart('purchase');
@@ -4735,6 +4793,23 @@ function createHtml(config: {
         } catch (error) {
           const prefix = context === 'purchase' ? 'Purchase logged' : 'Transfer recorded';
           showResult(prefix + ' but WhatsApp alert failed: ' + (error.message || error), true);
+        }
+      }
+
+      async function notifyTelegram(summary, context = 'transfer') {
+        try {
+          const response = await fetch('/api/notify-telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context, summary, scanner: 'ingredients' })
+          });
+          if (!response.ok) {
+            const info = await response.json().catch(() => ({}));
+            throw new Error(info.error || 'Unable to ping Telegram API');
+          }
+        } catch (error) {
+          const prefix = context === 'purchase' ? 'Purchase logged' : context === 'damage' ? 'Damage logged' : 'Transfer recorded';
+          showResult(prefix + ' but Telegram alert failed: ' + (error.message || error), true);
         }
       }
 

@@ -12,6 +12,7 @@ const DESTINATION_CHOICES = [
   { id: '732d83ba-48f6-481a-bedf-291b5f158552', label: 'Destination' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
+const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c'] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -451,7 +452,7 @@ function createHtml(config: {
     }
     .destination-select-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
       width: 100%;
     }
@@ -4510,6 +4511,17 @@ function createHtml(config: {
               homesRows = childRows.map((row) => ({ ...row, active: row?.active ?? true }));
             }
           }
+          const extraHomes = EXTRA_HOMES_IDS
+            .map((id) => state.warehouses.find((row) => row.id === id) ?? null)
+            .filter((row) => row && row.active !== false);
+          if (extraHomes.length) {
+            const existingHomes = new Set(homesRows.map((row) => row.id));
+            extraHomes.forEach((row) => {
+              if (!existingHomes.has(row.id)) {
+                homesRows.push(row);
+              }
+            });
+          }
           state.homesOptions = homesRows
             .filter((row) => row && row.active !== false)
             .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
@@ -4697,6 +4709,9 @@ function createHtml(config: {
           notifyWhatsApp(summary).catch((notifyError) => {
             console.warn('WhatsApp notification failed', notifyError);
           });
+          notifyTelegram(summary, 'transfer').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           renderPrintReceipt(summary, cartSnapshot);
           setCart('transfer', []);
           renderCart('transfer');
@@ -4756,7 +4771,35 @@ function createHtml(config: {
           });
           if (error) throw error;
 
+          const now = new Date();
+          const windowLabel =
+            now.toLocaleDateString('en-US') +
+            ' ' +
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
+          const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
+          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const summary = {
+            reference: 'Damage',
+            referenceRaw: 'Damage',
+            processedBy: state.session?.user?.email ?? 'Unknown operator',
+            operator: state.session?.user?.email ?? 'Unknown operator',
+            sourceLabel: sourceLabel.textContent,
+            destLabel: destLabel.textContent,
+            route:
+              (sourceLabel.textContent ?? 'Unknown source') +
+              ' → ' +
+              (destLabel.textContent ?? 'Unknown destination'),
+            dateTime: windowLabel,
+            window: windowLabel,
+            itemsBlock,
+            items: lineItems,
+            note: noteValue || null
+          };
+
           showResult('Damages logged and deducted.', false);
+          notifyTelegram(summary, 'damage').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           setCart('damage', []);
           renderCart('damage');
           if (damageNote) damageNote.value = '';
@@ -4871,6 +4914,9 @@ function createHtml(config: {
               console.warn('Purchase WhatsApp notification failed', notifyError);
             });
           }
+          notifyTelegram(summary, 'purchase').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           renderPrintReceipt(summary, cartSnapshot, { context: 'purchase', totalGross: grossTotal });
           setCart('purchase', []);
           renderCart('purchase');
@@ -4901,6 +4947,23 @@ function createHtml(config: {
         } catch (error) {
           const prefix = context === 'purchase' ? 'Purchase logged' : 'Transfer recorded';
           showResult(prefix + ' but WhatsApp alert failed: ' + (error.message || error), true);
+        }
+      }
+
+      async function notifyTelegram(summary, context = 'transfer') {
+        try {
+          const response = await fetch('/api/notify-telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context, summary, scanner: 'beverages' })
+          });
+          if (!response.ok) {
+            const info = await response.json().catch(() => ({}));
+            throw new Error(info.error || 'Unable to ping Telegram API');
+          }
+        } catch (error) {
+          const prefix = context === 'purchase' ? 'Purchase logged' : context === 'damage' ? 'Damage logged' : 'Transfer recorded';
+          showResult(prefix + ' but Telegram alert failed: ' + (error.message || error), true);
         }
       }
 
