@@ -166,20 +166,7 @@ export default function OutletSetupPage() {
       ? [{ value: "", label: "Select raw", itemId: "", variantKey: "base", kind: "raw" }, ...filtered]
       : [{ value: "", label: "No raws found", itemId: "", variantKey: "base", kind: "raw" }];
   }, [items]);
-  const ingredientOptions = useMemo<RouteOption[]>(() => {
-    const hasProductFilter = Boolean(selectedProductId);
-    const ingredientSet = new Set(recipeIngredientIds);
-    if (!hasProductFilter) {
-      return [{ value: "", label: "Select a product first", itemId: "", variantKey: "base", kind: "ingredient" }];
-    }
-    if (recipeIngredientsLoading) {
-      return [{ value: "", label: "Loading recipe ingredients...", itemId: "", variantKey: "base", kind: "ingredient" }];
-    }
-    const filtered = baseIngredientOptions.filter((opt) => opt.itemId && ingredientSet.has(opt.itemId));
-    return filtered.length
-      ? [{ value: "", label: "Select ingredient", itemId: "", variantKey: "base", kind: "ingredient" }, ...filtered]
-      : [{ value: "", label: "No ingredients for selected product", itemId: "", variantKey: "base", kind: "ingredient" }];
-  }, [baseIngredientOptions, selectedProductId, recipeIngredientIds, recipeIngredientsLoading]);
+  const ingredientOptions = useMemo<RouteOption[]>(() => baseIngredientOptions, [baseIngredientOptions]);
   const rawOptions = useMemo<RouteOption[]>(() => baseRawOptions, [baseRawOptions]);
   const productOptions = useMemo<RouteOption[]>(() => {
     const filtered = items
@@ -512,6 +499,17 @@ export default function OutletSetupPage() {
     return productRoutes;
   };
 
+  const activeRoutingGroup: RoutingGroup = selectedIngredientId ? "ingredient" : selectedRawId ? "raw" : "product";
+  const activeRoutingLabel = activeRoutingGroup === "ingredient" ? "ingredient" : activeRoutingGroup === "raw" ? "raw" : "product";
+  const activeRoutingItemId =
+    activeRoutingGroup === "ingredient"
+      ? selectedIngredientId
+      : activeRoutingGroup === "raw"
+        ? selectedRawId
+        : selectedProductId;
+  const activeRoutingLoading = routingLoading[activeRoutingGroup];
+  const activeRoutes = routesFor(activeRoutingGroup);
+
   const setRoute = (group: RoutingGroup, outletId: string, warehouseId: string) => {
     if (group === "ingredient") {
       setIngredientRoutes((prev) => ({ ...prev, [outletId]: warehouseId }));
@@ -542,10 +540,10 @@ export default function OutletSetupPage() {
     setRawRoutes({});
   };
 
-  const saveRoutes = async (group: RoutingGroup) => {
+  const saveRoutes = async (group: RoutingGroup): Promise<boolean> => {
     if (readOnly) {
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Read-only access: saving is disabled." } }));
-      return;
+      return false;
     }
     const selection =
       group === "ingredient"
@@ -559,19 +557,19 @@ export default function OutletSetupPage() {
 
     if (!selection.itemId) {
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: `Choose a ${label} first` } }));
-      return;
+      return false;
     }
 
     if (group === "product" && selection.variantKeys.length === 0) {
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Select at least one variant" } }));
-      return;
+      return false;
     }
 
     const currentRoutes = routesFor(group);
     const hasAnyRoute = outlets.some((outlet) => Boolean(currentRoutes[outlet.id]));
     if (!hasAnyRoute) {
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Select a warehouse for at least one outlet" } }));
-      return;
+      return false;
     }
 
     setRoutingSavingKind(group);
@@ -598,27 +596,36 @@ export default function OutletSetupPage() {
       }
 
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: true, text: "Mappings saved" } }));
+      return true;
     } catch (error) {
       console.error(error);
       setRoutingMessage((prev) => ({
         ...prev,
         [group]: { ok: false, text: error instanceof Error ? error.message : "Failed to save" },
       }));
+      return false;
     } finally {
       setRoutingSavingKind(null);
     }
   };
 
-  const saveAllRoutes = async (): Promise<boolean> => {
+  const saveActiveRoutes = async (group: RoutingGroup): Promise<boolean> => {
     if (readOnly) {
       setSaveAllMessage({ ok: false, text: "Read-only access: saving is disabled." });
       return false;
     }
-    if (!selectedProductId) {
-      setSaveAllMessage({ ok: false, text: "Select a product first" });
+    const selectionId =
+      group === "ingredient"
+        ? selectedIngredientId
+        : group === "raw"
+          ? selectedRawId
+          : selectedProductId;
+    const label = group === "ingredient" ? "ingredient" : group === "raw" ? "raw" : "product";
+    if (!selectionId) {
+      setSaveAllMessage({ ok: false, text: `Select a ${label} first` });
       return false;
     }
-    const hasAnyRoute = Object.values(productRoutes).some(Boolean);
+    const hasAnyRoute = outlets.some((outlet) => Boolean(routesFor(group)[outlet.id]));
     if (!hasAnyRoute) {
       setSaveAllMessage({ ok: false, text: "Set at least one warehouse before saving" });
       return false;
@@ -626,7 +633,10 @@ export default function OutletSetupPage() {
     setMappingsSaving(true);
     setSaveAllMessage(null);
     try {
-      await saveRoutes("product");
+      const ok = await saveRoutes(group);
+      if (!ok) {
+        throw new Error("Failed to save mappings");
+      }
       setSaveAllMessage({ ok: true, text: "Mappings saved" });
       return true;
     } catch (error) {
@@ -842,7 +852,7 @@ export default function OutletSetupPage() {
       if (storageOk === false) {
         throw new Error("Storage homes incomplete");
       }
-      const routesOk = await saveAllRoutes();
+      const routesOk = await saveActiveRoutes(activeRoutingGroup);
       if (routesOk === false) {
         throw new Error("Outlet mappings incomplete");
       }
@@ -979,6 +989,16 @@ export default function OutletSetupPage() {
           </div>
         </header>
 
+        <section className={styles.setupBanner}>
+          <div className={styles.setupBannerTitle}>Ingredient stocktake setup sequence</div>
+          <ol className={styles.setupBannerList}>
+            <li>Add the ingredient or raw item in Menu Items & Recipes.</li>
+            <li>Assign the outlet to the warehouse in Outlet → Warehouse Assignments (Show in stocktake = Yes).</li>
+            <li>Map the ingredient/raw to the outlet warehouse on this page (deduct routing). For transfer-only warehouses, skip this.</li>
+            <li>Optional: set the storage home for the ingredient/raw in the storage cards below.</li>
+          </ol>
+        </section>
+
         <div className={styles.panels}>
           <section className={styles.panel}>
             <div>
@@ -1053,12 +1073,18 @@ export default function OutletSetupPage() {
               </div>
 
               <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Ingredients (from recipe)</div>
+                <div className={styles.subHeading}>Ingredients (deduct)</div>
                 <select
                   value={selectedIngredientId}
-                  onChange={(e) => setSelectedIngredientId(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedIngredientId(value);
+                    if (value) {
+                      setSelectedRawId("");
+                    }
+                  }}
                   className={styles.select}
-                  disabled={!selectedProductId || routingLoading.ingredient || recipeIngredientsLoading || ingredientOptions.length <= 1}
+                  disabled={routingLoading.ingredient || ingredientOptions.length <= 1}
                   aria-label="Select ingredient for routing"
                 >
                   {ingredientOptions.map((opt) => (
@@ -1073,9 +1099,15 @@ export default function OutletSetupPage() {
                 <div className={styles.subHeading}>Raws (deduct)</div>
                 <select
                   value={selectedRawId}
-                  onChange={(e) => setSelectedRawId(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedRawId(value);
+                    if (value) {
+                      setSelectedIngredientId("");
+                    }
+                  }}
                   className={styles.select}
-                  disabled={!selectedProductId || routingLoading.raw || rawSelectOptions.length <= 1}
+                  disabled={routingLoading.raw || rawSelectOptions.length <= 1}
                   aria-label="Select raw for routing"
                 >
                   {rawSelectOptions.map((opt) => (
@@ -1090,7 +1122,7 @@ export default function OutletSetupPage() {
             <div className={styles.inlineHint}>
               <div className={styles.inlineTitle}>Linked dropdowns</div>
               <div className={styles.inlineBody}>
-                Variants only unlock when the product has variants. Ingredients show only the ones used by the selected product’s recipe. Raws stay locked until a product is chosen.
+                Variants only unlock when the product has variants. Ingredients and raws can be assigned directly without selecting a finished product.
               </div>
             </div>
 
@@ -1148,12 +1180,19 @@ export default function OutletSetupPage() {
               Each outlet row uses one warehouse for variants, ingredients, and raws. Storage/receiving can differ per item type above.
             </div>
 
+            <div className={styles.inlineHint}>
+              <div className={styles.inlineTitle}>Outlet warehouse scope</div>
+              <div className={styles.inlineBody}>
+                This table saves routes for the selected {activeRoutingLabel}. Choose a different item type above to update its mappings.
+              </div>
+            </div>
+
             <div className={styles.tableWrapper}>
               <table className={styles.routesTable}>
                 <thead>
                   <tr>
                     <th>Outlet</th>
-                    <th>Outlet warehouse (shared)</th>
+                    <th>Outlet warehouse (shared for selected {activeRoutingLabel})</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1171,10 +1210,10 @@ export default function OutletSetupPage() {
                         </td>
                         <td>
                           <select
-                            value={productRoutes[outlet.id] ?? ""}
-                            onChange={(e) => setRoute("product", outlet.id, e.target.value)}
+                            value={activeRoutes[outlet.id] ?? ""}
+                            onChange={(e) => setRoute(activeRoutingGroup, outlet.id, e.target.value)}
                             className={styles.select}
-                            disabled={routingLoading.product || !selectedProductId}
+                            disabled={activeRoutingLoading || !activeRoutingItemId}
                             aria-label={`Outlet warehouse for ${outlet.name}`}
                           >
                             <option value="">Select warehouse</option>
@@ -1184,8 +1223,8 @@ export default function OutletSetupPage() {
                               </option>
                             ))}
                           </select>
-                          {!selectedProductId && (
-                            <div className={styles.inlineHintSmall}>Select a product to assign a warehouse.</div>
+                          {!activeRoutingItemId && (
+                            <div className={styles.inlineHintSmall}>Select a {activeRoutingLabel} to assign a warehouse.</div>
                           )}
                         </td>
                       </tr>

@@ -10,6 +10,7 @@ export default function WarehouseBackofficeDashboard() {
 
   const goToInventory = () => router.push("/Warehouse_Backoffice/inventory");
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
+  const goToCatalogManage = () => router.push("/Warehouse_Backoffice/catalog/manage");
   const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup");
   const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
@@ -37,6 +38,47 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
           </div>
         </header>
+
+        <section className={styles.setupBanner}>
+          <div className={styles.setupHeader}>
+            <h2 className={styles.setupTitle}>Stocktake setup sequence</h2>
+            <p className={styles.setupSubtitle}>Follow these steps in order to make a warehouse and its ingredients/raws appear in the Stocktake app.</p>
+          </div>
+          <ol className={styles.setupSteps}>
+            <li className={styles.setupStep}>
+              <span className={styles.setupIndex}>1</span>
+              <div className={styles.setupContent}>
+                <div className={styles.setupLabel}>Add ingredient or raw</div>
+                <div className={styles.setupHint}>Create the item first so it can be mapped to outlets and stocktake.</div>
+                <button type="button" className={styles.setupLink} onClick={goToCatalogManage}>Open Menu Items & Recipes</button>
+              </div>
+            </li>
+            <li className={styles.setupStep}>
+              <span className={styles.setupIndex}>2</span>
+              <div className={styles.setupContent}>
+                <div className={styles.setupLabel}>Enable warehouse in stocktake</div>
+                <div className={styles.setupHint}>Assign outlet to warehouse and set Show in stocktake = Yes.</div>
+                <button type="button" className={styles.setupLink} onClick={goToOutletWarehouseAssignments}>Open Outlet → Warehouse Assignments</button>
+              </div>
+            </li>
+            <li className={styles.setupStep}>
+              <span className={styles.setupIndex}>3</span>
+              <div className={styles.setupContent}>
+                <div className={styles.setupLabel}>Map ingredient/raw to outlet warehouse</div>
+                <div className={styles.setupHint}>Use the ingredient/raw dropdowns and save mappings.</div>
+                <button type="button" className={styles.setupLink} onClick={goToOutletSetup}>Open Item To Warehouse Assignments</button>
+              </div>
+            </li>
+            <li className={styles.setupStep}>
+              <span className={styles.setupIndex}>4</span>
+              <div className={styles.setupContent}>
+                <div className={styles.setupLabel}>Verify stocktake periods</div>
+                <div className={styles.setupHint}>Confirm the warehouse appears and periods can open/close.</div>
+                <button type="button" className={styles.setupLink} onClick={goToStockReports}>Open Stock Reports</button>
+              </div>
+            </li>
+          </ol>
+        </section>
 
         <section className={styles.actionsGrid}>
           <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>

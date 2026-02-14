@@ -761,7 +761,7 @@ fun StocktakeCountScreen(
         val key = raw?.trim()?.lowercase().orEmpty()
         return when (key) {
             "g", "kg", "mg", "ml", "l" -> 2
-            "each", "case", "crate", "bottle", "tin can", "jar", "plastic" -> 0
+            "each", "case", "crate", "bottle", "tin can", "jar", "plastic", "packet", "box" -> 0
             else -> 2
         }
     }
@@ -798,6 +798,8 @@ fun StocktakeCountScreen(
             "tin can", "tin can(s)" -> "Tin Can(s)"
             "jar", "jar(s)" -> "Jar(s)"
             "plastic", "plastic(s)" -> "Plastic(s)"
+            "packet", "packet(s)" -> "Packet(s)"
+            "box", "box(es)" -> "Box(es)"
             else -> {
                 if (key.isBlank()) "Each" else key.replaceFirstChar { it.titlecase() }
             }

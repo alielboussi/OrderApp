@@ -18,6 +18,8 @@ const qtyUnitOptions = [
   { value: "Tin Can", label: "Tin Can(s)" },
   { value: "Jar", label: "Jar(s)" },
   { value: "plastic", label: "Plastic(s)" },
+  { value: "Packet", label: "Packet(s)" },
+  { value: "Box", label: "Box(es)" },
 ] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -330,6 +332,19 @@ function ProductCreatePage() {
                 )}
                 {isIngredientOrRaw && !form.has_variations && (
                     <div className={styles.ingredientCardGrid}>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Supplier Pack Unit</h3>
+                        <p className={styles.sectionHint}>Unit written on the supplier pack.</p>
+                      </div>
+                      <Select
+                        label="Supplier pack unit"
+                        hint="Unit used when receiving stock."
+                        value={form.purchase_pack_unit}
+                        onChange={(v) => handleChange("purchase_pack_unit", v)}
+                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                      />
+                    </div>
                       <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
                       <div className={styles.sectionHeader}>
                         <h3 className={styles.sectionTitle}>Units Inside One Supplier Pack</h3>

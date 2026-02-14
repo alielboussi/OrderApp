@@ -33,6 +33,8 @@ const qtyUnits = [
   "bottle",
   "Tin Can",
   "Jar",
+  "Packet",
+  "Box",
 ] as const;
 
 type UomOption = { value: string; label: string };
@@ -54,7 +56,11 @@ const formatUnitLabel = (unit: string) => {
               ? "Millilitre(s)"
               : lower === "l"
                 ? "Litre(s)"
-                : null;
+                : lower === "packet"
+                  ? "Packet(s)"
+                  : lower === "box"
+                    ? "Box(es)"
+                    : null;
   if (mapped) return mapped;
   const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
   return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;

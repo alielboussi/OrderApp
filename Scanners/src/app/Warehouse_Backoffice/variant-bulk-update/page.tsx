@@ -33,7 +33,7 @@ type VariantSummary = {
   active: boolean;
 };
 
-const qtyUnits = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle", "Tin Can", "Jar"] as const;
+const qtyUnits = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle", "Tin Can", "Jar", "Packet", "Box"] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },

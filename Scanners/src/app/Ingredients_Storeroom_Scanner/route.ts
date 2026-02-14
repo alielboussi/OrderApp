@@ -2616,21 +2616,75 @@ function createHtml(config: {
         return 1;
       }
 
+      function resolveTransferQuantity(product, variation) {
+        const qty = Number(variation?.transfer_quantity ?? product?.transfer_quantity);
+        if (Number.isFinite(qty) && qty > 0) {
+          return qty;
+        }
+        return 1;
+      }
+
+      function resolveBaseUom(product, variation, context) {
+        if (context === 'purchase') {
+          return (variation?.uom || product.uom || 'unit').toUpperCase();
+        }
+        const unit =
+          variation?.consumption_uom ||
+          product.consumption_uom ||
+          variation?.transfer_unit ||
+          product.transfer_unit ||
+          variation?.uom ||
+          product.uom ||
+          'unit';
+        return String(unit).toUpperCase();
+      }
+
+      function resolveEffectiveUom(product, variation, context) {
+        if (context === 'purchase') {
+          const unit =
+            variation?.consumption_uom ||
+            product.consumption_uom ||
+            variation?.transfer_unit ||
+            product.transfer_unit ||
+            variation?.uom ||
+            product.uom ||
+            'unit';
+          return String(unit).toUpperCase();
+        }
+        return resolveBaseUom(product, variation, context);
+      }
+
+      function resolveQtyMultiplier(product, variation, context) {
+        if (context === 'purchase') {
+          return resolvePackageSize(product, variation);
+        }
+        return resolveTransferQuantity(product, variation);
+      }
+
       function computeEffectiveQty(rawQty, entry) {
         const qtyNumber = Number(rawQty);
         if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
           return null;
         }
-        const multiplier = MULTIPLY_QTY_BY_PACKAGE ? entry.packageSize ?? 1 : 1;
-        return qtyNumber * multiplier;
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 0 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if (mode === 'package') {
+          return qtyNumber * (MULTIPLY_QTY_BY_PACKAGE ? safeMultiplier : 1);
+        }
+        return qtyNumber * safeMultiplier;
       }
 
       function describeQty(entry, baseQty, effectiveQty) {
-        const unitLabel = entry.uom ?? 'UNIT';
-        if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
-          return baseQty + ' case(s) → ' + effectiveQty + ' ' + unitLabel;
+        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
+        const effectiveUom = entry.uom ?? baseUom;
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if ((mode === 'package' && MULTIPLY_QTY_BY_PACKAGE && safeMultiplier > 1) || (mode === 'transfer' && safeMultiplier > 1)) {
+          return baseQty + ' ' + baseUom + ' → ' + effectiveQty + ' ' + effectiveUom;
         }
-        return effectiveQty + ' ' + unitLabel;
+        return effectiveQty + ' ' + effectiveUom;
       }
 
       function mapCartSnapshotToLineItems(cartSnapshot) {
@@ -2659,12 +2713,22 @@ function createHtml(config: {
 
       function updateQtyHint(entry) {
         if (!qtyHint) return;
-        if (!entry || !(MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1)) {
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if (!entry || safeMultiplier <= 1) {
           qtyHint.style.display = 'none';
           qtyHint.textContent = '';
           return;
         }
-        qtyHint.textContent = 'Each = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
+        if (mode === 'package' && !MULTIPLY_QTY_BY_PACKAGE) {
+          qtyHint.style.display = 'none';
+          qtyHint.textContent = '';
+          return;
+        }
+        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
+        const effectiveUom = entry.uom ?? baseUom;
+        qtyHint.textContent = 'Each ' + baseUom + ' = ' + safeMultiplier + ' ' + effectiveUom;
         qtyHint.style.display = 'block';
       }
 
@@ -3422,19 +3486,20 @@ function createHtml(config: {
 
       function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
-        const packageSize = resolvePackageSize(product, variation);
+        const baseUom = resolveBaseUom(product, variation, context);
+        const effectiveUom = resolveEffectiveUom(product, variation, context);
+        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
         const entry = {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: (variation?.uom || product.uom || 'unit').toUpperCase(),
-          packageSize,
+          baseUom,
+          uom: effectiveUom,
+          qtyMultiplier,
+          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
           unitCost: null
         };
-        if (context === 'damage') {
-          entry.packageSize = 1;
-        }
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
@@ -3444,7 +3509,7 @@ function createHtml(config: {
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = entry.uom;
+        qtyUom.textContent = entry.baseUom;
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -3461,15 +3526,19 @@ function createHtml(config: {
         focusActiveScanner();
       }
 
-      function buildEntry(product, variation) {
-        const packageSize = resolvePackageSize(product, variation);
+      function buildEntry(product, variation, context = state.mode) {
+        const baseUom = resolveBaseUom(product, variation, context);
+        const effectiveUom = resolveEffectiveUom(product, variation, context);
+        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
         return {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: (variation?.transfer_unit || variation?.uom || product.transfer_unit || product.uom || 'unit').toUpperCase(),
-          packageSize,
+          baseUom,
+          uom: effectiveUom,
+          qtyMultiplier,
+          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
           unitCost: null
         };
       }
@@ -3502,10 +3571,7 @@ function createHtml(config: {
         }
 
         rows.forEach((row) => {
-          const entry = buildEntry(product, row.variation);
-          if (context === 'damage') {
-            entry.packageSize = 1;
-          }
+          const entry = buildEntry(product, row.variation, context);
           const wrapper = document.createElement('div');
           wrapper.className = 'variant-row';
 
@@ -3515,7 +3581,7 @@ function createHtml(config: {
           name.textContent = row.label;
           const uom = document.createElement('div');
           uom.className = 'variant-uom';
-          uom.textContent = entry.uom;
+          uom.textContent = entry.baseUom;
           header.appendChild(name);
           header.appendChild(uom);
 
@@ -3625,15 +3691,12 @@ function createHtml(config: {
         const target = cart[index];
         if (!target) return;
         state.pendingEntry = { ...target };
-        if (context === 'damage') {
-          state.pendingEntry.packageSize = 1;
-        }
         state.pendingEditIndex = index;
         state.pendingContext = context;
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = target.uom ?? 'UNIT';
+        qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';

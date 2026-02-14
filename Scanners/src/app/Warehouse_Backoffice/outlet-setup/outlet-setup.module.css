@@ -81,6 +81,27 @@
   gap: 16px;
 }
 
+.setupBanner {
+  background: linear-gradient(130deg, rgba(59, 130, 246, 0.18), rgba(20, 184, 166, 0.16));
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 16px;
+  padding: 14px 18px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+}
+
+.setupBannerTitle {
+  font-weight: 700;
+  color: #e0f2fe;
+  margin-bottom: 6px;
+}
+
+.setupBannerList {
+  margin: 0;
+  padding-left: 20px;
+  color: #d2d7ea;
+  line-height: 1.5;
+}
+
 .panel {
   background: linear-gradient(170deg, rgba(17, 24, 39, 0.9), rgba(10, 15, 28, 0.9));
   border: 1px solid rgba(255, 255, 255, 0.12);
