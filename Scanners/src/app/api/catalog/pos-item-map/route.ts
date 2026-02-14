@@ -199,7 +199,7 @@ export async function POST(request: Request) {
 
     const enrichWithCatalog = buildEnricher(supabase);
 
-    const findExisting = async (selectCols: string) => {
+    const findExisting = async (selectCols: string): Promise<PosMapRow | null> => {
       let query = supabase
         .from("pos_item_map")
         .select(selectCols)
@@ -216,7 +216,8 @@ export async function POST(request: Request) {
 
       const { data, error } = await query.limit(1);
       if (error) throw error;
-      return Array.isArray(data) && data.length ? data[0] : null;
+      const rows = (data ?? []) as PosMapRow[];
+      return rows[0] ?? null;
     };
 
     const insertAndSelect = async (payload: Record<string, string | null>, selectCols: string) => {
