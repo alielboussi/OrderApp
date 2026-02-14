@@ -105,7 +105,7 @@ export async function GET() {
     const attempt = async (columns: string) => {
       const { data, error } = await supabase.from("pos_item_map").select(columns);
       if (error) throw error;
-      return mapWithFallback(data ?? []);
+      return mapWithFallback((data ?? []) as PosMapRow[]);
     };
 
     const baseRows = await attempt(selectCols);
@@ -137,7 +137,7 @@ export async function GET() {
         ].join(",");
         const { data, error: legacyError } = await supabase.from("pos_item_map").select(legacyCols);
         if (legacyError) throw legacyError;
-        const rows = data ?? [];
+        const rows = (data ?? []) as PosMapRow[];
         const mapped = (rows as PosMapRow[]).map((row) => ({
           ...row,
           pos_item_name: row.pos_item_id ?? null,
