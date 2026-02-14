@@ -87,6 +87,7 @@ export default function OutletWarehouseBalancesPage() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
+  const [itemPackMass, setItemPackMass] = useState<Record<string, { mass: number | null; uom: string | null }>>({});
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +99,7 @@ export default function OutletWarehouseBalancesPage() {
   const [includeFinished, setIncludeFinished] = useState(true);
   const [baseOnly, setBaseOnly] = useState(false);
   const [showZeroOrNegative, setShowZeroOrNegative] = useState(false);
+  const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -374,7 +376,10 @@ export default function OutletWarehouseBalancesPage() {
         }
 
         const [{ data: itemData, error: itemError }, { data: variantData, error: variantError }] = await Promise.all([
-          supabase.from("catalog_items").select("id,consumption_unit,consumption_uom").in("id", ids),
+          supabase
+            .from("catalog_items")
+            .select("id,consumption_unit,consumption_uom,purchase_unit_mass,purchase_unit_mass_uom")
+            .in("id", ids),
           supabase.from("catalog_variants").select("id,item_id,name,active").in("item_id", ids),
         ]);
 
@@ -384,9 +389,16 @@ export default function OutletWarehouseBalancesPage() {
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
+        const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
         (itemData || []).forEach((row) => {
           const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? "each";
           if (row.id) uomMap[row.id] = fallbackUom;
+          if (row.id) {
+            packMap[row.id] = {
+              mass: typeof row.purchase_unit_mass === "number" ? row.purchase_unit_mass : null,
+              uom: row.purchase_unit_mass_uom ?? null,
+            };
+          }
         });
 
         const normalizeVariantKey = (value?: string | null) => {
@@ -404,10 +416,12 @@ export default function OutletWarehouseBalancesPage() {
 
         setVariantNames(map);
         setItemUoms(uomMap);
+        setItemPackMass(packMap);
       } catch {
         if (active) {
           setVariantNames({});
           setItemUoms({});
+          setItemPackMass({});
         }
       }
     };
@@ -543,6 +557,14 @@ export default function OutletWarehouseBalancesPage() {
               />
               Show zero/negative
             </label>
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={showPackWeightTotals}
+                onChange={(event) => setShowPackWeightTotals(event.target.checked)}
+              />
+              Pack weight total
+            </label>
           </div>
         </section>
 
@@ -564,15 +586,19 @@ export default function OutletWarehouseBalancesPage() {
           {error && <p className={styles.errorBanner}>{error}</p>}
 
           <div className={styles.table}>
-            <div className={`${styles.tableRow} ${styles.tableHead}`}>
+            <div className={`${styles.tableRow} ${styles.tableHead} ${showPackWeightTotals ? styles.tableRowWide : ""}`}>
               <span>Item</span>
               <span>Variant</span>
               <span>Kind</span>
               <span className={styles.alignRight}>Net Units</span>
+              {showPackWeightTotals && <span className={styles.alignRight}>Pack total</span>}
             </div>
 
             {items.map((item) => (
-              <div key={`${item.item_id}-${item.variant_key ?? "base"}`} className={styles.tableRow}>
+              <div
+                key={`${item.item_id}-${item.variant_key ?? "base"}`}
+                className={`${styles.tableRow} ${showPackWeightTotals ? styles.tableRowWide : ""}`}
+              >
                 <span>{item.item_name || item.item_id}</span>
                 <span>{variantNames[item.variant_key ?? ""] || item.variant_key || "base"}</span>
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
@@ -582,6 +608,17 @@ export default function OutletWarehouseBalancesPage() {
                     return `${formatted.text} ${formatted.uom}`.trim();
                   })()}
                 </span>
+                {showPackWeightTotals && (
+                  <span className={styles.alignRight}>
+                    {(() => {
+                      const packInfo = itemPackMass[item.item_id];
+                      if (!packInfo || packInfo.mass == null || item.net_units == null) return "-";
+                      const total = item.net_units * packInfo.mass;
+                      const formatted = formatQtyWithUom(total, packInfo.uom ?? undefined);
+                      return `${formatted.text} ${formatted.uom}`.trim();
+                    })()}
+                  </span>
+                )}
               </div>
             ))}
 

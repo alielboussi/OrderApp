@@ -483,6 +483,104 @@ function createHtml(config: {
       cursor: pointer;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
+    .destination-pill-button {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 12px 16px;
+      color: #ff5d73;
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .destination-pill-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .destination-pill-button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(255, 27, 45, 0.25);
+    }
+    .destination-hidden-select {
+      display: none;
+    }
+    .select-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(6px);
+      z-index: 1200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .select-modal.active {
+      display: flex;
+    }
+    .select-modal-card {
+      width: min(820px, 94vw);
+      max-height: 84vh;
+      overflow: hidden;
+      border-radius: 20px;
+      background: rgba(8, 8, 12, 0.96);
+      border: 1px solid rgba(255, 27, 45, 0.35);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+    }
+    .select-modal-header {
+      padding: 18px 20px 12px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #ffe5ea;
+      border-bottom: 1px solid rgba(255, 27, 45, 0.2);
+    }
+    .select-modal-grid {
+      padding: 16px 20px 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      overflow: auto;
+    }
+    .select-card {
+      border: 1px solid rgba(255, 27, 45, 0.35);
+      background: rgba(14, 14, 18, 0.9);
+      color: #f8fafc;
+      padding: 16px;
+      border-radius: 16px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+    }
+    .select-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 27, 45, 0.7);
+      box-shadow: 0 18px 30px rgba(255, 27, 45, 0.25);
+    }
+    .select-modal-actions {
+      padding: 0 20px 18px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .select-modal-close {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f8fafc;
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
     .destination-pill-select select option {
       font-size: 1.5rem;
     }
@@ -568,6 +666,32 @@ function createHtml(config: {
       text-transform: uppercase;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
       cursor: pointer;
+    }
+    .operator-pill-button {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 14px 18px;
+      color: #ff5d73;
+      font-size: 1.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .operator-pill-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .operator-pill-button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(255, 27, 45, 0.25);
+    }
+    .operator-hidden-select {
+      display: none;
     }
     .operator-select-label select:focus-visible {
       outline: none;
@@ -1442,13 +1566,15 @@ function createHtml(config: {
               <div class="destination-select-grid">
                 <label class="destination-pill-select">
                   <span class="destination-pill-hint">Outlets</span>
-                  <select id="console-destination-select">
+                  <button type="button" id="destination-picker" class="destination-pill-button">Select outlet</button>
+                  <select id="console-destination-select" class="destination-hidden-select">
                     <option value="">Select...</option>
                   </select>
                 </label>
                 <label class="destination-pill-select">
                   <span class="destination-pill-hint">Homes</span>
-                  <select id="console-homes-select">
+                  <button type="button" id="homes-picker" class="destination-pill-button">Select home</button>
+                  <select id="console-homes-select" class="destination-hidden-select">
                     <option value="">Select...</option>
                   </select>
                 </label>
@@ -1466,7 +1592,8 @@ function createHtml(config: {
               <span id="transfer-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
             </div>
             <label class="operator-select-label">Select operator
-              <select id="transfer-operator-select">
+              <button type="button" id="transfer-operator-picker" class="operator-pill-button">Select operator</button>
+              <select id="transfer-operator-select" class="operator-hidden-select">
                 <option value="">Select operator</option>
               </select>
             </label>
@@ -1514,6 +1641,36 @@ function createHtml(config: {
   </main>
 
   <div id="result-toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="destination-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="destination-modal-title">
+      <div class="select-modal-header" id="destination-modal-title">Select outlet</div>
+      <div class="select-modal-grid" id="destination-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="destination-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="homes-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="homes-modal-title">
+      <div class="select-modal-header" id="homes-modal-title">Select home</div>
+      <div class="select-modal-grid" id="homes-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="homes-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="operator-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-modal-title">
+      <div class="select-modal-header" id="operator-modal-title">Select operator</div>
+      <div class="select-modal-grid" id="operator-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="operator-modal">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="qty-modal">
     <form id="qty-form">
@@ -1597,7 +1754,8 @@ function createHtml(config: {
               <span id="purchase-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
             </div>
             <label class="operator-select-label">Select operator
-              <select id="purchase-operator-select">
+              <button type="button" id="purchase-operator-picker" class="operator-pill-button">Select operator</button>
+              <select id="purchase-operator-select" class="operator-hidden-select">
                 <option value="">Select operator</option>
               </select>
             </label>
@@ -1693,7 +1851,8 @@ function createHtml(config: {
               <span id="damage-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
             </div>
             <label class="operator-select-label">Select operator
-              <select id="damage-operator-select">
+              <button type="button" id="damage-operator-picker" class="operator-pill-button">Select operator</button>
+              <select id="damage-operator-select" class="operator-hidden-select">
                 <option value="">Select operator</option>
               </select>
             </label>
@@ -2050,14 +2209,28 @@ function createHtml(config: {
         purchase: document.getElementById('purchase-operator-select'),
         damage: document.getElementById('damage-operator-select')
       };
+      const operatorPickers = {
+        transfer: document.getElementById('transfer-operator-picker'),
+        purchase: document.getElementById('purchase-operator-picker'),
+        damage: document.getElementById('damage-operator-picker')
+      };
       const destinationSelect = document.getElementById('console-destination-select');
       const homesSelect = document.getElementById('console-homes-select');
+      const destinationPicker = document.getElementById('destination-picker');
+      const homesPicker = document.getElementById('homes-picker');
+      const destinationModal = document.getElementById('destination-modal');
+      const homesModal = document.getElementById('homes-modal');
+      const destinationModalOptions = document.getElementById('destination-modal-options');
+      const homesModalOptions = document.getElementById('homes-modal-options');
+      const operatorSelectModal = document.getElementById('operator-modal');
+      const operatorSelectModalOptions = document.getElementById('operator-modal-options');
+      let activeOperatorContext = 'transfer';
       const operatorStatusLabels = {
         transfer: document.getElementById('transfer-operator-status'),
         purchase: document.getElementById('purchase-operator-status'),
         damage: document.getElementById('damage-operator-status')
       };
-      const operatorModal = document.getElementById('operator-passcode-modal');
+      const operatorPasscodeModal = document.getElementById('operator-passcode-modal');
       const operatorModalForm = document.getElementById('operator-passcode-form');
       const operatorModalTitle = document.getElementById('operator-modal-title');
       const operatorModalContext = document.getElementById('operator-modal-context');
@@ -2863,10 +3036,56 @@ function createHtml(config: {
           const sessionValue = session?.operatorId ?? '';
           select.value = sessionValue || existingValue;
           select.disabled = !state.operators.length;
+          updateOperatorPickerLabel(context);
         });
         updateOperatorStatus('transfer');
         updateOperatorStatus('purchase');
         updateOperatorStatus('damage');
+      }
+
+      function getOperatorLabelById(id) {
+        const op = state.operators.find((operator) => operator?.id === id);
+        return op?.displayName ?? null;
+      }
+
+      function updateOperatorPickerLabel(context) {
+        const picker = operatorPickers[context];
+        const select = operatorSelects[context];
+        if (!picker || !select) return;
+        const selectedId = select.value || '';
+        const label = selectedId ? getOperatorLabelById(selectedId) : null;
+        picker.textContent = label || 'Select operator';
+        picker.disabled = !state.operators.length;
+      }
+
+      function renderOperatorCards(context) {
+        if (!operatorSelectModalOptions) return;
+        operatorSelectModalOptions.innerHTML = '';
+        if (!state.operators.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No operators available';
+          empty.disabled = true;
+          operatorSelectModalOptions.appendChild(empty);
+          return;
+        }
+        state.operators.forEach((operator) => {
+          if (!operator?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = operator.displayName ?? 'Operator';
+          card.addEventListener('click', () => {
+            const select = operatorSelects[context];
+            if (select) {
+              select.value = operator.id;
+            }
+            handleOperatorSelection(context, operator.id);
+            closeSelectModal(operatorSelectModal);
+          });
+          operatorSelectModalOptions.appendChild(card);
+        });
       }
 
       function renderDestinationOptions() {
@@ -2887,6 +3106,11 @@ function createHtml(config: {
         const savedValue = state.destinationSelection ?? existingValue;
         destinationSelect.value = savedValue || '';
         destinationSelect.disabled = !state.destinationOptions.length;
+        if (destinationPicker) {
+          destinationPicker.textContent = getSelectedPrimaryDestination()?.label ?? 'Select outlet';
+          destinationPicker.disabled = !state.destinationOptions.length;
+        }
+        renderDestinationCards();
         syncDestinationPillLabel();
       }
 
@@ -2908,14 +3132,88 @@ function createHtml(config: {
         const savedValue = state.homesSelection ?? existingValue;
         homesSelect.value = savedValue || '';
         homesSelect.disabled = !state.homesOptions.length;
+        if (homesPicker) {
+          homesPicker.textContent = getSelectedHomeDestination()?.label ?? 'Select home';
+          homesPicker.disabled = !state.homesOptions.length;
+        }
+        renderHomesCards();
         syncDestinationPillLabel();
       }
 
-      function showOperatorPrompt(context) {
-        const select = operatorSelects[context];
-        if (select) {
-          select.focus();
+      function openSelectModal(modal) {
+        if (!modal) return;
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+
+      function closeSelectModal(modal) {
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+
+      function renderDestinationCards() {
+        if (!destinationModalOptions) return;
+        destinationModalOptions.innerHTML = '';
+        if (!state.destinationOptions.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No outlets found';
+          empty.disabled = true;
+          destinationModalOptions.appendChild(empty);
+          return;
         }
+        state.destinationOptions.forEach((option) => {
+          if (!option?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = option.label ?? 'Destination';
+          card.addEventListener('click', () => {
+            if (destinationSelect) {
+              destinationSelect.value = option.id;
+            }
+            handleDestinationSelection(option.id);
+            closeSelectModal(destinationModal);
+          });
+          destinationModalOptions.appendChild(card);
+        });
+      }
+
+      function renderHomesCards() {
+        if (!homesModalOptions) return;
+        homesModalOptions.innerHTML = '';
+        if (!state.homesOptions.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No homes found';
+          empty.disabled = true;
+          homesModalOptions.appendChild(empty);
+          return;
+        }
+        state.homesOptions.forEach((option) => {
+          if (!option?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = option.label ?? 'Home';
+          card.addEventListener('click', () => {
+            if (homesSelect) {
+              homesSelect.value = option.id;
+            }
+            handleHomesSelection(option.id);
+            closeSelectModal(homesModal);
+          });
+          homesModalOptions.appendChild(card);
+        });
+      }
+
+      function showOperatorPrompt(context) {
+        activeOperatorContext = context;
+        renderOperatorCards(context);
+        openSelectModal(operatorSelectModal);
       }
 
       function getValidOperatorSession(context, options = {}) {
@@ -2947,6 +3245,7 @@ function createHtml(config: {
         if (select && select.value !== (unlocked ? session.operatorId : '')) {
           select.value = unlocked ? session.operatorId : '';
         }
+        updateOperatorPickerLabel(context);
         enforceOperatorLocks();
       }
 
@@ -3086,10 +3385,10 @@ function createHtml(config: {
 
       function showDestinationPrompt(context) {
         if (context === 'transfer' && homesSelect && state.homesOptions.length) {
-          homesSelect.focus();
+          openSelectModal(homesModal);
           return;
         }
-        destinationSelect?.focus();
+        openSelectModal(destinationModal);
       }
 
       function ensureDestinationSelected(context, shouldPrompt = true) {
@@ -3127,6 +3426,9 @@ function createHtml(config: {
           if (destinationSelect && destinationSelect.value !== '') {
             destinationSelect.value = '';
           }
+          if (destinationPicker) {
+            destinationPicker.textContent = 'Select outlet';
+          }
           syncDestinationPillLabel();
           enforceOperatorLocks();
           return;
@@ -3146,6 +3448,12 @@ function createHtml(config: {
         if (homesSelect && homesSelect.value !== '') {
           homesSelect.value = '';
         }
+        if (destinationPicker) {
+          destinationPicker.textContent = option.label ?? 'Select outlet';
+        }
+        if (homesPicker) {
+          homesPicker.textContent = 'Select home';
+        }
         syncDestinationPillLabel();
         enforceOperatorLocks();
       }
@@ -3159,6 +3467,9 @@ function createHtml(config: {
           }
           if (homesSelect && homesSelect.value !== '') {
             homesSelect.value = '';
+          }
+          if (homesPicker) {
+            homesPicker.textContent = 'Select home';
           }
           syncDestinationPillLabel();
           enforceOperatorLocks();
@@ -3179,12 +3490,18 @@ function createHtml(config: {
         if (destinationSelect && destinationSelect.value !== '') {
           destinationSelect.value = '';
         }
+        if (homesPicker) {
+          homesPicker.textContent = option.label ?? 'Select home';
+        }
+        if (destinationPicker) {
+          destinationPicker.textContent = 'Select outlet';
+        }
         syncDestinationPillLabel();
         enforceOperatorLocks();
       }
 
       function openOperatorModal(context, operator) {
-        if (!operatorModal || !operatorModalForm) return;
+        if (!operatorPasscodeModal || !operatorModalForm) return;
         operatorModalTitle.textContent = 'Unlock ' + formatOperatorLabel(context);
         operatorModalContext.textContent = 'Scan password for ' + operator.displayName + '.';
         operatorPasswordInput.value = '';
@@ -3192,19 +3509,19 @@ function createHtml(config: {
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
         state.operatorUnlocking = false;
         state.pendingOperatorSelection = { context, operator };
-        operatorModal.classList.add('active');
-        operatorModal.setAttribute('aria-hidden', 'false');
+        operatorPasscodeModal.classList.add('active');
+        operatorPasscodeModal.setAttribute('aria-hidden', 'false');
         window.setTimeout(() => operatorPasswordInput?.focus(), 10);
       }
 
       function closeOperatorModal() {
-        if (!operatorModal) return;
+        if (!operatorPasscodeModal) return;
         const active = document.activeElement;
-        if (active instanceof HTMLElement && operatorModal.contains(active)) {
+        if (active instanceof HTMLElement && operatorPasscodeModal.contains(active)) {
           active.blur();
         }
-        operatorModal.classList.remove('active');
-        operatorModal.setAttribute('aria-hidden', 'true');
+        operatorPasscodeModal.classList.remove('active');
+        operatorPasscodeModal.setAttribute('aria-hidden', 'true');
         operatorPasswordInput.value = '';
         operatorModalError.textContent = '';
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
@@ -5186,6 +5503,52 @@ function createHtml(config: {
       homesSelect?.addEventListener('change', (event) => {
         const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
         handleHomesSelection(value);
+      });
+
+      Object.entries(operatorPickers).forEach(([context, button]) => {
+        if (!button) return;
+        button.addEventListener('click', () => {
+          activeOperatorContext = context;
+          renderOperatorCards(context);
+          openSelectModal(operatorSelectModal);
+        });
+      });
+
+      destinationPicker?.addEventListener('click', () => {
+        renderDestinationCards();
+        openSelectModal(destinationModal);
+      });
+
+      homesPicker?.addEventListener('click', () => {
+        renderHomesCards();
+        openSelectModal(homesModal);
+      });
+
+      destinationModal?.addEventListener('click', (event) => {
+        if (event.target === destinationModal) {
+          closeSelectModal(destinationModal);
+        }
+      });
+
+      homesModal?.addEventListener('click', (event) => {
+        if (event.target === homesModal) {
+          closeSelectModal(homesModal);
+        }
+      });
+
+      operatorSelectModal?.addEventListener('click', (event) => {
+        if (event.target === operatorSelectModal) {
+          closeSelectModal(operatorSelectModal);
+        }
+      });
+
+      document.querySelectorAll('[data-modal-close]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.getAttribute('data-modal-close');
+          if (targetId === 'destination-modal') closeSelectModal(destinationModal);
+          if (targetId === 'homes-modal') closeSelectModal(homesModal);
+          if (targetId === 'operator-modal') closeSelectModal(operatorSelectModal);
+        });
       });
 
       operatorModalForm?.addEventListener('submit', (event) => {

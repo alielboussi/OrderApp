@@ -35,6 +35,8 @@ type FormState = {
   consumption_unit: string;
   purchase_pack_unit: string;
   units_per_purchase_pack: string;
+  purchase_unit_mass: string;
+  purchase_unit_mass_uom: string;
   transfer_unit: string;
   transfer_quantity: string;
   consumption_qty_per_base: string;
@@ -60,6 +62,8 @@ const defaultForm: FormState = {
   consumption_unit: "each",
   purchase_pack_unit: "each",
   units_per_purchase_pack: "1",
+  purchase_unit_mass: "",
+  purchase_unit_mass_uom: "kg",
   transfer_unit: "each",
   transfer_quantity: "1",
   consumption_qty_per_base: "1",
@@ -76,6 +80,25 @@ const defaultForm: FormState = {
   image_url: "",
   active: true,
 };
+
+function formatConversion(value: number, uom: string) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const normalized = uom.trim().toLowerCase();
+  if (["g", "kg", "mg"].includes(normalized)) {
+    const grams = normalized === "kg" ? value * 1000 : normalized === "mg" ? value / 1000 : value;
+    const kg = grams / 1000;
+    const lb = grams / 453.59237;
+    const oz = grams / 28.349523125;
+    return `Approx: ${kg.toFixed(3)} kg | ${lb.toFixed(3)} lb | ${oz.toFixed(2)} oz`;
+  }
+  if (["ml", "l"].includes(normalized)) {
+    const liters = normalized === "l" ? value : value / 1000;
+    const gallons = liters / 3.785411784;
+    const flOz = liters * 33.8140227;
+    return `Approx: ${liters.toFixed(3)} l | ${gallons.toFixed(3)} gal | ${flOz.toFixed(1)} fl oz`;
+  }
+  return "";
+}
 
 function ProductCreatePage() {
   const router = useRouter();
@@ -98,6 +121,11 @@ function ProductCreatePage() {
     if (!Number.isFinite(parsed) || parsed <= 0) return "";
     return (parsed / 1.16).toFixed(2);
   }, [form.selling_price]);
+  const packMassConversion = useMemo(() => {
+    const raw = Number(form.purchase_unit_mass);
+    if (!Number.isFinite(raw) || raw <= 0) return "";
+    return formatConversion(raw, form.purchase_unit_mass_uom);
+  }, [form.purchase_unit_mass, form.purchase_unit_mass_uom]);
 
   useEffect(() => {
     async function loadItem(id: string) {
@@ -117,6 +145,8 @@ function ProductCreatePage() {
             consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
             purchase_pack_unit: item.purchase_pack_unit ?? item.storage_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
             units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
+            purchase_unit_mass: item.purchase_unit_mass != null ? item.purchase_unit_mass.toString() : "",
+            purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? "kg",
             transfer_unit: item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
             transfer_quantity: (item.transfer_quantity ?? 1).toString(),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
@@ -198,6 +228,8 @@ function ProductCreatePage() {
         consumption_unit: form.consumption_unit,
         purchase_pack_unit: form.purchase_pack_unit || form.storage_unit || form.consumption_unit,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
+        purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0),
+        purchase_unit_mass_uom: form.purchase_unit_mass ? form.purchase_unit_mass_uom : null,
         transfer_unit: form.transfer_unit || form.consumption_unit,
         transfer_quantity: toNumber(form.transfer_quantity, 1),
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
@@ -310,6 +342,21 @@ function ProductCreatePage() {
                   onChange={(v) => handleChange("stocktake_uom", v)}
                   options={[{ value: "", label: "Use consumption unit" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
                 />
+                <Field
+                  label="Image URL (optional)"
+                  hint="Link to product image"
+                  value={form.image_url}
+                  onChange={(v) => handleChange("image_url", v)}
+                />
+                <Field
+                  type="number"
+                  label="Storage qty"
+                  hint="Optional: quantity per storage unit (weight, volume, or count; e.g., kg per rod/bag)"
+                  value={form.storage_weight}
+                  onChange={(v) => handleChange("storage_weight", v)}
+                  step="0.01"
+                  min="0"
+                />
                 {isFinished && (
                   <>
                     <Select
@@ -362,6 +409,37 @@ function ProductCreatePage() {
                       </div>
                       <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
                       <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Weight/Volume Per Pack</h3>
+                        <p className={styles.sectionHint}>Set the weight or volume for one supplier pack.</p>
+                      </div>
+                      <Field
+                        type="number"
+                        label="Pack weight/volume"
+                        hint="Used to convert packs to base units (e.g., 250 g)."
+                        value={form.purchase_unit_mass}
+                        onChange={(v) => handleChange("purchase_unit_mass", v)}
+                        step="0.01"
+                        min="0"
+                      />
+                      </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Mass/Volume Unit</h3>
+                        <p className={styles.sectionHint}>Units for the pack weight/volume.</p>
+                      </div>
+                      <Select
+                        label="Mass/volume unit"
+                        hint="Pick the unit used in the pack weight/volume."
+                        value={form.purchase_unit_mass_uom}
+                        onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
+                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                      />
+                      {packMassConversion ? (
+                        <p className={styles.sectionHint}>{packMassConversion}</p>
+                      ) : null}
+                      </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
                         <h3 className={styles.sectionTitle}>Transfer Unit</h3>
                         <p className={styles.sectionHint}>Unit used for transfers and stock movements.</p>
                       </div>
@@ -401,6 +479,19 @@ function ProductCreatePage() {
                         options={[{ value: "", label: "Select storage home" }, ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id }))]}
                       />
                     </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                        <div className={styles.sectionHeader}>
+                          <h3 className={styles.sectionTitle}>Storage Unit</h3>
+                          <p className={styles.sectionHint}>How this item is held in stock.</p>
+                        </div>
+                        <Select
+                          label="Storage unit"
+                          hint="How this item is held in stock (e.g., rods, bags, cases)"
+                          value={form.storage_unit}
+                          onChange={(v) => handleChange("storage_unit", v)}
+                          options={[{ value: "", label: "Not set" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
+                        />
+                      </div>
                   </div>
                 )}
                 <Field
@@ -422,22 +513,15 @@ function ProductCreatePage() {
                   step="1"
                   min="0"
                 />
-                <Select
-                  label="Storage unit"
-                  hint="How this item is held in stock (e.g., rods, bags, cases)"
-                  value={form.storage_unit}
-                  onChange={(v) => handleChange("storage_unit", v)}
-                  options={[{ value: "", label: "Not set" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
-                />
-                <Field
-                  type="number"
-                  label="Storage qty"
-                  hint="Optional: quantity per storage unit (weight, volume, or count; e.g., kg per rod/bag)"
-                  value={form.storage_weight}
-                  onChange={(v) => handleChange("storage_weight", v)}
-                  step="0.01"
-                  min="0"
-                />
+                {!(isIngredientOrRaw && !form.has_variations) && (
+                  <Select
+                    label="Storage unit"
+                    hint="How this item is held in stock (e.g., rods, bags, cases)"
+                    value={form.storage_unit}
+                    onChange={(v) => handleChange("storage_unit", v)}
+                    options={[{ value: "", label: "Not set" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
+                  />
+                )}
                 {!isIngredient && (
                   <Field
                     type="number"
@@ -451,12 +535,6 @@ function ProductCreatePage() {
                 )}
               </>
             )}
-            <Field
-              label="Image URL (optional)"
-              hint="Link to product image"
-              value={form.image_url}
-              onChange={(v) => handleChange("image_url", v)}
-            />
           </div>
 
           {!form.has_variations && (

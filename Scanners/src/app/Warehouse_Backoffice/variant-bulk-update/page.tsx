@@ -40,7 +40,34 @@ const itemKinds = [
   { value: "raw", label: "Raw (unprocessed material)" },
 ];
 
-const unitOptions = qtyUnits.map((value) => ({ value, label: value }));
+const formatUnitLabel = (unit: string) => {
+  const trimmed = unit.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  const mapped =
+    lower === "each"
+      ? "Each"
+      : lower === "g"
+        ? "Gram(s)"
+        : lower === "kg"
+          ? "Kilogram(s)"
+          : lower === "mg"
+            ? "Milligram(s)"
+            : lower === "ml"
+              ? "Millilitre(s)"
+              : lower === "l"
+                ? "Litre(s)"
+                : lower === "packet"
+                  ? "Packet(s)"
+                  : lower === "box"
+                    ? "Box(es)"
+                    : null;
+  if (mapped) return mapped;
+  const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+  return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
+};
+
+const unitOptions = qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }));
 
 const fieldOptions = [
   { value: "sku", label: "SKU", type: "text" },
