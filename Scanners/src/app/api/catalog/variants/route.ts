@@ -276,7 +276,8 @@ export async function GET(request: Request) {
         itemsError = fallback.error;
       }
       if (itemsError) throw itemsError;
-      itemIds = (itemRows ?? []).map((row) => row.id).filter(Boolean) as string[];
+      const rows = (itemRows ?? []) as Array<{ id: string | null | undefined }>;
+      itemIds = rows.map((row) => row.id).filter(Boolean) as string[];
     }
 
     if (itemIds.length === 0 && !id) {
