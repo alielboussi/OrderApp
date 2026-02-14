@@ -1771,7 +1771,7 @@ function createHtml(config: {
     </article>
   </section>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
+  <script src="/vendor/supabase.min.js"></script>
   <script>
     (function () {
     const SUPABASE_URL_RAW = ${JSON.stringify(PROJECT_URL)};

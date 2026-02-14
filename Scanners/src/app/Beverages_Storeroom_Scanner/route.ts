@@ -1784,7 +1784,7 @@ function createHtml(config: {
     </article>
   </section>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
+  <script src="/vendor/supabase.min.js"></script>
   <script>
     (function () {
     const SUPABASE_URL_RAW = ${JSON.stringify(PROJECT_URL)};
@@ -4654,6 +4654,10 @@ function createHtml(config: {
         }
       }
 
+      function handleProductScan(raw) {
+        searchProductsWithScan(raw);
+      }
+
       function searchProductsWithScan(raw) {
         const value = raw.trim();
         if (!value) return;
@@ -4662,9 +4666,71 @@ function createHtml(config: {
 
         const findLooseVariation = () => {
           return Array.from(state.variationIndex.values()).find((variation) => {
-            return;
-          showResult(error.message ?? 'Failed to load metadata', true);
+            if (!variation) return false;
+            const keys = [variation.id, variation.sku, variation.supplier_sku].filter(Boolean);
+            return keys.some((key) => {
+              const keyValue = String(key).toLowerCase();
+              return keyValue === normalized || normalizeKey(keyValue) === compact;
+            });
+          });
+        };
+
+        const matchedVariation =
+          state.variationIndex.get(value) ||
+          state.variationIndex.get(normalized) ||
+          state.variationIndex.get(compact) ||
+          findLooseVariation();
+
+        let product = null;
+        let preferredVariation = null;
+
+        if (matchedVariation?.product_id) {
+          product = state.products.find((item) => item?.id === matchedVariation.product_id) ?? null;
+          preferredVariation = matchedVariation;
         }
+
+        if (!product) {
+          product =
+            state.products.find((item) => {
+              if (!item) return false;
+              const keys = [item.id, item.sku, item.supplier_sku].filter(Boolean);
+              return keys.some((key) => {
+                const keyValue = String(key).toLowerCase();
+                return keyValue === normalized || normalizeKey(keyValue) === compact;
+              });
+            }) ?? null;
+        }
+
+        if (!product) {
+          const nameMatches = state.products.filter((item) => {
+            const name = (item?.name ?? '').toString().toLowerCase();
+            return name && name.includes(normalized);
+          });
+          if (nameMatches.length === 1) {
+            product = nameMatches[0];
+          }
+        }
+
+        if (!product) {
+          showResult('No matching product found for "' + value + '".', true);
+          return;
+        }
+
+        if (preferredVariation) {
+          openVariantModal(product, preferredVariation, state.mode);
+          return;
+        }
+
+        const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
+        const variations = state.variations.get(product.id) ?? [];
+        const hasVariants = Boolean(product.has_variations) || variations.length > 0;
+
+        if (hasVariants && !isIngredient) {
+          openVariantModal(product, null, state.mode);
+          return;
+        }
+
+        promptQuantity(product, null, state.mode);
       }
 
       scannerWedge?.addEventListener('keydown', (event) => {
