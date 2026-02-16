@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 type SummaryPayload = {
   processedBy?: unknown;
   operator?: unknown;
+  dateTime?: unknown;
+  window?: unknown;
   destLabel?: unknown;
   destinationLabel?: unknown;
   route?: unknown;
