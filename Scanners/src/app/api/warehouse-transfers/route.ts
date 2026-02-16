@@ -134,12 +134,32 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const createdByIds = Array.from(
+      new Set((data ?? []).map((transfer) => transfer.created_by).filter((id): id is string => !!id))
+    );
+    const operatorFallbackMap = new Map<string, string>();
+    if (createdByIds.length > 0) {
+      const { data: userRows, error: userError } = await supabase
+        .schema('auth')
+        .from('users')
+        .select('id,email,raw_user_meta_data')
+        .in('id', createdByIds);
+      if (userError) throw userError;
+      (userRows ?? []).forEach((row) => {
+        const meta = row?.raw_user_meta_data as { display_name?: string } | null;
+        const display = meta?.display_name?.trim() || row?.email?.trim();
+        if (row?.id && display) operatorFallbackMap.set(row.id, display);
+      });
+    }
+
     const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => {
       const sourceIdValue = transfer.source_warehouse_id;
       const destIdValue = transfer.destination_warehouse_id;
       const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;
       const destName = destIdValue ? warehouseMap.get(destIdValue) ?? null : null;
-      const operatorName = transfer.operator_name ?? null;
+      const operatorName = (transfer.operator_name ?? '').trim();
+      const fallbackName = transfer.created_by ? operatorFallbackMap.get(transfer.created_by) ?? null : null;
+      const resolvedOperator = operatorName && operatorName !== 'Operator' ? operatorName : fallbackName ?? operatorName;
 
       return {
         id: transfer.id,
@@ -150,7 +170,7 @@ export async function GET(req: NextRequest) {
         completed_at: transfer.created_at ?? null,
         source_location_id: sourceIdValue,
         dest_location_id: destIdValue,
-        operator_name: operatorName,
+        operator_name: resolvedOperator || null,
         source: sourceIdValue ? { id: sourceIdValue, name: sourceName } : null,
         dest: destIdValue ? { id: destIdValue, name: destName } : null,
         items: Array.isArray(transfer.items)

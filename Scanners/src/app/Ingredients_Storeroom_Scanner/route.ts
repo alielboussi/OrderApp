@@ -4283,7 +4283,18 @@ function createHtml(config: {
           console.warn('Supplier fetch: network offline (skipping direct Supabase queries)');
         }
 
-        const matchesScannerArea = (supplier) => supplier?.scanner_id === SCANNER_ID;
+        const matchesScannerArea = (supplier) => {
+          if (!supplier) return false;
+          const scannerIds = Array.isArray(supplier.scanner_ids)
+            ? supplier.scanner_ids.filter(Boolean)
+            : Array.isArray(supplier.scanners)
+              ? supplier.scanners.map((scanner) => scanner?.id).filter(Boolean)
+              : supplier.scanner_id
+                ? [supplier.scanner_id]
+                : [];
+          if (!scannerIds.length) return true;
+          return scannerIds.includes(SCANNER_ID);
+        };
 
         const linkTableSelect = (withScanner) =>
           withScanner
@@ -4361,13 +4372,27 @@ function createHtml(config: {
           return Array.isArray(payload?.suppliers) ? payload.suppliers : [];
         };
 
+        const hasScannerInfo = (supplier) => {
+          if (!supplier) return false;
+          if (supplier.scanner_id) return true;
+          if (Array.isArray(supplier.scanner_ids) && supplier.scanner_ids.length) return true;
+          if (Array.isArray(supplier.scanners) && supplier.scanners.length) return true;
+          return false;
+        };
+
         const mergeSuppliers = (baseList, extraList) => {
           const map = new Map();
           (Array.isArray(baseList) ? baseList : []).forEach((supplier) => {
             if (supplier?.id) map.set(supplier.id, supplier);
           });
           (Array.isArray(extraList) ? extraList : []).forEach((supplier) => {
-            if (supplier?.id && !map.has(supplier.id)) {
+            if (!supplier?.id) return;
+            if (!map.has(supplier.id)) {
+              map.set(supplier.id, supplier);
+              return;
+            }
+            const existing = map.get(supplier.id);
+            if (!hasScannerInfo(existing) && hasScannerInfo(supplier)) {
               map.set(supplier.id, supplier);
             }
           });

@@ -35,6 +35,15 @@ interface TransferRow {
   items: TransferItem[];
 }
 
+interface StockPeriod {
+  id: string;
+  warehouse_id: string;
+  status: string;
+  opened_at: string | null;
+  closed_at: string | null;
+  stocktake_number: string | null;
+}
+
 const AUTO_REFRESH_MS = 120_000; // 2 minutes
 const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/transfers";
 
@@ -129,6 +138,8 @@ export default function WarehouseTransfersWeb() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [periods, setPeriods] = useState<StockPeriod[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualRefreshTick, setManualRefreshTick] = useState(0);
@@ -164,6 +175,16 @@ export default function WarehouseTransfersWeb() {
   const handleBackOne = () => {
     allowNavRef.current = true;
     router.back();
+  };
+
+  const formatDateInput = (value?: string | null) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
   useEffect(() => {
@@ -238,6 +259,28 @@ export default function WarehouseTransfersWeb() {
       setSourceId(lockedFromId.trim());
     }
   }, [lockedFromActive, lockedFromId]);
+
+  useEffect(() => {
+    const loadPeriods = async () => {
+      const periodWarehouseId = lockedFromActive ? lockedFromId.trim() : sourceId.trim();
+      if (!periodWarehouseId) {
+        setPeriods([]);
+        setSelectedPeriodId("");
+        return;
+      }
+      try {
+        const data = await fetchJson<{ periods?: StockPeriod[] }>(
+          `/api/warehouse-periods?warehouseId=${encodeURIComponent(periodWarehouseId)}`
+        );
+        const list = normalizeList<StockPeriod>(data, ["periods"]);
+        setPeriods(list);
+      } catch (err) {
+        setPeriods([]);
+        setError(normalizeErrorMessage(err) || "Unable to load stock periods");
+      }
+    };
+    loadPeriods();
+  }, [lockedFromActive, lockedFromId, sourceId]);
 
   const loadTransfers = async () => {
     setLoading(true);
@@ -375,8 +418,45 @@ export default function WarehouseTransfersWeb() {
               />
             </div>
             <div className={styles.gridTwo}>
-              <LabeledDate label="From date" value={formatDateRangeValue(startDate)} onChange={setStartDate} />
-              <LabeledDate label="To date" value={formatDateRangeValue(endDate)} onChange={setEndDate} />
+              <LabeledDate
+                label="From date"
+                value={formatDateRangeValue(startDate)}
+                onChange={(value) => {
+                  setStartDate(value);
+                  if (selectedPeriodId) setSelectedPeriodId("");
+                }}
+              />
+              <LabeledDate
+                label="To date"
+                value={formatDateRangeValue(endDate)}
+                onChange={(value) => {
+                  setEndDate(value);
+                  if (selectedPeriodId) setSelectedPeriodId("");
+                }}
+              />
+            </div>
+            <div className={styles.gridTwo}>
+              <LabeledSelect
+                label="Stock period"
+                value={selectedPeriodId}
+                onChange={(value) => {
+                  setSelectedPeriodId(value);
+                  const match = periods.find((period) => period.id === value);
+                  if (!match) {
+                    setStartDate("");
+                    setEndDate("");
+                    return;
+                  }
+                  setStartDate(formatDateInput(match.opened_at));
+                  setEndDate(formatDateInput(match.closed_at ?? new Date().toISOString()));
+                }}
+                options={periods.map((period) => ({
+                  id: period.id,
+                  name: period.stocktake_number || period.id.slice(0, 8),
+                }))}
+                placeholder="Any period"
+              />
+              <div className={styles.fieldStack} />
             </div>
             <div className={styles.stackSm}>
               <label className={styles.label}>Search everything</label>
@@ -391,6 +471,12 @@ export default function WarehouseTransfersWeb() {
               </div>
               <div className={styles.pillRow}>
                 <button
+                  className={styles.primaryBtn}
+                  onClick={() => setManualRefreshTick((v) => v + 1)}
+                >
+                  Search
+                </button>
+                <button
                   className={styles.dangerPill}
                   onClick={() => {
                     setSourceId(lockedFromActive ? lockedFromId : "");
@@ -398,6 +484,7 @@ export default function WarehouseTransfersWeb() {
                     setStartDate("");
                     setEndDate("");
                     setSearchQuery("");
+                    setSelectedPeriodId("");
                     setManualRefreshTick((v) => v + 1);
                   }}
                 >

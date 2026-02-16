@@ -117,6 +117,7 @@ export default function OutletWarehouseBalancesPage() {
   const [baseOnly, setBaseOnly] = useState(false);
   const [showZeroOrNegative, setShowZeroOrNegative] = useState(false);
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
+  const [includePurchases, setIncludePurchases] = useState(true);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -344,8 +345,7 @@ export default function OutletWarehouseBalancesPage() {
           "outlet_sale",
           "damage",
           "recipe_consumption",
-          "purchase_receipt",
-          "rollup_production",
+          ...(includePurchases ? ["purchase_receipt"] : []),
         ];
 
         const { data: ledgerRows, error: ledgerError } = await supabase
@@ -652,6 +652,14 @@ export default function OutletWarehouseBalancesPage() {
                 onChange={(event) => setShowPackWeightTotals(event.target.checked)}
               />
               Pack weight total
+            </label>
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={includePurchases}
+                onChange={(event) => setIncludePurchases(event.target.checked)}
+              />
+              Purchases
             </label>
           </div>
         </section>
