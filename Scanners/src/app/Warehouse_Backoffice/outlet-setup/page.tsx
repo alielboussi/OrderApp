@@ -75,6 +75,7 @@ export default function OutletSetupPage() {
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedRoutingVariantKeys, setSelectedRoutingVariantKeys] = useState<string[]>(["base"]);
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
+  const [selectedIngredientVariantKeys, setSelectedIngredientVariantKeys] = useState<string[]>(["base"]);
   const [selectedRawId, setSelectedRawId] = useState<string>("");
 
   type RoutingGroup = "product" | "ingredient" | "raw";
@@ -196,6 +197,17 @@ export default function OutletSetupPage() {
       }));
     return [base, ...scoped];
   }, [selectedProductId, variants]);
+  const ingredientVariantOptions = useMemo(() => {
+    const base = { value: "base", label: "Base ingredient" };
+    if (!selectedIngredientId) return [base];
+    const scoped = variants
+      .filter((variant) => variant.item_id === selectedIngredientId)
+      .map((variant) => ({
+        value: variant.id,
+        label: variant.name || variant.id,
+      }));
+    return [base, ...scoped];
+  }, [selectedIngredientId, variants]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select catalog item" }, ...items], [items]);
   const posVariantOptions = useMemo(() => {
     const base = { value: "base", label: "Use base product" };
@@ -336,16 +348,23 @@ export default function OutletSetupPage() {
   useEffect(() => {
     if (status !== "ok") return;
     if (!selectedIngredientId) {
+      setSelectedIngredientVariantKeys((prev) =>
+        prev.length === 1 && prev[0] === "base" ? prev : ["base"]
+      );
       setIngredientRoutes({});
       setRoutingMessage((prev) => ({ ...prev, ingredient: null }));
       setRoutingLoading((prev) => ({ ...prev, ingredient: false }));
+      return;
+    }
+    const activeVariantKeys = selectedIngredientVariantKeys.length ? selectedIngredientVariantKeys : ["base"];
+    if (activeVariantKeys.length !== 1) {
       return;
     }
     const loadRoutes = async () => {
       setRoutingLoading((prev) => ({ ...prev, ingredient: true }));
       setRoutingMessage((prev) => ({ ...prev, ingredient: null }));
       try {
-        const res = await fetch(`/api/outlet-routes?item_id=${selectedIngredientId}&variant_key=base`);
+        const res = await fetch(`/api/outlet-routes?item_id=${selectedIngredientId}&variant_key=${activeVariantKeys[0]}`);
         if (!res.ok) throw new Error("Could not load ingredient routes");
         const json = await res.json();
         const routeMap: RouteRecord = {};
@@ -363,7 +382,7 @@ export default function OutletSetupPage() {
       }
     };
     loadRoutes();
-  }, [selectedIngredientId, status]);
+  }, [selectedIngredientId, selectedIngredientVariantKeys, status]);
 
   // Load routes for selected raw
   useEffect(() => {
@@ -547,7 +566,7 @@ export default function OutletSetupPage() {
     }
     const selection =
       group === "ingredient"
-        ? { itemId: selectedIngredientId, variantKeys: ["base"] }
+        ? { itemId: selectedIngredientId, variantKeys: selectedIngredientVariantKeys.length ? selectedIngredientVariantKeys : ["base"] }
         : group === "raw"
           ? { itemId: selectedRawId, variantKeys: ["base"] }
           : { itemId: selectedProductId, variantKeys: selectedRoutingVariantKeys.length ? selectedRoutingVariantKeys : ["base"] };
@@ -560,7 +579,7 @@ export default function OutletSetupPage() {
       return false;
     }
 
-    if (group === "product" && selection.variantKeys.length === 0) {
+    if ((group === "product" || group === "ingredient") && selection.variantKeys.length === 0) {
       setRoutingMessage((prev) => ({ ...prev, [group]: { ok: false, text: "Select at least one variant" } }));
       return false;
     }
@@ -1079,6 +1098,7 @@ export default function OutletSetupPage() {
                   onChange={(e) => {
                     const value = e.target.value;
                     setSelectedIngredientId(value);
+                    setSelectedIngredientVariantKeys(["base"]);
                     if (value) {
                       setSelectedRawId("");
                     }
@@ -1093,6 +1113,43 @@ export default function OutletSetupPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className={styles.selectGroup}>
+                <div className={styles.subHeading}>Ingredient variants (deduct)</div>
+                <div className={styles.variantChooser} aria-label="Select ingredient variants for routing">
+                  {!selectedIngredientId ? (
+                    <div className={styles.variantHint}>Select an ingredient to choose variants</div>
+                  ) : (
+                    <div className={styles.variantList}>
+                      {ingredientVariantOptions.map((variant) => {
+                        const checked = selectedIngredientVariantKeys.includes(variant.value);
+                        return (
+                          <label key={`ingredient-variant-${variant.value}`} className={styles.variantOption}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={routingLoading.ingredient || ingredientVariantOptions.length <= 1}
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                setSelectedIngredientVariantKeys((prev) => {
+                                  if (isChecked) return Array.from(new Set([...prev, variant.value]));
+                                  const next = prev.filter((v) => v !== variant.value);
+                                  return next.length ? next : ["base"];
+                                });
+                                setSelectedRawId("");
+                              }}
+                            />
+                            <span>{variant.label}</span>
+                          </label>
+                        );
+                      })}
+                      <div className={styles.variantHint}>
+                        Tick multiple ingredient variants to apply the same outlet warehouse to each.
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className={styles.selectGroup}>
@@ -1122,7 +1179,7 @@ export default function OutletSetupPage() {
             <div className={styles.inlineHint}>
               <div className={styles.inlineTitle}>Linked dropdowns</div>
               <div className={styles.inlineBody}>
-                Variants only unlock when the product has variants. Ingredients and raws can be assigned directly without selecting a finished product.
+                Variants only unlock when the item has variants. Ingredients and raws can be assigned directly without selecting a finished product.
               </div>
             </div>
 

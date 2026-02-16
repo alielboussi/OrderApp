@@ -14,6 +14,7 @@ type Item = {
   has_variations?: boolean | null;
   has_recipe?: boolean | null;
   base_recipe_count?: number | null;
+  image_url?: string | null;
 };
 
 type Variant = {
@@ -24,6 +25,7 @@ type Variant = {
   supplier_sku?: string | null;
   active?: boolean | null;
   has_recipe?: boolean | null;
+  image_url?: string | null;
 };
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
@@ -204,7 +206,13 @@ export default function CatalogMenuPage() {
                   return (
                     <article key={item.id} className={styles.card}>
                       <div className={styles.cardHeader}>
-                        <div className={styles.cardTitleBlock}>
+                        <div className={styles.cardMain}>
+                          {item.image_url ? (
+                            <div className={styles.itemImageWrap}>
+                              <img className={styles.itemImage} src={item.image_url} alt={item.name} loading="lazy" />
+                            </div>
+                          ) : null}
+                          <div className={styles.cardTitleBlock}>
                           <div className={styles.rowTop}>
                             <p className={styles.itemKind}>{item.item_kind || "product"}</p>
                             <button className={styles.linkButton} onClick={() => router.push(`/Warehouse_Backoffice/catalog/product?id=${item.id}`)}>
@@ -216,6 +224,7 @@ export default function CatalogMenuPage() {
                           </div>
                           <h2 className={styles.itemName}>{item.name}</h2>
                           {item.sku && <p className={styles.sku}>SKU: {item.sku}</p>}
+                          </div>
                         </div>
                         <div className={styles.badges}>
                           <span className={`${styles.badge} ${item.active === false ? styles.badgeMuted : styles.badgeLive}`}>
@@ -243,12 +252,24 @@ export default function CatalogMenuPage() {
                           ) : (
                             itemVariants.map((variant) => (
                               <div key={variant.id} className={styles.variantRow}>
-                                <div>
+                                <div className={styles.variantInfo}>
+                                  {(variant.image_url || item.image_url) ? (
+                                    <div className={styles.variantImageWrap}>
+                                      <img
+                                        className={styles.variantImage}
+                                        src={variant.image_url || item.image_url || ""}
+                                        alt={variant.name || item.name}
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  ) : null}
+                                  <div>
                                   <p className={styles.variantName}>{variant.name}</p>
                                   {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
                                   {variant.supplier_sku && (
                                     <p className={styles.variantSupplierSku}>Supplier SKU: {variant.supplier_sku}</p>
                                   )}
+                                  </div>
                                 </div>
                                 <div className={styles.variantActions}>
                                   <span

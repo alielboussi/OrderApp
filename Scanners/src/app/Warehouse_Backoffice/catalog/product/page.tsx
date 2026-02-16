@@ -326,6 +326,12 @@ function ProductCreatePage() {
               onChange={(v) => handleChange("item_kind", v)}
               options={itemKinds}
             />
+            <Field
+              label="Image URL (optional)"
+              hint="Link to product image"
+              value={form.image_url}
+              onChange={(v) => handleChange("image_url", v)}
+            />
             {!disableVariantControlled && (
               <>
                 <Select
@@ -341,12 +347,6 @@ function ProductCreatePage() {
                   value={form.stocktake_uom}
                   onChange={(v) => handleChange("stocktake_uom", v)}
                   options={[{ value: "", label: "Use consumption unit" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
-                />
-                <Field
-                  label="Image URL (optional)"
-                  hint="Link to product image"
-                  value={form.image_url}
-                  onChange={(v) => handleChange("image_url", v)}
                 />
                 <Field
                   type="number"

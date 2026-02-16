@@ -1208,9 +1208,30 @@ fun StocktakeCountScreen(
             emptyList()
         }
         val recipeLoading = hasRecipe && ui.recipeIngredientsLoading.contains(recipeKey)
-        val variantRows = dialogRows.filter { (it.variantKey ?: "base") != "base" }
+        val variantRowsExisting = dialogRows.filter { (it.variantKey ?: "base") != "base" }
+        val variantRowsFromCatalog = ui.variations
+            .filter { it.productId == dialogItemId }
+            .mapNotNull { variation ->
+                val key = variation.key?.ifBlank { variation.id } ?: variation.id
+                if (key.isBlank() || key.equals("base", ignoreCase = true)) return@mapNotNull null
+                com.afterten.orders.data.SupabaseProvider.WarehouseStockItem(
+                    itemId = dialogItemId,
+                    itemName = baseRow?.itemName,
+                    variantKey = key,
+                    netUnits = null,
+                    unitCost = baseRow?.unitCost,
+                    itemKind = baseRow?.itemKind,
+                    imageUrl = baseRow?.imageUrl,
+                    hasRecipe = baseRow?.hasRecipe
+                )
+            }
+        val variantRows = (variantRowsExisting + variantRowsFromCatalog)
+            .distinctBy { row -> row.variantKey?.lowercase()?.ifBlank { "base" } ?: "base" }
+
+        val hasIngredientVariants = isIngredient && variantRows.isNotEmpty()
         val displayRows = when {
             hasRecipe -> ingredientRows
+            hasIngredientVariants -> variantRows
             isIngredient -> listOfNotNull(baseRow)
             variantRows.isNotEmpty() -> variantRows
             else -> listOfNotNull(baseRow)
@@ -1267,7 +1288,15 @@ fun StocktakeCountScreen(
             }
 
             Text(
-                if (hasRecipe) "Enter ingredient counts" else if (isIngredient) "Enter ingredient count" else "Enter variant counts",
+                if (hasRecipe) {
+                    "Enter ingredient counts"
+                } else if (hasIngredientVariants) {
+                    "Enter ingredient variant counts"
+                } else if (isIngredient) {
+                    "Enter ingredient count"
+                } else {
+                    "Enter variant counts"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.8f)
             )
@@ -1304,10 +1333,12 @@ fun StocktakeCountScreen(
                         } else {
                             variantLabelMap[key] ?: variantLabelMap[key.lowercase()] ?: key.take(8)
                         }
-                        val imageModel = if (hasRecipe || isIngredient || key == "base") {
+                        val imageModel = if (hasRecipe || key == "base") {
                             row.imageUrl
                         } else {
-                            variantImageMap[key] ?: variantImageMap[key.lowercase()]
+                            variantImageMap[key]
+                                ?: variantImageMap[key.lowercase()]
+                                ?: row.imageUrl
                         }
                         val uom = variantStocktakeUomMap[key] ?: variantStocktakeUomMap[key.lowercase()]
                             ?: ui.stocktakeUoms[row.itemId]
