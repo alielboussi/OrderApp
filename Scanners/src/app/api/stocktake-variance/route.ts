@@ -82,9 +82,25 @@ export async function GET(request: Request) {
   const damageMap = new Map<string, number>();
   const salesMap = new Map<string, number>();
 
+  const countedKeys = new Set<string>([...openingMap.keys(), ...closingMap.keys()]);
+
+  if (countedKeys.size === 0) {
+    return NextResponse.json({
+      period: {
+        id: periodRow.id,
+        opened_at: periodRow.opened_at,
+        closed_at: periodRow.closed_at,
+        stocktake_number: periodRow.stocktake_number,
+        warehouse_id: periodRow.warehouse_id,
+      },
+      rows: [],
+    });
+  }
+
   (ledgerRows ?? []).forEach((row) => {
     if (!row?.item_id) return;
     const key = toKey(row.item_id, row.variant_key);
+    if (!countedKeys.has(key)) return;
     const delta = parseQty(row.delta_units);
     if (row.reason === "warehouse_transfer") {
       transferMap.set(key, (transferMap.get(key) ?? 0) + delta);
@@ -95,13 +111,7 @@ export async function GET(request: Request) {
     }
   });
 
-  const keys = new Set<string>([
-    ...openingMap.keys(),
-    ...closingMap.keys(),
-    ...transferMap.keys(),
-    ...damageMap.keys(),
-    ...salesMap.keys(),
-  ]);
+  const keys = new Set<string>(countedKeys);
 
   const itemIds = Array.from(new Set(Array.from(keys).map((key) => key.split("::")[0])));
 

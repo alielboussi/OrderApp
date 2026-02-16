@@ -45,6 +45,13 @@ function getScannerConfig(scanner: string | null) {
   return null;
 }
 
+function getScannerLabel(scanner: string | null) {
+  if (scanner === 'ingredients') return 'Ingredients Storeroom';
+  if (scanner === 'beverages') return 'Beverages Storeroom';
+  if (scanner === 'supervisor') return 'Supervisor';
+  return 'Supervisor';
+}
+
 function formatItemsBlock(summary: SummaryPayload) {
   const items = Array.isArray(summary.items) ? summary.items : [];
   const lines = items
@@ -81,7 +88,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage') {
+function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage', scanner: string | null) {
   const typeLabel = context === 'purchase' ? 'Purchase' : context === 'damage' ? 'Damage' : 'Transfer';
   const operator = String(summary.processedBy ?? summary.operator ?? 'Unknown operator');
   const destination = String(
@@ -89,8 +96,10 @@ function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' 
   );
   const dateTime = String(summary.dateTime ?? summary.window ?? '');
   const itemsBlock = formatItemsBlock(summary);
+  const scannerLabel = getScannerLabel(scanner);
 
   const lines = [
+    `<b>${escapeHtml(scannerLabel)}</b>`,
     `<b>Outlet/Home &amp; Department: ${escapeHtml(destination)}</b>`,
     `Type: ${escapeHtml(typeLabel)}`,
     dateTime ? `Date &amp; Time: ${escapeHtml(dateTime)}` : '',
@@ -127,7 +136,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing Telegram configuration' }, { status: 500 });
   }
 
-  const message = buildMessage(summary, context);
+  const message = buildMessage(summary, context, scanner);
   const response = await fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -688,7 +688,7 @@ fun StocktakePeriodCountsScreen(
                 title = { Text("Import previous closing counts") },
                 text = {
                     Text(
-                        "This will overwrite opening counts for this period using the previous period's closing counts. Items with no previous count will be set to 0."
+                        "This will overwrite opening counts for this period using the previous period's closing counts. Items with no previous count will be left blank."
                     )
                 },
                 confirmButton = {
@@ -699,7 +699,7 @@ fun StocktakePeriodCountsScreen(
                             vm.importPreviousClosingIntoOpening(
                                 periodId = periodId,
                                 warehouseId = warehouseId,
-                                includeZeros = true,
+                                includeZeros = false,
                                 auto = false
                             )
                         }
@@ -1315,6 +1315,7 @@ fun StocktakeCountScreen(
                             ?: ui.productUoms[row.itemId]
                             ?: "each"
                         val qtyKey = "${row.itemId}|$key"
+                        val normalizedQtyKey = qtyKey.lowercase()
                         val rowDecimals = resolveDecimals(row.itemId, key, uom)
                         val step = stepForDecimals(rowDecimals)
                         val currentQty = dialogQty[qtyKey].orEmpty()
@@ -1322,6 +1323,7 @@ fun StocktakeCountScreen(
                         val closingLocked = ui.closingLockedKeys.contains(qtyKey)
                         val entryMode = if (openingLocked) "closing" else "opening"
                         val isLocked = if (entryMode == "closing") closingLocked else false
+                        val hasOpeningCount = openingCountMap.containsKey(normalizedQtyKey)
                         val fieldBorder = if (isLocked) primaryRed.copy(alpha = 0.4f) else primaryRed
                         val fieldText = if (isLocked) Color.White.copy(alpha = 0.6f) else Color.White
 
@@ -1335,6 +1337,16 @@ fun StocktakeCountScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
+                                if (hasOpeningCount) {
+                                    Text(
+                                        "Tally Mark",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier
+                                            .background(primaryRed.copy(alpha = 0.85f), RoundedCornerShape(999.dp))
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
                                 AsyncImage(
                                     model = imageModel,
                                     contentDescription = "Item photo",

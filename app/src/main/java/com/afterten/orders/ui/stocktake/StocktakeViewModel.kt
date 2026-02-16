@@ -396,21 +396,6 @@ class StocktakeViewModel(
                         pushDebug("closePeriod: load closing counts failed: ${err.message}")
                     }.getOrElse { emptyList() }
 
-                    val allItems = if (_ui.value.allItems.isNotEmpty()) {
-                        _ui.value.allItems
-                    } else {
-                        runCatching {
-                            val fetched = repo.listWarehouseItems(jwt, warehouseId, null, null)
-                            val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
-                                .onFailure { pushDebug("closePeriod: warehouse_stock_items failed: ${it.message}") }
-                                .getOrElse { emptyList() }
-                            (fetched + direct).distinctBy { it.itemId to (it.variantKey ?: "base") }
-                        }.onFailure { err ->
-                            Log.e(TAG, "closePeriod: failed to load warehouse items", err)
-                            pushDebug("closePeriod: load warehouse items failed: ${err.message}")
-                        }.getOrElse { emptyList() }
-                    }
-
                     val newPeriod = runCatching {
                         repo.startPeriod(jwt, warehouseId, "Auto-opened from ${period.stocktakeNumber ?: period.id}")
                     }.onFailure { err ->
@@ -459,28 +444,6 @@ class StocktakeViewModel(
                             hadSeedFailure = true
                             Log.e(TAG, "closePeriod: seed opening count failed", err)
                             pushDebug("closePeriod: seed opening count failed: ${err.message}")
-                        }
-                        seededKeys.add(key)
-                    }
-
-                    allItems.forEach { item ->
-                        val variant = item.variantKey?.ifBlank { "base" } ?: "base"
-                        val key = "${item.itemId}|${variant}".lowercase()
-                        if (seededKeys.contains(key)) return@forEach
-                        runCatching {
-                            repo.recordCount(
-                                jwt = jwt,
-                                periodId = newPeriod.id,
-                                itemId = item.itemId,
-                                qty = 0.0,
-                                variantKey = variant,
-                                kind = "opening",
-                                context = mapOf("auto_seed" to "true", "from_period" to period.id)
-                            )
-                        }.onFailure { err ->
-                            hadSeedFailure = true
-                            Log.e(TAG, "closePeriod: seed opening zero failed", err)
-                            pushDebug("closePeriod: seed opening zero failed: ${err.message}")
                         }
                         seededKeys.add(key)
                     }
@@ -616,7 +579,7 @@ class StocktakeViewModel(
                         importPreviousClosingIntoOpening(
                             periodId = period.id,
                             warehouseId = period.warehouseId,
-                            includeZeros = true,
+                            includeZeros = false,
                             auto = true
                         )
                     }
@@ -631,7 +594,7 @@ class StocktakeViewModel(
     fun importPreviousClosingIntoOpening(
         periodId: String,
         warehouseId: String,
-        includeZeros: Boolean = true,
+        includeZeros: Boolean = false,
         auto: Boolean = false
     ) {
         val jwt = session?.token ?: return
@@ -797,6 +760,13 @@ class StocktakeViewModel(
             .map { row -> "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase() }
             .toSet()
 
+        val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
+            .toString()
+
+        if (includedKeys.isEmpty()) {
+            return VarianceReport(period = period, rows = emptyList(), generatedAt = nowLabel)
+        }
+
         val ledgerRows = repo.listStockLedgerForPeriod(jwt, period.warehouseId, openedAt, closedAt)
         val transfersByKey = mutableMapOf<String, Double>()
         val damagesByKey = mutableMapOf<String, Double>()
@@ -839,7 +809,7 @@ class StocktakeViewModel(
         val rows = varianceRows
             .filter { row ->
                 val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
-                includedKeys.isEmpty() || includedKeys.contains(key)
+                includedKeys.contains(key)
             }
             .map { row ->
                 val variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
@@ -876,9 +846,6 @@ class StocktakeViewModel(
             }
             .filterNotNull()
             .sortedBy { it.itemLabel.lowercase() }
-
-        val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
-            .toString()
 
         return VarianceReport(period = period, rows = rows, generatedAt = nowLabel)
     }
