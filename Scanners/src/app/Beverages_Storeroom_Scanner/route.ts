@@ -2936,10 +2936,10 @@ function createHtml(config: {
       function mapCartSnapshotToLineItems(cartSnapshot) {
         return cartSnapshot.map((item, index) => ({
           productName: item.productName ?? 'Item ' + (index + 1),
-          variationName: item.variationName ?? 'Base',
+          variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: item.uom ?? 'unit',
+          unit: item.packUom ?? item.uom ?? 'unit',
           unitCost: item.unitCost ?? null
         }));
       }
@@ -2947,11 +2947,16 @@ function createHtml(config: {
       function buildItemsBlockFromLines(lineItems) {
         return lineItems
           .map((item, index) => {
-            const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
+            const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
+            const useVariationOnly = rawVariation && rawVariation.toLowerCase() !== 'base';
+            const name = useVariationOnly
+              ? rawVariation
+              : (item.productName ?? 'Item ' + (index + 1));
+            const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
             const unitLabel = item.unit ?? 'unit';
             const costLabel = formatAmount(item.unitCost);
-            const base = '• ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
+            const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
           })
           .join('\\n');
@@ -3014,6 +3019,11 @@ function createHtml(config: {
 
       function formatOperatorLabel(context) {
         return OPERATOR_CONTEXT_LABELS[context] ?? 'Console';
+      }
+
+      function getOperatorDisplayName(context) {
+        const session = getValidOperatorSession(context, { silent: true, skipStatusUpdate: true });
+        return session?.displayName ?? state.session?.user?.email ?? 'Unknown operator';
       }
 
       function renderOperatorOptions() {
@@ -4739,8 +4749,8 @@ function createHtml(config: {
           const summary = {
             reference,
             referenceRaw: rawReference,
-            processedBy: state.session?.user?.email ?? 'Unknown operator',
-            operator: state.session?.user?.email ?? 'Unknown operator',
+            processedBy: getOperatorDisplayName('transfer'),
+            operator: getOperatorDisplayName('transfer'),
             sourceLabel: sourceLabel.textContent,
             destLabel: destLabel.textContent,
             route:
@@ -4823,8 +4833,8 @@ function createHtml(config: {
           const summary = {
             reference: 'Damage',
             referenceRaw: 'Damage',
-            processedBy: state.session?.user?.email ?? 'Unknown operator',
-            operator: state.session?.user?.email ?? 'Unknown operator',
+            processedBy: getOperatorDisplayName('damage'),
+            operator: getOperatorDisplayName('damage'),
             sourceLabel: sourceLabel.textContent,
             destLabel: destLabel.textContent,
             route:
@@ -4937,7 +4947,7 @@ function createHtml(config: {
           const summary = {
             reference: receiptRef,
             referenceRaw: receiptRef,
-            processedBy: state.session?.user?.email ?? 'Unknown operator',
+            processedBy: getOperatorDisplayName('purchase'),
             sourceLabel: supplierName,
             destLabel: warehouseName,
             route: supplierName + ' → ' + warehouseName,

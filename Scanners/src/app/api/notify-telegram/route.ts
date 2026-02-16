@@ -47,8 +47,12 @@ function formatItemsBlock(summary: SummaryPayload) {
   const items = Array.isArray(summary.items) ? summary.items : [];
   const lines = items
     .map((item, index) => {
-      const name = String(item.productName ?? `Item ${index + 1}`);
-      const variation = item.variationName ? ` (${item.variationName})` : '';
+      const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
+      const useVariationOnly = rawVariation && rawVariation.toLowerCase() !== 'base';
+      const name = useVariationOnly
+        ? rawVariation
+        : String(item.productName ?? `Item ${index + 1}`);
+      const variation = useVariationOnly ? '' : (rawVariation ? ` (${rawVariation})` : '');
       const qty = item.scannedQty ?? item.qty ?? 0;
       const unit = item.unit ?? 'unit';
       return `• ${name}${variation} — ${qty} ${unit}`.trim();
@@ -66,23 +70,34 @@ function formatItemsBlock(summary: SummaryPayload) {
   return '• No line items provided';
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage') {
   const typeLabel = context === 'purchase' ? 'Purchase' : context === 'damage' ? 'Damage' : 'Transfer';
   const operator = String(summary.processedBy ?? summary.operator ?? 'Unknown operator');
   const destination = String(
     summary.destLabel ?? summary.destinationLabel ?? summary.route ?? 'Unknown destination'
   );
+  const dateTime = String(summary.dateTime ?? summary.window ?? '');
   const itemsBlock = formatItemsBlock(summary);
 
-  return [
-    `Type: ${typeLabel}`,
-    `Operator: ${operator}`,
-    `Outlet/Home & Department: ${destination}`,
+  const lines = [
+    `<b>Outlet/Home &amp; Department: ${escapeHtml(destination)}</b>`,
+    `Type: ${escapeHtml(typeLabel)}`,
+    dateTime ? `Date &amp; Time: ${escapeHtml(dateTime)}` : '',
+    `Operator: ${escapeHtml(operator)}`,
     'Products:',
-    itemsBlock
-  ]
-    .filter(Boolean)
-    .join('\n');
+    escapeHtml(itemsBlock)
+  ].filter(Boolean);
+
+  return lines.join('\n');
 }
 
 export async function POST(request: Request) {
@@ -114,7 +129,7 @@ export async function POST(request: Request) {
   const response = await fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: config.chatId, text: message })
+    body: JSON.stringify({ chat_id: config.chatId, text: message, parse_mode: 'HTML' })
   });
 
   if (!response.ok) {
