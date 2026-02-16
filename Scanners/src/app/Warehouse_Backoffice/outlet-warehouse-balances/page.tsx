@@ -37,6 +37,23 @@ type WarehouseVarianceRow = {
   expected_qty: number | null;
 };
 
+type OpeningCountRow = {
+  period_id: string;
+  item_id: string;
+  variant_key: string | null;
+  counted_qty: number | null;
+  counted_at: string | null;
+};
+
+type StockLedgerRow = {
+  warehouse_id: string | null;
+  item_id: string | null;
+  variant_key: string | null;
+  delta_units: number | null;
+  reason: string | null;
+  occurred_at: string | null;
+};
+
 type WhoAmIRoles = {
   outlets: Array<{ outlet_id: string; outlet_name: string }> | null;
 };
@@ -259,7 +276,7 @@ export default function OutletWarehouseBalancesPage() {
 
         const { data: periodRows, error: periodError } = await supabase
           .from("warehouse_stock_periods")
-          .select("id,warehouse_id,status")
+          .select("id,warehouse_id,status,opened_at")
           .in("warehouse_id", warehouseIds)
           .eq("status", "open");
 
@@ -289,6 +306,74 @@ export default function OutletWarehouseBalancesPage() {
         const rows = (varianceRows as WarehouseVarianceRow[]) || [];
         const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
 
+        const periodOpenedAtById = new Map<string, number>();
+        const periodIdByWarehouse = new Map<string, string>();
+        (periodRows ?? []).forEach((row) => {
+          if (!row?.id || !row?.warehouse_id) return;
+          periodIdByWarehouse.set(row.warehouse_id, row.id);
+          const openedAt = typeof row.opened_at === "string" ? Date.parse(row.opened_at) : NaN;
+          if (!Number.isNaN(openedAt)) periodOpenedAtById.set(row.id, openedAt);
+        });
+
+        const { data: openingRows, error: openingError } = await supabase
+          .from("warehouse_stock_counts")
+          .select("period_id,item_id,variant_key,counted_qty,counted_at")
+          .in("period_id", periodIds)
+          .eq("kind", "opening");
+
+        if (openingError) throw openingError;
+
+        const openingMap = new Map<string, number>();
+        const openingTimeByKey = new Map<string, number>();
+        (openingRows as OpeningCountRow[] | null | undefined)?.forEach((row) => {
+          if (!row?.period_id || !row?.item_id) return;
+          const vKey = (row.variant_key ?? "base").toLowerCase();
+          const key = `${row.period_id}::${row.item_id}::${vKey}`;
+          openingMap.set(key, parseQty(row.counted_qty));
+          const countedAt = typeof row.counted_at === "string" ? Date.parse(row.counted_at) : NaN;
+          if (!Number.isNaN(countedAt)) {
+            const current = openingTimeByKey.get(key);
+            if (current === undefined || countedAt > current) openingTimeByKey.set(key, countedAt);
+          }
+        });
+
+        const minOpenedAt = Math.min(...Array.from(periodOpenedAtById.values()).filter(Number.isFinite));
+        const hasOpenedAt = Number.isFinite(minOpenedAt);
+        const ledgerReasons = [
+          "warehouse_transfer",
+          "outlet_sale",
+          "damage",
+          "recipe_consumption",
+          "purchase_receipt",
+          "rollup_production",
+        ];
+
+        const { data: ledgerRows, error: ledgerError } = await supabase
+          .from("stock_ledger")
+          .select("warehouse_id,item_id,variant_key,delta_units,reason,occurred_at")
+          .eq("location_type", "warehouse")
+          .in("warehouse_id", warehouseIds)
+          .in("reason", ledgerReasons)
+          .in("item_id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"])
+          .gte("occurred_at", hasOpenedAt ? new Date(minOpenedAt).toISOString() : "1970-01-01T00:00:00Z");
+
+        if (ledgerError) throw ledgerError;
+
+        const movementMap = new Map<string, number>();
+        (ledgerRows as StockLedgerRow[] | null | undefined)?.forEach((row) => {
+          if (!row?.warehouse_id || !row?.item_id) return;
+          const periodId = periodIdByWarehouse.get(row.warehouse_id);
+          if (!periodId) return;
+          const vKey = (row.variant_key ?? "base").toLowerCase();
+          const key = `${periodId}::${row.item_id}::${vKey}`;
+          const occurredAt = typeof row.occurred_at === "string" ? Date.parse(row.occurred_at) : NaN;
+          const openingAt = openingTimeByKey.get(key);
+          const baselineAt = openingAt ?? periodOpenedAtById.get(periodId);
+          if (baselineAt !== undefined && !Number.isNaN(occurredAt) && occurredAt < baselineAt) return;
+          const delta = parseQty(row.delta_units);
+          movementMap.set(key, (movementMap.get(key) ?? 0) + delta);
+        });
+
         const { data: itemRows, error: itemError } = await supabase
           .from("catalog_items")
           .select("id,item_kind")
@@ -310,7 +395,10 @@ export default function OutletWarehouseBalancesPage() {
 
           const key = `${row.item_id}::${vKey}::${kind}`;
           const existing = map.get(key);
-          const onHandUnits = parseQty(row.expected_qty);
+          const openingKey = `${row.period_id ?? ""}::${row.item_id}::${vKey}`;
+          const openingQty = openingMap.get(openingKey) ?? 0;
+          const movementQty = movementMap.get(openingKey) ?? 0;
+          const onHandUnits = openingQty + movementQty;
           const isZeroNet = Math.abs(onHandUnits) < 1e-9;
           if (showZeroOrNegative) {
             if (onHandUnits >= 0 || isZeroNet) return;
