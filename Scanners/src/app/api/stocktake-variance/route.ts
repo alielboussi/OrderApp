@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 
   const { data: countRows, error: countError } = await supabase
     .from("warehouse_stock_counts")
-    .select("item_id,variant_key,counted_qty,kind")
+    .select("item_id,variant_key,counted_qty,kind,counted_at")
     .eq("period_id", periodId)
     .in("kind", ["opening", "closing"]);
 
@@ -83,6 +83,18 @@ export async function GET(request: Request) {
   const salesMap = new Map<string, number>();
 
   const countedKeys = new Set<string>([...openingMap.keys(), ...closingMap.keys()]);
+  const openingTimeByKey = new Map<string, number>();
+
+  (countRows ?? []).forEach((row) => {
+    if (row.kind !== "opening" || !row.item_id) return;
+    const key = toKey(row.item_id, row.variant_key);
+    const raw = typeof row.counted_at === "string" ? Date.parse(row.counted_at) : NaN;
+    if (Number.isNaN(raw)) return;
+    const current = openingTimeByKey.get(key);
+    if (current === undefined || raw > current) {
+      openingTimeByKey.set(key, raw);
+    }
+  });
 
   if (countedKeys.size === 0) {
     return NextResponse.json({
@@ -101,6 +113,11 @@ export async function GET(request: Request) {
     if (!row?.item_id) return;
     const key = toKey(row.item_id, row.variant_key);
     if (!countedKeys.has(key)) return;
+    const openingAt = openingTimeByKey.get(key);
+    if (openingAt !== undefined) {
+      const occurredAt = typeof row.occurred_at === "string" ? Date.parse(row.occurred_at) : NaN;
+      if (!Number.isNaN(occurredAt) && occurredAt < openingAt) return;
+    }
     const delta = parseQty(row.delta_units);
     if (row.reason === "warehouse_transfer") {
       transferMap.set(key, (transferMap.get(key) ?? 0) + delta);

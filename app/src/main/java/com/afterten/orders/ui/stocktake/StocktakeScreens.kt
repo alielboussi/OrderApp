@@ -1332,21 +1332,24 @@ fun StocktakeCountScreen(
                             border = BorderStroke(1.dp, primaryRed),
                             modifier = Modifier.size(cardSize)
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize().padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
                                 if (hasOpeningCount) {
                                     Text(
                                         "Tally Mark",
                                         color = Color.White,
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier
-                                            .background(primaryRed.copy(alpha = 0.85f), RoundedCornerShape(999.dp))
-                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                            .align(Alignment.TopEnd)
+                                            .padding(8.dp)
+                                            .background(primaryRed.copy(alpha = 0.9f), RoundedCornerShape(999.dp))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
                                 }
+                                Column(
+                                    modifier = Modifier.fillMaxSize().padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                 AsyncImage(
                                     model = imageModel,
                                     contentDescription = "Item photo",
@@ -1440,6 +1443,7 @@ fun StocktakeCountScreen(
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }

@@ -751,6 +751,12 @@ class StocktakeViewModel(
         val closedAt = period.closedAt ?: java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
             .toString()
 
+        fun parseInstant(value: String?): java.time.Instant? {
+            val raw = value?.trim().orEmpty()
+            if (raw.isEmpty()) return null
+            return runCatching { java.time.OffsetDateTime.parse(raw).toInstant() }.getOrNull()
+        }
+
         fun safe(value: Double?): Double = value ?: 0.0
 
         val varianceRows = repo.fetchVariances(jwt, periodId)
@@ -767,6 +773,15 @@ class StocktakeViewModel(
             return VarianceReport(period = period, rows = emptyList(), generatedAt = nowLabel)
         }
 
+        val openingTimeByKey = openingCounts
+            .mapNotNull { row ->
+                val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+                val time = parseInstant(row.countedAt) ?: return@mapNotNull null
+                key to time
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { entry -> entry.value.maxOrNull() }
+
         val ledgerRows = repo.listStockLedgerForPeriod(jwt, period.warehouseId, openedAt, closedAt)
         val transfersByKey = mutableMapOf<String, Double>()
         val damagesByKey = mutableMapOf<String, Double>()
@@ -774,6 +789,9 @@ class StocktakeViewModel(
 
         ledgerRows.forEach { row ->
             val key = "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase()
+            val occurredAt = parseInstant(row.occurredAt)
+            val openingAt = openingTimeByKey[key]
+            if (openingAt != null && occurredAt != null && occurredAt.isBefore(openingAt)) return@forEach
             val delta = safe(row.deltaUnits)
             when (row.reason?.lowercase()) {
                 "warehouse_transfer" -> {
