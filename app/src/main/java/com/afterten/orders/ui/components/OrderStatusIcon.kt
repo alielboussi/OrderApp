@@ -18,7 +18,7 @@ fun OrderStatusIcon(
     tint: Color = MaterialTheme.colorScheme.primary
 ) {
     val icon: ImageVector? = when (status.lowercase(Locale.US)) {
-        "approved", "loaded" -> Icons.Filled.LocalShipping
+        "ordered", "loaded" -> Icons.Filled.LocalShipping
         "offloaded", "delivered" -> Icons.Filled.Inventory2
         else -> null
     }

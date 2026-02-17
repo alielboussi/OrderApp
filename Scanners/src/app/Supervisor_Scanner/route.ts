@@ -2862,6 +2862,7 @@ function createHtml(config: {
                   .select('id')
                   .eq('default_warehouse_id', activeDestId)
                   .eq('active', true)
+                  .eq('outlet_order_visible', true)
               : Promise.resolve({ data: [], error: null }),
             activeDestId
               ? supabase
@@ -2963,13 +2964,15 @@ function createHtml(config: {
             )
             .in('id', Array.from(productIds))
             .eq('active', true)
+            .eq('outlet_order_visible', true)
             .order('name');
           if (prodErr) throw prodErr;
 
           const { data: variantRows, error: variantErr } = await supabase
             .from('catalog_variants')
             .select('id,item_id,default_warehouse_id,locked_from_warehouse_id,active')
-            .in('item_id', Array.from(productIds));
+            .in('item_id', Array.from(productIds))
+            .eq('outlet_order_visible', true);
           if (variantErr) throw variantErr;
 
           const variantsByItem = new Map();
@@ -3037,7 +3040,8 @@ function createHtml(config: {
           .select(
             'id,item_id,name,purchase_pack_unit,transfer_unit,consumption_uom,sku,supplier_sku,units_per_purchase_pack,transfer_quantity,default_warehouse_id,locked_from_warehouse_id,active'
           )
-          .in('item_id', productIds);
+          .in('item_id', productIds)
+          .eq('outlet_order_visible', true);
         if (error) throw error;
 
         const activeDestId = state.destinationSelection;

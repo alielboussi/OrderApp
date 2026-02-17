@@ -19,6 +19,8 @@ export default function WarehouseBackofficeDashboard() {
   const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
   const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
+  const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
+  const goToOutletOrdersSetup = () => router.push("/Warehouse_Backoffice/outlet-orders-setup");
 
 
   if (status !== "ok") {
@@ -114,6 +116,18 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToReports} className={`${styles.actionCard} ${styles.reportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Outlet Sales Reports</p>
             <p className={styles.cardBody}>Filter sales by outlet, date, and product type with before/after tax totals.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToOutletOrdersSetup} className={`${styles.actionCard} ${styles.mappingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>Outlet Orders Setup</p>
+            <p className={styles.cardBody}>Step-by-step flow to add outlets, users, and item mappings for orders.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToOutletOrders} className={`${styles.actionCard} ${styles.reportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Outlet Orders</p>
+            <p className={styles.cardBody}>Filter orders by outlet and date, then download offloaded PDFs.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

@@ -276,8 +276,8 @@ fun SupervisorOrderDetailScreen(
     val statusLower = order?.status?.lowercase(Locale.US)
     val isLocked = order?.locked == true
     val canApprove = order != null && rows.isNotEmpty() && statusLower !in setOf("loaded", "offloaded", "delivered")
-    val canMarkLoaded = order != null && rows.isNotEmpty() && statusLower in setOf("approved", "loaded")
-    val allowItemEdits = !isLocked && statusLower !in setOf("approved", "loaded", "offloaded", "delivered")
+    val canMarkLoaded = order != null && rows.isNotEmpty() && statusLower in setOf("ordered", "loaded")
+    val allowItemEdits = !isLocked && statusLower !in setOf("ordered", "loaded", "offloaded", "delivered")
 
     fun handleVariationChange(rowItem: OrderRepository.OrderItemRow, variation: SupabaseProvider.SimpleVariation) {
         if (!allowItemEdits) return
@@ -460,7 +460,7 @@ fun SupervisorOrderDetailScreen(
                             Text(
                                 when {
                                     approving -> "Submitting…"
-                                    statusLower == "approved" -> "Re-Sign Approval"
+                                    statusLower == "ordered" -> "Re-Sign Approval"
                                     else -> "Approve & Sign"
                                 }
                             )
@@ -476,8 +476,7 @@ fun SupervisorOrderDetailScreen(
                             Text(
                                 when {
                                     driverSubmitting -> "Marking…"
-                                    statusLower == "loaded" -> "Re-Capture Driver"
-                                    else -> "Mark Loaded"
+                                    else -> "Driver Loading"
                                 }
                             )
                         }

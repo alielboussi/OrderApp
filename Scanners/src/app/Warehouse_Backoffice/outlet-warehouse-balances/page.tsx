@@ -54,6 +54,12 @@ type StockLedgerRow = {
   occurred_at: string | null;
 };
 
+type OrderTotals = {
+  count: number;
+  qty: number;
+  amount: number;
+};
+
 type WhoAmIRoles = {
   outlets: Array<{ outlet_id: string; outlet_name: string }> | null;
 };
@@ -109,6 +115,9 @@ export default function OutletWarehouseBalancesPage() {
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [orderDate, setOrderDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [orderTotals, setOrderTotals] = useState<OrderTotals>({ count: 0, qty: 0, amount: 0 });
+  const [ordersLoading, setOrdersLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [includeIngredients, setIncludeIngredients] = useState(true);
@@ -247,6 +256,74 @@ export default function OutletWarehouseBalancesPage() {
       active = false;
     };
   }, [status, selectedOutletIds, selectedWarehouseId, supabase]);
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    if (selectedOutletIds.length === 0 || !orderDate) {
+      setOrderTotals({ count: 0, qty: 0, amount: 0 });
+      return;
+    }
+    let active = true;
+
+    const loadOrderTotals = async () => {
+      try {
+        setOrdersLoading(true);
+        const start = new Date(orderDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 1);
+
+        const { data: ordersData, error: ordersError } = await supabase
+          .from("orders")
+          .select("id")
+          .in("outlet_id", selectedOutletIds)
+          .gte("created_at", start.toISOString())
+          .lt("created_at", end.toISOString());
+
+        if (ordersError) throw ordersError;
+        const orderIds = (ordersData || []).map((row) => row.id).filter(Boolean) as string[];
+
+        if (!active) return;
+        if (orderIds.length === 0) {
+          setOrderTotals({ count: 0, qty: 0, amount: 0 });
+          return;
+        }
+
+        const { data: itemsData, error: itemsError } = await supabase
+          .from("order_items")
+          .select("order_id,qty,cost,amount")
+          .in("order_id", orderIds);
+
+        if (itemsError) throw itemsError;
+
+        const totals = (itemsData || []).reduce(
+          (acc, row) => {
+            const qty = typeof row.qty === "number" ? row.qty : 0;
+            const cost = typeof row.cost === "number" ? row.cost : 0;
+            const amount = typeof row.amount === "number" ? row.amount : cost * qty;
+            acc.qty += qty;
+            acc.amount += amount;
+            return acc;
+          },
+          { count: orderIds.length, qty: 0, amount: 0 }
+        );
+
+        if (!active) return;
+        setOrderTotals(totals);
+      } catch (err) {
+        if (!active) return;
+        setError(toErrorMessage(err));
+      } finally {
+        if (active) setOrdersLoading(false);
+      }
+    };
+
+    loadOrderTotals();
+
+    return () => {
+      active = false;
+    };
+  }, [status, selectedOutletIds, orderDate, supabase]);
 
   useEffect(() => {
     if (status !== "ok" || !selectedWarehouseId) return;
@@ -661,6 +738,41 @@ export default function OutletWarehouseBalancesPage() {
               />
               Purchases
             </label>
+          </div>
+        </section>
+
+        <section className={styles.summaryCard}>
+          <div className={styles.summaryHeader}>
+            <div>
+              <p className={styles.tableTitle}>Outlet Orders</p>
+              <p className={styles.tableSubtitle}>Totals for selected outlets on the chosen day.</p>
+            </div>
+            {ordersLoading && <span className={styles.loadingTag}>Loading…</span>}
+          </div>
+          <div className={styles.filterRow}>
+            <label className={styles.filterLabel}>
+              Orders date
+              <input
+                type="date"
+                className={styles.input}
+                value={orderDate}
+                onChange={(event) => setOrderDate(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className={styles.summaryRow}>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>Orders</span>
+              <span className={styles.summaryValue}>{orderTotals.count.toLocaleString()}</span>
+            </div>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>Total Qty</span>
+              <span className={styles.summaryValue}>{orderTotals.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className={styles.summaryItem}>
+              <span className={styles.summaryLabel}>Total Amount</span>
+              <span className={styles.summaryValue}>{orderTotals.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
           </div>
         </section>
 

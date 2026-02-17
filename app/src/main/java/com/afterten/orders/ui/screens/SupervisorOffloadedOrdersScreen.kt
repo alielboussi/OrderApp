@@ -1,32 +1,31 @@
 package com.afterten.orders.ui.screens
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.Icons
-import androidx.compose.material3.*
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.ui.platform.LocalContext
 import android.app.DownloadManager
-import android.os.Environment
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import androidx.core.net.toUri
+import android.os.Environment
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.afterten.orders.RootViewModel
+import com.afterten.orders.data.RoleGuards
+import com.afterten.orders.data.hasRole
 import com.afterten.orders.data.repo.OrderRepository
+import com.afterten.orders.ui.components.AccessDeniedCard
 import com.afterten.orders.ui.components.OrderStatusIcon
 import com.afterten.orders.util.LogAnalytics
 import com.afterten.orders.util.PdfSignatureBlock
@@ -35,11 +34,8 @@ import com.afterten.orders.util.rememberScreenLogger
 import com.afterten.orders.util.sanitizeForFile
 import com.afterten.orders.util.toBlackInk
 import com.afterten.orders.util.toPdfGroups
-import com.afterten.orders.data.RoleGuards
-import com.afterten.orders.data.hasRole
-import com.afterten.orders.ui.components.AccessDeniedCard
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -47,7 +43,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrdersScreen(
+fun SupervisorOffloadedOrdersScreen(
     root: RootViewModel,
     onBack: () -> Unit
 ) {
@@ -56,87 +52,57 @@ fun OrdersScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val logger = rememberScreenLogger("Orders")
+    val logger = rememberScreenLogger("SupervisorOffloadedOrders")
 
-    val hasAccess = session.hasRole(RoleGuards.Branch)
+    val hasAccess = session.hasRole(RoleGuards.Supervisor)
     if (!hasAccess) {
         AccessDeniedCard(
-            title = "Branch access required",
-            message = "Only branch (outlet) operators can view offloaded orders.",
+            title = "Supervisor access required",
+            message = "Only supervisors can view offloaded outlet orders.",
             primaryLabel = "Back to Home",
             onPrimary = onBack
         )
         return
     }
 
-    LaunchedEffect(Unit) {
-        logger.enter(mapOf("hasSession" to (session != null)))
-    }
-    LaunchedEffect(session?.outletId) {
-        logger.state(
-            "SessionContext",
-            mapOf(
-                "outletId" to (session?.outletId ?: ""),
-                "hasSession" to (session != null)
-            )
-        )
-    }
-
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf(listOf<OrderRepository.OrderRow>()) }
 
-    LaunchedEffect(items.size) {
-        logger.state("OrdersListUpdated", mapOf("count" to items.size))
-    }
-
-    LaunchedEffect(session?.token, session?.outletId) {
-        val s = session
-        if (s == null) {
-            items = emptyList()
-            loading = false
-            return@LaunchedEffect
-        }
+    LaunchedEffect(session?.token) {
+        val s = session ?: return@LaunchedEffect
         loading = true
         error = null
-        logger.state("InitialLoadStart", mapOf("outletId" to s.outletId))
+        logger.state("InitialLoadStart")
         try {
-            // Initial load
-            items = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
-            LogAnalytics.event("orders_loaded", mapOf("count" to items.size))
-            logger.state("InitialLoadSuccess", mapOf("count" to items.size))
+            items = repo.listOrdersForSupervisor(jwt = s.token, limit = 200)
+            LogAnalytics.event("supervisor_offloaded_loaded", mapOf("count" to items.size))
             loading = false
         } catch (t: Throwable) {
             error = t.message ?: t.toString()
-            LogAnalytics.error("orders_load_failed", error, t)
-            logger.error("InitialLoadFailed", t, mapOf("outletId" to s.outletId))
+            logger.error("InitialLoadFailed", t)
             loading = false
         }
     }
 
-    // Realtime subscription below pushes into ordersEvents so every device refreshes automatically
-
-    // Also refresh when we emit a local event (e.g., right after placing an order)
-    LaunchedEffect(session?.token, session?.outletId) {
+    LaunchedEffect(session?.token) {
         val s = session ?: return@LaunchedEffect
         root.supabaseProvider.ordersEvents.collect {
             runCatching {
-                logger.event("RealtimeOrdersEvent", mapOf("outletId" to s.outletId))
-                val newItems = repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                logger.event("RealtimeOrdersEvent")
+                val newItems = repo.listOrdersForSupervisor(jwt = s.token, limit = 200)
                 items = newItems
-                LogAnalytics.event("orders_refreshed_local", mapOf("count" to newItems.size))
-                logger.state("RealtimeRefreshSuccess", mapOf("count" to newItems.size))
+                LogAnalytics.event("supervisor_offloaded_refreshed", mapOf("count" to newItems.size))
             }
         }
     }
 
-    DisposableEffect(session?.token, session?.outletId) {
+    DisposableEffect(session?.token) {
         val s = session
-        val outletId = s?.outletId?.takeIf { it.isNotBlank() }
-        if (s != null && outletId != null) {
+        if (s != null) {
             val handle = root.supabaseProvider.subscribeOrders(
                 jwt = s.token,
-                outletId = outletId
+                outletId = null
             ) {
                 root.supabaseProvider.emitOrdersChanged()
             }
@@ -149,7 +115,6 @@ fun OrdersScreen(
     val filteredItems = remember(items) {
         items.filter { row -> row.status.equals("offloaded", true) }
     }
-    val statusCounts = remember(filteredItems) { countStatuses(filteredItems) }
 
     suspend fun loadSignatureBitmap(jwt: String, path: String?): Bitmap? {
         val safePath = path?.trim().orEmpty()
@@ -170,8 +135,8 @@ fun OrdersScreen(
         val detail = repo.fetchOrder(jwt = s.token, orderId = row.id) ?: error("Order not found")
         val itemsForPdf = repo.listOrderItems(jwt = s.token, orderId = row.id)
         val createdAt = runCatching { OffsetDateTime.parse(detail.createdAt) }.getOrElse { OffsetDateTime.now() }
-        val outletName = detail.outlet?.name ?: s.outletName.ifBlank { detail.outletId ?: "Outlet" }
-        val outletFolder = detail.outletId ?: s.outletId.ifBlank { "orders" }
+        val outletName = detail.outlet?.name ?: detail.outletId ?: "Outlet"
+        val outletFolder = detail.outletId ?: "orders"
         val safeOutlet = outletName.sanitizeForFile()
         val safeOrder = detail.orderNumber.sanitizeForFile()
         val dateStr = createdAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
@@ -212,26 +177,27 @@ fun OrdersScreen(
             upsert = true
         )
 
+        val fileName = "${safeOutlet}_${safeOrder}_${dateStr}.pdf"
         val url = root.supabaseProvider.createSignedUrl(
             jwt = s.token,
             bucket = "orders",
             path = storagePath,
             expiresInSeconds = 3600,
-            downloadName = "${safeOutlet}_${safeOrder}_${dateStr}.pdf"
+            downloadName = fileName
         )
         val dm = ctx.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as DownloadManager
         val req = DownloadManager.Request(url.toUri())
-            .setTitle("${safeOutlet}_${safeOrder}_${dateStr}.pdf")
+            .setTitle(fileName)
             .setMimeType("application/pdf")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "${safeOutlet}_${safeOrder}_${dateStr}.pdf")
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
         runCatching { dm.enqueue(req) }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Orders") },
+                title = { Text("Offloaded Orders") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -243,16 +209,13 @@ fun OrdersScreen(
                             val s = session ?: return@launch
                             loading = true
                             error = null
-                            logger.event("ManualRefreshStart", mapOf("outletId" to s.outletId))
                             runCatching {
-                                repo.listOrdersForOutlet(jwt = s.token, outletId = s.outletId, limit = 200)
+                                repo.listOrdersForSupervisor(jwt = s.token, limit = 200)
                             }.onSuccess { list ->
                                 items = list
-                                LogAnalytics.event("orders_refreshed", mapOf("count" to list.size))
-                                logger.state("ManualRefreshSuccess", mapOf("count" to list.size))
+                                LogAnalytics.event("supervisor_offloaded_refreshed", mapOf("count" to list.size))
                             }.onFailure { t ->
                                 error = t.message ?: t.toString()
-                                logger.error("ManualRefreshFailed", t, mapOf("outletId" to s.outletId))
                             }
                             loading = false
                         }
@@ -265,40 +228,28 @@ fun OrdersScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         when {
-            loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Error: $error")
-            }
-            else -> Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                OrderStatusSummary(statusCounts = statusCounts)
-                Spacer(Modifier.height(8.dp))
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(filteredItems) { row ->
-                        OrderRowCard(
-                            row = row,
-                            onDownload = {
-                                logger.event("DownloadTapped", mapOf("orderId" to row.id))
-                                scope.launch {
-                                    val result = runCatching {
-                                        withContext(Dispatchers.IO) { downloadDetailedPdf(row) }
-                                    }
-                                    result.onFailure { err ->
-                                        snackbarHostState.showSnackbar(
-                                            message = err.message ?: "PDF download failed",
-                                            withDismissAction = true
-                                        )
-                                    }
+            loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Error: $error") }
+            else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+                items(filteredItems) { row ->
+                    OffloadedOrderRow(
+                        row = row,
+                        onDownload = {
+                            logger.event("DownloadTapped", mapOf("orderId" to row.id))
+                            scope.launch {
+                                val result = runCatching {
+                                    withContext(Dispatchers.IO) { downloadDetailedPdf(row) }
+                                }
+                                result.onFailure { err ->
+                                    snackbarHostState.showSnackbar(
+                                        message = err.message ?: "PDF download failed",
+                                        withDismissAction = true
+                                    )
                                 }
                             }
-                        )
-                        HorizontalDivider()
-                    }
+                        }
+                    )
+                    HorizontalDivider()
                 }
             }
         }
@@ -306,14 +257,11 @@ fun OrdersScreen(
 }
 
 @Composable
-private fun OrderRowCard(
+private fun OffloadedOrderRow(
     row: OrderRepository.OrderRow,
     onDownload: () -> Unit
 ) {
-    Card(modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 OrderStatusIcon(status = row.status, modifier = Modifier.padding(end = 8.dp))
@@ -330,70 +278,18 @@ private fun OrderRowCard(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = formatIso(row.createdAt),
+                text = row.outlet?.name ?: (row.outletId ?: ""),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "ID: ${row.id}",
+                text = formatIso(row.createdAt),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (row.modifiedBySupervisor == true || !row.modifiedBySupervisorName.isNullOrEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f), shape = MaterialTheme.shapes.small) {
-                    Text(
-                        text = "Updated by ${row.modifiedBySupervisorName ?: "Supervisor"}",
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
         }
     }
-}
-
-@Composable
-private fun OrderStatusSummary(statusCounts: StatusCounts) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        SummaryStat(label = "Total", value = statusCounts.total, color = MaterialTheme.colorScheme.primary)
-        SummaryStat(label = "Offloaded", value = statusCounts.offloaded, color = MaterialTheme.colorScheme.onSurface)
-    }
-}
-
-@Composable
-private fun RowScope.SummaryStat(label: String, value: Int, color: Color) {
-    Surface(
-        tonalElevation = 2.dp,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.weight(1f)
-    ) {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-private data class StatusCounts(
-    val total: Int,
-    val offloaded: Int
-)
-
-private fun countStatuses(rows: List<OrderRepository.OrderRow>): StatusCounts {
-    val total = rows.size
-    var offloaded = 0
-    rows.forEach { row ->
-        val status = row.status.lowercase(Locale.US)
-        if (status == "offloaded") offloaded += 1
-    }
-    return StatusCounts(total = total, offloaded = offloaded)
 }
 
 @Composable
@@ -427,27 +323,6 @@ private fun StatusBadge(status: String) {
     }
 }
 
-@Composable
-private fun LiveIndicator() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(end = 12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.tertiary)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "LIVE",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.tertiary,
-        )
-    }
-}
-
 private fun formatIso(iso: String): String {
     return try {
         val odt = OffsetDateTime.parse(iso)
@@ -461,4 +336,3 @@ private fun displayOrderNumber(raw: String): String {
     val digits = raw.trim().takeLastWhile { it.isDigit() }
     return if (digits.isNotEmpty()) digits else raw
 }
-

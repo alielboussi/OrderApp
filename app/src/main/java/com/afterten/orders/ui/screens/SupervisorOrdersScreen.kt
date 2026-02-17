@@ -28,7 +28,8 @@ import com.afterten.orders.ui.components.AccessDeniedCard
 fun SupervisorOrdersScreen(
     root: RootViewModel,
     onBack: () -> Unit,
-    onOpenOrder: (orderId: String) -> Unit
+    onOpenOrder: (orderId: String) -> Unit,
+    onOpenOffloaded: () -> Unit
 ) {
     val session by root.session.collectAsState()
     val repo = remember { OrderRepository(root.supabaseProvider) }
@@ -105,7 +106,7 @@ fun SupervisorOrdersScreen(
 
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("Supervisor Orders") },
+            title = { Text("Outlet Orders") },
             navigationIcon = {
                 IconButton(onClick = {
                     logger.event("BackTapped")
@@ -130,16 +131,29 @@ fun SupervisorOrdersScreen(
         when {
             loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             error != null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Error: $error") }
-            else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                items(items) { row ->
-                    SupervisorOrderRow(
-                        row = row,
-                        onClick = {
-                            logger.event("OrderTapped", mapOf("orderId" to row.id, "status" to row.status))
-                            onOpenOrder(row.id)
-                        }
-                    )
-                    HorizontalDivider()
+            else -> Column(Modifier.fillMaxSize().padding(padding)) {
+                Button(
+                    onClick = {
+                        logger.event("OffloadedOrdersTapped")
+                        onOpenOffloaded()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text("Offloaded Orders")
+                }
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(items) { row ->
+                        SupervisorOrderRow(
+                            row = row,
+                            onClick = {
+                                logger.event("OrderTapped", mapOf("orderId" to row.id, "status" to row.status))
+                                onOpenOrder(row.id)
+                            }
+                        )
+                        HorizontalDivider()
+                    }
                 }
             }
         }

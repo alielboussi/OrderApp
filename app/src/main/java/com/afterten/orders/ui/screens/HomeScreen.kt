@@ -32,6 +32,7 @@ import com.afterten.orders.ui.components.AccessDeniedCard
 fun HomeScreen(
     onCreateOrder: () -> Unit,
     onViewOrders: () -> Unit,
+    onReceiveOrders: () -> Unit,
     onOpenStocktake: () -> Unit,
     onOpenStocktakePeriods: () -> Unit,
     onLogout: () -> Unit,
@@ -144,6 +145,15 @@ fun HomeScreen(
                 },
                 enabled = (session?.outletId?.isNotEmpty() == true)
             ) { Text("Orders") }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    logger.event("ReceiveOrdersTapped")
+                    onReceiveOrders()
+                },
+                enabled = (session?.outletId?.isNotEmpty() == true)
+            ) { Text("Receive Orders") }
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),

@@ -428,14 +428,7 @@ fun OrderSummaryScreen(
                                         )
                                         placedRemotely = true
                                         logger.state("OrderRpcSuccess", mapOf("orderId" to rpcRes.orderId))
-                                        // Immediately approve, lock and allocate from warehouses (coldrooms)
-                                        runCatching {
-                                            root.supabaseProvider.approveLockAndAllocateOrder(
-                                                jwt = ses.token,
-                                                orderId = rpcRes.orderId,
-                                                strict = true
-                                            )
-                                        }
+                                        // Supervisor approval is required before allocation.
                                     } catch (placeErr: Throwable) {
                                         // Fallback: insert directly via PostgREST
                                         runCatching {
@@ -450,12 +443,6 @@ fun OrderSummaryScreen(
                                                 jwt = ses.token,
                                                 orderId = order.id,
                                                 items = itemsReq
-                                            )
-                                            // Approve, lock and allocate for fallback-created order as well
-                                            root.supabaseProvider.approveLockAndAllocateOrder(
-                                                jwt = ses.token,
-                                                orderId = order.id,
-                                                strict = true
                                             )
                                         }.onSuccess {
                                             placedRemotely = true

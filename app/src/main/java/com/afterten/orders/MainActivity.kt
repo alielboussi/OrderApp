@@ -51,9 +51,11 @@ sealed class Routes(val route: String) {
     data object CartReview : Routes("cart_review")
     data object Summary : Routes("summary")
     data object Orders : Routes("orders")
+    data object ReceiveOrders : Routes("receive_orders")
     data object BackofficeHome : Routes("backoffice_home")
     data object CatalogManager : Routes("catalog_manager")
     data object SupervisorOrders : Routes("supervisor_orders")
+    data object SupervisorOffloadedOrders : Routes("supervisor_offloaded_orders")
     data object SupervisorOrderDetail : Routes("supervisor_order_detail/{orderId}") {
         fun route(orderId: String) = "supervisor_order_detail/$orderId"
     }
@@ -105,6 +107,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onViewOrders = { navController.navigate(Routes.Orders.route) },
+                onReceiveOrders = { navController.navigate(Routes.ReceiveOrders.route) },
                 onOpenStocktake = { navController.navigate(Routes.StocktakeDashboard.route) },
                 onOpenStocktakePeriods = { navController.navigate(Routes.StocktakePeriods.route("select")) },
                 onLogout = {
@@ -143,6 +146,12 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(Routes.ReceiveOrders.route) {
+            com.afterten.orders.ui.screens.ReceiveOrdersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(Routes.BackofficeHome.route) {
             BackofficeHomeScreen(
                 onOpenCatalog = { navController.navigate(Routes.CatalogManager.route) },
@@ -166,7 +175,14 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             com.afterten.orders.ui.screens.SupervisorOrdersScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() },
-                onOpenOrder = { id -> navController.navigate(Routes.SupervisorOrderDetail.route(id)) }
+                onOpenOrder = { id -> navController.navigate(Routes.SupervisorOrderDetail.route(id)) },
+                onOpenOffloaded = { navController.navigate(Routes.SupervisorOffloadedOrders.route) }
+            )
+        }
+        composable(Routes.SupervisorOffloadedOrders.route) {
+            com.afterten.orders.ui.screens.SupervisorOffloadedOrdersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
             )
         }
         composable(Routes.SupervisorOrderDetail.route) { backStackEntry ->
