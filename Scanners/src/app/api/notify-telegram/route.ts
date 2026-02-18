@@ -72,8 +72,9 @@ function formatItemsBlock(summary: SummaryPayload) {
       const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : 'Base';
       const qty = item.scannedQty ?? item.qty ?? 0;
       const unit = formatUnitLabel(item.unit ?? 'unit', qty);
-      if (!grouped.has(baseName)) grouped.set(baseName, []);
-      grouped.get(baseName).push({ variation, qty, unit });
+      const bucket = grouped.get(baseName) ?? [];
+      bucket.push({ variation, qty, unit });
+      grouped.set(baseName, bucket);
     });
 
     const lines: string[] = [];
