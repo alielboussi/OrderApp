@@ -10,6 +10,8 @@ data class ProductEntity(
     val sku: String?,
     val name: String,
     val imageUrl: String?,
+    val itemKind: String?,
+    val hasRecipe: Boolean,
     val purchasePackUnit: String,
     val consumptionUom: String,
     val unitsPerPurchasePack: Double,

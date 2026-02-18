@@ -54,21 +54,36 @@ function getScannerLabel(scanner: string | null) {
 
 function formatItemsBlock(summary: SummaryPayload) {
   const items = Array.isArray(summary.items) ? summary.items : [];
-  const lines = items
-    .map((item, index) => {
-      const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
-      const useVariationOnly = rawVariation && rawVariation.toLowerCase() !== 'base';
-      const name = useVariationOnly
-        ? rawVariation
-        : String(item.productName ?? `Item ${index + 1}`);
-      const variation = useVariationOnly ? '' : (rawVariation ? ` (${rawVariation})` : '');
-      const qty = item.scannedQty ?? item.qty ?? 0;
-      const unit = item.unit ?? 'unit';
-      return `• ${name}${variation} — ${qty} ${unit}`.trim();
-    })
-    .filter(Boolean);
+  const formatUnitLabel = (unit: unknown, qty: unknown) => {
+    const unitLabel = String(unit ?? 'unit').trim();
+    const numeric = Number(qty ?? 0);
+    if (!Number.isFinite(numeric) || numeric <= 1) return unitLabel || 'unit';
+    if (!unitLabel) return 'unit';
+    if (unitLabel.includes('(s)') || unitLabel.includes('(S)')) return unitLabel;
+    if (unitLabel.endsWith('s') || unitLabel.endsWith('S')) return unitLabel;
+    return unitLabel + '(s)';
+  };
 
-  if (lines.length) {
+  if (items.length) {
+    const grouped = new Map();
+    items.forEach((item, index) => {
+      const baseName = String(item.productName ?? `Item ${index + 1}`);
+      const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
+      const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : 'Base';
+      const qty = item.scannedQty ?? item.qty ?? 0;
+      const unit = formatUnitLabel(item.unit ?? 'unit', qty);
+      if (!grouped.has(baseName)) grouped.set(baseName, []);
+      grouped.get(baseName).push({ variation, qty, unit });
+    });
+
+    const lines = [];
+    grouped.forEach((entries, baseName) => {
+      lines.push(`<u>${escapeHtml(baseName)}</u>`);
+      entries.forEach((entry) => {
+        lines.push(`• ${escapeHtml(entry.variation)} — ${escapeHtml(String(entry.qty))} ${escapeHtml(entry.unit)}`);
+      });
+    });
+
     return lines.join('\n');
   }
 

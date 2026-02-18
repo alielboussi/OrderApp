@@ -9,6 +9,8 @@ data class ProductDto(
     val sku: String? = null,
     val name: String,
     @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("item_kind") val itemKind: String? = null,
+    @SerialName("has_recipe") val hasRecipe: Boolean? = null,
     @SerialName("purchase_pack_unit") val purchasePackUnit: String,
     @SerialName("consumption_uom") val consumptionUom: String = "each",
     @SerialName("units_per_purchase_pack") val unitsPerPurchasePack: Double = 1.0,

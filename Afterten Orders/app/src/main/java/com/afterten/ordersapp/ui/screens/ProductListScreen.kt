@@ -1,6 +1,7 @@
 package com.afterten.ordersapp.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -83,6 +84,7 @@ fun ProductListScreen(
     var syncing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    var showIngredientsFor by remember { mutableStateOf<ProductEntity?>(null) }
     val logger = rememberScreenLogger("ProductList")
 
     LaunchedEffect(Unit) { logger.enter() }
@@ -174,6 +176,10 @@ fun ProductListScreen(
             showVariationsFor?.let { logger.state("VariationsDialogOpened", mapOf("productId" to it.id)) }
                 ?: logger.state("VariationsDialogClosed")
         }
+        LaunchedEffect(showIngredientsFor?.id) {
+            showIngredientsFor?.let { logger.state("IngredientsDialogOpened", mapOf("productId" to it.id)) }
+                ?: logger.state("IngredientsDialogClosed")
+        }
 
         Column(
             modifier = Modifier
@@ -197,9 +203,16 @@ fun ProductListScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
 
-            val minCostByProduct = remember(allVariations) {
+            val variationsByProduct = remember(allVariations) {
                 allVariations.groupBy { it.productId }
-                    .mapValues { entry -> entry.value.minOfOrNull { it.cost } }
+            }
+            val minCostByProduct = remember(variationsByProduct) {
+                variationsByProduct.mapValues { entry -> entry.value.minOfOrNull { it.cost } }
+            }
+            val fallbackImageByProduct = remember(variationsByProduct) {
+                variationsByProduct.mapValues { entry ->
+                    entry.value.firstOrNull { !it.imageUrl.isNullOrBlank() }?.imageUrl
+                }
             }
 
             val filtered = remember(products, allVariations, query) {
@@ -214,6 +227,9 @@ fun ProductListScreen(
                         p.name.lowercase().contains(ql) || mapHasMatchVariation.contains(p.id)
                     }
                 }
+            }.filter { item ->
+                val kind = item.itemKind?.lowercase()
+                kind == null || kind != "ingredient"
             }
 
             // Grid of 2 columns
@@ -238,11 +254,16 @@ fun ProductListScreen(
                     ProductCard(
                         root = root,
                         item = item,
+                        imageUrlOverride = fallbackImageByProduct[item.id],
                         minVariationCost = minCostByProduct[item.id],
                         logger = logger,
                         onOpenVariations = {
                             logger.event("VariationsTapped", mapOf("productId" to item.id))
                             showVariationsFor = item
+                        },
+                        onOpenIngredients = {
+                            logger.event("IngredientsTapped", mapOf("productId" to item.id))
+                            showIngredientsFor = item
                         }
                     )
                 }
@@ -262,6 +283,22 @@ fun ProductListScreen(
                 }
             )
         }
+
+        val ingredientsProduct = showIngredientsFor
+        if (ingredientsProduct != null) {
+            val productsById = remember(products) { products.associateBy { it.id } }
+            RecipeIngredientsDialog(
+                product = ingredientsProduct,
+                root = root,
+                repo = repo,
+                productsById = productsById,
+                logger = logger,
+                onDismiss = {
+                    logger.event("IngredientsDialogDismissed", mapOf("productId" to ingredientsProduct.id))
+                    showIngredientsFor = null
+                }
+            )
+        }
     }
 }
 
@@ -269,9 +306,11 @@ fun ProductListScreen(
 private fun ProductCard(
     root: RootViewModel,
     item: ProductEntity,
+    imageUrlOverride: String?,
     minVariationCost: Double?,
     logger: ScreenLogger,
-    onOpenVariations: () -> Unit
+    onOpenVariations: () -> Unit,
+    onOpenIngredients: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -281,10 +320,10 @@ private fun ProductCard(
     ) {
         Column(Modifier.fillMaxSize()) {
             ProductImage(
-                url = item.imageUrl,
+                url = item.imageUrl ?: imageUrlOverride,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .height(130.dp)
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                 contentScale = ContentScale.Crop
             )
@@ -332,26 +371,54 @@ private fun ProductCard(
                             }
                         }
                     }
-                    if (item.hasVariations) {
-                        TextButton(onClick = onOpenVariations) { Text("Variations") }
-                    } else {
-                        val cart = root.cart.collectAsState().value
-                        val qty = cart["${item.id}:"]?.qty ?: 0
-                        QuantityStepper(
-                            qty = qty,
-                            onDec = {
-                                logger.event("QtyDecrement", mapOf("productId" to item.id))
-                                root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
-                            },
-                            onInc = {
-                                logger.event("QtyIncrement", mapOf("productId" to item.id))
-                                root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
-                            },
-                            onChange = { n ->
-                                logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
-                                root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
+                    when {
+                        item.hasRecipe || item.hasVariations -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (item.hasRecipe) {
+                                    FilledTonalButton(
+                                        onClick = onOpenIngredients,
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = Color(0xFF1E2A3D),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Text("Ingredients")
+                                    }
+                                }
+                                if (item.hasVariations) {
+                                    FilledTonalButton(
+                                        onClick = onOpenVariations,
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = Color(0xFF1E2A3D),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Text("Variations")
+                                    }
+                                }
                             }
-                        )
+                        }
+                        else -> {
+                            val cart = root.cart.collectAsState().value
+                            val qty = cart["${item.id}:"]?.qty ?: 0
+                            QuantityStepper(
+                                qty = qty,
+                                onDec = {
+                                    logger.event("QtyDecrement", mapOf("productId" to item.id))
+                                    root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                                },
+                                onInc = {
+                                    logger.event("QtyIncrement", mapOf("productId" to item.id))
+                                    root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                                },
+                                onChange = { n ->
+                                    logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
+                                    root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -360,10 +427,11 @@ private fun ProductCard(
 }
 
 @Composable
-private fun ProductImage(url: String?, modifier: Modifier, contentScale: ContentScale) {
+private fun ProductImage(url: String?, modifier: Modifier, contentScale: ContentScale, onClick: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     var failed by remember(url) { mutableStateOf(url.isNullOrBlank()) }
-    Box(modifier) {
+    val clickableModifier = if (onClick != null) modifier.clickable { onClick() } else modifier
+    Box(clickableModifier) {
         AsyncImage(
             model = ImageRequest.Builder(ctx)
                 .data(url)
@@ -392,7 +460,7 @@ private fun ProductImage(url: String?, modifier: Modifier, contentScale: Content
 @Composable
 fun QuantityStepper(qty: Int, onDec: () -> Unit, onInc: () -> Unit, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = onDec, enabled = qty > 0) { Text("-") }
+        RedOutlinedCircleButton(text = "-", onClick = onDec, enabled = qty > 0)
         OutlinedTextField(
             value = qty.toString(),
             onValueChange = { s ->
@@ -412,7 +480,176 @@ fun QuantityStepper(qty: Int, onDec: () -> Unit, onInc: () -> Unit, onChange: (I
                 unfocusedContainerColor = Color.Transparent
             )
         )
-        OutlinedButton(onClick = onInc) { Text("+") }
+        RedOutlinedCircleButton(text = "+", onClick = onInc)
+    }
+}
+
+@Composable
+private fun RecipeIngredientsDialog(
+    product: ProductEntity,
+    root: RootViewModel,
+    repo: ProductRepository,
+    productsById: Map<String, ProductEntity>,
+    logger: ScreenLogger,
+    onDismiss: () -> Unit
+) {
+    val session = root.session.collectAsState().value
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var ingredientIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var previewUrl by remember { mutableStateOf<String?>(null) }
+    var previewTitle by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(product.id, session?.token) {
+        val token = session?.token ?: return@LaunchedEffect
+        loading = true
+        error = null
+        logger.state("IngredientsLoadStart", mapOf("productId" to product.id))
+        runCatching { repo.listRecipeIngredientIds(token, product.id) }
+            .onSuccess {
+                ingredientIds = it
+                logger.state("IngredientsLoadSuccess", mapOf("count" to it.size))
+            }
+            .onFailure {
+                error = it.message
+                logger.error("IngredientsLoadFailed", it)
+            }
+        loading = false
+    }
+
+    val ingredientItems = remember(ingredientIds, productsById) {
+        ingredientIds.mapNotNull { id ->
+            productsById[id]?.takeIf { it.outletOrderVisible }
+        }
+    }
+    val missingCount = ingredientIds.size - ingredientItems.size
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth(0.95f)) {
+            Column(Modifier.padding(20.dp)) {
+                Text(
+                    text = "${product.name} ingredients",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    textDecoration = TextDecoration.Underline
+                )
+                Spacer(Modifier.height(12.dp))
+                when {
+                    loading -> {
+                        Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    error != null -> {
+                        Text(text = error ?: "Unable to load ingredients", color = MaterialTheme.colorScheme.error)
+                    }
+                    else -> {
+                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                            if (ingredientItems.isEmpty()) {
+                                Text(
+                                    text = "No ingredients available for this recipe.",
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
+                            ingredientItems.forEachIndexed { index, item ->
+                                IngredientRow(
+                                    root = root,
+                                    item = item,
+                                    logger = logger,
+                                    onImageClick = { url, title ->
+                                        previewUrl = url
+                                        previewTitle = title
+                                    }
+                                )
+                                if (index < ingredientItems.lastIndex) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                                }
+                            }
+                            if (missingCount > 0) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "$missingCount ingredient(s) are hidden because they are not enabled for outlet orders.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.75f)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Done") }
+                }
+            }
+        }
+    }
+
+    val imageUrl = previewUrl
+    if (!imageUrl.isNullOrBlank()) {
+        ImagePreviewDialog(url = imageUrl, title = previewTitle) {
+            previewUrl = null
+            previewTitle = null
+        }
+    }
+}
+
+@Composable
+private fun IngredientRow(
+    root: RootViewModel,
+    item: ProductEntity,
+    logger: ScreenLogger,
+    onImageClick: (String, String) -> Unit
+) {
+    val cart = root.cart.collectAsState().value
+    val qty = cart["${item.id}:"]?.qty ?: 0
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ProductImage(
+            url = item.imageUrl,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Crop,
+            onClick = {
+                val url = item.imageUrl
+                if (!url.isNullOrBlank()) {
+                    onImageClick(url, item.name)
+                }
+            }
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Text(
+                text = "Order in ${item.purchasePackUnit.uppercase()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.85f)
+            )
+        }
+        QuantityStepper(
+            qty = qty,
+            onDec = {
+                logger.event("IngredientQtyDecrement", mapOf("productId" to item.id))
+                root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+            },
+            onInc = {
+                logger.event("IngredientQtyIncrement", mapOf("productId" to item.id))
+                root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+            },
+            onChange = { n ->
+                logger.event("IngredientQtyChanged", mapOf("productId" to item.id, "newQty" to n))
+                root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
+            }
+        )
     }
 }
 
@@ -427,6 +664,8 @@ private fun VariationsDialog(
     val variations by repo.listenVariations(product.id).collectAsState(initial = emptyList())
     val session = root.session.collectAsState().value
     var loading by remember { mutableStateOf(false) }
+    var previewUrl by remember { mutableStateOf<String?>(null) }
+    var previewTitle by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(product.id, session?.token) {
         if (session?.token != null) {
             loading = true
@@ -454,7 +693,15 @@ private fun VariationsDialog(
                 } else {
                     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                         variations.forEachIndexed { index, v ->
-                            VariationRow(root = root, v = v, logger = logger)
+                            VariationRow(
+                                root = root,
+                                v = v,
+                                logger = logger,
+                                onImageClick = { url, title ->
+                                    previewUrl = url
+                                    previewTitle = title
+                                }
+                            )
                             if (index < variations.lastIndex) {
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                             }
@@ -468,10 +715,23 @@ private fun VariationsDialog(
             }
         }
     }
+
+    val imageUrl = previewUrl
+    if (!imageUrl.isNullOrBlank()) {
+        ImagePreviewDialog(url = imageUrl, title = previewTitle) {
+            previewUrl = null
+            previewTitle = null
+        }
+    }
 }
 
 @Composable
-private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: ScreenLogger) {
+private fun VariationRow(
+    root: RootViewModel,
+    v: VariationEntity,
+    logger: ScreenLogger,
+    onImageClick: (String, String) -> Unit
+) {
     val cart = root.cart.collectAsState().value
     val qty = cart["${v.productId}:${v.id}"]?.qty ?: 0
     Row(
@@ -489,9 +749,15 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: Screen
             ProductImage(
                 url = v.imageUrl,
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop,
+                onClick = {
+                    val url = v.imageUrl
+                    if (!url.isNullOrBlank()) {
+                        onImageClick(url, v.name)
+                    }
+                }
             )
             Spacer(Modifier.height(6.dp))
             Text(
@@ -540,6 +806,36 @@ private fun VariationRow(root: RootViewModel, v: VariationEntity, logger: Screen
                 root.setQty(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, n, v.unitsPerPurchasePack)
             }
         )
+    }
+}
+
+@Composable
+private fun ImagePreviewDialog(url: String, title: String?, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 4.dp) {
+            Column(Modifier.padding(16.dp)) {
+                if (!title.isNullOrBlank()) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                ProductImage(
+                    url = url,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 220.dp, max = 420.dp)
+                        .clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Fit
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
+            }
+        }
     }
 }
 

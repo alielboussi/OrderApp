@@ -71,6 +71,8 @@ fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        val primaryRed = androidx.compose.ui.graphics.Color(0xFFD50000)
+        val contentWhite = androidx.compose.ui.graphics.Color.White
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Button(
                 onClick = {
@@ -78,7 +80,7 @@ fun HomeScreen(
                     onLogout()
                 },
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors()
+                colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
             ) {
                 Text("Log out")
             }
@@ -96,17 +98,9 @@ fun HomeScreen(
                 logger.event("CreateOrderTapped")
                 onCreateOrder()
             },
-            enabled = (session?.outletId?.isNotEmpty() == true)
+            enabled = (session?.outletId?.isNotEmpty() == true),
+            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
         ) { Text("Create New Order") }
-        Spacer(Modifier.height(12.dp))
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                logger.event("OrdersTapped")
-                onViewOrders()
-            },
-            enabled = (session?.outletId?.isNotEmpty() == true)
-        ) { Text("Orders") }
         Spacer(Modifier.height(12.dp))
         Button(
             modifier = Modifier.fillMaxWidth(),
@@ -114,7 +108,18 @@ fun HomeScreen(
                 logger.event("ReceiveOrdersTapped")
                 onReceiveOrders()
             },
-            enabled = (session?.outletId?.isNotEmpty() == true)
+            enabled = (session?.outletId?.isNotEmpty() == true),
+            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
         ) { Text("Receive Orders") }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                logger.event("OrdersTapped")
+                onViewOrders()
+            },
+            enabled = (session?.outletId?.isNotEmpty() == true),
+            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
+        ) { Text("Orders") }
     }
 }

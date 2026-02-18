@@ -2713,8 +2713,18 @@ function createHtml(config: {
       function formatQtyLabel(qty, uom) {
         const numeric = Number(qty ?? 0);
         const formattedQty = Number.isFinite(numeric) ? numeric : 0;
-        const unit = (uom || 'unit').toUpperCase();
+        const unit = formatUnitLabel(uom, formattedQty).toUpperCase();
         return formattedQty + ' ' + unit;
+      }
+
+      function formatUnitLabel(uom, qty) {
+        const unitLabel = String(uom ?? 'unit').trim();
+        const numeric = Number(qty ?? 0);
+        if (!Number.isFinite(numeric) || numeric <= 1) return unitLabel || 'unit';
+        if (!unitLabel) return 'unit';
+        if (unitLabel.includes('(s)') || unitLabel.includes('(S)')) return unitLabel;
+        if (unitLabel.endsWith('s') || unitLabel.endsWith('S')) return unitLabel;
+        return unitLabel + '(s)';
       }
 
       function formatAmount(value) {
@@ -2862,7 +2872,7 @@ function createHtml(config: {
               : (item.productName ?? 'Item ' + (index + 1));
             const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = item.unit ?? 'unit';
+            const unitLabel = formatUnitLabel(item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
@@ -4658,15 +4668,10 @@ function createHtml(config: {
           const { data, error } = await supabase.rpc('transfer_units_between_warehouses', payload);
           if (error) throw error;
           const now = new Date();
-          const month = String(now.getMonth() + 1);
-          const day = String(now.getDate());
-          const year = String(now.getFullYear());
-          const datePart = month + '/' + day + '/' + year;
-          const timePart = now.toLocaleString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit'
-          });
-          const windowLabel = datePart + ' ' + timePart;
+          const windowLabel =
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            ' ' +
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const itemsBlock = buildItemsBlockFromLines(lineItems);
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
@@ -4750,9 +4755,9 @@ function createHtml(config: {
 
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US') +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const itemsBlock = buildItemsBlockFromLines(lineItems);
           const summary = {
@@ -4864,10 +4869,10 @@ function createHtml(config: {
           const itemsBlock = buildItemsBlockFromLines(lineItems);
           const timestampSource = data?.received_at ?? data?.recorded_at ?? new Date().toISOString();
           const timestamp = new Date(timestampSource);
-          const windowLabel = timestamp.toLocaleDateString('en-US') + ' ' + timestamp.toLocaleString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit'
-          });
+          const windowLabel =
+            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            ' ' +
+            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
 
           const summary = {
             reference: receiptRef,

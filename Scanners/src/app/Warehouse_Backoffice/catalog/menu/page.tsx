@@ -39,6 +39,7 @@ export default function CatalogMenuPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -149,6 +150,11 @@ export default function CatalogMenuPage() {
   const toggleExpanded = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  const openPreview = (url: string, label: string) => {
+    if (!url) return;
+    setPreview({ url, label });
+  };
+
   const variantCount = useMemo(() => variants.length, [variants]);
 
   return (
@@ -208,9 +214,13 @@ export default function CatalogMenuPage() {
                       <div className={styles.cardHeader}>
                         <div className={styles.cardMain}>
                           {item.image_url ? (
-                            <div className={styles.itemImageWrap}>
+                            <button
+                              type="button"
+                              className={`${styles.itemImageWrap} ${styles.imageButton}`}
+                              onClick={() => openPreview(item.image_url ?? "", item.name)}
+                            >
                               <img className={styles.itemImage} src={item.image_url} alt={item.name} loading="lazy" />
-                            </div>
+                            </button>
                           ) : null}
                           <div className={styles.cardTitleBlock}>
                           <div className={styles.rowTop}>
@@ -254,14 +264,20 @@ export default function CatalogMenuPage() {
                               <div key={variant.id} className={styles.variantRow}>
                                 <div className={styles.variantInfo}>
                                   {(variant.image_url || item.image_url) ? (
-                                    <div className={styles.variantImageWrap}>
+                                    <button
+                                      type="button"
+                                      className={`${styles.variantImageWrap} ${styles.imageButton}`}
+                                      onClick={() =>
+                                        openPreview(variant.image_url || item.image_url || "", variant.name || item.name)
+                                      }
+                                    >
                                       <img
                                         className={styles.variantImage}
                                         src={variant.image_url || item.image_url || ""}
                                         alt={variant.name || item.name}
                                         loading="lazy"
                                       />
-                                    </div>
+                                    </button>
                                   ) : null}
                                   <div>
                                   <p className={styles.variantName}>{variant.name}</p>
@@ -300,6 +316,19 @@ export default function CatalogMenuPage() {
                 })
               )}
             </section>
+            {preview && (
+              <div className={styles.imageModal} onClick={() => setPreview(null)} role="presentation">
+                <div className={styles.imageModalCard} onClick={(event) => event.stopPropagation()}>
+                  <div className={styles.imageModalHeader}>
+                    <p className={styles.imageModalTitle}>{preview.label}</p>
+                    <button className={styles.imageModalClose} onClick={() => setPreview(null)}>
+                      Close
+                    </button>
+                  </div>
+                  <img className={styles.imageModalImg} src={preview.url} alt={preview.label} />
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>

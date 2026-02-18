@@ -44,7 +44,7 @@ class ProductRepository(
     suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
         val raw = provider.getWithJwt(
             "/rest/v1/catalog_items?active=eq.true&outlet_order_visible=eq.true&select=" +
-                "id,sku,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
+                "id,sku,name,image_url,item_kind,has_recipe,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
                 "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,has_variations,outlet_order_visible,active,default_warehouse_id",
             jwt
         )
@@ -57,6 +57,8 @@ class ProductRepository(
                 sku = it.sku,
                 name = it.name,
                 imageUrl = it.imageUrl,
+                itemKind = it.itemKind,
+                hasRecipe = it.hasRecipe == true,
                 purchasePackUnit = it.purchasePackUnit,
                 consumptionUom = it.consumptionUom,
                 unitsPerPurchasePack = it.unitsPerPurchasePack,
@@ -72,6 +74,10 @@ class ProductRepository(
             )
         }
         db.productDao().upsertAll(mapped)
+    }
+
+    suspend fun listRecipeIngredientIds(jwt: String, finishedItemId: String, variantKey: String = "base"): List<String> {
+        return provider.listRecipeIngredientIds(jwt, finishedItemId, variantKey)
     }
 
     fun listenVariations(productId: String): Flow<List<VariationEntity>> =

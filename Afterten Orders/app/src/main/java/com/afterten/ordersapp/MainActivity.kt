@@ -56,8 +56,8 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
     val session by appViewModel.session.collectAsState()
 
     fun routeFor(session: OutletSession): String = when {
-        session.hasRole(RoleGuards.Supervisor) -> Routes.SupervisorOrders.route
         session.hasRole(RoleGuards.Branch) -> Routes.Home.route
+        session.hasRole(RoleGuards.Supervisor) -> Routes.SupervisorOrders.route
         else -> Routes.Login.route
     }
 
