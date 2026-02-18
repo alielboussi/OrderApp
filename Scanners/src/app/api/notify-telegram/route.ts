@@ -65,7 +65,7 @@ function formatItemsBlock(summary: SummaryPayload) {
   };
 
   if (items.length) {
-    const grouped = new Map();
+    const grouped = new Map<string, Array<{ variation: string; qty: unknown; unit: string }>>();
     items.forEach((item, index) => {
       const baseName = String(item.productName ?? `Item ${index + 1}`);
       const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
@@ -76,7 +76,7 @@ function formatItemsBlock(summary: SummaryPayload) {
       grouped.get(baseName).push({ variation, qty, unit });
     });
 
-    const lines = [];
+    const lines: string[] = [];
     grouped.forEach((entries, baseName) => {
       lines.push(`<u>${escapeHtml(baseName)}</u>`);
       entries.forEach((entry) => {
