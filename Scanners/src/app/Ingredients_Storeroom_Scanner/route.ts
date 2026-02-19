@@ -1583,6 +1583,16 @@ function createHtml(config: {
     </div>
   </div>
 
+  <div id="supplier-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="supplier-modal-title">
+      <div class="select-modal-header" id="supplier-modal-title">Select supplier</div>
+      <div class="select-modal-grid" id="supplier-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="supplier-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="qty-modal">
     <form id="qty-form">
       <h3 id="qty-title">Enter quantity</h3>
@@ -1675,7 +1685,8 @@ function createHtml(config: {
           <h3>Purchase Intake</h3>
           <div class="purchase-grid">
             <label>Supplier
-              <select id="purchase-supplier">
+              <button type="button" id="purchase-supplier-picker" class="destination-pill-button">Select supplier</button>
+              <select id="purchase-supplier" class="destination-hidden-select">
                 <option value="">Select supplier</option>
               </select>
             </label>
@@ -2118,6 +2129,7 @@ function createHtml(config: {
       const purchasePage = document.getElementById('purchase-page');
       const purchaseForm = document.getElementById('purchase-form');
       const purchaseSupplier = document.getElementById('purchase-supplier');
+      const purchaseSupplierPicker = document.getElementById('purchase-supplier-picker');
       const purchaseReference = document.getElementById('purchase-reference');
       const purchaseItemSearchInput = document.getElementById('purchase-item-search');
       const purchaseSummaryList = document.getElementById('purchase-summary-list');
@@ -2180,8 +2192,10 @@ function createHtml(config: {
       const homesPicker = document.getElementById('homes-picker');
       const destinationModal = document.getElementById('destination-modal');
       const homesModal = document.getElementById('homes-modal');
+      const supplierModal = document.getElementById('supplier-modal');
       const destinationModalOptions = document.getElementById('destination-modal-options');
       const homesModalOptions = document.getElementById('homes-modal-options');
+      const supplierModalOptions = document.getElementById('supplier-modal-options');
       const operatorSelectModal = document.getElementById('operator-modal');
       const operatorSelectModalOptions = document.getElementById('operator-modal-options');
       let activeOperatorContext = 'transfer';
@@ -3586,6 +3600,13 @@ function createHtml(config: {
           purchaseSupplier.disabled = true;
           state.purchaseForm.supplierId = '';
           purchaseSupplier.value = '';
+          if (purchaseSupplierPicker) {
+            purchaseSupplierPicker.textContent = 'No active suppliers';
+            purchaseSupplierPicker.disabled = true;
+          }
+          if (supplierModalOptions) {
+            supplierModalOptions.innerHTML = '';
+          }
           return;
         }
         purchaseSupplier.disabled = false;
@@ -3601,6 +3622,49 @@ function createHtml(config: {
         if (!hasExisting) {
           state.purchaseForm.supplierId = '';
         }
+        if (purchaseSupplierPicker) {
+          const label = getSelectedSupplierLabel();
+          purchaseSupplierPicker.textContent = label;
+          purchaseSupplierPicker.disabled = !state.suppliers.length;
+        }
+        renderSupplierCards();
+      }
+
+      function getSelectedSupplierLabel() {
+        const selected = state.suppliers.find((supplier) => supplier?.id === state.purchaseForm.supplierId);
+        return selected?.name ?? selected?.supplier_name ?? selected?.display_name ?? 'Select supplier';
+      }
+
+      function renderSupplierCards() {
+        if (!supplierModalOptions) return;
+        supplierModalOptions.innerHTML = '';
+        if (!state.suppliers.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No suppliers found';
+          empty.disabled = true;
+          supplierModalOptions.appendChild(empty);
+          return;
+        }
+        state.suppliers.forEach((supplier) => {
+          if (!supplier?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = supplier.name ?? supplier.supplier_name ?? supplier.display_name ?? 'Supplier';
+          card.addEventListener('click', () => {
+            if (purchaseSupplier) {
+              purchaseSupplier.value = supplier.id;
+            }
+            state.purchaseForm.supplierId = supplier.id;
+            if (purchaseSupplierPicker) {
+              purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
+            }
+            closeSelectModal(supplierModal);
+          });
+          supplierModalOptions.appendChild(card);
+        });
       }
 
       function updatePurchaseSummary() {
@@ -3787,6 +3851,10 @@ function createHtml(config: {
         if (purchaseSupplier) {
           purchaseSupplier.value = state.purchaseForm.supplierId ?? '';
           purchaseSupplier.disabled = state.suppliers.length === 0;
+        }
+        if (purchaseSupplierPicker) {
+          purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
+          purchaseSupplierPicker.disabled = state.suppliers.length === 0;
         }
         if (purchaseReference) {
           purchaseReference.value = state.purchaseForm.referenceCode ?? '';
@@ -5216,6 +5284,9 @@ function createHtml(config: {
 
       purchaseSupplier?.addEventListener('change', () => {
         state.purchaseForm.supplierId = purchaseSupplier.value ?? '';
+        if (purchaseSupplierPicker) {
+          purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
+        }
       });
 
       purchaseReference?.addEventListener('focus', () => {
@@ -5319,7 +5390,12 @@ function createHtml(config: {
         const clickedReferenceNumpad = referenceNumpad?.contains(target);
         const interactingWithDamageNotes =
           target === damageNote || damageNote?.contains(target) || damageNotesKeyboard?.contains(target);
-        const interactingWithSupplier = target === purchaseSupplier || purchaseSupplier?.contains(target);
+        const interactingWithSupplier =
+          target === purchaseSupplier ||
+          purchaseSupplier?.contains(target) ||
+          target === purchaseSupplierPicker ||
+          purchaseSupplierPicker?.contains(target) ||
+          supplierModal?.contains(target);
 
         if (
           clickedReferenceInput ||
@@ -5366,6 +5442,11 @@ function createHtml(config: {
         openSelectModal(homesModal);
       });
 
+      purchaseSupplierPicker?.addEventListener('click', () => {
+        renderSupplierCards();
+        openSelectModal(supplierModal);
+      });
+
       Object.entries(operatorPickers).forEach(([context, button]) => {
         if (!button) return;
         button.addEventListener('click', () => {
@@ -5393,12 +5474,19 @@ function createHtml(config: {
         }
       });
 
+      supplierModal?.addEventListener('click', (event) => {
+        if (event.target === supplierModal) {
+          closeSelectModal(supplierModal);
+        }
+      });
+
       document.querySelectorAll('[data-modal-close]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
           if (targetId === 'homes-modal') closeSelectModal(homesModal);
           if (targetId === 'operator-modal') closeSelectModal(operatorSelectModal);
+          if (targetId === 'supplier-modal') closeSelectModal(supplierModal);
         });
       });
 
