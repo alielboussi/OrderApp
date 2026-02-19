@@ -5021,7 +5021,7 @@ function createHtml(config: {
       }
 
       scannerWedge?.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault();
           commitScanBuffer();
           return;
@@ -5087,7 +5087,7 @@ function createHtml(config: {
       });
 
       itemSearchInput?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter') return;
+        if (event.key !== 'Enter' && event.key !== 'Tab') return;
         event.preventDefault();
         const value = (itemSearchInput.value ?? '').trim();
         if (!value) return;
@@ -5102,7 +5102,7 @@ function createHtml(config: {
       });
 
       damageItemSearchInput?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter') return;
+        if (event.key !== 'Enter' && event.key !== 'Tab') return;
         event.preventDefault();
         const value = (damageItemSearchInput.value ?? '').trim();
         if (!value) return;
@@ -5117,7 +5117,7 @@ function createHtml(config: {
       });
 
       purchaseItemSearchInput?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter') return;
+        if (event.key !== 'Enter' && event.key !== 'Tab') return;
         event.preventDefault();
         const value = (purchaseItemSearchInput.value ?? '').trim();
         if (!value) return;

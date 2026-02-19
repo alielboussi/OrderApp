@@ -54,12 +54,18 @@ function getScannerLabel(scanner: string | null) {
 
 function formatItemsBlock(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage') {
   const items = Array.isArray(summary.items) ? summary.items : [];
+  const pickSupplierUnit = (unit: unknown) => {
+    const raw = String(unit ?? '').trim();
+    if (!raw) return '';
+    const slashIndex = raw.indexOf('/');
+    if (slashIndex <= 0) return raw;
+    return raw.slice(0, slashIndex).trim();
+  };
   const formatUnitLabel = (unit: unknown, qty: unknown) => {
-    const unitLabel = String(unit ?? 'unit').trim();
+    const unitLabel = pickSupplierUnit(unit) || 'unit';
     const numeric = Number(qty ?? 0);
     if (!Number.isFinite(numeric) || numeric <= 1) return unitLabel || 'unit';
     if (!unitLabel) return 'unit';
-    if (unitLabel.includes('/')) return unitLabel;
     if (unitLabel.includes('(s)') || unitLabel.includes('(S)')) return unitLabel;
     if (unitLabel.endsWith('s') || unitLabel.endsWith('S')) return unitLabel;
     return unitLabel + '(s)';
