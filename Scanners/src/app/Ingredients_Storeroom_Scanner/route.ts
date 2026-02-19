@@ -3220,17 +3220,18 @@ function createHtml(config: {
 
       function enforceOperatorLocks() {
         const destinationSelected = Boolean(getSelectedDestination());
+        const sourceReady = Boolean(lockedSourceId);
         const transferUnlocked = Boolean(getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true }));
         if (transferSubmit) {
           transferSubmit.disabled = state.loading || !transferUnlocked || !destinationSelected;
         }
         const purchaseUnlocked = Boolean(getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true }));
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !destinationSelected;
+          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !sourceReady;
         }
         const damageUnlocked = Boolean(getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true }));
         if (damageSubmit) {
-          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !destinationSelected;
+          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !sourceReady;
         }
       }
 

@@ -3295,7 +3295,6 @@ function createHtml(config: {
 
       function enforceOperatorLocks() {
         const transferDestinationSelected = Boolean(getSelectedDestination());
-        const primaryDestinationSelected = Boolean(getSelectedPrimaryDestination());
         const sourceReady = Boolean(lockedSourceId);
         const transferUnlocked = Boolean(getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true }));
         if (transferSubmit) {
@@ -3303,11 +3302,11 @@ function createHtml(config: {
         }
         const purchaseUnlocked = Boolean(getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true }));
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !(primaryDestinationSelected || sourceReady);
+          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !sourceReady;
         }
         const damageUnlocked = Boolean(getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true }));
         if (damageSubmit) {
-          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !(primaryDestinationSelected || sourceReady);
+          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !sourceReady;
         }
       }
 
