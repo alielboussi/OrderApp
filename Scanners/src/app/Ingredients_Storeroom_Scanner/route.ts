@@ -5082,6 +5082,23 @@ function createHtml(config: {
         state.damageNote = damageNote.value ?? '';
       });
 
+      let searchAutoCommitTimer = null;
+      const scheduleSearchAutoCommit = (input, context) => {
+        if (!input) return;
+        if (qtyModal?.style.display === 'flex') return;
+        if (variantModal?.style.display === 'flex') return;
+        window.clearTimeout(searchAutoCommitTimer);
+        const value = (input.value ?? '').trim();
+        if (value.length < 8) return;
+        if (!/^[0-9]+$/.test(value)) return;
+        searchAutoCommitTimer = window.setTimeout(() => {
+          searchProductsWithScan(value);
+          window.setTimeout(() => {
+            input.select();
+          }, 10);
+        }, 120);
+      };
+
       itemSearchInput?.addEventListener('focus', () => {
         state.mode = 'transfer';
       });
@@ -5095,6 +5112,9 @@ function createHtml(config: {
         window.setTimeout(() => {
           itemSearchInput.select();
         }, 10);
+      });
+      itemSearchInput?.addEventListener('input', () => {
+        scheduleSearchAutoCommit(itemSearchInput, 'transfer');
       });
 
       damageItemSearchInput?.addEventListener('focus', () => {
@@ -5111,6 +5131,9 @@ function createHtml(config: {
           damageItemSearchInput.select();
         }, 10);
       });
+      damageItemSearchInput?.addEventListener('input', () => {
+        scheduleSearchAutoCommit(damageItemSearchInput, 'damage');
+      });
 
       purchaseItemSearchInput?.addEventListener('focus', () => {
         state.mode = 'purchase';
@@ -5125,6 +5148,9 @@ function createHtml(config: {
         window.setTimeout(() => {
           purchaseItemSearchInput.select();
         }, 10);
+      });
+      purchaseItemSearchInput?.addEventListener('input', () => {
+        scheduleSearchAutoCommit(purchaseItemSearchInput, 'purchase');
       });
 
       const openDamageKeyboard = (event) => {
