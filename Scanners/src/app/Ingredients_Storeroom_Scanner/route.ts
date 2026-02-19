@@ -2851,13 +2851,21 @@ function createHtml(config: {
         return effectiveQty + ' ' + effectiveUom;
       }
 
+      function formatCombinedUom(stockUom, consumptionUom) {
+        const stock = String(stockUom ?? '').trim();
+        const cons = String(consumptionUom ?? '').trim();
+        if (!stock && !cons) return 'unit';
+        if (!cons || stock.toUpperCase() === cons.toUpperCase()) return stock || cons;
+        return stock + ' / ' + cons;
+      }
+
       function mapCartSnapshotToLineItems(cartSnapshot) {
         return cartSnapshot.map((item, index) => ({
           productName: item.productName ?? 'Item ' + (index + 1),
           variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
+          unit: formatCombinedUom(item.baseUom ?? item.packUom ?? item.uom, item.uom ?? item.baseUom),
           unitCost: item.unitCost ?? null
         }));
       }

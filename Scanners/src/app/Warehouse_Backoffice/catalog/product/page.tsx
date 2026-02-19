@@ -7,6 +7,7 @@ import styles from "./product.module.css";
 
 const qtyUnitOptions = [
   { value: "each", label: "Each" },
+  { value: "pc", label: "Pc(s)" },
   { value: "g", label: "Gram(s)" },
   { value: "kg", label: "Kilogram(s)" },
   { value: "mg", label: "Milligram(s)" },

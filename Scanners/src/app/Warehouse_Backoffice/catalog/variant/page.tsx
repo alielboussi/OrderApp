@@ -7,6 +7,7 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 
 const qtyUnits = [
   "each",
+  "pc",
   "g",
   "kg",
   "mg",
@@ -34,6 +35,8 @@ const formatUnitLabel = (unit: string) => {
   const mapped =
     lower === "each"
       ? "Each"
+      : lower === "pc" || lower === "pcs"
+        ? "Pc(s)"
       : lower === "g"
       ? "Gram(s)"
       : lower === "kg"

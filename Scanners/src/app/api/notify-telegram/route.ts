@@ -52,13 +52,14 @@ function getScannerLabel(scanner: string | null) {
   return 'Supervisor';
 }
 
-function formatItemsBlock(summary: SummaryPayload) {
+function formatItemsBlock(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage') {
   const items = Array.isArray(summary.items) ? summary.items : [];
   const formatUnitLabel = (unit: unknown, qty: unknown) => {
     const unitLabel = String(unit ?? 'unit').trim();
     const numeric = Number(qty ?? 0);
     if (!Number.isFinite(numeric) || numeric <= 1) return unitLabel || 'unit';
     if (!unitLabel) return 'unit';
+    if (unitLabel.includes('/')) return unitLabel;
     if (unitLabel.includes('(s)') || unitLabel.includes('(S)')) return unitLabel;
     if (unitLabel.endsWith('s') || unitLabel.endsWith('S')) return unitLabel;
     return unitLabel + '(s)';
@@ -78,8 +79,9 @@ function formatItemsBlock(summary: SummaryPayload) {
     });
 
     const lines: string[] = [];
+    const headerPrefix = context === 'purchase' ? '🟢' : '🔴';
     grouped.forEach((entries, baseName) => {
-      lines.push(`<u>${escapeHtml(baseName)}</u>`);
+      lines.push(`${headerPrefix} ${escapeHtml(baseName)}`);
       entries.forEach((entry) => {
         lines.push(`• ${escapeHtml(entry.variation)} — ${escapeHtml(String(entry.qty))} ${escapeHtml(entry.unit)}`);
       });
@@ -111,7 +113,7 @@ function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' 
     summary.destLabel ?? summary.destinationLabel ?? summary.route ?? 'Unknown destination'
   );
   const dateTime = String(summary.dateTime ?? summary.window ?? '');
-  const itemsBlock = formatItemsBlock(summary);
+  const itemsBlock = formatItemsBlock(summary, context);
   const scannerLabel = getScannerLabel(scanner);
 
   const lines = [

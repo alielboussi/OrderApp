@@ -45,6 +45,7 @@ type ProductFormState = {
 
 const qtyUnitOptions = [
   { value: "each", label: "Each" },
+  { value: "pc", label: "Pc(s)" },
   { value: "g", label: "Gram(s)" },
   { value: "kg", label: "Kilogram(s)" },
   { value: "mg", label: "Milligram(s)" },
