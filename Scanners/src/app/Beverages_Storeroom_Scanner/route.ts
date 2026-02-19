@@ -2050,6 +2050,8 @@ function createHtml(config: {
         lockedSource: null,
         lockedDest: null,
         suppliers: [],
+        suppliersNoScannerFields: true,
+        suppliersSkipRpc: true,
         operators: [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
         destinationSelection: null,
@@ -4396,6 +4398,7 @@ function createHtml(config: {
         if (skipDirect) {
           console.warn('Supplier fetch: network offline (skipping direct Supabase queries)');
         }
+        const includeScannerFields = !state.suppliersNoScannerFields;
 
         const matchesScannerArea = (supplier) => {
           if (!supplier) return false;
@@ -4420,9 +4423,13 @@ function createHtml(config: {
             : 'id,name,contact_name,contact_phone,contact_email,active';
 
         const loadViaRpc = async (warehouseId) => {
-          if (!warehouseId) return [];
+          if (!warehouseId || state.suppliersSkipRpc) return [];
           const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
           if (error) {
+            const message = (error.message ?? '').toLowerCase();
+            if (status === 400 || message.includes('scanner') || message.includes('column') || message.includes('relationship')) {
+              state.suppliersSkipRpc = true;
+            }
             const wrapped = new Error(error.message ?? 'suppliers_for_warehouse RPC failed');
             wrapped.status = status;
             wrapped.code = error.code;
@@ -4435,10 +4442,11 @@ function createHtml(config: {
           if (!warehouseId) return [];
           let { data, error, status } = await supabase
             .from('product_supplier_links')
-            .select(linkTableSelect(true))
+            .select(linkTableSelect(includeScannerFields))
             .eq('warehouse_id', warehouseId)
             .eq('active', true);
-          if (error && (error.message?.includes('scanner') || error.message?.includes('scanners'))) {
+          if (error && includeScannerFields) {
+            state.suppliersNoScannerFields = true;
             ({ data, error, status } = await supabase
               .from('product_supplier_links')
               .select(linkTableSelect(false))
@@ -4457,9 +4465,10 @@ function createHtml(config: {
         const loadAllSuppliers = async () => {
           let { data, error, status } = await supabase
             .from('suppliers')
-            .select(supplierSelect(true))
+            .select(supplierSelect(includeScannerFields))
             .eq('active', true);
-          if (error && (error.message?.includes('scanner') || error.message?.includes('scanners'))) {
+          if (error && includeScannerFields) {
+            state.suppliersNoScannerFields = true;
             ({ data, error, status } = await supabase
               .from('suppliers')
               .select(supplierSelect(false))
