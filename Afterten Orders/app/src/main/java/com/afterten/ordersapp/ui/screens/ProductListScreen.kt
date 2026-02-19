@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import coil.compose.AsyncImage
@@ -85,6 +86,8 @@ fun ProductListScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var showIngredientsFor by remember { mutableStateOf<ProductEntity?>(null) }
+    var recipeIngredientIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var recipeSourcesLoaded by remember { mutableStateOf<Set<String>>(emptySet()) }
     val logger = rememberScreenLogger("ProductList")
 
     LaunchedEffect(Unit) { logger.enter() }
@@ -114,6 +117,25 @@ fun ProductListScreen(
         } finally {
             syncing = false
         }
+    }
+
+    LaunchedEffect(products, session?.token) {
+        val token = session?.token ?: return@LaunchedEffect
+        val recipeSources = products.filter {
+            it.hasRecipe && it.itemKind?.lowercase() != "ingredient"
+        }
+        val toLoad = recipeSources.map { it.id }.filterNot { recipeSourcesLoaded.contains(it) }
+        if (toLoad.isEmpty()) return@LaunchedEffect
+        val nextIngredients = recipeIngredientIds.toMutableSet()
+        val nextLoaded = recipeSourcesLoaded.toMutableSet()
+        toLoad.forEach { id ->
+            nextLoaded.add(id)
+            runCatching { repo.listRecipeIngredientIds(token, id) }
+                .onSuccess { nextIngredients.addAll(it) }
+                .onFailure { logger.warn("RecipeIngredientsLoadFailed", mapOf("productId" to id, "message" to (it.message ?: ""))) }
+        }
+        recipeIngredientIds = nextIngredients
+        recipeSourcesLoaded = nextLoaded
     }
 
     Scaffold(
@@ -228,8 +250,10 @@ fun ProductListScreen(
                     }
                 }
             }.filter { item ->
-                val kind = item.itemKind?.lowercase()
-                kind == null || kind != "ingredient"
+                if (!item.outletOrderVisible) return@filter false
+                val isIngredient = item.itemKind?.lowercase() == "ingredient"
+                if (isIngredient && recipeIngredientIds.contains(item.id)) return@filter false
+                true
             }
 
             // Grid of 2 columns
@@ -315,10 +339,10 @@ private fun ProductCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1f),
+            .heightIn(min = 240.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth()) {
             ProductImage(
                 url = item.imageUrl ?: imageUrlOverride,
                 modifier = Modifier
@@ -333,92 +357,86 @@ private fun ProductCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
-                    maxLines = 2
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        if (!item.hasVariations) {
-                            Text(
-                                text = "Order in ${item.purchasePackUnit.uppercase()}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White
-                            )
+                if (item.hasRecipe || item.hasVariations) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (item.hasRecipe) {
+                            Button(
+                                onClick = onOpenIngredients,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1E2A3D),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("Ingredients", color = Color.White, fontSize = 12.sp)
+                            }
                         }
                         if (item.hasVariations) {
-                            val mc = minVariationCost
-                            if (mc != null && mc > 0.0) {
-                                Text(
-                                    text = "From ${formatMoney(mc)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.White.copy(alpha = 0.95f)
-                                )
+                            Button(
+                                onClick = onOpenVariations,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1E2A3D),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("Variations", color = Color.White, fontSize = 12.sp)
                             }
-                        } else {
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                Column {
+                    if (item.hasVariations) {
+                        val mc = minVariationCost
+                        if (mc != null && mc > 0.0) {
                             Text(
-                                text = "Cost: ${formatMoney(item.cost)}",
+                                text = "From ${formatMoney(mc)}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = Color.White.copy(alpha = 0.95f)
                             )
-                            formatPackageUnits(item.unitsPerPurchasePack)?.let { units ->
-                                Text(
-                                    text = "1 ${item.purchasePackUnit.uppercase()} = $units ${item.consumptionUom.uppercase()}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.85f)
-                                )
-                            }
                         }
-                    }
-                    when {
-                        item.hasRecipe || item.hasVariations -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (item.hasRecipe) {
-                                    FilledTonalButton(
-                                        onClick = onOpenIngredients,
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color(0xFF1E2A3D),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Text("Ingredients")
-                                    }
-                                }
-                                if (item.hasVariations) {
-                                    FilledTonalButton(
-                                        onClick = onOpenVariations,
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color(0xFF1E2A3D),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Text("Variations")
-                                    }
-                                }
-                            }
-                        }
-                        else -> {
-                            val cart = root.cart.collectAsState().value
-                            val qty = cart["${item.id}:"]?.qty ?: 0
-                            QuantityStepper(
-                                qty = qty,
-                                onDec = {
-                                    logger.event("QtyDecrement", mapOf("productId" to item.id))
-                                    root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
-                                },
-                                onInc = {
-                                    logger.event("QtyIncrement", mapOf("productId" to item.id))
-                                    root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
-                                },
-                                onChange = { n ->
-                                    logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
-                                    root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
-                                }
+                    } else {
+                        Text(
+                            text = "Cost: ${formatMoney(item.cost)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.95f)
+                        )
+                        formatPackageUnits(item.unitsPerPurchasePack)?.let { units ->
+                            Text(
+                                text = "1 ${item.purchasePackUnit.uppercase()} = $units ${item.consumptionUom.uppercase()}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f)
                             )
                         }
+                    }
+                    if (!item.hasRecipe && !item.hasVariations) {
+                        Spacer(Modifier.height(8.dp))
+                        val cart = root.cart.collectAsState().value
+                        val qty = cart["${item.id}:"]?.qty ?: 0
+                        QuantityStepper(
+                            qty = qty,
+                            onDec = {
+                                logger.event("QtyDecrement", mapOf("productId" to item.id))
+                                root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                            },
+                            onInc = {
+                                logger.event("QtyIncrement", mapOf("productId" to item.id))
+                                root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                            },
+                            onChange = { n ->
+                                logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
+                                root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
+                            }
+                        )
                     }
                 }
             }
@@ -519,10 +537,9 @@ private fun RecipeIngredientsDialog(
 
     val ingredientItems = remember(ingredientIds, productsById) {
         ingredientIds.mapNotNull { id ->
-            productsById[id]?.takeIf { it.outletOrderVisible }
+            productsById[id]
         }
     }
-    val missingCount = ingredientIds.size - ingredientItems.size
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(20.dp), tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth(0.95f)) {
@@ -565,14 +582,6 @@ private fun RecipeIngredientsDialog(
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                                 }
                             }
-                            if (missingCount > 0) {
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = "$missingCount ingredient(s) are hidden because they are not enabled for outlet orders.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.75f)
-                                )
-                            }
                         }
                     }
                 }
@@ -608,34 +617,36 @@ private fun IngredientRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ProductImage(
-            url = item.imageUrl,
+        Column(
             modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(12.dp)),
-            contentScale = ContentScale.Crop,
-            onClick = {
-                val url = item.imageUrl
-                if (!url.isNullOrBlank()) {
-                    onImageClick(url, item.name)
+                .weight(1f)
+                .widthIn(min = 120.dp)
+        ) {
+            ProductImage(
+                url = item.imageUrl,
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop,
+                onClick = {
+                    val url = item.imageUrl
+                    if (!url.isNullOrBlank()) {
+                        onImageClick(url, item.name)
+                    }
                 }
-            }
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+            )
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = item.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Text(
-                text = "Order in ${item.purchasePackUnit.uppercase()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.85f)
+                color = Color.White,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
         }
-        QuantityStepper(
+        VariationQtyControls(
+            uom = item.purchasePackUnit,
             qty = qty,
             onDec = {
                 logger.event("IngredientQtyDecrement", mapOf("productId" to item.id))
@@ -877,7 +888,7 @@ private fun VariationQtyControls(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = uom,
+                text = formatUomLabel(uom, qty),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
                 color = Color.White,
@@ -910,4 +921,14 @@ private fun VariationQtyControls(
         }
         RedOutlinedCircleButton(text = "+", onClick = onInc)
     }
+}
+
+private fun formatUomLabel(uom: String?, qty: Int): String {
+    val unit = uom?.trim().orEmpty()
+    if (unit.isEmpty()) return "UNIT"
+    if (unit.contains('/')) return unit.uppercase()
+    if (qty <= 1) return unit.uppercase()
+    if (unit.contains("(s)") || unit.contains("(S)")) return unit.uppercase()
+    if (unit.endsWith("s", ignoreCase = true)) return unit.uppercase()
+    return "${unit.uppercase()}(S)"
 }
