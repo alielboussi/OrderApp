@@ -3225,11 +3225,11 @@ function createHtml(config: {
         if (transferSubmit) {
           transferSubmit.disabled = state.loading || !transferUnlocked || !destinationSelected;
         }
-        const purchaseUnlocked = Boolean(getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true }));
+        const purchaseUnlocked = true;
         if (purchaseSubmit) {
           purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !sourceReady;
         }
-        const damageUnlocked = Boolean(getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true }));
+        const damageUnlocked = true;
         if (damageSubmit) {
           damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !sourceReady;
         }
