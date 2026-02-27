@@ -2344,6 +2344,11 @@ function createHtml(config: {
         return String(value).trim().replace(/[^0-9a-z]/gi, '').toLowerCase();
       }
 
+      function normalizeVariantKeyLocal(value) {
+        const raw = value === undefined || value === null ? '' : String(value).trim();
+        return raw || 'base';
+      }
+
       function submitQtyForm() {
         if (!qtyForm) return;
         if (typeof qtyForm.requestSubmit === 'function') {
