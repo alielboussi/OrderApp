@@ -56,6 +56,8 @@ const qtyUnitOptions = [
   { value: "bottle", label: "Bottle(s)" },
   { value: "Tin Can", label: "Tin Can(s)" },
   { value: "Jar", label: "Jar(s)" },
+  { value: "Bucket", label: "Bucket(s)" },
+  { value: "Bag", label: "Bag(s)" },
   { value: "plastic", label: "Plastic(s)" },
   { value: "Packet", label: "Packet(s)" },
   { value: "Box", label: "Box(es)" },

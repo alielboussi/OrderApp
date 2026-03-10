@@ -33,7 +33,24 @@ type VariantSummary = {
   active: boolean;
 };
 
-const qtyUnits = ["each", "pc", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle", "Tin Can", "Jar", "Packet", "Box"] as const;
+const qtyUnits = [
+  "each",
+  "pc",
+  "g",
+  "kg",
+  "mg",
+  "ml",
+  "l",
+  "case",
+  "crate",
+  "bottle",
+  "Tin Can",
+  "Jar",
+  "Bucket",
+  "Bag",
+  "Packet",
+  "Box",
+] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },
@@ -59,11 +76,15 @@ const formatUnitLabel = (unit: string) => {
               ? "Millilitre(s)"
               : lower === "l"
                 ? "Litre(s)"
-                : lower === "packet"
-                  ? "Packet(s)"
-                  : lower === "box"
-                    ? "Box(es)"
-                    : null;
+                : lower === "bucket"
+                  ? "Bucket(s)"
+                  : lower === "bag"
+                    ? "Bag(s)"
+                    : lower === "packet"
+                      ? "Packet(s)"
+                      : lower === "box"
+                        ? "Box(es)"
+                        : null;
   if (mapped) return mapped;
   const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
   return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;

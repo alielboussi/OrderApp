@@ -18,6 +18,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToReports = () => router.push("/Warehouse_Backoffice/reports");
   const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
+  const goToStocktakes = () => router.push("/Warehouse_Backoffice/stocktakes");
   const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
   const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
   const goToOutletOrdersSetup = () => router.push("/Warehouse_Backoffice/outlet-orders-setup");
@@ -152,6 +153,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToStockReports} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Stock Reports</p>
             <p className={styles.cardBody}>Review stocktake periods for mapped warehouses.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToStocktakes} className={`${styles.actionCard} ${styles.stocktakeCard}`}>
+            <p className={`${styles.cardTitle} ${styles.stocktakeTitle}`}>Warehouse Stocktake</p>
+            <p className={styles.cardBody}>Run opening and closing counts, close periods, and export variance PDFs.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
