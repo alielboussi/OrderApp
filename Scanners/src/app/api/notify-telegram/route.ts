@@ -1,5 +1,17 @@
 import { NextResponse } from 'next/server';
 
+type SummaryItem = {
+  productName?: unknown;
+  variationName?: unknown;
+  qty?: unknown;
+  scannedQty?: unknown;
+  unit?: unknown;
+  packUom?: unknown;
+  packUnit?: unknown;
+  pack_unit?: unknown;
+  supplierPackUom?: unknown;
+};
+
 type SummaryPayload = {
   processedBy?: unknown;
   operator?: unknown;
@@ -9,13 +21,7 @@ type SummaryPayload = {
   destinationLabel?: unknown;
   route?: unknown;
   itemsBlock?: unknown;
-  items?: Array<{
-    productName?: unknown;
-    variationName?: unknown;
-    qty?: unknown;
-    scannedQty?: unknown;
-    unit?: unknown;
-  }>;
+  items?: SummaryItem[];
 };
 
 type NotifyRequest = {
@@ -28,6 +34,8 @@ const TELEGRAM_INGREDIENTS_BOT_TOKEN = process.env.TELEGRAM_INGREDIENTS_BOT_TOKE
 const TELEGRAM_INGREDIENTS_CHAT_ID = process.env.TELEGRAM_INGREDIENTS_CHAT_ID;
 const TELEGRAM_BEVERAGES_BOT_TOKEN = process.env.TELEGRAM_BEVERAGES_BOT_TOKEN;
 const TELEGRAM_BEVERAGES_CHAT_ID = process.env.TELEGRAM_BEVERAGES_CHAT_ID;
+const TELEGRAM_SOYOLA_BOT_TOKEN = process.env.TELEGRAM_SOYOLA_BOT_TOKEN;
+const TELEGRAM_SOYOLA_CHAT_ID = process.env.TELEGRAM_SOYOLA_CHAT_ID;
 
 function getScannerConfig(scanner: string | null) {
   if (scanner === 'ingredients') {
@@ -42,18 +50,41 @@ function getScannerConfig(scanner: string | null) {
       chatId: TELEGRAM_BEVERAGES_CHAT_ID ?? ''
     };
   }
+  if (scanner === 'soyola') {
+    return {
+      token: TELEGRAM_SOYOLA_BOT_TOKEN ?? '',
+      chatId: TELEGRAM_SOYOLA_CHAT_ID ?? ''
+    };
+  }
   return null;
 }
 
 function getScannerLabel(scanner: string | null) {
   if (scanner === 'ingredients') return 'Ingredients Storeroom';
   if (scanner === 'beverages') return 'Beverages Storeroom';
+  if (scanner === 'soyola') return 'Soyola Storeroom';
   if (scanner === 'supervisor') return 'Supervisor';
   return 'Supervisor';
 }
 
+function normalizeLabel(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
 function formatItemsBlock(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage') {
   const items = Array.isArray(summary.items) ? summary.items : [];
+  const resolveItemUnit = (item: SummaryItem) => {
+    const raw =
+      item.supplierPackUom ??
+      item.packUom ??
+      item.packUnit ??
+      item.pack_unit ??
+      item.unit ??
+      '';
+    return String(raw ?? '').trim();
+  };
   const pickSupplierUnit = (unit: unknown) => {
     const raw = String(unit ?? '').trim();
     if (!raw) return '';
@@ -78,7 +109,7 @@ function formatItemsBlock(summary: SummaryPayload, context: 'transfer' | 'purcha
       const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
       const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : 'Base';
       const qty = item.scannedQty ?? item.qty ?? 0;
-      const unit = formatUnitLabel(item.unit ?? 'unit', qty);
+      const unit = formatUnitLabel(resolveItemUnit(item), qty);
       const bucket = grouped.get(baseName) ?? [];
       bucket.push({ variation, qty, unit });
       grouped.set(baseName, bucket);
@@ -114,7 +145,7 @@ function escapeHtml(value: string) {
 
 function buildMessage(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage', scanner: string | null) {
   const typeLabel = context === 'purchase' ? 'Purchase' : context === 'damage' ? 'Damage' : 'Transfer';
-  const operator = String(summary.processedBy ?? summary.operator ?? 'Unknown operator');
+  const operator = normalizeLabel(summary.processedBy) ?? normalizeLabel(summary.operator) ?? 'Unknown operator';
   const destination = String(
     summary.destLabel ?? summary.destinationLabel ?? summary.route ?? 'Unknown destination'
   );

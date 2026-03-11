@@ -74,9 +74,11 @@ function toErrorMessage(error: unknown): string {
   }
 }
 
-function parseQty(value: number | null): number {
-  if (typeof value !== "number" || Number.isNaN(value)) return 0;
-  return value;
+function parseQty(value: number | string | null): number {
+  if (value === null || value === undefined) return 0;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return parsed;
 }
 
 function formatQtyWithUom(value: number | null, uom?: string): { text: string; uom: string } {
@@ -167,9 +169,6 @@ export default function OutletWarehouseBalancesPage() {
         }
 
         setOutlets(mapped);
-        if (selectedOutletIds.length === 0 && mapped.length > 0) {
-          setSelectedOutletIds(mapped.map((outlet) => outlet.id));
-        }
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));

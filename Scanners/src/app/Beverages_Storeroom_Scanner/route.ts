@@ -2973,7 +2973,9 @@ function createHtml(config: {
           variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: formatCombinedUom(item.packUom ?? item.uom, item.uom ?? item.packUom),
+          unit: item.supplierPackUom ?? item.packUom ?? item.uom ?? 'unit',
+          supplierPackUom: item.supplierPackUom ?? null,
+          packUom: item.packUom ?? null,
           unitCost: item.unitCost ?? null
         }));
       }
@@ -2988,7 +2990,7 @@ function createHtml(config: {
               : (item.productName ?? 'Item ' + (index + 1));
             const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = formatUnitLabel(item.unit ?? 'unit', qtyLabel);
+            const unitLabel = formatUnitLabel(item.supplierPackUom ?? item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
@@ -3057,7 +3059,19 @@ function createHtml(config: {
 
       function getOperatorDisplayName(context) {
         const session = getValidOperatorSession(context, { silent: true, skipStatusUpdate: true });
-        return session?.displayName ?? state.session?.user?.email ?? 'Unknown operator';
+        if (session?.displayName) return session.displayName;
+        const selectedId = operatorSelects[context]?.value || '';
+        const selectedLabel = selectedId ? getOperatorLabelById(selectedId) : null;
+        if (selectedLabel) return selectedLabel;
+        const profileName =
+          state.session?.user?.user_metadata?.full_name ||
+          state.session?.user?.user_metadata?.display_name ||
+          state.session?.user?.user_metadata?.name ||
+          null;
+        if (profileName) return profileName;
+        const email = state.session?.user?.email ?? '';
+        if (email) return email.split('@')[0] || email;
+        return 'Unknown operator';
       }
 
       function renderOperatorOptions() {
@@ -4012,6 +4026,7 @@ function createHtml(config: {
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
           uom: consumptionUom.toUpperCase(),
+          supplierPackUom: packUom.toUpperCase(),
           packUom: packUom.toUpperCase(),
           packageSize,
           unitCost: null
