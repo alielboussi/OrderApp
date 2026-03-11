@@ -36,6 +36,8 @@ const TELEGRAM_BEVERAGES_BOT_TOKEN = process.env.TELEGRAM_BEVERAGES_BOT_TOKEN;
 const TELEGRAM_BEVERAGES_CHAT_ID = process.env.TELEGRAM_BEVERAGES_CHAT_ID;
 const TELEGRAM_SOYOLA_BOT_TOKEN = process.env.TELEGRAM_SOYOLA_BOT_TOKEN;
 const TELEGRAM_SOYOLA_CHAT_ID = process.env.TELEGRAM_SOYOLA_CHAT_ID;
+const TELEGRAM_FLOUR_POTATOES_BOT_TOKEN = process.env.TELEGRAM_FLOUR_POTATOES_BOT_TOKEN;
+const TELEGRAM_FLOUR_POTATOES_CHAT_ID = process.env.TELEGRAM_FLOUR_POTATOES_CHAT_ID;
 
 function getScannerConfig(scanner: string | null) {
   if (scanner === 'ingredients') {
@@ -56,6 +58,12 @@ function getScannerConfig(scanner: string | null) {
       chatId: TELEGRAM_SOYOLA_CHAT_ID ?? ''
     };
   }
+  if (scanner === 'flour-potatoes') {
+    return {
+      token: TELEGRAM_FLOUR_POTATOES_BOT_TOKEN ?? '',
+      chatId: TELEGRAM_FLOUR_POTATOES_CHAT_ID ?? ''
+    };
+  }
   return null;
 }
 
@@ -63,6 +71,7 @@ function getScannerLabel(scanner: string | null) {
   if (scanner === 'ingredients') return 'Ingredients Storeroom';
   if (scanner === 'beverages') return 'Beverages Storeroom';
   if (scanner === 'soyola') return 'Soyola Storeroom';
+  if (scanner === 'flour-potatoes') return 'Flour Potatoes Storeroom';
   if (scanner === 'supervisor') return 'Supervisor';
   return 'Supervisor';
 }

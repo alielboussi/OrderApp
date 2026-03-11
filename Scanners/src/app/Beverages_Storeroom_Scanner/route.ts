@@ -796,6 +796,10 @@ function createHtml(config: {
       display: none;
       align-items: center;
       justify-content: center;
+      gap: 24px;
+      padding: 24px;
+      flex-wrap: wrap;
+      overflow-y: auto;
       z-index: 1005;
     }
     .qty-cost-field {
@@ -811,7 +815,8 @@ function createHtml(config: {
       z-index: 1005;
     }
     #variant-modal-card {
-      width: min(520px, calc(100vw - 48px));
+      width: min(640px, calc(100vw - 32px));
+      flex: 0 1 640px;
       background: #060606;
       border: 2px solid #ff1b2d;
       border-radius: 20px;
@@ -819,8 +824,8 @@ function createHtml(config: {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      max-height: 80vh;
-      overflow: auto;
+      max-height: none;
+      overflow: visible;
     }
     .variant-modal-header {
       display: flex;
@@ -832,50 +837,90 @@ function createHtml(config: {
       margin: 0;
     }
     .variant-modal-body {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
     }
     .variant-row {
       border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 12px;
+      border-radius: 16px;
       padding: 12px;
-      display: grid;
-      gap: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      align-items: center;
+      text-align: center;
+    }
+    .variant-row.is-active {
+      border-color: rgba(255, 27, 45, 0.85);
+      box-shadow: 0 0 0 1px rgba(255, 27, 45, 0.35);
     }
     .variant-row-header {
       display: flex;
-      justify-content: space-between;
+      flex-direction: column;
       align-items: center;
       gap: 12px;
+      cursor: pointer;
+      text-align: center;
     }
-    .variant-pack-unit {
-      margin-top: 4px;
-      margin-bottom: 2px;
-      font-size: 0.8rem;
-      color: #f7a8b7;
-      text-transform: uppercase;
+    .variant-row-image {
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: #fff;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 0 auto;
     }
-    .variant-pack-unit span {
+    .variant-row-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       display: block;
-      font-size: 1rem;
-      color: #ffffff;
-      text-transform: none;
-      letter-spacing: 0.02em;
-      margin-top: 2px;
+    }
+    .variant-row-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+      align-items: center;
+      text-align: center;
+    }
+    .variant-row-name {
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      text-align: center;
     }
     .variant-uom {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       letter-spacing: 0.14em;
       color: #ff6b81;
       text-transform: uppercase;
+      text-align: center;
+    }
+    .variant-qty-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
     }
     .variant-qty-controls {
       display: grid;
       grid-template-columns: auto 1fr auto;
       gap: 8px;
       align-items: center;
+      justify-items: center;
+      width: 100%;
     }
     .variant-qty-controls input {
       background: rgba(0, 0, 0, 0.65);
@@ -883,6 +928,9 @@ function createHtml(config: {
       border-radius: 12px;
       border: 2px solid rgba(255, 34, 67, 0.5);
       padding: 8px 10px;
+      min-width: 72px;
+      min-height: 32px;
+      font-size: 0.95rem;
       text-align: center;
     }
     .variant-qty-button {
@@ -890,7 +938,15 @@ function createHtml(config: {
       border: 2px solid rgba(255, 34, 67, 0.6);
       background: transparent;
       color: #fff;
-      padding: 6px 10px;
+      min-width: 32px;
+      height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      font-size: 1rem;
+      flex-shrink: 0;
       font-weight: 700;
       cursor: pointer;
     }
@@ -903,6 +959,22 @@ function createHtml(config: {
       color: #fff;
       font-weight: 700;
       cursor: pointer;
+    }
+    .variant-numpad {
+      margin-top: 0;
+      padding: 16px;
+      width: min(280px, calc(100vw - 32px));
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(0, 0, 0, 0.75);
+    }
+    @media (max-width: 980px) {
+      #variant-modal {
+        flex-direction: column;
+      }
+      #variant-modal-card {
+        flex-basis: auto;
+      }
     }
     #qty-form {
       width: min(420px, calc(100vw - 48px));
@@ -1715,20 +1787,20 @@ function createHtml(config: {
         <button type="button" id="variant-modal-close">Close</button>
       </div>
       <div id="variant-modal-body" class="variant-modal-body"></div>
-      <div class="numpad" id="variant-numpad" aria-label="Variant quantity keypad">
-        <button type="button" data-key="7">7</button>
-        <button type="button" data-key="8">8</button>
-        <button type="button" data-key="9">9</button>
-        <button type="button" data-key="4">4</button>
-        <button type="button" data-key="5">5</button>
-        <button type="button" data-key="6">6</button>
-        <button type="button" data-key="1">1</button>
-        <button type="button" data-key="2">2</button>
-        <button type="button" data-key="3">3</button>
-        <button type="button" data-action="clear">CLR</button>
-        <button type="button" data-key="0">0</button>
-        <button type="button" data-action="enter">Enter</button>
-      </div>
+    </div>
+    <div class="numpad variant-numpad" id="variant-numpad" aria-label="Variant quantity keypad">
+      <button type="button" data-key="7">7</button>
+      <button type="button" data-key="8">8</button>
+      <button type="button" data-key="9">9</button>
+      <button type="button" data-key="4">4</button>
+      <button type="button" data-key="5">5</button>
+      <button type="button" data-key="6">6</button>
+      <button type="button" data-key="1">1</button>
+      <button type="button" data-key="2">2</button>
+      <button type="button" data-key="3">3</button>
+      <button type="button" data-action="clear">CLR</button>
+      <button type="button" data-key="0">0</button>
+      <button type="button" data-action="enter">Enter</button>
     </div>
   </div>
 
@@ -2591,7 +2663,7 @@ function createHtml(config: {
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
             .select(
-              'id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity'
+              'id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url'
             )
             .in('id', Array.from(productIds))
             .eq('active', true)
@@ -2667,7 +2739,7 @@ function createHtml(config: {
         const { data, error } = await supabase
           .from('catalog_variants')
           .select(
-            'id,item_id,name,purchase_pack_unit,transfer_unit,consumption_uom,sku,supplier_sku,units_per_purchase_pack,transfer_quantity,default_warehouse_id,locked_from_warehouse_id,active'
+            'id,item_id,name,image_url,purchase_pack_unit,transfer_unit,consumption_uom,sku,supplier_sku,units_per_purchase_pack,transfer_quantity,default_warehouse_id,locked_from_warehouse_id,active'
           )
           .in('item_id', productIds);
         if (error) throw error;
@@ -2704,6 +2776,7 @@ function createHtml(config: {
             id: key,
             product_id: variant.item_id,
             name: (variant?.name ?? '').toString() || 'Variant',
+            image_url: variant?.image_url ?? null,
             uom: (variant?.purchase_pack_unit ?? variant?.transfer_unit ?? 'each').toString(),
             consumption_uom: (variant?.consumption_uom ?? variant?.purchase_pack_unit ?? 'each').toString(),
             sku: typeof variant?.sku === 'string' ? variant.sku : null,
@@ -4080,20 +4153,34 @@ function createHtml(config: {
 
           const header = document.createElement('div');
           header.className = 'variant-row-header';
+          const imageWrap = document.createElement('div');
+          imageWrap.className = 'variant-row-image';
+          const imageUrl = row.variation?.image_url || product.image_url || '';
+          if (imageUrl) {
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = row.label + ' image';
+            img.loading = 'lazy';
+            imageWrap.appendChild(img);
+          } else {
+            imageWrap.classList.add('is-fallback');
+            imageWrap.textContent = (row.label || 'V').charAt(0).toUpperCase();
+          }
+
+          const meta = document.createElement('div');
+          meta.className = 'variant-row-meta';
           const name = document.createElement('div');
+          name.className = 'variant-row-name';
           name.textContent = row.label;
           const uom = document.createElement('div');
           uom.className = 'variant-uom';
-          uom.textContent = entry.uom;
-          header.appendChild(name);
-          header.appendChild(uom);
+          uom.textContent = formatUnitLabel(entry.packUom ?? entry.uom ?? 'unit', 2);
 
-          const packUnit = document.createElement('div');
-          packUnit.className = 'variant-pack-unit';
-          packUnit.textContent = isDamage ? 'Consumption unit' : 'Supplier pack unit';
-          const packUnitValue = document.createElement('span');
-          packUnitValue.textContent = entry.packUom ?? entry.uom ?? 'UNIT';
-          packUnit.appendChild(packUnitValue);
+          meta.appendChild(name);
+          meta.appendChild(uom);
+
+          header.appendChild(imageWrap);
+          header.appendChild(meta);
 
           const controls = document.createElement('div');
           controls.className = 'variant-qty-controls';
@@ -4116,6 +4203,12 @@ function createHtml(config: {
           addBtn.className = 'variant-add-button';
           addBtn.textContent = 'Add';
           const activateRow = () => {
+            if (variantModalBody) {
+              Array.from(variantModalBody.querySelectorAll('.variant-row')).forEach((node) => {
+                node.classList.remove('is-active');
+              });
+            }
+            wrapper.classList.add('is-active');
             activeVariantQtyInput = qtyInput;
             activeVariantAddButton = addBtn;
           };
@@ -4138,6 +4231,10 @@ function createHtml(config: {
             activateRow();
             const current = Number(qtyInput.value || 0);
             setQty(current + 1);
+          });
+          header.addEventListener('click', () => {
+            activateRow();
+            qtyInput.focus();
           });
           qtyInput.addEventListener('focus', activateRow);
           qtyInput.addEventListener('click', activateRow);
@@ -4164,10 +4261,13 @@ function createHtml(config: {
             activateRow();
           }
 
+          const qtyPanel = document.createElement('div');
+          qtyPanel.className = 'variant-qty-panel';
+          qtyPanel.appendChild(controls);
+          qtyPanel.appendChild(addBtn);
+
           wrapper.appendChild(header);
-          wrapper.appendChild(packUnit);
-          wrapper.appendChild(controls);
-          wrapper.appendChild(addBtn);
+          wrapper.appendChild(qtyPanel);
           variantModalBody.appendChild(wrapper);
         });
 

@@ -551,7 +551,6 @@ export default function WarehouseTransfersWeb() {
                                       <span className={styles.itemSub}> - {item.variation.name}</span>
                                     ) : null}
                                   </p>
-                                  <p className={styles.itemSub}>{item.product_id ?? item.variant_key ?? "Item"}</p>
                                 </div>
                                 <div className={styles.textRight}>
                                   <p className={styles.itemQty}>{item.qty}</p>

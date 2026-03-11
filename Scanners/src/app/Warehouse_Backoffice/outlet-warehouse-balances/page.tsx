@@ -81,22 +81,95 @@ function parseQty(value: number | string | null): number {
   return parsed;
 }
 
+function formatUomLabel(raw?: string | null): string {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) return "";
+  const key = trimmed.toLowerCase();
+  switch (key) {
+    case "g":
+    case "gram":
+    case "grams":
+    case "g(s)":
+      return "Gram(s)";
+    case "kg":
+    case "kilogram":
+    case "kilograms":
+    case "kg(s)":
+      return "Kilogram(s)";
+    case "mg":
+    case "milligram":
+    case "milligrams":
+    case "mg(s)":
+      return "Milligram(s)";
+    case "ml":
+    case "millilitre":
+    case "millilitres":
+    case "ml(s)":
+      return "Millilitre(s)";
+    case "l":
+    case "litre":
+    case "litres":
+    case "l(s)":
+      return "Litre(s)";
+    case "each":
+      return "Each";
+    case "pc":
+    case "pcs":
+    case "pc(s)":
+      return "Pc(s)";
+    case "case":
+    case "case(s)":
+      return "Case(s)";
+    case "crate":
+    case "crate(s)":
+      return "Crate(s)";
+    case "bottle":
+    case "bottle(s)":
+      return "Bottle(s)";
+    case "tin can":
+    case "tin can(s)":
+      return "Tin Can(s)";
+    case "jar":
+    case "jar(s)":
+      return "Jar(s)";
+    case "plastic":
+    case "plastic(s)":
+      return "Plastic(s)";
+    case "packet":
+    case "packet(s)":
+      return "Packet(s)";
+    case "box":
+    case "box(es)":
+      return "Box(es)";
+    case "bag":
+    case "bag(s)":
+      return "Bag(s)";
+    case "bucket":
+    case "bucket(s)":
+      return "Bucket(s)";
+    default: {
+      const capitalized = trimmed.replace(/\b\w/g, (char) => char.toUpperCase());
+      return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
+    }
+  }
+}
+
 function formatQtyWithUom(value: number | null, uom?: string): { text: string; uom: string } {
-  if (value === null || Number.isNaN(value)) return { text: "-", uom: uom ?? "" };
+  if (value === null || Number.isNaN(value)) return { text: "-", uom: formatUomLabel(uom) };
   const unit = (uom ?? "").toLowerCase();
   const abs = Math.abs(value);
 
   if (unit === "g" && abs >= 1000) {
-    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: "kg" };
+    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("kg") };
   }
   if (unit === "mg" && abs >= 1000) {
-    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: "g" };
+    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("g") };
   }
   if (unit === "ml" && abs >= 1000) {
-    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: "l" };
+    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("l") };
   }
 
-  return { text: value.toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: uom ?? "" };
+  return { text: value.toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel(uom) };
 }
 
 export default function OutletWarehouseBalancesPage() {

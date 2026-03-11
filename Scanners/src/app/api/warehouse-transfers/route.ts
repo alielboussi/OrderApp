@@ -112,6 +112,18 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
+    const operatorMap = new Map<string, string>();
+    const { data: operators } = await supabase.rpc('console_operator_directory');
+    if (Array.isArray(operators)) {
+      operators.forEach((op) => {
+        const id = (op as { auth_user_id?: string; id?: string }).auth_user_id ?? (op as { id?: string }).id;
+        const name = (op as { display_name?: string; name?: string }).display_name ?? (op as { name?: string }).name;
+        if (id && name) {
+          operatorMap.set(id, name);
+        }
+      });
+    }
+
     const warehouseIds = new Set<string>();
     (data ?? []).forEach((transfer) => {
       if (transfer.source_warehouse_id) warehouseIds.add(transfer.source_warehouse_id);
@@ -152,14 +164,42 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const variantKeys = new Set<string>();
+    (data ?? []).forEach((transfer) => {
+      (transfer.items ?? []).forEach((item) => {
+        const key = (item.variant_key ?? item.variation_key ?? '').toString().trim();
+        if (!key) return;
+        if (key.toLowerCase() === 'base') return;
+        variantKeys.add(key);
+      });
+    });
+
+    const variantNameMap = new Map<string, string>();
+    if (variantKeys.size > 0) {
+      const { data: variantRows, error: variantError } = await supabase
+        .from('catalog_variants')
+        .select('id,name')
+        .in('id', Array.from(variantKeys));
+      if (variantError) throw variantError;
+      (variantRows ?? []).forEach((row) => {
+        if (row?.id) {
+          variantNameMap.set(row.id, (row.name ?? '').trim() || row.id);
+        }
+      });
+    }
+
     const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => {
       const sourceIdValue = transfer.source_warehouse_id;
       const destIdValue = transfer.destination_warehouse_id;
       const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;
       const destName = destIdValue ? warehouseMap.get(destIdValue) ?? null : null;
       const operatorName = (transfer.operator_name ?? '').trim();
+      const operatorDirectoryName = transfer.created_by ? operatorMap.get(transfer.created_by) ?? null : null;
       const fallbackName = transfer.created_by ? operatorFallbackMap.get(transfer.created_by) ?? null : null;
-      const resolvedOperator = operatorName && operatorName !== 'Operator' ? operatorName : fallbackName ?? operatorName;
+      let resolvedOperator = operatorName && operatorName !== 'Operator' ? operatorName : operatorDirectoryName ?? fallbackName ?? operatorName;
+      if (resolvedOperator && resolvedOperator.trim() === 'Operator') {
+        resolvedOperator = '';
+      }
 
       return {
         id: transfer.id,
@@ -175,16 +215,19 @@ export async function GET(req: NextRequest) {
         dest: destIdValue ? { id: destIdValue, name: destName } : null,
         items: Array.isArray(transfer.items)
           ? transfer.items.map((item) => {
-              const variantKey = item.variant_key ?? item.variation_key ?? null;
+              const rawKey = (item.variant_key ?? item.variation_key ?? null) as string | null;
+              const normalizedKey = rawKey ? rawKey.trim() : '';
+              const isBase = !normalizedKey || normalizedKey.toLowerCase() === 'base';
+              const variantLabel = !isBase ? (variantNameMap.get(normalizedKey) ?? normalizedKey) : null;
 
               return {
                 id: item.id,
                 transfer_id: item.transfer_id ?? null,
                 product_id: item.product_id ?? item.item_id ?? null,
-                variant_key: variantKey,
+                variant_key: normalizedKey || null,
                 qty: Number(item.qty_units ?? item.qty ?? 0) || 0,
                 product: item.item ?? item.product ?? null,
-                variation: variantKey ? { id: variantKey, name: variantKey } : item.variant ?? item.variation ?? null,
+                variation: variantLabel ? { id: normalizedKey, name: variantLabel } : null,
               } satisfies TransferItem;
             })
           : [],

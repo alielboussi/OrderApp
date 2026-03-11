@@ -124,6 +124,24 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const recordedByIds = Array.from(
+      new Set((data ?? []).map((purchase) => purchase.recorded_by).filter((id): id is string => !!id))
+    );
+    const operatorFallbackMap = new Map<string, string>();
+    if (recordedByIds.length > 0) {
+      const { data: userRows, error: userError } = await supabase
+        .schema('auth')
+        .from('users')
+        .select('id,email,raw_user_meta_data')
+        .in('id', recordedByIds);
+      if (userError) throw userError;
+      (userRows ?? []).forEach((row) => {
+        const meta = row?.raw_user_meta_data as { display_name?: string } | null;
+        const display = meta?.display_name?.trim() || row?.email?.trim();
+        if (row?.id && display) operatorFallbackMap.set(row.id, display);
+      });
+    }
+
     const warehouseIds = new Set<string>();
     (data ?? []).forEach((purchase) => {
       if (purchase.warehouse_id) warehouseIds.add(purchase.warehouse_id);
@@ -145,10 +163,36 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const variantKeys = new Set<string>();
+    (data ?? []).forEach((purchase) => {
+      (purchase.items ?? []).forEach((item) => {
+        const key = (item.variant_key ?? item.variation_key ?? '').toString().trim();
+        if (!key) return;
+        if (key.toLowerCase() === 'base') return;
+        variantKeys.add(key);
+      });
+    });
+
+    const variantNameMap = new Map<string, string>();
+    if (variantKeys.size > 0) {
+      const { data: variantRows, error: variantError } = await supabase
+        .from('catalog_variants')
+        .select('id,name')
+        .in('id', Array.from(variantKeys));
+      if (variantError) throw variantError;
+      (variantRows ?? []).forEach((row) => {
+        if (row?.id) {
+          variantNameMap.set(row.id, (row.name ?? '').trim() || row.id);
+        }
+      });
+    }
+
     const purchases: WarehousePurchase[] = (data ?? []).map((purchase) => {
       const whId = purchase.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
-      const operatorName = purchase.recorded_by ? operatorMap.get(purchase.recorded_by) ?? null : null;
+      const operatorDirectoryName = purchase.recorded_by ? operatorMap.get(purchase.recorded_by) ?? null : null;
+      const fallbackName = purchase.recorded_by ? operatorFallbackMap.get(purchase.recorded_by) ?? null : null;
+      const operatorName = operatorDirectoryName ?? fallbackName ?? null;
 
       return {
         id: purchase.id,
@@ -164,18 +208,21 @@ export async function GET(req: NextRequest) {
         operator_name: operatorName,
         items: Array.isArray(purchase.items)
           ? purchase.items.map((item) => {
-              const variantKey = item.variant_key ?? item.variation_key ?? null;
+              const rawKey = (item.variant_key ?? item.variation_key ?? null) as string | null;
+              const normalizedKey = rawKey ? rawKey.trim() : '';
+              const isBase = !normalizedKey || normalizedKey.toLowerCase() === 'base';
+              const variantLabel = !isBase ? (variantNameMap.get(normalizedKey) ?? normalizedKey) : null;
 
               return {
                 id: item.id,
                 receipt_id: item.receipt_id ?? null,
                 item_id: item.item_id ?? null,
-                variant_key: variantKey,
+                variant_key: normalizedKey || null,
                 qty: Number(item.qty_units ?? 0) || 0,
                 qty_input_mode: item.qty_input_mode ?? null,
                 unit_cost: item.unit_cost != null ? Number(item.unit_cost) : null,
                 item: item.item ?? null,
-                variant: variantKey ? { id: variantKey, name: variantKey } : item.variant ?? null,
+                variant: variantLabel ? { id: normalizedKey, name: variantLabel } : null,
               } satisfies PurchaseItem;
             })
           : [],

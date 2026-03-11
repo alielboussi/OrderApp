@@ -93,6 +93,24 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const createdByIds = Array.from(
+      new Set((data ?? []).map((damage) => damage.created_by).filter((id): id is string => !!id))
+    );
+    const operatorFallbackMap = new Map<string, string>();
+    if (createdByIds.length > 0) {
+      const { data: userRows, error: userError } = await supabase
+        .schema('auth')
+        .from('users')
+        .select('id,email,raw_user_meta_data')
+        .in('id', createdByIds);
+      if (userError) throw userError;
+      (userRows ?? []).forEach((row) => {
+        const meta = row?.raw_user_meta_data as { display_name?: string } | null;
+        const display = meta?.display_name?.trim() || row?.email?.trim();
+        if (row?.id && display) operatorFallbackMap.set(row.id, display);
+      });
+    }
+
     const warehouseIds = new Set<string>();
     const itemIds = new Set<string>();
 
@@ -140,15 +158,44 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const variantKeys = new Set<string>();
+    parsedDamages.forEach((damage) => {
+      damage.parsedLines.forEach((line) => {
+        const key = (line?.variant_key ?? line?.variation_key ?? '').toString().trim();
+        if (!key) return;
+        if (key.toLowerCase() === 'base') return;
+        variantKeys.add(key);
+      });
+    });
+
+    const variantNameMap = new Map<string, string>();
+    if (variantKeys.size > 0) {
+      const { data: variantRows, error: variantError } = await supabase
+        .from('catalog_variants')
+        .select('id,name')
+        .in('id', Array.from(variantKeys));
+      if (variantError) throw variantError;
+      (variantRows ?? []).forEach((row) => {
+        if (row?.id) {
+          variantNameMap.set(row.id, (row.name ?? '').trim() || row.id);
+        }
+      });
+    }
+
     const damages: WarehouseDamage[] = parsedDamages.map((damage) => {
       const whId = damage.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
-      const operatorName = damage.created_by ? operatorMap.get(damage.created_by) ?? null : null;
+      const operatorDirectoryName = damage.created_by ? operatorMap.get(damage.created_by) ?? null : null;
+      const fallbackName = damage.created_by ? operatorFallbackMap.get(damage.created_by) ?? null : null;
+      const operatorName = operatorDirectoryName ?? fallbackName ?? null;
 
       const items: DamageItem[] = Array.isArray(damage.parsedLines)
         ? damage.parsedLines.map((line, index) => {
             const itemId = (line?.product_id ?? line?.item_id ?? null) as string | null;
-            const variantKey = (line?.variant_key ?? line?.variation_key ?? null) as string | null;
+            const rawKey = (line?.variant_key ?? line?.variation_key ?? null) as string | null;
+            const normalizedKey = rawKey ? rawKey.trim() : '';
+            const isBase = !normalizedKey || normalizedKey.toLowerCase() === 'base';
+            const variantLabel = !isBase ? (variantNameMap.get(normalizedKey) ?? normalizedKey) : null;
             const qty = Number((line?.qty ?? line?.qty_units ?? 0) as number) || 0;
             const note = (line?.note ?? null) as string | null;
 
@@ -156,11 +203,11 @@ export async function GET(req: NextRequest) {
               id: `${damage.id}-${index + 1}`,
               damage_id: damage.id,
               item_id: itemId,
-              variant_key: variantKey,
+              variant_key: normalizedKey || null,
               qty,
               note,
               item: itemId ? { id: itemId, name: itemMap.get(itemId) ?? null } : null,
-              variant: variantKey ? { id: variantKey, name: variantKey } : null,
+              variant: variantLabel ? { id: normalizedKey, name: variantLabel } : null,
             };
           })
         : [];
