@@ -1544,19 +1544,6 @@ function createHtml(config: {
 
       <article class="panel transfer-panel">
         <form id="transfer-form">
-          <section class="operator-auth-card" data-context="transfer">
-            <div class="operator-auth-head">
-              <h3>Transfer Operator</h3>
-              <span id="transfer-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
-            </div>
-            <label class="operator-select-label">Select operator
-              <button type="button" id="transfer-operator-picker" class="operator-pill-button">Select operator</button>
-              <select id="transfer-operator-select" class="operator-hidden-select">
-                <option value="">Select operator</option>
-              </select>
-            </label>
-            <p class="operator-auth-hint">Transfers stay locked until a valid operator signs in. Sessions auto-expire after 20 minutes.</p>
-          </section>
           <section class="ingredient-panel">
             <div class="ingredient-head">
               <h3>Ingredients</h3>
@@ -1617,9 +1604,6 @@ function createHtml(config: {
     <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-modal-title">
       <div class="select-modal-header" id="operator-modal-title">Select operator</div>
       <div class="select-modal-grid" id="operator-modal-options"></div>
-      <div class="select-modal-actions">
-        <button type="button" class="select-modal-close" data-modal-close="operator-modal">Close</button>
-      </div>
     </div>
   </div>
 
@@ -1709,19 +1693,6 @@ function createHtml(config: {
     <article class="panel purchase-panel">
       <form id="purchase-form">
         <div class="purchase-shell">
-          <section class="operator-auth-card" data-context="purchase">
-            <div class="operator-auth-head">
-              <h3>Purchase Operator</h3>
-              <span id="purchase-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
-            </div>
-            <label class="operator-select-label">Select operator
-              <button type="button" id="purchase-operator-picker" class="operator-pill-button">Select operator</button>
-              <select id="purchase-operator-select" class="operator-hidden-select">
-                <option value="">Select operator</option>
-              </select>
-            </label>
-            <p class="operator-auth-hint">Unlock purchases with the assigned Supabase password. Sessions auto-expire after 20 minutes.</p>
-          </section>
           <h3>Purchase Intake</h3>
           <div class="purchase-grid">
             <label>Supplier
@@ -1807,19 +1778,6 @@ function createHtml(config: {
     <article class="panel damage-panel" id="damage-panel">
       <form id="damage-form">
         <div class="damage-shell">
-          <section class="operator-auth-card" data-context="damage">
-            <div class="operator-auth-head">
-              <h3>Damage Operator</h3>
-              <span id="damage-operator-status" class="operator-status-pill" data-state="locked">Locked</span>
-            </div>
-            <label class="operator-select-label">Select operator
-              <button type="button" id="damage-operator-picker" class="operator-pill-button">Select operator</button>
-              <select id="damage-operator-select" class="operator-hidden-select">
-                <option value="">Select operator</option>
-              </select>
-            </label>
-            <p class="operator-auth-hint">Damages stay locked until an operator signs in. Auto-lock after 20 minutes.</p>
-          </section>
           <h3>Log Damages</h3>
           <section class="ingredient-panel">
             <div class="ingredient-head">
@@ -2204,6 +2162,7 @@ function createHtml(config: {
       const logoutButtons = document.querySelectorAll('[data-logout="true"]');
 
       const VALID_VIEWS = ['transfer', 'damage'];
+      const OPERATOR_GATE_CONTEXT = 'transfer';
 
       function syncViewQuery(view) {
         if (typeof window === 'undefined' || !window.history?.replaceState) return;
@@ -2294,6 +2253,8 @@ function createHtml(config: {
         sourceMissingText: state.lockedSource ? undefined : 'Loading...',
         destMissingText: state.lockedDest ? undefined : 'Choose destination'
       });
+
+      openOperatorGate();
 
       window.setTimeout(() => {
         focusActiveScanner();
@@ -3115,6 +3076,8 @@ function createHtml(config: {
         if (!scannerWedge) return;
         if (qtyModal?.style.display === 'flex') return;
         if (variantModal?.style.display === 'flex') return;
+        if (operatorSelectModal?.classList.contains('active')) return;
+        if (operatorPasscodeModal?.classList.contains('active')) return;
         if (document.body.dataset.view === 'purchase') return;
         scannerWedge.focus();
       }
@@ -3133,6 +3096,7 @@ function createHtml(config: {
         }
         if (active instanceof HTMLElement) {
           if (active.closest('#operator-passcode-modal')) return true;
+          if (active.closest('#operator-modal')) return true;
           if (active.closest('.operator-auth-card')) return true;
         }
         return false;
@@ -3147,6 +3111,7 @@ function createHtml(config: {
           scanBuffer = '';
           scannerWedge.value = '';
           if (!payload) return;
+          if (!ensureOperatorGate({ silent: true })) return;
           handleProductScan(payload).catch((error) => console.warn('scan handling failed', error));
         }, SCAN_FLUSH_DELAY_MS);
       }
@@ -3158,6 +3123,7 @@ function createHtml(config: {
         scanBuffer = '';
         scannerWedge.value = '';
         if (!payload) return;
+        if (!ensureOperatorGate({ silent: true })) return;
         handleProductScan(payload).catch((error) => console.warn('scan handling failed', error));
       }
 
@@ -3344,6 +3310,34 @@ function createHtml(config: {
         return OPERATOR_CONTEXT_LABELS[context] ?? 'Console';
       }
 
+      function isOperatorUnlocked() {
+        return Boolean(getValidOperatorSession(OPERATOR_GATE_CONTEXT, { silent: true, skipStatusUpdate: true }));
+      }
+
+      function canCloseOperatorSelectModal() {
+        if (isOperatorUnlocked()) return true;
+        return Boolean(state.pendingOperatorSelection);
+      }
+
+      function openOperatorGate() {
+        if (isOperatorUnlocked()) return;
+        if (!operatorSelectModal) return;
+        if (operatorPasscodeModal?.classList.contains('active')) return;
+        activeOperatorContext = OPERATOR_GATE_CONTEXT;
+        renderOperatorCards(OPERATOR_GATE_CONTEXT);
+        openSelectModal(operatorSelectModal);
+      }
+
+      function ensureOperatorGate(options = {}) {
+        const { silent = false } = options;
+        if (isOperatorUnlocked()) return true;
+        if (!silent) {
+          showResult('Select an operator to unlock the console.', true);
+          openOperatorGate();
+        }
+        return false;
+      }
+
       function renderOperatorOptions() {
         Object.entries(operatorSelects).forEach(([context, select]) => {
           if (!select) return;
@@ -3369,6 +3363,10 @@ function createHtml(config: {
         updateOperatorStatus('transfer');
         updateOperatorStatus('purchase');
         updateOperatorStatus('damage');
+        if (operatorSelectModal?.classList.contains('active')) {
+          renderOperatorCards(OPERATOR_GATE_CONTEXT);
+        }
+        openOperatorGate();
       }
 
       function getOperatorLabelById(id) {
@@ -3491,15 +3489,12 @@ function createHtml(config: {
 
       function getValidOperatorSession(context, options = {}) {
         const { silent = false, skipStatusUpdate = false } = options;
-        const session = state.operatorSessions[context];
+        const session = state.operatorSessions[OPERATOR_GATE_CONTEXT];
         if (!session) return null;
         if (session.expiresAt <= Date.now()) {
-          state.operatorSessions[context] = null;
+          clearOperatorSession(OPERATOR_GATE_CONTEXT, false);
           if (!silent) {
             showResult(formatOperatorLabel(context) + ' session expired. Please sign in again.', true);
-          }
-          if (!skipStatusUpdate) {
-            updateOperatorStatus(context);
           }
           return null;
         }
@@ -3524,17 +3519,15 @@ function createHtml(config: {
 
       function enforceOperatorLocks() {
         const destinationSelected = Boolean(getSelectedDestination());
-        const transferUnlocked = Boolean(getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true }));
+        const consoleUnlocked = isOperatorUnlocked();
         if (transferSubmit) {
-          transferSubmit.disabled = state.loading || !transferUnlocked || !destinationSelected;
+          transferSubmit.disabled = state.loading || !consoleUnlocked || !destinationSelected;
         }
-        const purchaseUnlocked = Boolean(getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true }));
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !purchaseUnlocked || !destinationSelected;
+          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked || !destinationSelected;
         }
-        const damageUnlocked = Boolean(getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true }));
         if (damageSubmit) {
-          damageSubmit.disabled = state.damageSubmitting || !damageUnlocked || !destinationSelected;
+          damageSubmit.disabled = state.damageSubmitting || !consoleUnlocked || !destinationSelected;
         }
       }
 
@@ -3557,20 +3550,25 @@ function createHtml(config: {
       }
 
       function clearOperatorSession(context, notify = false) {
-        const hadSession = Boolean(state.operatorSessions[context]);
-        state.operatorSessions[context] = null;
-        if (state.operatorSessionTimers?.hasOwnProperty(context)) {
-          window.clearTimeout(state.operatorSessionTimers[context]);
-          state.operatorSessionTimers[context] = null;
-        }
-        if (operatorSelects[context]) {
-          operatorSelects[context].value = '';
-        }
-        updateOperatorStatus(context);
+        const hadSession = Boolean(state.operatorSessions[OPERATOR_GATE_CONTEXT]);
+        Object.keys(state.operatorSessions).forEach((key) => {
+          state.operatorSessions[key] = null;
+          if (state.operatorSessionTimers?.hasOwnProperty(key)) {
+            window.clearTimeout(state.operatorSessionTimers[key]);
+            state.operatorSessionTimers[key] = null;
+          }
+          if (operatorSelects[key]) {
+            operatorSelects[key].value = '';
+          }
+        });
+        updateOperatorStatus('transfer');
+        updateOperatorStatus('purchase');
+        updateOperatorStatus('damage');
         if (notify && hadSession) {
-          showResult(formatOperatorLabel(context) + ' locked.', false);
+          showResult(formatOperatorLabel(OPERATOR_GATE_CONTEXT) + ' locked.', false);
         }
         syncDestinationPillLabel();
+        openOperatorGate();
       }
 
       async function handleLogout() {
@@ -3592,13 +3590,18 @@ function createHtml(config: {
       }
 
       function setOperatorSession(context, operator) {
-        state.operatorSessions[context] = {
-          operatorId: operator.id,
-          displayName: operator.displayName,
-          expiresAt: Date.now() + OPERATOR_SESSION_TTL_MS
-        };
-        scheduleOperatorExpiryTimeout(context);
-        updateOperatorStatus(context);
+        const expiresAt = Date.now() + OPERATOR_SESSION_TTL_MS;
+        Object.keys(state.operatorSessions).forEach((key) => {
+          state.operatorSessions[key] = {
+            operatorId: operator.id,
+            displayName: operator.displayName,
+            expiresAt
+          };
+          scheduleOperatorExpiryTimeout(key);
+        });
+        updateOperatorStatus('transfer');
+        updateOperatorStatus('purchase');
+        updateOperatorStatus('damage');
       }
 
       function ensureOperatorUnlocked(context, shouldPrompt = true) {
@@ -3716,6 +3719,10 @@ function createHtml(config: {
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
         state.operatorUnlocking = false;
         state.pendingOperatorSelection = null;
+        if (!isOperatorUnlocked()) {
+          openOperatorGate();
+          return;
+        }
         focusActiveScanner();
       }
 
@@ -4058,11 +4065,14 @@ function createHtml(config: {
         }
       }
 
-      function enterPurchaseMode() {}
+      function enterPurchaseMode() {
+        if (!ensureOperatorGate()) return;
+      }
 
       function exitPurchaseMode() {}
 
       function enterDamageMode() {
+        if (!ensureOperatorGate()) return;
         setMode('damage');
         applyViewState('damage');
         renderCart('damage');
@@ -4769,6 +4779,9 @@ function createHtml(config: {
       async function handleSubmit(event) {
         event.preventDefault();
         if (state.loading) return;
+        if (!ensureOperatorGate()) {
+          return;
+        }
         const sourceId = lockedSourceId;
         if (!ensureDestinationSelected('transfer')) {
           return;
@@ -4845,6 +4858,9 @@ function createHtml(config: {
       async function handleDamageSubmit(event) {
         event.preventDefault();
         if (state.damageSubmitting) return;
+        if (!ensureOperatorGate()) {
+          return;
+        }
         if (!ensureDestinationSelected('damage')) {
           return;
         }
@@ -4908,6 +4924,9 @@ function createHtml(config: {
       async function handlePurchaseSubmit(event) {
         event.preventDefault();
         if (state.purchaseSubmitting) return;
+        if (!ensureOperatorGate()) {
+          return;
+        }
         if (!ensureDestinationSelected('purchase')) {
           return;
         }

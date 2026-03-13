@@ -23,7 +23,7 @@
     var(--wb-bg);
   display: flex;
   justify-content: center;
-  padding: 44px 26px 54px;
+  padding: 28px 22px 32px;
   color: var(--wb-text);
   font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
 }
@@ -33,7 +33,7 @@
   max-width: 1280px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 20px;
 }
 
 .hero {
@@ -41,11 +41,12 @@
   gap: 32px;
   border-radius: 32px;
   border: 1px solid var(--wb-border);
-  padding: 32px;
+  padding: 22px;
   background: var(--wb-panel);
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
   box-shadow: var(--wb-shadow);
+  justify-content: center;
 }
 
 .setupBanner {
@@ -189,6 +190,7 @@
 
 .grow {
   flex: 1;
+  text-align: center;
 }
 
 .kicker {
@@ -197,20 +199,25 @@
   letter-spacing: 4px;
   text-transform: uppercase;
   color: #8da2ff;
+  text-align: center;
 }
 
 .title {
   margin: 8px 0 12px;
-  font-size: 48px;
+  font-size: 40px;
   letter-spacing: -1px;
   font-weight: 700;
+  text-align: center;
 }
 
 .subtitle {
   margin: 0;
   color: var(--wb-muted);
-  max-width: 640px;
+  max-width: 560px;
   line-height: 1.6;
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .shortcutNote {
@@ -218,6 +225,7 @@
   color: rgba(148, 163, 184, 0.9);
   font-size: 12px;
   letter-spacing: 0.2px;
+  text-align: center;
 }
 
 .notice {
@@ -230,27 +238,28 @@
 
 .actionsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
   justify-items: stretch;
 }
 
 .actionCard {
-  text-align: left;
+  text-align: center;
   border-radius: 22px;
-  padding: 8px;
+  padding: 6px;
   background: linear-gradient(160deg, rgba(17, 24, 39, 0.92), rgba(11, 17, 31, 0.9));
   border: 1px solid var(--wb-border);
   color: inherit;
   transition: transform 150ms ease, box-shadow 180ms ease, border-color 150ms ease;
   width: 100%;
-  min-height: 116px;
+  min-height: 104px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   gap: 6px;
   position: relative;
-  padding-bottom: 16px;
+  padding-bottom: 12px;
+  align-items: center;
 }
 
 .inventoryCard { border-color: rgba(96, 165, 250, 0.6); box-shadow: 0 18px 38px rgba(96, 165, 250, 0.28); }
@@ -266,7 +275,7 @@
 .suppliersCard { border-color: rgba(248, 113, 113, 0.55); box-shadow: 0 18px 38px rgba(248, 113, 113, 0.22); }
 
 .cardTitle {
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: 0.4px;
   margin: 0 0 6px;
   font-weight: 600;
@@ -321,7 +330,7 @@
   margin: 0 0 10px;
   color: var(--wb-muted);
   line-height: 1.45;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .cardCta {
@@ -331,8 +340,9 @@
   text-transform: uppercase;
   color: var(--wb-strong);
   position: absolute;
-  left: 14px;
-  bottom: 10px;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
 }
 
 

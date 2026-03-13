@@ -567,7 +567,7 @@ export default function OutletOrdersPage() {
         <header className={styles.hero}>
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Outlet Orders</h1>
+            <h1 className={styles.title}>Outlet Orders Reports</h1>
             <p className={styles.subtitle}>Filter outlet orders by date and outlet. Download PDFs after offload.</p>
           </div>
           <div className={styles.headerButtons}>
