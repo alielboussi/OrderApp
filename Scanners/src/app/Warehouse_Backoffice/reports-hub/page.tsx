@@ -16,6 +16,7 @@ export default function WarehouseBackofficeReportsHub() {
   const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
   const goToScannerReports = () => router.push("/Warehouse_Backoffice/inventory");
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
+  const goToWarehouseReports = () => router.push("/Warehouse_Backoffice/warehouse-reports");
 
   if (status !== "ok") return null;
 
@@ -61,6 +62,12 @@ export default function WarehouseBackofficeReportsHub() {
           <button onClick={goToStockReports} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Stock Reports</p>
             <p className={styles.cardBody}>Review stocktake periods for mapped warehouses.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToWarehouseReports} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Warehouse Reports</p>
+            <p className={styles.cardBody}>See assigned products and accrued movement totals by date range.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>

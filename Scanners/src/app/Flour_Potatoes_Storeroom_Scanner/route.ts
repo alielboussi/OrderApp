@@ -4140,11 +4140,18 @@ function createHtml(config: {
         variantModalBody.innerHTML = '';
 
         const variations = state.variations.get(product.id) ?? [];
-        const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
-        const hasVariants = variations.length > 0;
-        let rows = isIngredient || !hasVariants
-          ? [{ key: 'base', variation: null, label: 'Base' }]
-          : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
+        const uniqueVariations = [];
+        const variationIds = new Set();
+        variations.forEach((variation) => {
+          const key = variation?.id ?? '';
+          if (!key || variationIds.has(key)) return;
+          variationIds.add(key);
+          uniqueVariations.push(variation);
+        });
+        const hasVariants = uniqueVariations.length > 0;
+        let rows = hasVariants
+          ? uniqueVariations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }))
+          : [{ key: 'base', variation: null, label: 'Base' }];
         if (preferredVariation) {
           rows = [{
             key: preferredVariation.id,
@@ -5763,7 +5770,7 @@ function createHtml(config: {
       });
 
       operatorSelectModal?.addEventListener('click', (event) => {
-        if (event.target === operatorSelectModal) {
+        if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
           closeSelectModal(operatorSelectModal);
         }
       });
@@ -5779,7 +5786,9 @@ function createHtml(config: {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
           if (targetId === 'homes-modal') closeSelectModal(homesModal);
-          if (targetId === 'operator-modal') closeSelectModal(operatorSelectModal);
+          if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
+            closeSelectModal(operatorSelectModal);
+          }
           if (targetId === 'supplier-modal') closeSelectModal(supplierModal);
         });
       });

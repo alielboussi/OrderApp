@@ -5563,7 +5563,7 @@ function createHtml(config: {
       });
 
       operatorSelectModal?.addEventListener('click', (event) => {
-        if (event.target === operatorSelectModal) {
+        if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
           closeSelectModal(operatorSelectModal);
         }
       });
@@ -5578,7 +5578,9 @@ function createHtml(config: {
         btn.addEventListener('click', () => {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
-          if (targetId === 'operator-modal') closeSelectModal(operatorSelectModal);
+          if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
+            closeSelectModal(operatorSelectModal);
+          }
           if (targetId === 'supplier-modal') closeSelectModal(supplierModal);
         });
       });

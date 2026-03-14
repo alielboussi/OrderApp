@@ -5876,7 +5876,7 @@ function createHtml(config: {
       });
 
       operatorSelectModal?.addEventListener('click', (event) => {
-        if (event.target === operatorSelectModal) {
+        if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
           closeSelectModal(operatorSelectModal);
         }
       });
@@ -5892,7 +5892,9 @@ function createHtml(config: {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
           if (targetId === 'homes-modal') closeSelectModal(homesModal);
-          if (targetId === 'operator-modal') closeSelectModal(operatorSelectModal);
+          if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
+            closeSelectModal(operatorSelectModal);
+          }
           if (targetId === 'supplier-modal') closeSelectModal(supplierModal);
         });
       });
