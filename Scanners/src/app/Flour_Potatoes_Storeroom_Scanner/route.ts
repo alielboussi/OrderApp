@@ -2840,14 +2840,12 @@ function createHtml(config: {
 
       function formatUnitLabel(uom, qty) {
         const unitLabel = String(uom ?? 'unit').trim();
+        const numeric = Number(qty ?? 0);
+        if (!Number.isFinite(numeric) || numeric <= 1) return unitLabel || 'unit';
         if (!unitLabel) return 'unit';
         if (unitLabel.includes('(s)') || unitLabel.includes('(S)')) return unitLabel;
         if (unitLabel.endsWith('s') || unitLabel.endsWith('S')) return unitLabel;
         return unitLabel + '(s)';
-      }
-
-      function formatUomDisplay(uom) {
-        return formatUnitLabel(uom, 2).toUpperCase();
       }
 
       function formatAmount(value) {
@@ -3031,7 +3029,7 @@ function createHtml(config: {
         }
         const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
         const effectiveUom = entry.uom ?? baseUom;
-        qtyHint.textContent = 'Each ' + formatUomDisplay(baseUom) + ' = ' + safeMultiplier + ' ' + formatUomDisplay(effectiveUom);
+        qtyHint.textContent = 'Each ' + baseUom + ' = ' + safeMultiplier + ' ' + effectiveUom;
         qtyHint.style.display = 'block';
       }
 
@@ -4092,7 +4090,7 @@ function createHtml(config: {
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = formatUomDisplay(entry.baseUom);
+        qtyUom.textContent = entry.baseUom;
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -4142,18 +4140,11 @@ function createHtml(config: {
         variantModalBody.innerHTML = '';
 
         const variations = state.variations.get(product.id) ?? [];
-        const uniqueVariations = [];
-        const variationIds = new Set();
-        variations.forEach((variation) => {
-          const key = variation?.id ?? '';
-          if (!key || variationIds.has(key)) return;
-          variationIds.add(key);
-          uniqueVariations.push(variation);
-        });
-        const hasVariants = uniqueVariations.length > 0;
-        let rows = hasVariants
-          ? uniqueVariations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }))
-          : [{ key: 'base', variation: null, label: 'Base' }];
+        const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
+        const hasVariants = variations.length > 0;
+        let rows = isIngredient || !hasVariants
+          ? [{ key: 'base', variation: null, label: 'Base' }]
+          : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
         if (preferredVariation) {
           rows = [{
             key: preferredVariation.id,
@@ -4190,7 +4181,7 @@ function createHtml(config: {
           name.textContent = row.label;
           const uom = document.createElement('div');
           uom.className = 'variant-uom';
-          uom.textContent = formatUomDisplay(entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit');
+          uom.textContent = formatUnitLabel(entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit', 2);
           meta.appendChild(name);
           meta.appendChild(uom);
 
@@ -4368,7 +4359,7 @@ function createHtml(config: {
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = formatUomDisplay(target.baseUom ?? target.uom ?? 'UNIT');
+        qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4455,7 +4446,7 @@ function createHtml(config: {
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
-            uomCell.textContent = formatUomDisplay(item.uom ?? 'UNIT');
+            uomCell.textContent = item.uom ?? 'UNIT';
             if (context === 'purchase') {
               const costCell = document.createElement('td');
               costCell.textContent = formatAmount(item.unitCost) ?? '-';
