@@ -3443,13 +3443,25 @@ function createHtml(config: {
       function openSelectModal(modal) {
         if (!modal) return;
         modal.classList.add('active');
+        modal.removeAttribute('inert');
         modal.setAttribute('aria-hidden', 'false');
+        const focusTarget = modal.querySelector(
+          'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          focusTarget.focus();
+        }
       }
 
       function closeSelectModal(modal) {
         if (!modal) return;
+        const active = document.activeElement;
+        if (active && modal.contains(active) && typeof active.blur === 'function') {
+          active.blur();
+        }
         modal.classList.remove('active');
         modal.setAttribute('aria-hidden', 'true');
+        modal.setAttribute('inert', '');
       }
 
       function renderDestinationCards() {
@@ -3578,7 +3590,7 @@ function createHtml(config: {
         state.session = null;
         state.operatorProfile = null;
         try {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: 'local' });
         } catch (error) {
           console.warn('Logout failed', error);
         }
@@ -4805,13 +4817,19 @@ function createHtml(config: {
         }
         try {
           const cartSnapshot = cart.map((item) => ({ ...item }));
+          const operatorSession = getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true });
+          const operatorName =
+            (operatorSession?.operatorId ? getOperatorLabelById(operatorSession.operatorId) : null) ??
+            state.session?.user?.email ??
+            null;
           const payload = {
             p_source: sourceId,
             p_destination: destId,
             p_items: cartSnapshot.map((item) => ({
               product_id: item.productId,
               variant_key: item.variationId ?? item.variantKey ?? null,
-              qty: item.qty
+              qty: item.qty,
+              operator_name: operatorName
             })),
             p_note: null
           };
@@ -4877,10 +4895,16 @@ function createHtml(config: {
 
         const noteValue = (damageNote?.value ?? state.damageNote ?? '').trim();
         const cartSnapshot = cart.map((item) => ({ ...item }));
+        const operatorSession = getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true });
+        const operatorName =
+          (operatorSession?.operatorId ? getOperatorLabelById(operatorSession.operatorId) : null) ??
+          state.session?.user?.email ??
+          null;
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
           variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
+          operator_name: operatorName,
           note: noteValue || null
         }));
 
@@ -4950,12 +4974,18 @@ function createHtml(config: {
 
         const supplierId = state.purchaseForm.supplierId || null;
         const cartSnapshot = cart.map((item) => ({ ...item }));
+        const operatorSession = getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true });
+        const operatorName =
+          (operatorSession?.operatorId ? getOperatorLabelById(operatorSession.operatorId) : null) ??
+          state.session?.user?.email ??
+          null;
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
           variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           qty_input_mode: 'units',
-          unit_cost: item.unitCost ?? null
+          unit_cost: item.unitCost ?? null,
+          operator_name: operatorName
         }));
 
         if (payloadItems.some((item) => !item.product_id || !item.qty || item.qty <= 0)) {

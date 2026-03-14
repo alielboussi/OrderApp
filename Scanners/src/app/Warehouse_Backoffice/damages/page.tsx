@@ -46,6 +46,13 @@ function formatTimestamp(value?: string | null) {
   }
 }
 
+function formatQuantity(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function titleCase(value?: string | null) {
   if (!value) return "Unknown";
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
@@ -258,6 +265,32 @@ export default function WarehouseDamagesWeb() {
     return hasActiveFilters ? base : base.slice(0, 3);
   }, [damages, searchQuery, hasActiveFilters]);
 
+  const damageSummary = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    const matches = new Map<string, { qty: number }>();
+    damages.forEach((damage) => {
+      (damage.items ?? []).forEach((item) => {
+        const itemName = item.item?.name ?? "";
+        const variantName = item.variant?.name ?? "";
+        const itemId = item.item_id ?? item.item?.id ?? "";
+        const variantKey = item.variant_key ?? item.variant?.id ?? "";
+        const haystack = `${itemName} ${variantName} ${itemId} ${variantKey}`.toLowerCase();
+        if (!haystack.includes(q)) return;
+        const key = `${itemId || itemName}::${variantKey || variantName}`;
+        const qty = Number(item.qty) || 0;
+        const existing = matches.get(key);
+        if (existing) {
+          existing.qty += qty;
+        } else {
+          matches.set(key, { qty });
+        }
+      });
+    });
+    if (matches.size !== 1) return null;
+    return Array.from(matches.values())[0];
+  }, [damages, searchQuery]);
+
   const warehouseMap = useMemo(() => {
     const map = new Map<string, string>();
     (warehouses ?? []).forEach((w) => {
@@ -355,6 +388,13 @@ export default function WarehouseDamagesWeb() {
                 >
                   Reset all filters
                 </button>
+                {damageSummary ? (
+                  <div className={styles.badgeRow}>
+                    <span className={styles.summaryBadge}>
+                      Total damaged: {formatQuantity(damageSummary.qty)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
             {error && <p className={styles.errorText}>{error}</p>}

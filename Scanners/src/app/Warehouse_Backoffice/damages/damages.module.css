@@ -315,6 +315,28 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.badgeRow {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summaryBadge {
+  border-radius: 999px;
+  border: 1px solid rgba(249, 115, 22, 0.6);
+  background: rgba(249, 115, 22, 0.18);
+  color: #fff1e6;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .fieldStack {

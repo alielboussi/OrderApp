@@ -24,12 +24,36 @@ type PurchaseRecordRaw = {
   reference_code?: string | null;
   note?: string | null;
   auto_whatsapp?: boolean | null;
+  operator_name?: string | null;
+  context?: unknown;
   recorded_by?: string | null;
   recorded_at?: string | null;
   received_at?: string | null;
   supplier?: { id: string; name: string | null } | null;
   items?: PurchaseItemRaw[] | null;
 };
+
+type OperatorContextLine = {
+  operator_name?: string | null;
+  operator?: string | null;
+  processedBy?: string | null;
+  processed_by?: string | null;
+};
+
+function resolveOperatorFromContext(context: unknown): string | null {
+  if (!Array.isArray(context)) return null;
+  for (const entry of context) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as OperatorContextLine;
+    const candidates = [record.operator_name, record.operator, record.processedBy, record.processed_by];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -76,6 +100,8 @@ export async function GET(req: NextRequest) {
         reference_code,
         note,
         auto_whatsapp,
+        operator_name,
+        context,
         recorded_by,
         recorded_at,
         received_at,
@@ -190,9 +216,16 @@ export async function GET(req: NextRequest) {
     const purchases: WarehousePurchase[] = (data ?? []).map((purchase) => {
       const whId = purchase.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
+      const contextOperatorName = resolveOperatorFromContext(purchase.context);
+      const rawOperatorName = (purchase.operator_name ?? '').trim();
       const operatorDirectoryName = purchase.recorded_by ? operatorMap.get(purchase.recorded_by) ?? null : null;
       const fallbackName = purchase.recorded_by ? operatorFallbackMap.get(purchase.recorded_by) ?? null : null;
-      const operatorName = operatorDirectoryName ?? fallbackName ?? null;
+      let operatorName = rawOperatorName && rawOperatorName !== 'Operator'
+        ? rawOperatorName
+        : contextOperatorName ?? operatorDirectoryName ?? fallbackName ?? rawOperatorName;
+      if (operatorName && operatorName.trim() === 'Operator') {
+        operatorName = '';
+      }
 
       return {
         id: purchase.id,
@@ -205,7 +238,7 @@ export async function GET(req: NextRequest) {
         auto_whatsapp: purchase.auto_whatsapp ?? null,
         recorded_at: purchase.recorded_at ?? null,
         received_at: purchase.received_at ?? null,
-        operator_name: operatorName,
+        operator_name: operatorName || null,
         items: Array.isArray(purchase.items)
           ? purchase.items.map((item) => {
               const rawKey = (item.variant_key ?? item.variation_key ?? null) as string | null;

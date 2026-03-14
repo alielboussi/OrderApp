@@ -60,6 +60,19 @@ function formatDateRangeValue(value?: string | null) {
   return value ?? "";
 }
 
+function formatQuantity(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatQtyWithUom(value: number, uom?: string | null) {
+  const formatted = formatQuantity(value);
+  const label = uom?.trim();
+  return label ? `${formatted} ${label}` : formatted;
+}
+
 function formatTimestamp(value?: string | null) {
   if (!value) return "-";
   try {
@@ -340,6 +353,33 @@ export default function WarehouseTransfersWeb() {
     return hasActiveFilters ? base : base.slice(0, 3);
   }, [transfers, searchQuery, hasActiveFilters]);
 
+  const transferSummary = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    const matches = new Map<string, { qty: number; uom?: string | null }>();
+    transfers.forEach((transfer) => {
+      (transfer.items ?? []).forEach((item) => {
+        const productName = item.product?.name ?? "";
+        const variantName = item.variation?.name ?? "";
+        const productId = item.product_id ?? item.product?.id ?? "";
+        const variantKey = item.variant_key ?? item.variation?.id ?? "";
+        const haystack = `${productName} ${variantName} ${productId} ${variantKey}`.toLowerCase();
+        if (!haystack.includes(q)) return;
+        const key = `${productId || productName}::${variantKey || variantName}`;
+        const qty = Number(item.qty) || 0;
+        const uom = item.variation?.uom ?? item.product?.uom ?? "units";
+        const existing = matches.get(key);
+        if (existing) {
+          existing.qty += qty;
+        } else {
+          matches.set(key, { qty, uom });
+        }
+      });
+    });
+    if (matches.size !== 1) return null;
+    return Array.from(matches.values())[0];
+  }, [searchQuery, transfers]);
+
   const warehouseMap = useMemo(() => {
     const list = Array.isArray(warehouses) ? warehouses : [];
     const map = new Map<string, string>();
@@ -490,6 +530,13 @@ export default function WarehouseTransfersWeb() {
                 >
                   Reset all filters
                 </button>
+                {transferSummary ? (
+                  <div className={styles.badgeRow}>
+                    <span className={styles.summaryBadge}>
+                      Total transferred: {formatQtyWithUom(transferSummary.qty, transferSummary.uom)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
             {error && <p className={styles.errorText}>{error}</p>}

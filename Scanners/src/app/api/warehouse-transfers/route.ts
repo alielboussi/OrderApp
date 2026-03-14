@@ -23,6 +23,7 @@ type TransferRecordRaw = {
   id: string;
   reference_code?: string | null;
   note?: string | null;
+  context?: unknown;
   created_at?: string | null;
   created_by?: string | null;
   operator_name?: string | null;
@@ -30,6 +31,28 @@ type TransferRecordRaw = {
   destination_warehouse_id: string | null;
   items?: TransferItemRaw[] | null;
 };
+
+type OperatorContextLine = {
+  operator_name?: string | null;
+  operator?: string | null;
+  processedBy?: string | null;
+  processed_by?: string | null;
+};
+
+function resolveOperatorFromContext(context: unknown): string | null {
+  if (!Array.isArray(context)) return null;
+  for (const entry of context) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as OperatorContextLine;
+    const candidates = [record.operator_name, record.operator, record.processedBy, record.processed_by];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -74,6 +97,7 @@ export async function GET(req: NextRequest) {
         id,
         reference_code,
         note,
+        context,
         created_at,
         created_by,
         operator_name,
@@ -193,10 +217,13 @@ export async function GET(req: NextRequest) {
       const destIdValue = transfer.destination_warehouse_id;
       const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;
       const destName = destIdValue ? warehouseMap.get(destIdValue) ?? null : null;
+      const contextOperatorName = resolveOperatorFromContext(transfer.context);
       const operatorName = (transfer.operator_name ?? '').trim();
       const operatorDirectoryName = transfer.created_by ? operatorMap.get(transfer.created_by) ?? null : null;
       const fallbackName = transfer.created_by ? operatorFallbackMap.get(transfer.created_by) ?? null : null;
-      let resolvedOperator = operatorName && operatorName !== 'Operator' ? operatorName : operatorDirectoryName ?? fallbackName ?? operatorName;
+      let resolvedOperator = operatorName && operatorName !== 'Operator'
+        ? operatorName
+        : contextOperatorName ?? operatorDirectoryName ?? fallbackName ?? operatorName;
       if (resolvedOperator && resolvedOperator.trim() === 'Operator') {
         resolvedOperator = '';
       }

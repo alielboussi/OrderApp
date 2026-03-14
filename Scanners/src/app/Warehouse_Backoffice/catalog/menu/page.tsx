@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "./menu.module.css";
@@ -30,6 +31,16 @@ type Variant = {
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
 
+type VariantPopover = {
+  itemId: string;
+  itemName: string;
+  itemImageUrl?: string | null;
+  variants: Variant[];
+  top: number;
+  left: number;
+  width: number;
+};
+
 export default function CatalogMenuPage() {
   const router = useRouter();
   const { status, readOnly, deleteDisabled } = useWarehouseAuth();
@@ -38,8 +49,9 @@ export default function CatalogMenuPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [variantPopover, setVariantPopover] = useState<VariantPopover | null>(null);
   const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
+  const variantPopoverRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,8 +80,10 @@ export default function CatalogMenuPage() {
         setError("Delete access is disabled for this user.");
         return;
       }
-      const confirmed = window.confirm("Delete this product? This cannot be undone.");
-      if (!confirmed) return;
+      const confirmation = window.prompt("Type YES to confirm deleting this product.");
+      if (!confirmation || confirmation.trim().toLowerCase() !== "yes") {
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -96,8 +110,10 @@ export default function CatalogMenuPage() {
         setError("Delete access is disabled for this user.");
         return;
       }
-      const confirmed = window.confirm("Delete this variant? This cannot be undone.");
-      if (!confirmed) return;
+      const confirmation = window.prompt("Type YES to confirm deleting this variant.");
+      if (!confirmation || confirmation.trim().toLowerCase() !== "yes") {
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -147,13 +163,72 @@ export default function CatalogMenuPage() {
       .filter((entry): entry is ItemWithVariants => Boolean(entry));
   }, [items, variants, search]);
 
-  const toggleExpanded = (id: string) =>
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const closeVariantPopover = useCallback(() => {
+    setVariantPopover(null);
+  }, []);
+
+  const openVariantPopover = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, item: Item, itemVariants: Variant[]) => {
+      if (!itemVariants.length) return;
+      if (variantPopover?.itemId === item.id) {
+        setVariantPopover(null);
+        return;
+      }
+      const target = event.currentTarget as HTMLElement;
+      const card = target.closest("[data-card]") as HTMLElement | null;
+      if (!card) return;
+      const rect = card.getBoundingClientRect();
+      const gap = 12;
+      const width = 360;
+      let left = rect.right + gap;
+      if (left + width > window.innerWidth - gap) {
+        left = rect.left - width - gap;
+      }
+      if (left < gap) {
+        left = Math.max(gap, window.innerWidth - width - gap);
+      }
+      const maxHeight = Math.min(420, window.innerHeight - gap * 2);
+      let top = rect.top;
+      if (top + maxHeight > window.innerHeight - gap) {
+        top = Math.max(gap, window.innerHeight - gap - maxHeight);
+      }
+      setVariantPopover({
+        itemId: item.id,
+        itemName: item.name ?? "Variants",
+        itemImageUrl: item.image_url ?? null,
+        variants: itemVariants,
+        top,
+        left,
+        width
+      });
+    },
+    [variantPopover]
+  );
 
   const openPreview = (url: string, label: string) => {
     if (!url) return;
     setPreview({ url, label });
   };
+
+  useEffect(() => {
+    if (!variantPopover) return;
+    const handleClose = () => {
+      setVariantPopover(null);
+    };
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+    return () => {
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+    };
+  }, [variantPopover]);
+
+  useEffect(() => {
+    if (!variantPopover || !variantPopoverRef.current) return;
+    variantPopoverRef.current.style.top = `${variantPopover.top}px`;
+    variantPopoverRef.current.style.left = `${variantPopover.left}px`;
+    variantPopoverRef.current.style.width = `${variantPopover.width}px`;
+  }, [variantPopover]);
 
   const variantCount = useMemo(() => variants.length, [variants]);
 
@@ -206,11 +281,12 @@ export default function CatalogMenuPage() {
                 <div className={styles.emptyCard}>No products found.</div>
               ) : (
                 grouped.map(({ item, variants: itemVariants }) => {
-                  const open = expanded[item.id] ?? false;
                   const baseRecipeCount = item.base_recipe_count ?? 0;
-                  const hasRecipe = (item.has_recipe ?? false) || baseRecipeCount > 0;
+                  const hasRecipe = baseRecipeCount > 0;
+                  const hasVariants = itemVariants.length > 0;
+                  const isPopoverOpen = variantPopover?.itemId === item.id;
                   return (
-                    <article key={item.id} className={styles.card}>
+                    <article key={item.id} className={styles.card} data-card>
                       <div className={styles.cardHeader}>
                         <div className={styles.cardMain}>
                           {item.image_url ? (
@@ -240,82 +316,110 @@ export default function CatalogMenuPage() {
                           <span className={`${styles.badge} ${item.active === false ? styles.badgeMuted : styles.badgeLive}`}>
                             {item.active === false ? "Inactive" : "Active"}
                           </span>
-                          <span className={styles.badge}>
-                            {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
-                          </span>
-                          {hasRecipe && (
-                            <span className={`${styles.badge} ${styles.badgeRecipe}`}>
-                              {baseRecipeCount > 0 ? `Recipes: ${baseRecipeCount}` : "Recipe set"}
+                          {hasVariants && (
+                            <span className={styles.badge}>
+                              {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
                             </span>
                           )}
-                          {item.has_variations && <span className={styles.badge}>Has variations</span>}
-                          <button className={styles.chipButton} onClick={() => toggleExpanded(item.id)}>
-                            {open ? "Hide variants" : "Show variants"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {open && (
-                        <div className={styles.variantList}>
-                          {itemVariants.length === 0 ? (
-                            <p className={styles.empty}>No variants recorded.</p>
-                          ) : (
-                            itemVariants.map((variant) => (
-                              <div key={variant.id} className={styles.variantRow}>
-                                <div className={styles.variantInfo}>
-                                  {(variant.image_url || item.image_url) ? (
-                                    <button
-                                      type="button"
-                                      className={`${styles.variantImageWrap} ${styles.imageButton}`}
-                                      onClick={() =>
-                                        openPreview(variant.image_url || item.image_url || "", variant.name || item.name)
-                                      }
-                                    >
-                                      <img
-                                        className={styles.variantImage}
-                                        src={variant.image_url || item.image_url || ""}
-                                        alt={variant.name || item.name}
-                                        loading="lazy"
-                                      />
-                                    </button>
-                                  ) : null}
-                                  <div>
-                                  <p className={styles.variantName}>{variant.name}</p>
-                                  {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
-                                  {variant.supplier_sku && (
-                                    <p className={styles.variantSupplierSku}>Supplier SKU: {variant.supplier_sku}</p>
-                                  )}
-                                  </div>
-                                </div>
-                                <div className={styles.variantActions}>
-                                  <span
-                                    className={`${styles.badge} ${variant.active === false ? styles.badgeMuted : styles.badgeLive}`}
-                                  >
-                                    {variant.active === false ? "Inactive" : "Active"}
-                                  </span>
-                                  {variant.has_recipe && (
-                                    <span className={`${styles.badge} ${styles.badgeRecipe}`}>Recipe</span>
-                                  )}
-                                  <button
-                                    className={styles.linkButton}
-                                    onClick={() => router.push(`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${item.id}`)}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button className={styles.linkButton} onClick={() => handleDeleteVariant(variant.id, item.id)} disabled={readOnly}>
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            ))
+                          {hasRecipe && (
+                            <span className={`${styles.badge} ${styles.badgeRecipe}`}>
+                              {`Recipes: ${baseRecipeCount}`}
+                            </span>
+                          )}
+                          {hasVariants && (
+                            <button className={styles.chipButton} onClick={(event) => openVariantPopover(event, item, itemVariants)}>
+                              {isPopoverOpen ? "Hide variants" : "Show variants"}
+                            </button>
                           )}
                         </div>
-                      )}
+                      </div>
                     </article>
                   );
                 })
               )}
             </section>
+            {variantPopover && (
+              <div className={styles.variantOverlay} onClick={closeVariantPopover} role="presentation">
+                <div
+                  className={styles.variantPopover}
+                  ref={variantPopoverRef}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className={styles.variantPopoverHeader}>
+                    <div>
+                      <p className={styles.variantPopoverTitle}>{variantPopover.itemName}</p>
+                      <p className={styles.variantPopoverMeta}>
+                        {variantPopover.variants.length} variant{variantPopover.variants.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <button className={styles.variantPopoverClose} onClick={closeVariantPopover} type="button">
+                      Close
+                    </button>
+                  </div>
+                  <div className={styles.variantPopoverList}>
+                    {variantPopover.variants.map((variant) => (
+                      <div key={variant.id} className={styles.variantRow}>
+                        <div className={styles.variantInfo}>
+                          {(variant.image_url || variantPopover.itemImageUrl) ? (
+                            <button
+                              type="button"
+                              className={`${styles.variantImageWrap} ${styles.imageButton}`}
+                              onClick={() =>
+                                openPreview(
+                                  variant.image_url || variantPopover.itemImageUrl || "",
+                                  variant.name || variantPopover.itemName
+                                )
+                              }
+                            >
+                              <img
+                                className={styles.variantImage}
+                                src={variant.image_url || variantPopover.itemImageUrl || ""}
+                                alt={variant.name || variantPopover.itemName}
+                                loading="lazy"
+                              />
+                            </button>
+                          ) : null}
+                          <div>
+                            <p className={styles.variantName}>{variant.name}</p>
+                            {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
+                            {variant.supplier_sku && (
+                              <p className={styles.variantSupplierSku}>Supplier SKU: {variant.supplier_sku}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className={styles.variantActions}>
+                          <span
+                            className={`${styles.badge} ${variant.active === false ? styles.badgeMuted : styles.badgeLive}`}
+                          >
+                            {variant.active === false ? "Inactive" : "Active"}
+                          </span>
+                          {variant.has_recipe && (
+                            <span className={`${styles.badge} ${styles.badgeRecipe}`}>Recipe</span>
+                          )}
+                          <button
+                            className={styles.linkButton}
+                            onClick={() =>
+                              router.push(
+                                `/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${variantPopover.itemId}`
+                              )
+                            }
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className={styles.linkButton}
+                            onClick={() => handleDeleteVariant(variant.id, variantPopover.itemId)}
+                            disabled={readOnly}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             {preview && (
               <div className={styles.imageModal} onClick={() => setPreview(null)} role="presentation">
                 <div className={styles.imageModalCard} onClick={(event) => event.stopPropagation()}>

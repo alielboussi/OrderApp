@@ -11,7 +11,7 @@ const DESTINATION_CHOICES = [
   { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
-const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c'] as const;
+const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', 'a7addcec-bcf5-4eab-94f0-6fb704ad6ca4'] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -2921,6 +2921,8 @@ function createHtml(config: {
 
       function mapCartSnapshotToLineItems(cartSnapshot) {
         return cartSnapshot.map((item, index) => ({
+          productId: item.productId ?? null,
+          variantKey: item.variationId ?? item.variantKey ?? null,
           productName: item.productName ?? 'Item ' + (index + 1),
           variationName: item.variationName ?? null,
           qty: item.qty,
@@ -3194,13 +3196,25 @@ function createHtml(config: {
       function openSelectModal(modal) {
         if (!modal) return;
         modal.classList.add('active');
+        modal.removeAttribute('inert');
         modal.setAttribute('aria-hidden', 'false');
+        const focusTarget = modal.querySelector(
+          'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          focusTarget.focus();
+        }
       }
 
       function closeSelectModal(modal) {
         if (!modal) return;
+        const active = document.activeElement;
+        if (active && modal.contains(active) && typeof active.blur === 'function') {
+          active.blur();
+        }
         modal.classList.remove('active');
         modal.setAttribute('aria-hidden', 'true');
+        modal.setAttribute('inert', '');
       }
 
       function renderDestinationCards() {
@@ -3366,7 +3380,7 @@ function createHtml(config: {
         state.session = null;
         state.operatorProfile = null;
         try {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: 'local' });
         } catch (error) {
           console.warn('Logout failed', error);
         }
@@ -4878,13 +4892,15 @@ function createHtml(config: {
         }
         try {
           const cartSnapshot = cart.map((item) => ({ ...item }));
+          const operatorName = getOperatorDisplayName('transfer');
           const payload = {
             p_source: sourceId,
             p_destination: destId,
             p_items: cartSnapshot.map((item) => ({
               product_id: item.productId,
               variant_key: item.variationId ?? item.variantKey ?? null,
-              qty: item.qty
+              qty: item.qty,
+              operator_name: operatorName || null
             })),
             p_note: null
           };
@@ -4902,6 +4918,7 @@ function createHtml(config: {
           const summary = {
             reference,
             referenceRaw: rawReference,
+            warehouseId: sourceId,
             processedBy: getOperatorDisplayName('transfer'),
             operator: getOperatorDisplayName('transfer'),
             sourceLabel: sourceLabel.textContent,
@@ -4953,10 +4970,12 @@ function createHtml(config: {
 
         const noteValue = (damageNote?.value ?? state.damageNote ?? '').trim();
         const cartSnapshot = cart.map((item) => ({ ...item }));
+        const operatorName = getOperatorDisplayName('damage');
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
           variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
+          operator_name: operatorName || null,
           note: noteValue || null
         }));
 
@@ -4989,6 +5008,7 @@ function createHtml(config: {
           const summary = {
             reference: 'Damage',
             referenceRaw: 'Damage',
+            warehouseId: warehouseId,
             processedBy: getOperatorDisplayName('damage'),
             operator: getOperatorDisplayName('damage'),
             sourceLabel: sourceLabel.textContent,
@@ -5054,12 +5074,14 @@ function createHtml(config: {
 
         const supplierId = state.purchaseForm.supplierId || null;
         const cartSnapshot = cart.map((item) => ({ ...item }));
+        const operatorName = getOperatorDisplayName('purchase');
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
           variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           qty_input_mode: 'units',
-          unit_cost: item.unitCost ?? null
+          unit_cost: item.unitCost ?? null,
+          operator_name: operatorName || null
         }));
 
         if (payloadItems.some((item) => !item.product_id || !item.qty || item.qty <= 0)) {
@@ -5106,6 +5128,7 @@ function createHtml(config: {
           const summary = {
             reference: receiptRef,
             referenceRaw: receiptRef,
+            warehouseId: warehouseId,
             processedBy: getOperatorDisplayName('purchase'),
             sourceLabel: supplierName,
             destLabel: warehouseName,
@@ -5144,8 +5167,27 @@ function createHtml(config: {
             body: JSON.stringify({ context, summary, scanner: 'ingredients' })
           });
           if (!response.ok) {
-            const info = await response.json().catch(() => ({}));
-            throw new Error(info.error || 'Unable to ping Telegram API');
+            let errorText = '';
+            let detailText = '';
+            let rawText = '';
+            try {
+              rawText = await response.text();
+            } catch {
+              rawText = '';
+            }
+            if (rawText) {
+              try {
+                const info = JSON.parse(rawText);
+                errorText = typeof info.error === 'string' ? info.error : '';
+                detailText = typeof info.detail === 'string' ? info.detail : '';
+              } catch {
+                detailText = rawText.trim();
+              }
+            }
+            if (detailText.length > 160) detailText = detailText.slice(0, 160) + '...';
+            const statusText = response.status ? 'HTTP ' + response.status : '';
+            const message = [errorText, detailText].filter(Boolean).join(': ') || statusText;
+            throw new Error(message || 'Unable to ping Telegram API');
           }
         } catch (error) {
           const prefix = context === 'purchase' ? 'Purchase logged' : context === 'damage' ? 'Damage logged' : 'Transfer recorded';

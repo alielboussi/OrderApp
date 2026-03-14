@@ -21,7 +21,30 @@ type DamageRecordRaw = {
   context?: unknown;
   created_by?: string | null;
   created_at?: string | null;
+  operator_name?: string | null;
 };
+
+type OperatorContextLine = {
+  operator_name?: string | null;
+  operator?: string | null;
+  processedBy?: string | null;
+  processed_by?: string | null;
+};
+
+function resolveOperatorFromContext(context: unknown): string | null {
+  if (!Array.isArray(context)) return null;
+  for (const entry of context) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as OperatorContextLine;
+    const candidates = [record.operator_name, record.operator, record.processedBy, record.processed_by];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -60,7 +83,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient();
     let query = supabase
       .from('warehouse_damages')
-      .select('id, warehouse_id, note, context, created_by, created_at')
+      .select('id, warehouse_id, note, context, created_by, created_at, operator_name')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -185,9 +208,16 @@ export async function GET(req: NextRequest) {
     const damages: WarehouseDamage[] = parsedDamages.map((damage) => {
       const whId = damage.warehouse_id;
       const warehouseName = whId ? warehouseMap.get(whId) ?? null : null;
+      const contextOperatorName = resolveOperatorFromContext(damage.context);
+      const rawOperatorName = (damage.operator_name ?? '').trim();
       const operatorDirectoryName = damage.created_by ? operatorMap.get(damage.created_by) ?? null : null;
       const fallbackName = damage.created_by ? operatorFallbackMap.get(damage.created_by) ?? null : null;
-      const operatorName = operatorDirectoryName ?? fallbackName ?? null;
+      let operatorName = rawOperatorName && rawOperatorName !== 'Operator'
+        ? rawOperatorName
+        : contextOperatorName ?? operatorDirectoryName ?? fallbackName ?? rawOperatorName;
+      if (operatorName && operatorName.trim() === 'Operator') {
+        operatorName = '';
+      }
 
       const items: DamageItem[] = Array.isArray(damage.parsedLines)
         ? damage.parsedLines.map((line, index) => {
@@ -218,7 +248,7 @@ export async function GET(req: NextRequest) {
         warehouse: whId ? { id: whId, name: warehouseName } : null,
         note: damage.note ?? null,
         created_at: damage.created_at ?? null,
-        operator_name: operatorName,
+        operator_name: operatorName || null,
         items,
       };
     });
