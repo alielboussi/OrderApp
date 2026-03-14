@@ -22,10 +22,13 @@ type SummaryItem = {
 type SummaryPayload = {
   processedBy?: unknown;
   operator?: unknown;
+  reference?: unknown;
+  referenceRaw?: unknown;
   dateTime?: unknown;
   window?: unknown;
   destLabel?: unknown;
   destinationLabel?: unknown;
+  sourceLabel?: unknown;
   route?: unknown;
   itemsBlock?: unknown;
   items?: SummaryItem[];
@@ -168,7 +171,7 @@ function formatRemainingLine(item: SummaryItem, remainingByKey: Map<string, numb
   const unitLabel = remainingQty === null ? '' : formatUnitLabel(resolveItemUnit(item), remainingQty);
   const qtyText = remainingQty === null ? 'Null' : formatQtyValue(remainingQty);
   const combined = unitLabel ? `${qtyText} ${unitLabel}` : qtyText;
-  return `<b>- Remaining Qty - (${escapeHtml(combined)})</b>`;
+  return `<b>- Remaining Qty - ${escapeHtml(combined)}</b>`;
 }
 
 function formatDamageLine(item: SummaryItem, damageByKey: Map<string, number> | null): string {
@@ -249,6 +252,8 @@ function buildMessage(
 ) {
   const typeLabel = context === 'purchase' ? 'Purchase' : context === 'damage' ? 'Damage' : 'Transfer';
   const operator = normalizeLabel(summary.processedBy) ?? normalizeLabel(summary.operator) ?? 'Unknown operator';
+  const reference = normalizeLabel(summary.reference) ?? normalizeLabel(summary.referenceRaw);
+  const supplierName = normalizeLabel(summary.sourceLabel);
   const destination = String(
     summary.destLabel ?? summary.destinationLabel ?? summary.route ?? 'Unknown destination'
   );
@@ -260,6 +265,8 @@ function buildMessage(
     `<b>${escapeHtml(scannerLabel)}</b>`,
     `<b>Outlet/Home &amp; Department: ${escapeHtml(destination)}</b>`,
     `Type: ${escapeHtml(typeLabel)}`,
+    context === 'purchase' && reference ? `Reference / Invoice #: ${escapeHtml(reference)}` : '',
+    context === 'purchase' && supplierName ? `Supplier: ${escapeHtml(supplierName)}` : '',
     dateTime ? `Date &amp; Time: ${escapeHtml(dateTime)}` : '',
     `Operator: ${escapeHtml(operator)}`,
     'Products:',

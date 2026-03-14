@@ -1965,7 +1965,7 @@ function createHtml(config: {
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SCANNER_NAME = 'Flour Potatoes';
-    const SCANNER_ID = '3c5f1e92-6c1a-4a3b-8a8c-0c8ab4b98e75';
+    const SCANNER_ID = 'e6304935-b53c-4979-a799-33f2a93b70e1';
     const SESSION_STORAGE_KEY = 'flour-potatoes-kiosk-session-v1';
     const PASSWORD_STORAGE_KEY = 'flour-potatoes-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';
