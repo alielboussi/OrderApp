@@ -43,12 +43,16 @@ import com.afterten.stocktake.data.RoleGuards
 import com.afterten.stocktake.data.hasRole
 import com.afterten.stocktake.data.repo.CatalogRepository
 import com.afterten.stocktake.ui.components.AccessDeniedCard
+import com.afterten.stocktake.ui.theme.StocktakePalette
 import com.afterten.stocktake.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 
-private val GlowRed = Color(0xFFE53935)
-private val JetBlack = Color(0xFF000000)
-private val CardBlack = Color(0xFF111111)
+private val GlowRed = StocktakePalette.Accent
+private val JetBlack = StocktakePalette.Background
+private val CardBlack = StocktakePalette.Panel
+private val PanelStrong = StocktakePalette.PanelStrong
+private val MutedText = StocktakePalette.Muted
+private val SuccessGreen = StocktakePalette.AccentGreen
 
 private enum class CatalogMode { Product, Variance }
 
@@ -116,7 +120,7 @@ private fun HeaderButtons(mode: CatalogMode, onSelect: (CatalogMode) -> Unit) {
             modifier = Modifier.weight(1f),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (mode == CatalogMode.Product) GlowRed else CardBlack,
-                contentColor = Color.White
+                contentColor = StocktakePalette.Text
             ),
             shape = RoundedCornerShape(20.dp)
         ) { Text("Products") }
@@ -126,7 +130,7 @@ private fun HeaderButtons(mode: CatalogMode, onSelect: (CatalogMode) -> Unit) {
             modifier = Modifier.weight(1f),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (mode == CatalogMode.Variance) GlowRed else CardBlack,
-                contentColor = Color.White
+                contentColor = StocktakePalette.Text
             ),
             shape = RoundedCornerShape(20.dp)
         ) { Text("Variances") }
@@ -208,7 +212,7 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
             results.take(5).forEach { row ->
                 Text(
                     text = "${'$'}{row.name} (${row.sku ?: "no sku"})",
-                    color = Color.White,
+                    color = StocktakePalette.Text,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { loadFrom(row) }
@@ -228,7 +232,7 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
             GlowingField(defaultWarehouseId, { defaultWarehouseId = it }, "Default Warehouse ID", "Optional UUID; leave blank to skip")
             GlowingField(lockedFromWarehouseId, { lockedFromWarehouseId = it }, "Locked From Warehouse ID", "Optional UUID to lock item")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Outlet Order Visible", color = Color.White)
+                Text("Outlet Order Visible", color = StocktakePalette.Text)
                 androidx.compose.material3.Switch(
                     checked = outletVisible,
                     onCheckedChange = { outletVisible = it },
@@ -237,7 +241,7 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
             }
 
             if (error != null) Text(error!!, color = GlowRed)
-            if (success != null) Text(success!!, color = Color.Green)
+            if (success != null) Text(success!!, color = SuccessGreen)
 
             Button(
                 onClick = {
@@ -282,9 +286,9 @@ private fun ProductPane(jwt: String, repo: CatalogRepository, loggerTag: String,
                 },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = Color.White)
+                colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = StocktakePalette.Text)
             ) {
-                if (loading) CircularProgressIndicator(modifier = Modifier.height(18.dp), color = Color.White) else Text(if (editingId == null) "Add" else "Update")
+                if (loading) CircularProgressIndicator(modifier = Modifier.height(18.dp), color = StocktakePalette.Text) else Text(if (editingId == null) "Add" else "Update")
             }
         }
     }
@@ -357,7 +361,7 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
             results.take(5).forEach { row ->
                 Text(
                     text = "${'$'}{row.name} (${row.sku ?: "no sku"})",
-                    color = Color.White,
+                    color = StocktakePalette.Text,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { loadFrom(row) }
@@ -378,14 +382,14 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
                         runCatching { repo.searchCatalogItems(jwt, productSearch) }
                             .onSuccess { productMatches = it }
                     }
-                }, colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = Color.White)) {
+                }, colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = StocktakePalette.Text)) {
                     Text("Search")
                 }
             }
             productMatches.take(5).forEach { p ->
                 Text(
                     text = "Link to ${'$'}{p.name}",
-                    color = Color.White,
+                    color = StocktakePalette.Text,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -404,7 +408,7 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
             GlowingField(consumptionUom, { consumptionUom = it }, "Consumption UOM", "Display UOM (e.g., each)")
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Active", color = Color.White)
+                Text("Active", color = StocktakePalette.Text)
                 androidx.compose.material3.Switch(
                     checked = active,
                     onCheckedChange = { active = it },
@@ -413,7 +417,7 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
             }
 
             if (error != null) Text(error!!, color = GlowRed)
-            if (success != null) Text(success!!, color = Color.Green)
+            if (success != null) Text(success!!, color = SuccessGreen)
 
             Button(
                 onClick = {
@@ -450,9 +454,9 @@ private fun VariancePane(jwt: String, repo: CatalogRepository, loggerTag: String
                 },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = Color.White)
+                colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = StocktakePalette.Text)
             ) {
-                if (loading) CircularProgressIndicator(modifier = Modifier.height(18.dp), color = Color.White) else Text(if (editingId == null) "Add" else "Update")
+                if (loading) CircularProgressIndicator(modifier = Modifier.height(18.dp), color = StocktakePalette.Text) else Text(if (editingId == null) "Add" else "Update")
             }
         }
     }
@@ -468,7 +472,7 @@ private fun SearchBar(value: String, onValueChange: (String) -> Unit, onSearch: 
             helper = "Type to search",
             modifier = Modifier.weight(1f)
         )
-        Button(onClick = onSearch, colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = Color.White)) { Text("Search") }
+        Button(onClick = onSearch, colors = ButtonDefaults.buttonColors(containerColor = GlowRed, contentColor = StocktakePalette.Text)) { Text("Search") }
     }
 }
 
@@ -486,30 +490,30 @@ private fun GlowingField(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            label = { Text(label, color = Color.White) },
-            placeholder = { Text(helper, color = Color.White.copy(alpha = 0.7f)) },
+            label = { Text(label, color = StocktakePalette.Text) },
+            placeholder = { Text(helper, color = MutedText) },
             modifier = Modifier
                 .fillMaxWidth()
-                .background(JetBlack)
+                .background(PanelStrong)
                 .border(width = 2.dp, color = GlowRed, shape = RoundedCornerShape(14.dp))
                 .shadow(elevation = 8.dp, spotColor = GlowRed, shape = RoundedCornerShape(14.dp)),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             trailingIcon = trailingIcon,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = JetBlack,
-                unfocusedContainerColor = JetBlack,
-                disabledContainerColor = JetBlack,
+                focusedContainerColor = PanelStrong,
+                unfocusedContainerColor = PanelStrong,
+                disabledContainerColor = PanelStrong,
                 focusedBorderColor = Color.Transparent,
                 unfocusedBorderColor = Color.Transparent,
-                cursorColor = Color.White,
-                focusedLabelColor = Color.White,
-                unfocusedLabelColor = Color.White,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                disabledTextColor = Color.White.copy(alpha = 0.5f),
-                focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
-                unfocusedPlaceholderColor = Color.White.copy(alpha = 0.7f)
+                cursorColor = StocktakePalette.Text,
+                focusedLabelColor = StocktakePalette.Text,
+                unfocusedLabelColor = MutedText,
+                focusedTextColor = StocktakePalette.Text,
+                unfocusedTextColor = StocktakePalette.Text,
+                disabledTextColor = StocktakePalette.Text.copy(alpha = 0.5f),
+                focusedPlaceholderColor = MutedText,
+                unfocusedPlaceholderColor = MutedText
             )
         )
         Text(helper, style = MaterialTheme.typography.bodySmall, color = GlowRed)

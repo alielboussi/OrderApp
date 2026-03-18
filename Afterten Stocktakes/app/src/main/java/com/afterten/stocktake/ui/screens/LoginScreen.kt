@@ -1,5 +1,6 @@
 package com.afterten.stocktake.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -60,6 +61,7 @@ fun LoginScreen(
     var loading by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val logger = rememberScreenLogger("Login")
+    val scheme = MaterialTheme.colorScheme
 
     LaunchedEffect(Unit) { logger.enter() }
     LaunchedEffect(error) {
@@ -110,6 +112,7 @@ fun LoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(scheme.background)
             .padding(24.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -161,10 +164,10 @@ fun LoginScreen(
             onClick = { submit() },
             enabled = !loading,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFD50000),
-                contentColor = Color.White,
-                disabledContainerColor = Color(0x80D50000),
-                disabledContentColor = Color.White
+                containerColor = scheme.primary,
+                contentColor = scheme.onPrimary,
+                disabledContainerColor = scheme.primary.copy(alpha = 0.5f),
+                disabledContentColor = scheme.onPrimary
             )
         ) {
             Text(if (loading) "Signing in…" else "Sign In")

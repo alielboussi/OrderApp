@@ -57,6 +57,16 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
     )
 
     @Serializable
+    data class VehicleRow(
+        val id: String,
+        val name: String,
+        @SerialName("number_plate") val numberPlate: String? = null,
+        @SerialName("driver_name") val driverName: String? = null,
+        @SerialName("warehouse_id") val warehouseId: String? = null,
+        val active: Boolean? = null
+    )
+
+    @Serializable
     data class VarianceRow(
         @SerialName("period_id") val periodId: String,
         @SerialName("warehouse_id") val warehouseId: String,
@@ -79,7 +89,8 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         @SerialName("variant_key") val variantKey: String? = "base",
         @SerialName("delta_units") val deltaUnits: Double? = null,
         val reason: String? = null,
-        @SerialName("occurred_at") val occurredAt: String? = null
+        @SerialName("occurred_at") val occurredAt: String? = null,
+        @SerialName("warehouse_id") val warehouseId: String? = null
     )
 
     private val json = relaxedJson
@@ -276,6 +287,43 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
             "&occurred_at=gte.${opened}" +
             "&occurred_at=lte.${closed}" +
             "&reason=in.(warehouse_transfer,outlet_sale,damage,recipe_consumption)"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(StockLedgerRow.serializer()), text)
+    }
+
+    suspend fun listVehicles(jwt: String): List<VehicleRow> {
+        val select = encode("id,name,number_plate,driver_name,warehouse_id,active")
+        val path = "/rest/v1/vehicles?select=${select}&order=name.asc"
+        val text = supabase.getWithJwt(path, jwt)
+        return json.decodeFromString(ListSerializer(VehicleRow.serializer()), text)
+    }
+
+    suspend fun listVehicleLedger(
+        jwt: String,
+        warehouseIds: List<String>,
+        startedAtUtc: String?,
+        endedAtUtc: String?
+    ): List<StockLedgerRow> {
+        if (warehouseIds.isEmpty()) return emptyList()
+        val select = encode("item_id,variant_key,delta_units,reason,occurred_at,warehouse_id")
+        val ids = warehouseIds.joinToString(",") { it }
+        val path = buildString {
+            append("/rest/v1/stock_ledger?select=${select}")
+            append("&warehouse_id=in.(")
+            append(ids)
+            append(")")
+            append("&location_type=eq.warehouse")
+            append("&reason=eq.warehouse_transfer")
+            append("&delta_units=gt.0")
+            if (!startedAtUtc.isNullOrBlank()) {
+                append("&occurred_at=gte.")
+                append(encode(startedAtUtc))
+            }
+            if (!endedAtUtc.isNullOrBlank()) {
+                append("&occurred_at=lt.")
+                append(encode(endedAtUtc))
+            }
+        }
         val text = supabase.getWithJwt(path, jwt)
         return json.decodeFromString(ListSerializer(StockLedgerRow.serializer()), text)
     }

@@ -185,6 +185,7 @@ export default function OutletWarehouseBalancesPage() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
+  const [variantUoms, setVariantUoms] = useState<Record<string, string>>({});
   const [itemPackMass, setItemPackMass] = useState<Record<string, { mass: number | null; uom: string | null }>>({});
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
@@ -615,9 +616,9 @@ export default function OutletWarehouseBalancesPage() {
         const [{ data: itemData, error: itemError }, { data: variantData, error: variantError }] = await Promise.all([
           supabase
             .from("catalog_items")
-            .select("id,consumption_unit,consumption_uom,purchase_unit_mass,purchase_unit_mass_uom")
+            .select("id,consumption_unit,consumption_uom,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom")
             .in("id", ids),
-          supabase.from("catalog_variants").select("id,item_id,name,active").in("item_id", ids),
+          supabase.from("catalog_variants").select("id,item_id,name,active,purchase_pack_unit").in("item_id", ids),
         ]);
 
         if (itemError) throw itemError;
@@ -626,9 +627,10 @@ export default function OutletWarehouseBalancesPage() {
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
+        const variantUomMap: Record<string, string> = {};
         const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
         (itemData || []).forEach((row) => {
-          const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? "each";
+          const fallbackUom = row.purchase_pack_unit ?? row.consumption_unit ?? row.consumption_uom ?? "each";
           if (row.id) uomMap[row.id] = fallbackUom;
           if (row.id) {
             packMap[row.id] = {
@@ -645,6 +647,15 @@ export default function OutletWarehouseBalancesPage() {
 
         (variantData || []).forEach((variant) => {
           if (variant?.active === false) return;
+          if (variant?.id) {
+            const variantUom = variant.purchase_pack_unit?.trim();
+            if (variantUom) {
+              const normalizedKey = normalizeVariantKey(variant.id).toLowerCase();
+              variantUomMap[normalizedKey] = variantUom;
+              variantUomMap[variant.id] = variantUom;
+            }
+          }
+
           const name = variant?.name?.trim();
           if (!name || !variant?.id) return;
           map[variant.id] = name;
@@ -653,11 +664,13 @@ export default function OutletWarehouseBalancesPage() {
 
         setVariantNames(map);
         setItemUoms(uomMap);
+        setVariantUoms(variantUomMap);
         setItemPackMass(packMap);
       } catch {
         if (active) {
           setVariantNames({});
           setItemUoms({});
+          setVariantUoms({});
           setItemPackMass({});
         }
       }
@@ -884,7 +897,9 @@ export default function OutletWarehouseBalancesPage() {
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {
-                    const formatted = formatQtyWithUom(item.net_units, itemUoms[item.item_id]);
+                    const variantKey = (item.variant_key ?? "base").toLowerCase();
+                    const uom = variantUoms[variantKey] ?? itemUoms[item.item_id];
+                    const formatted = formatQtyWithUom(item.net_units, uom);
                     return `${formatted.text} ${formatted.uom}`.trim();
                   })()}
                 </span>

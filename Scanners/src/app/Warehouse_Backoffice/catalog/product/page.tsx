@@ -378,6 +378,16 @@ function ProductCreatePage() {
                       step="1"
                       min="1"
                     />
+                    <Select
+                      label="Storage home"
+                      hint="Pick the warehouse that holds this item."
+                      value={form.storage_home_id}
+                      onChange={(v) => handleChange("storage_home_id", v)}
+                      options={[
+                        { value: "", label: "Select storage home" },
+                        ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id })),
+                      ]}
+                    />
                   </>
                 )}
                 {isIngredientOrRaw && !form.has_variations && (

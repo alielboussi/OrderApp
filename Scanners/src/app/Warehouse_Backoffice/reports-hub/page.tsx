@@ -17,6 +17,7 @@ export default function WarehouseBackofficeReportsHub() {
   const goToScannerReports = () => router.push("/Warehouse_Backoffice/inventory");
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
   const goToWarehouseReports = () => router.push("/Warehouse_Backoffice/warehouse-reports");
+  const goToVehicleReports = () => router.push("/Warehouse_Backoffice/vehicle-reports");
 
   if (status !== "ok") return null;
 
@@ -68,6 +69,12 @@ export default function WarehouseBackofficeReportsHub() {
           <button onClick={goToWarehouseReports} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Warehouse Reports</p>
             <p className={styles.cardBody}>See assigned products and accrued movement totals by date range.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToVehicleReports} className={`${styles.actionCard} ${styles.vehicleReportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.vehicleReportsTitle}`}>Vehicle Reports</p>
+            <p className={styles.cardBody}>Track product transfers to vehicles with driver and plate filters.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>

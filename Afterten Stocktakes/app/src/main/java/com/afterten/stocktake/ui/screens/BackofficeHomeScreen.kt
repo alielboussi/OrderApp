@@ -1,5 +1,6 @@
 package com.afterten.stocktake.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ fun BackofficeHomeScreen(
     val session by viewModel.session.collectAsState()
     val hasBackofficeRole = session.hasRole(RoleGuards.Backoffice)
     val logger = rememberScreenLogger("BackofficeHome")
+    val scheme = MaterialTheme.colorScheme
 
     LaunchedEffect(Unit) {
         logger.enter(mapOf("hasSession" to (session != null)))
@@ -66,6 +68,7 @@ fun BackofficeHomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(scheme.background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center

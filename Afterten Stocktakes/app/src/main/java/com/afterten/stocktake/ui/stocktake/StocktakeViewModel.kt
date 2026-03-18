@@ -766,6 +766,12 @@ class StocktakeViewModel(
             .map { row -> "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase() }
             .toSet()
 
+        val itemKindMap = (_ui.value.allItems.ifEmpty { _ui.value.items })
+            .associateBy(
+                { "${it.itemId}|${it.variantKey?.ifBlank { "base" } ?: "base"}".lowercase() },
+                { it.itemKind?.lowercase() }
+            )
+
         val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
             .toString()
 
@@ -831,31 +837,40 @@ class StocktakeViewModel(
             }
             .map { row ->
                 val variantKey = row.variantKey?.ifBlank { "base" } ?: "base"
+                val normalizedVariant = variantKey.trim().lowercase()
+                val itemKey = row.itemId.trim().lowercase()
                 val key = "${row.itemId}|${variantKey}".lowercase()
                 val baseName = row.itemName ?: row.itemId
                 val variant = variantLabel(row.itemId, variantKey)
-                val label = if (variant.isBlank()) baseName else variant
-                val transfers = transfersByKey[key] ?: 0.0
-                val damages = damagesByKey[key] ?: 0.0
-                val sales = salesByKey[key] ?: 0.0
+                val label = if (variant.isBlank()) baseName else "$baseName - $variant"
+                val transfersSigned = transfersByKey[key] ?: 0.0
+                val damagesSigned = damagesByKey[key] ?: 0.0
+                val salesSigned = salesByKey[key] ?: 0.0
                 val opening = safe(row.openingQty)
                 val closing = safe(row.closingQty)
-                val expected = opening + transfers + damages + sales
+                val expected = opening + transfersSigned + damagesSigned + salesSigned
                 val varianceQty = closing - expected
                 val costKey = "${row.itemId}|${variantKey}".lowercase()
                 val unitCost = variationCostMap[costKey]?.cost ?: costMap[row.itemId] ?: 0.0
                 val varianceAmount = varianceQty * unitCost
-                val hasActivity = listOf(opening, transfers, damages, sales, closing)
+                val hasActivity = listOf(opening, transfersSigned, damagesSigned, salesSigned, closing)
                     .any { kotlin.math.abs(it) > 0.0000001 }
                 if (!hasActivity) return@map null
+                val kind = itemKindMap[key]
+                    ?: itemKindMap["${row.itemId}|base".lowercase()]
+                    ?: ""
+                val isBaseKey = normalizedVariant.isBlank() || normalizedVariant == "base" || (itemKey.isNotBlank() && normalizedVariant == itemKey)
+                val isBaseLabel = baseName.equals(label, ignoreCase = true)
+                val shouldInclude = kind == "ingredient" || kind == "raw" || (!isBaseKey && !isBaseLabel)
+                if (!shouldInclude) return@map null
                 VarianceReportRow(
                     itemId = row.itemId,
                     variantKey = variantKey,
                     itemLabel = label,
                     openingQty = opening,
-                    transfersQty = transfers,
-                    damagesQty = damages,
-                    salesQty = sales,
+                    transfersQty = kotlin.math.abs(transfersSigned),
+                    damagesQty = kotlin.math.abs(damagesSigned),
+                    salesQty = kotlin.math.abs(salesSigned),
                     expectedQty = expected,
                     closingQty = closing,
                     varianceQty = varianceQty,

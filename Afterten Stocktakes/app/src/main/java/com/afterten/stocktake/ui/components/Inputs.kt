@@ -1,6 +1,7 @@
 package com.afterten.stocktake.ui.components
 
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
@@ -21,20 +22,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun appTextFieldColors(): TextFieldColors = TextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White,
-    disabledTextColor = Color.White.copy(alpha = 0.6f),
-    cursorColor = Color.White,
-    focusedLabelColor = Color.White,
-    unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
-    focusedIndicatorColor = Color.White,
-    unfocusedIndicatorColor = Color.White.copy(alpha = 0.5f),
-    disabledIndicatorColor = Color.White.copy(alpha = 0.3f),
-    focusedContainerColor = Color.Transparent,
-    unfocusedContainerColor = Color.Transparent,
-    disabledContainerColor = Color.Transparent
-)
+fun appTextFieldColors(): TextFieldColors {
+    val colors = MaterialTheme.colorScheme
+    return TextFieldDefaults.colors(
+        focusedTextColor = colors.onSurface,
+        unfocusedTextColor = colors.onSurface,
+        disabledTextColor = colors.onSurface.copy(alpha = 0.6f),
+        cursorColor = colors.primary,
+        focusedLabelColor = colors.onSurface,
+        unfocusedLabelColor = colors.onSurfaceVariant,
+        focusedIndicatorColor = colors.primary,
+        unfocusedIndicatorColor = colors.outline,
+        disabledIndicatorColor = colors.outline.copy(alpha = 0.5f),
+        focusedContainerColor = colors.surface,
+        unfocusedContainerColor = colors.surface,
+        disabledContainerColor = colors.surface
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,21 +55,22 @@ fun AppOutlinedTextField(
     borderThickness: androidx.compose.ui.unit.Dp = 0.dp,
     shape: Shape = RoundedCornerShape(12.dp),
 ) {
+    val scheme = MaterialTheme.colorScheme
     val colors = if (borderColor != null) {
         // Hide the component's own outline so the outer border is the only one visible
         TextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            disabledTextColor = Color.White.copy(alpha = 0.6f),
-            cursorColor = Color.White,
-            focusedLabelColor = Color.White,
-            unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
+            focusedTextColor = scheme.onSurface,
+            unfocusedTextColor = scheme.onSurface,
+            disabledTextColor = scheme.onSurface.copy(alpha = 0.6f),
+            cursorColor = scheme.primary,
+            focusedLabelColor = scheme.onSurface,
+            unfocusedLabelColor = scheme.onSurfaceVariant,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-            disabledContainerColor = Color.Transparent
+            focusedContainerColor = scheme.surface,
+            unfocusedContainerColor = scheme.surface,
+            disabledContainerColor = scheme.surface
         )
     } else appTextFieldColors()
 

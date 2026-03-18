@@ -468,6 +468,16 @@ export default function CatalogManagePage() {
                       step="1"
                       min="1"
                     />
+                    <Select
+                      label="Storage home"
+                      hint="Pick the warehouse that holds this item."
+                      value={productForm.storage_home_id}
+                      onChange={(v) => handleProductChange("storage_home_id", v)}
+                      options={[
+                        { value: "", label: "Select storage home" },
+                        ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id })),
+                      ]}
+                    />
                   </>
                 )}
                 {isIngredientOrRaw && !productForm.has_variations && (

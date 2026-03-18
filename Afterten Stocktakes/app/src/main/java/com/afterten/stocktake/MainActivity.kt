@@ -28,6 +28,7 @@ import com.afterten.stocktake.ui.stocktake.StocktakeDashboardScreen
 import com.afterten.stocktake.ui.stocktake.StocktakePeriodsScreen
 import com.afterten.stocktake.ui.stocktake.StocktakePeriodCountsScreen
 import com.afterten.stocktake.ui.stocktake.StocktakeVarianceScreen
+import com.afterten.stocktake.ui.stocktake.VehicleReportsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +60,7 @@ sealed class Routes(val route: String) {
     data object StocktakeVariance : Routes("stocktake_variance/{periodId}") {
         fun route(periodId: String) = "stocktake_variance/$periodId"
     }
+    data object VehicleReports : Routes("vehicle_reports")
 }
 
 @Composable
@@ -113,7 +115,8 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onBack = { navController.popBackStack() },
                 onOpenCounts = { periodId -> navController.navigate(Routes.StocktakeCount.route(periodId)) },
                 onOpenVariance = { periodId -> navController.navigate(Routes.StocktakeVariance.route(periodId)) },
-                onOpenPeriods = { warehouseId -> navController.navigate(Routes.StocktakePeriods.route(warehouseId)) }
+                onOpenPeriods = { warehouseId -> navController.navigate(Routes.StocktakePeriods.route(warehouseId)) },
+                onOpenVehicleReports = { navController.navigate(Routes.VehicleReports.route) }
             )
         }
         composable(
@@ -158,6 +161,12 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             StocktakeVarianceScreen(
                 root = appViewModel,
                 periodId = periodId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.VehicleReports.route) {
+            VehicleReportsScreen(
+                root = appViewModel,
                 onBack = { navController.popBackStack() }
             )
         }

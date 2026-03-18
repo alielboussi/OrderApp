@@ -210,7 +210,7 @@ function formatItemsBlock(
     items.forEach((item, index) => {
       const baseName = String(item.productName ?? `Item ${index + 1}`);
       const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
-      const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : 'Base';
+      const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : baseName;
       const qty = item.scannedQty ?? item.qty ?? 0;
       const unit = formatUnitLabel(resolveItemUnit(item), qty);
       const remainingLine = formatRemainingLine(item, remainingByKey);
