@@ -1962,7 +1962,7 @@ function createHtml(config: {
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SCANNER_NAME = 'Soyola';
-    const SCANNER_ID = '1b1a5f6e-7c88-4f4a-a4fb-9c6e7a5c80d2';
+    const SCANNER_ID = 'f3f83926-7955-4bb3-9bc8-1aebd7ea2ae8';
     const SESSION_STORAGE_KEY = 'soyola-kiosk-session-v1';
     const PASSWORD_STORAGE_KEY = 'soyola-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';

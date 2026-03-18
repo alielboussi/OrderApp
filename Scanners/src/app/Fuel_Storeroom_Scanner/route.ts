@@ -1933,7 +1933,7 @@ function createHtml(config: {
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SCANNER_NAME = 'Fuel Storeroom';
-    const SCANNER_ID = '6e7a2b9a-8f7a-4e1c-9d3b-1b6b2a1bce8a';
+    const SCANNER_ID = '12e8e86c-a746-42f4-9fbd-7844b483eb2a';
     const SESSION_STORAGE_KEY = 'fuel-kiosk-session-v1';
     const PASSWORD_STORAGE_KEY = 'fuel-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';
