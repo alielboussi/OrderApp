@@ -1029,9 +1029,7 @@ fun StocktakeCountScreen(
             val qtyKey = "${row.itemId}|$key"
             if (!seenKeys.add(qtyKey)) return@forEach
             val openingLocked = ui.openingLockedKeys.contains(qtyKey)
-            val closingLocked = ui.closingLockedKeys.contains(qtyKey)
             val entryMode = if (openingLocked) "closing" else "opening"
-            if (entryMode == "closing" && closingLocked) return@forEach
             val rawText = dialogQty[qtyKey].orEmpty().trim()
             val parsed = if (rawText.isBlank()) 0.0 else rawText.toDoubleOrNull()
             if (parsed == null || parsed < 0) {
@@ -1410,9 +1408,7 @@ fun StocktakeCountScreen(
                         val step = stepForDecimals(rowDecimals)
                         val currentQty = dialogQty[qtyKey].orEmpty()
                         val openingLocked = ui.openingLockedKeys.contains(qtyKey)
-                        val closingLocked = ui.closingLockedKeys.contains(qtyKey)
-                        val entryMode = if (openingLocked) "closing" else "opening"
-                        val isLocked = if (entryMode == "closing") closingLocked else false
+                        val isLocked = !hasOpenPeriod
                         val hasOpeningCount = openingCountMap.containsKey(normalizedQtyKey)
                         val fieldBorder = if (isLocked) accent.copy(alpha = 0.4f) else accent
                         val fieldText = if (isLocked) text.copy(alpha = 0.6f) else text
@@ -1573,7 +1569,7 @@ fun StocktakeCountScreen(
                             vm.recordCountsBatch(batch)
                         }
                     },
-                    enabled = !ui.loading && displayRows.any { row ->
+                    enabled = hasOpenPeriod && !ui.loading && displayRows.any { row ->
                         val vKey = row.variantKey?.ifBlank { "base" } ?: "base"
                         val key = "${row.itemId}|$vKey"
                         unsavedKeys[key] == true

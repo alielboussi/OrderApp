@@ -1217,9 +1217,7 @@ export default function StocktakesPage() {
       seen.add(key);
 
       const openingLocked = openingLockedKeys.has(key);
-      const closingLocked = closingLockedKeys.has(key);
       const entryMode: "opening" | "closing" = openingLocked ? "closing" : "opening";
-      if (entryMode === "closing" && closingLocked) return;
 
       const rawText = dialogQty[key]?.trim() ?? "";
       const parsed = rawText === "" ? 0 : Number(rawText);
@@ -2138,9 +2136,8 @@ export default function StocktakesPage() {
                 const step = stepForDecimals(decimals);
                 const currentQty = dialogQty[qtyKey] ?? "";
                 const openingLocked = openingLockedKeys.has(qtyKey);
-                const closingLocked = closingLockedKeys.has(qtyKey);
                 const entryMode = openingLocked ? "closing" : "opening";
-                const isLocked = entryMode === "closing" && closingLocked;
+                const isLocked = !activePeriodIsOpen;
                 const hasOpeningCount = openingCountMap.has(qtyKey);
                 const label = dialogHasRecipe
                   ? row.item_name || row.item_id

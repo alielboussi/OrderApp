@@ -296,23 +296,89 @@ async function loadRemainingByKey(
   const itemIds = Array.from(new Set(items.map((item) => resolveItemId(item)).filter(Boolean))) as string[];
   if (!itemIds.length) return remainingByKey;
 
-  const { data, error } = await supabase
-    .from('warehouse_stock_items')
-    .select('item_id,variant_key,net_units')
+  const { data: periodRows, error: periodError } = await supabase
+    .from('warehouse_stock_periods')
+    .select('id,opened_at')
     .eq('warehouse_id', warehouseId)
-    .in('item_id', itemIds);
+    .eq('status', 'open')
+    .order('opened_at', { ascending: false })
+    .limit(1);
 
-  if (error || !Array.isArray(data)) {
+  if (periodError || !Array.isArray(periodRows)) {
     return remainingByKey;
   }
 
-  data.forEach((row) => {
+  const period = periodRows[0] ?? null;
+  if (!period?.id) return remainingByKey;
+
+  const parseQty = (value: unknown): number | null => {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
+  const { data: openingRows, error: openingError } = await supabase
+    .from('warehouse_stock_counts')
+    .select('item_id,variant_key,counted_qty')
+    .eq('period_id', period.id)
+    .eq('kind', 'opening')
+    .in('item_id', itemIds);
+
+  if (openingError || !Array.isArray(openingRows)) {
+    return remainingByKey;
+  }
+
+  const openingMap = new Map<string, number>();
+  openingRows.forEach((row) => {
     const itemId = typeof row?.item_id === 'string' ? row.item_id : null;
     if (!itemId) return;
     const variantKey = normalizeVariantKey(row?.variant_key ?? 'base');
-    const rawQty = typeof row?.net_units === 'number' ? row.net_units : Number(row?.net_units);
-    const qty = Number.isFinite(rawQty) ? rawQty : null;
-    remainingByKey.set(buildItemKey(itemId, variantKey), qty);
+    const qty = parseQty(row?.counted_qty);
+    if (qty === null) return;
+    openingMap.set(buildItemKey(itemId, variantKey), qty);
+  });
+
+  const ledgerReasons = ['warehouse_transfer', 'outlet_sale', 'damage', 'recipe_consumption', 'purchase_receipt'];
+  const openedAt = typeof period.opened_at === 'string' ? period.opened_at : null;
+  const { data: ledgerRows, error: ledgerError } = await supabase
+    .from('stock_ledger')
+    .select('item_id,variant_key,delta_units')
+    .eq('location_type', 'warehouse')
+    .eq('warehouse_id', warehouseId)
+    .in('reason', ledgerReasons)
+    .in('item_id', itemIds)
+    .gte('occurred_at', openedAt ?? '1970-01-01T00:00:00Z');
+
+  if (ledgerError || !Array.isArray(ledgerRows)) {
+    return remainingByKey;
+  }
+
+  const movementMap = new Map<string, number>();
+  ledgerRows.forEach((row) => {
+    const itemId = typeof row?.item_id === 'string' ? row.item_id : null;
+    if (!itemId) return;
+    const variantKey = normalizeVariantKey(row?.variant_key ?? 'base');
+    const delta = parseQty(row?.delta_units);
+    if (delta === null) return;
+    const key = buildItemKey(itemId, variantKey);
+    movementMap.set(key, (movementMap.get(key) ?? 0) + delta);
+  });
+
+  const requestedKeys = new Set<string>();
+  items.forEach((item) => {
+    const itemId = resolveItemId(item);
+    if (!itemId) return;
+    const variantKey = resolveVariantKey(item);
+    requestedKeys.add(buildItemKey(itemId, variantKey));
+  });
+
+  requestedKeys.forEach((key) => {
+    const openingQty = openingMap.get(key);
+    const movementQty = movementMap.get(key);
+    if (openingQty === undefined && movementQty === undefined) {
+      remainingByKey.set(key, null);
+      return;
+    }
+    remainingByKey.set(key, (openingQty ?? 0) + (movementQty ?? 0));
   });
 
   return remainingByKey;
