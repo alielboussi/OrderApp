@@ -46,6 +46,8 @@ type NotifyRequest = {
 
 const TELEGRAM_INGREDIENTS_BOT_TOKEN = process.env.TELEGRAM_INGREDIENTS_BOT_TOKEN;
 const TELEGRAM_INGREDIENTS_CHAT_ID = process.env.TELEGRAM_INGREDIENTS_CHAT_ID;
+const TELEGRAM_COLDROOMS_BOT_TOKEN = process.env.TELEGRAM_COLDROOMS_BOT_TOKEN;
+const TELEGRAM_COLDROOMS_CHAT_ID = process.env.TELEGRAM_COLDROOMS_CHAT_ID;
 const TELEGRAM_BEVERAGES_BOT_TOKEN = process.env.TELEGRAM_BEVERAGES_BOT_TOKEN;
 const TELEGRAM_BEVERAGES_CHAT_ID = process.env.TELEGRAM_BEVERAGES_CHAT_ID;
 const TELEGRAM_SOYOLA_BOT_TOKEN = process.env.TELEGRAM_SOYOLA_BOT_TOKEN;
@@ -60,6 +62,12 @@ function getScannerConfig(scanner: string | null) {
     return {
       token: TELEGRAM_INGREDIENTS_BOT_TOKEN ?? '',
       chatId: TELEGRAM_INGREDIENTS_CHAT_ID ?? ''
+    };
+  }
+  if (scanner === 'coldrooms') {
+    return {
+      token: TELEGRAM_COLDROOMS_BOT_TOKEN ?? '',
+      chatId: TELEGRAM_COLDROOMS_CHAT_ID ?? ''
     };
   }
   if (scanner === 'beverages') {
@@ -91,6 +99,7 @@ function getScannerConfig(scanner: string | null) {
 
 function getScannerLabel(scanner: string | null) {
   if (scanner === 'ingredients') return 'Ingredients Storeroom';
+  if (scanner === 'coldrooms') return 'Coldrooms Storeroom';
   if (scanner === 'beverages') return 'Beverages Storeroom';
   if (scanner === 'soyola') return 'Soyola Storeroom';
   if (scanner === 'flour-potatoes') return 'Flour Potatoes Storeroom';

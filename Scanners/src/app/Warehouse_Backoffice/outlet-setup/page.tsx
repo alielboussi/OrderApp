@@ -802,6 +802,9 @@ export default function OutletSetupPage() {
     setStorageHomesSaving(true);
     setStorageAllMessage(null);
     try {
+      if (selectedProductId && productDefaultWarehouseId) {
+        await saveProductDefaultWarehouse();
+      }
       if (selectedIngredientId && defaultWarehouseId) {
         await saveDefaultWarehouse();
       }
@@ -1014,7 +1017,7 @@ export default function OutletSetupPage() {
             <li>Add the ingredient or raw item in Menu Items & Recipes.</li>
             <li>Assign the outlet to the warehouse in Outlet → Warehouse Assignments (Show in stocktake = Yes).</li>
             <li>Map the ingredient/raw to the outlet warehouse on this page (deduct routing). For transfer-only warehouses, skip this.</li>
-            <li>Optional: set the storage home for the ingredient/raw in the storage cards below.</li>
+            <li>Optional: set the storage home for the finished product, ingredient, or raw in the storage cards below.</li>
           </ol>
         </section>
 
@@ -1184,6 +1187,29 @@ export default function OutletSetupPage() {
             </div>
 
             <div className={styles.storageGrid}>
+              <div className={styles.storageCard}>
+                <div className={styles.cardHeading}>Finished storage/receiving</div>
+                <p className={styles.cardBody}>Storage home for the selected finished product.</p>
+                <select
+                  className={styles.select}
+                  value={productDefaultWarehouseId}
+                  onChange={(e) => setProductDefaultWarehouseId(e.target.value)}
+                  aria-label="Storage home for selected product"
+                  disabled={!selectedProductId || routingLoading.product}
+                >
+                  <option value="">Select storage home</option>
+                  {storageHomeOptions.map((wh) => (
+                    <option key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </option>
+                  ))}
+                </select>
+                {productDefaultWarehouseMessage && (
+                  <div className={`${styles.callout} ${productDefaultWarehouseMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
+                    {productDefaultWarehouseMessage.text}
+                  </div>
+                )}
+              </div>
               <div className={styles.storageCard}>
                 <div className={styles.cardHeading}>Ingredient storage/receiving</div>
                 <p className={styles.cardBody}>Place of storage before being sent to outlet.</p>

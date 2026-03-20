@@ -34,6 +34,10 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 | `WHATSAPP_TEMPLATE_SID` | Twilio Content Template SID (e.g., `HX8f3e...`) for the approved `warehouse_out_transfers` template. |
 | `WHATSAPP_TO_NUMBER` | Comma separated list of recipient numbers (E.164) that should receive every transfer alert. |
 
+### Telegram notifications
+
+- Set a bot token + chat ID for each scanner you want to notify (see `.env.example`).
+
 ### WhatsApp notifications (Twilio)
 
 - For quick tests, use the Twilio WhatsApp Sandbox. Every recipient must text `join <code>` to the sandbox number and Twilio automatically removes them after roughly 72 hours of inactivity. That re-opt-in cycle is a sandbox limitation and cannot be disabled.

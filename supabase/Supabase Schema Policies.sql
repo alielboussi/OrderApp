@@ -541,6 +541,36 @@
   },
   {
     "schema_name": "public",
+    "table_name": "vehicles",
+    "policy_name": "vehicles_admin_rw",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "command": "ALL",
+    "using_expression": "is_admin(auth.uid())",
+    "with_check_expression": "is_admin(auth.uid())"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "vehicles",
+    "policy_name": "vehicles_select_backoffice",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "vehicles",
+    "policy_name": "vehicles_select_stocktake",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "command": "SELECT",
+    "using_expression": "(has_stocktake_role(auth.uid()) OR is_admin(auth.uid()))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
     "table_name": "warehouse_backoffice_logs",
     "policy_name": "wb_logs_insert_auth",
     "permissive": "PERMISSIVE",
