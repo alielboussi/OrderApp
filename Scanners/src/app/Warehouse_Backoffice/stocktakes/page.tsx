@@ -57,6 +57,7 @@ type SimpleProduct = {
 };
 
 type StockCountRow = {
+  period_id?: string | null;
   item_id: string;
   variant_key: string | null;
   counted_qty: number;
