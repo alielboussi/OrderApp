@@ -328,6 +328,57 @@
   flex-wrap: wrap;
 }
 
+.childSelector {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.65);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.childHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.childTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.childActions {
+  display: flex;
+  gap: 8px;
+}
+
+.childList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.childRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.childRow input {
+  accent-color: var(--st-accent-blue);
+}
+
 .itemGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -480,6 +531,77 @@
   text-align: center;
   animation: riseIn 320ms ease both;
   position: relative;
+}
+
+.childQtyGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.childQtyRow {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.childMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.childLabel {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.childMode {
+  margin: 0;
+  font-size: 11px;
+  color: var(--st-muted);
+}
+
+.childQtyControl {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  gap: 6px;
+  align-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 6px;
+}
+
+.childQtyButton {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.18);
+  color: #e0f2fe;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.childQtyInput {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--st-text);
+  text-align: center;
+  font-size: 14px;
+}
+
+.childQtyInput:disabled {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .cardGrid > *:nth-child(1),

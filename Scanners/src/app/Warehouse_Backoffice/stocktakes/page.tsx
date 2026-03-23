@@ -6,6 +6,7 @@ import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { buildStocktakeVariancePdfHtml } from "../stock-reports/stocktakepdf";
 import styles from "./stocktakes.module.css";
+import { COLDROOM_CHILDREN, COLDROOM_CHILD_IDS, COLDROOM_PARENT_ID, COLDROOM_WAREHOUSES } from "@/lib/coldrooms";
 
 type WarehouseOption = { id: string; name: string | null; code: string | null; active?: boolean | null };
 
@@ -170,6 +171,10 @@ function normalizeVariantKey(value?: string | null): string {
 
 function makeKey(itemId: string, variantKey?: string | null): string {
   return `${itemId}|${normalizeVariantKey(variantKey)}`.toLowerCase();
+}
+
+function makeChildKey(childId: string, itemId: string, variantKey?: string | null): string {
+  return `${childId}::${makeKey(itemId, variantKey)}`.toLowerCase();
 }
 
 function formatStamp(raw?: string | null): string {
@@ -340,6 +345,9 @@ export default function StocktakesPage() {
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
+  const [selectedChildWarehouseIds, setSelectedChildWarehouseIds] = useState<string[]>(COLDROOM_CHILD_IDS);
+  const [childOpenPeriods, setChildOpenPeriods] = useState<Record<string, StockPeriod | null>>({});
+  const [childOpeningLockedKeys, setChildOpeningLockedKeys] = useState<Record<string, Set<string>>>({});
   const [openPeriod, setOpenPeriod] = useState<StockPeriod | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<StockPeriod | null>(null);
   const [periods, setPeriods] = useState<StockPeriod[]>([]);
@@ -385,6 +393,20 @@ export default function StocktakesPage() {
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
+
+  const toggleChildWarehouse = (id: string) => {
+    setSelectedChildWarehouseIds((prev) =>
+      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllChildWarehouses = () => {
+    setSelectedChildWarehouseIds(COLDROOM_CHILD_IDS);
+  };
+
+  const clearChildWarehouses = () => {
+    setSelectedChildWarehouseIds([]);
+  };
 
   const warehouseNameMap = useMemo(() => {
     const map = new Map<string, { name: string | null; code: string | null }>();
@@ -506,6 +528,16 @@ export default function StocktakesPage() {
 
   const openPeriods = useMemo(() => periods.filter((period) => period.status?.toLowerCase() === "open"), [periods]);
   const closedPeriods = useMemo(() => periods.filter((period) => period.status?.toLowerCase() !== "open"), [periods]);
+
+  const isColdroomParent = selectedWarehouseId === COLDROOM_PARENT_ID;
+  const selectedChildSet = useMemo(() => new Set(selectedChildWarehouseIds), [selectedChildWarehouseIds]);
+  const childOpenPeriodIds = useMemo(
+    () => Object.values(childOpenPeriods).filter((period): period is StockPeriod => Boolean(period)).map((period) => period.id),
+    [childOpenPeriods]
+  );
+  const hasChildOpenPeriod = childOpenPeriodIds.length > 0;
+  const canEnterCounts = isColdroomParent ? selectedChildWarehouseIds.length > 0 : Boolean(openPeriod);
+  const canViewVariance = !isColdroomParent && Boolean(openPeriod);
 
   const combinedPeriodRows = useMemo(() => {
     const openingMap = new Map<string, PeriodCountDisplay>();
@@ -702,10 +734,16 @@ export default function StocktakesPage() {
         if (!active) return;
 
         const filtered = (warehouseRows ?? []).filter((row) => row.active ?? true) as WarehouseOption[];
-        setWarehouses(filtered);
-        const isValidSelection = selectedWarehouseId && filtered.some((warehouse) => warehouse.id === selectedWarehouseId);
-        if (!isValidSelection && filtered.length > 0) {
-          setSelectedWarehouseId(filtered[0].id);
+        const merged = [...filtered];
+        COLDROOM_WAREHOUSES.forEach((warehouse) => {
+          if (!merged.some((item) => item.id === warehouse.id)) {
+            merged.push({ id: warehouse.id, name: warehouse.name, code: warehouse.code });
+          }
+        });
+        setWarehouses(merged);
+        const isValidSelection = selectedWarehouseId && merged.some((warehouse) => warehouse.id === selectedWarehouseId);
+        if (!isValidSelection && merged.length > 0) {
+          setSelectedWarehouseId(merged[0].id);
         }
       } catch (err) {
         if (!active) return;
@@ -732,6 +770,12 @@ export default function StocktakesPage() {
     setClosingLockedKeys(new Set());
     setLastCount(null);
     setInputError(null);
+    setUnsavedKeys({});
+    if (selectedWarehouseId === COLDROOM_PARENT_ID) {
+      setSelectedChildWarehouseIds(COLDROOM_CHILD_IDS);
+    }
+    setChildOpenPeriods({});
+    setChildOpeningLockedKeys({});
   }, [selectedWarehouseId]);
 
   useEffect(() => {
@@ -840,6 +884,11 @@ export default function StocktakesPage() {
 
     const fetchOpenPeriod = async () => {
       try {
+        if (selectedWarehouseId === COLDROOM_PARENT_ID) {
+          setOpenPeriod(null);
+          await loadChildPeriods(selectedChildWarehouseIds);
+          return;
+        }
         const { data, error: periodError } = await supabase
           .from("warehouse_stock_periods")
           .select("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number")
@@ -879,7 +928,28 @@ export default function StocktakesPage() {
     return () => {
       active = false;
     };
-  }, [status, selectedWarehouseId, supabase]);
+  }, [status, selectedWarehouseId, selectedChildWarehouseIds, supabase]);
+
+  useEffect(() => {
+    if (status !== "ok" || !isColdroomParent) return;
+    loadChildPeriods(selectedChildWarehouseIds).catch((err) => {
+      setError(toErrorMessage(err));
+    });
+  }, [status, isColdroomParent, selectedChildWarehouseIds]);
+
+  useEffect(() => {
+    if (!isColdroomParent) return;
+    setUnsavedKeys((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        const [childId] = key.split("::");
+        if (childId && COLDROOM_CHILD_IDS.includes(childId) && !selectedChildSet.has(childId)) {
+          delete next[key];
+        }
+      });
+      return next;
+    });
+  }, [isColdroomParent, selectedChildSet]);
 
 
   const loadPeriods = async (warehouseId: string) => {
@@ -899,6 +969,86 @@ export default function StocktakesPage() {
     } finally {
       setPeriodsLoading(false);
     }
+  };
+
+  async function loadChildPeriods(childIds: string[]) {
+    if (!childIds.length) {
+      setChildOpenPeriods({});
+      return;
+    }
+    const { data, error } = await supabase
+      .from("warehouse_stock_periods")
+      .select("id,warehouse_id,outlet_id,status,opened_at,closed_at,note,stocktake_number")
+      .in("warehouse_id", childIds)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false });
+    if (error) throw error;
+    const map: Record<string, StockPeriod | null> = {};
+    childIds.forEach((id) => {
+      map[id] = null;
+    });
+    (data as StockPeriod[] | null | undefined)?.forEach((period) => {
+      if (!period?.warehouse_id || map[period.warehouse_id]) return;
+      map[period.warehouse_id] = period;
+    });
+    setChildOpenPeriods(map);
+  }
+
+  const loadChildCountsForDialog = async (
+    rows: WarehouseStockItem[],
+    periodOverride?: Record<string, StockPeriod | null>
+  ) => {
+    if (!rows.length || !selectedChildWarehouseIds.length) {
+      setChildOpeningLockedKeys({});
+      return null;
+    }
+
+    const childPeriods = periodOverride ?? childOpenPeriods;
+    const periodEntries = Object.entries(childPeriods)
+      .filter(([childId, period]) => selectedChildSet.has(childId) && period?.id)
+      .map(([childId, period]) => ({ childId, periodId: period!.id }));
+
+    if (!periodEntries.length) {
+      setChildOpeningLockedKeys({});
+      return null;
+    }
+
+    const periodIds = periodEntries.map((entry) => entry.periodId);
+    const itemIds = Array.from(new Set(rows.map((row) => row.item_id)));
+
+    const { data, error } = await supabase
+      .from("warehouse_stock_counts")
+      .select("period_id,item_id,variant_key,counted_qty,kind")
+      .in("period_id", periodIds)
+      .in("item_id", itemIds);
+    if (error) throw error;
+
+    const periodToChild = new Map(periodEntries.map((entry) => [entry.periodId, entry.childId]));
+    const openingMap: Record<string, Record<string, number>> = {};
+    const closingMap: Record<string, Record<string, number>> = {};
+    const lockedMap: Record<string, Set<string>> = {};
+
+    selectedChildWarehouseIds.forEach((childId) => {
+      openingMap[childId] = {};
+      closingMap[childId] = {};
+      lockedMap[childId] = new Set();
+    });
+
+    (data as StockCountRow[] | null | undefined)?.forEach((row) => {
+      const childId = periodToChild.get(row.period_id ?? "");
+      if (!childId) return;
+      const key = makeKey(row.item_id, row.variant_key);
+      if (row.kind === "opening") {
+        openingMap[childId][key] = row.counted_qty ?? 0;
+        lockedMap[childId].add(key);
+      }
+      if (row.kind === "closing") {
+        closingMap[childId][key] = row.counted_qty ?? 0;
+      }
+    });
+
+    setChildOpeningLockedKeys(lockedMap);
+    return { openingMap, closingMap, lockedMap };
   };
 
   const loadPeriodCounts = async (periodId: string) => {
@@ -1106,7 +1256,7 @@ export default function StocktakesPage() {
   };
 
   const handleStartStocktake = async () => {
-    if (!selectedWarehouseId || readOnly || !hasStocktakeAccess) return;
+    if (!selectedWarehouseId || readOnly || !hasStocktakeAccess || isColdroomParent) return;
     try {
       setLoading(true);
       setError(null);
@@ -1244,6 +1394,44 @@ export default function StocktakesPage() {
     return batch;
   };
 
+  const buildBatchForRowsWithChildren = (rows: WarehouseStockItem[]): Array<CountInput & { childId: string }> | null => {
+    let hadError = false;
+    const batch: Array<CountInput & { childId: string }> = [];
+
+    rows.forEach((row) => {
+      const variantKey = normalizeVariantKey(row.variant_key);
+      const key = makeKey(row.item_id, variantKey);
+
+      const uom =
+        variantStocktakeUomMap.get(variantKey) ||
+        stocktakeUoms[row.item_id] ||
+        variantUomMap.get(variantKey) ||
+        productUoms[row.item_id] ||
+        "each";
+      const decimals = resolveDecimals(row.item_id, variantKey, uom);
+      const factor = Math.pow(10, Math.min(Math.max(decimals, 0), 6));
+
+      selectedChildWarehouseIds.forEach((childId) => {
+        if (!selectedChildSet.has(childId)) return;
+        const childKey = makeChildKey(childId, row.item_id, variantKey);
+        if (!unsavedKeys[childKey]) return;
+        const rawText = dialogQty[childKey]?.trim() ?? "";
+        const parsed = rawText === "" ? 0 : Number(rawText);
+        if (Number.isNaN(parsed) || parsed < 0) {
+          hadError = true;
+          return;
+        }
+        const rounded = Math.round(parsed * factor) / factor;
+        const openingLocked = childOpeningLockedKeys[childId]?.has(key) ?? false;
+        const entryMode: "opening" | "closing" = openingLocked ? "closing" : "opening";
+        batch.push({ itemId: row.item_id, qty: rounded, variantKey, kind: entryMode, childId });
+      });
+    });
+
+    if (hadError) return null;
+    return batch;
+  };
+
   const recordCountsBatch = async (entries: CountInput[]) => {
     if (!entries.length || !activePeriodId || readOnly || !hasStocktakeAccess || !activePeriodIsOpen) return;
     setLoading(true);
@@ -1288,6 +1476,86 @@ export default function StocktakesPage() {
       if (selectedWarehouseId) {
         await refreshItemsForWarehouse(selectedWarehouseId);
       }
+    }
+
+    setLoading(false);
+  };
+
+  const ensureChildPeriod = async (childId: string): Promise<StockPeriod | null> => {
+    const existing = childOpenPeriods[childId];
+    if (existing?.id) return existing;
+    try {
+      const { data, error } = await supabase.rpc("start_stock_period", {
+        p_warehouse_id: childId,
+        p_note: `Auto-opened from ${COLDROOM_PARENT_ID}`,
+      });
+      if (error) throw error;
+      const period = (Array.isArray(data) ? data[0] : data) as StockPeriod | null;
+      if (!period?.id) return null;
+      setChildOpenPeriods((prev) => ({ ...prev, [childId]: period }));
+      return period;
+    } catch (err) {
+      setInputError(toErrorMessage(err));
+      return null;
+    }
+  };
+
+  const recordCountsBatchForChildren = async (
+    entries: Array<CountInput & { childId: string }>,
+    dialogRows: WarehouseStockItem[]
+  ) => {
+    if (!entries.length || readOnly || !hasStocktakeAccess) return;
+    setLoading(true);
+    setInputError(null);
+
+    let hadFailure = false;
+    let lastSaved: { kind: string; counted_qty: number } | null = null;
+    const savedKeys: string[] = [];
+    const periodMap: Record<string, StockPeriod | null> = { ...childOpenPeriods };
+
+    for (const entry of entries) {
+      let period = periodMap[entry.childId] ?? null;
+      if (!period?.id) {
+        period = await ensureChildPeriod(entry.childId);
+      }
+      if (!period?.id) {
+        hadFailure = true;
+        continue;
+      }
+      periodMap[entry.childId] = period;
+      try {
+        const { error: recordError } = await supabase.rpc("record_stock_count", {
+          p_period_id: period.id,
+          p_item_id: entry.itemId,
+          p_qty: entry.qty,
+          p_variant_key: entry.variantKey,
+          p_kind: entry.kind,
+        });
+        if (recordError) throw recordError;
+        lastSaved = { kind: entry.kind, counted_qty: entry.qty };
+        savedKeys.push(makeChildKey(entry.childId, entry.itemId, entry.variantKey));
+      } catch (err) {
+        hadFailure = true;
+      }
+    }
+
+    setLastCount(lastSaved);
+    if (hadFailure) {
+      setInputError("Some counts failed to save.");
+    }
+
+    if (savedKeys.length) {
+      setUnsavedKeys((prev) => {
+        const next = { ...prev };
+        savedKeys.forEach((key) => delete next[key]);
+        return next;
+      });
+    }
+
+    setChildOpenPeriods(periodMap);
+
+    if (dialogRows.length) {
+      await loadChildCountsForDialog(dialogRows, periodMap);
     }
 
     setLoading(false);
@@ -1345,7 +1613,11 @@ export default function StocktakesPage() {
   }, [recipeTargets, recipeIngredients, recipeIngredientsLoading]);
 
   const handleDialogClose = (displayRows: WarehouseStockItem[]) => {
-    const dialogKeys = displayRows.map((row) => makeKey(row.item_id, row.variant_key));
+    const dialogKeys = isColdroomParent
+      ? displayRows.flatMap((row) =>
+          selectedChildWarehouseIds.map((childId) => makeChildKey(childId, row.item_id, row.variant_key))
+        )
+      : displayRows.map((row) => makeKey(row.item_id, row.variant_key));
     const hasUnsaved = dialogKeys.some((key) => unsavedKeys[key]);
     if (hasUnsaved) {
       setConfirmState({
@@ -1527,13 +1799,47 @@ export default function StocktakesPage() {
 
   const hasUnsaved = Object.keys(unsavedKeys).length > 0;
   const canClosePeriod = Boolean(openPeriod && activePeriodId === openPeriod.id);
-  const activePeriodIsOpen = activePeriod?.status === "open";
+  const activePeriodIsOpen = isColdroomParent ? hasChildOpenPeriod : activePeriod?.status === "open";
 
   useEffect(() => {
     if (!dialogOpen || !dialogDisplayRows.length) return;
 
     if (dialogHasRecipe && !dialogRecipeLoading && !dialogIngredientIds.length) {
       loadRecipeIngredients(dialogItemId, dialogVariantKey);
+    }
+    if (isColdroomParent) {
+      (async () => {
+        const maps = await loadChildCountsForDialog(dialogDisplayRows, childOpenPeriods);
+        setDialogQty((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          dialogDisplayRows.forEach((row) => {
+            const variantKey = normalizeVariantKey(row.variant_key);
+            const baseKey = makeKey(row.item_id, variantKey);
+            const uom =
+              variantStocktakeUomMap.get(variantKey) ||
+              stocktakeUoms[row.item_id] ||
+              variantUomMap.get(variantKey) ||
+              productUoms[row.item_id] ||
+              "each";
+            const decimals = resolveDecimals(row.item_id, variantKey, uom);
+
+            selectedChildWarehouseIds.forEach((childId) => {
+              const childKey = makeChildKey(childId, row.item_id, variantKey);
+              if (next[childKey] !== undefined) return;
+              const openingLocked = maps?.lockedMap?.[childId]?.has(baseKey) ?? false;
+              const entryMode = openingLocked ? "closing" : "opening";
+              const seed = entryMode === "closing"
+                ? maps?.closingMap?.[childId]?.[baseKey] ?? 0
+                : maps?.openingMap?.[childId]?.[baseKey] ?? 0;
+              next[childKey] = seed === 0 ? "" : formatQty(seed, decimals);
+              changed = true;
+            });
+          });
+          return changed ? next : prev;
+        });
+      })();
+      return;
     }
 
     setDialogQty((prev) => {
@@ -1559,7 +1865,15 @@ export default function StocktakesPage() {
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialogOpen, dialogDisplayRows, dialogHasRecipe, dialogRecipeLoading, dialogIngredientIds.length]);
+  }, [
+    dialogOpen,
+    dialogDisplayRows,
+    dialogHasRecipe,
+    dialogRecipeLoading,
+    dialogIngredientIds.length,
+    isColdroomParent,
+    selectedChildWarehouseIds
+  ]);
 
   if (status !== "ok") return null;
 
@@ -1595,17 +1909,24 @@ export default function StocktakesPage() {
             <button
               key={tab.id}
               className={`${styles.tabButton} ${view === tab.id ? styles.tabButtonActive : ""}`}
-              disabled={(tab.id === "counts" || tab.id === "variance") && !openPeriod}
+              disabled={(tab.id === "counts" && !canEnterCounts) || (tab.id === "variance" && !canViewVariance)}
               onClick={() => {
                 setView(tab.id);
                 if (tab.id === "periods" && selectedWarehouseId) loadPeriods(selectedWarehouseId);
-                if (tab.id === "counts" && openPeriod) {
-                  setActivePeriodId(openPeriod.id);
-                  loadPeriodCounts(openPeriod.id);
+                if (tab.id === "counts") {
+                  if (isColdroomParent) {
+                    setActivePeriodId(null);
+                    loadChildPeriods(selectedChildWarehouseIds);
+                  } else if (openPeriod) {
+                    setActivePeriodId(openPeriod.id);
+                    loadPeriodCounts(openPeriod.id);
+                  }
                 }
                 if (tab.id === "variance" && openPeriod) {
-                  setActivePeriodId(openPeriod.id);
-                  loadVarianceFor(openPeriod.id);
+                  if (!isColdroomParent) {
+                    setActivePeriodId(openPeriod.id);
+                    loadVarianceFor(openPeriod.id);
+                  }
                 }
               }}
               type="button"
@@ -1654,6 +1975,11 @@ export default function StocktakesPage() {
                 <p className={styles.helperText}>
                   Flow: enter opening counts, process transfers and damages, then enter closing counts.
                 </p>
+                {isColdroomParent && (
+                  <p className={styles.helperText}>
+                    Coldroom parent uses child warehouse stocktakes. Select children and enter counts in the Counts tab.
+                  </p>
+                )}
                 <label className={styles.fieldLabel}>
                   Note (optional)
                   <textarea
@@ -1669,7 +1995,14 @@ export default function StocktakesPage() {
                     type="button"
                     className={styles.primaryButton}
                     onClick={handleStartStocktake}
-                    disabled={loading || !selectedWarehouseId || readOnly || !hasStocktakeAccess || !!openPeriod}
+                    disabled={
+                      loading ||
+                      !selectedWarehouseId ||
+                      readOnly ||
+                      !hasStocktakeAccess ||
+                      !!openPeriod ||
+                      isColdroomParent
+                    }
                   >
                     Start stocktake
                   </button>
@@ -1691,7 +2024,39 @@ export default function StocktakesPage() {
                 <span className={styles.panelNote}>Current active stocktake</span>
               </div>
               <div className={styles.panelBody}>
-                {openPeriod ? (
+                {isColdroomParent ? (
+                  <>
+                    <div className={styles.summaryCard}>
+                      <p className={styles.summaryTitle}>Coldroom children</p>
+                      <p className={styles.summaryMeta}>
+                        Open periods: {Object.values(childOpenPeriods).filter(Boolean).length}
+                      </p>
+                      <p className={styles.summaryMeta}>
+                        Selected children: {selectedChildWarehouseIds.length}
+                      </p>
+                    </div>
+                    <div className={styles.actionRow}>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        onClick={() => {
+                          setView("counts");
+                          loadChildPeriods(selectedChildWarehouseIds);
+                        }}
+                        disabled={!hasStocktakeAccess || selectedChildWarehouseIds.length === 0}
+                      >
+                        Enter counts
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.outlineButton}
+                        onClick={() => loadChildPeriods(selectedChildWarehouseIds)}
+                      >
+                        Refresh child periods
+                      </button>
+                    </div>
+                  </>
+                ) : openPeriod ? (
                   <>
                     <div className={styles.summaryCard}>
                       <p className={styles.summaryTitle}>{openPeriod.stocktake_number || "In-progress"}</p>
@@ -1764,6 +2129,11 @@ export default function StocktakesPage() {
                     )}
                   </select>
                 </label>
+                {isColdroomParent && (
+                  <p className={styles.helperText}>
+                    Coldroom parent uses child stocktakes. Select a child warehouse to review periods.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1886,7 +2256,11 @@ export default function StocktakesPage() {
                       className={styles.outlineButton}
                       onClick={() => {
                         if (selectedWarehouseId) refreshItemsForWarehouse(selectedWarehouseId);
-                        if (activePeriodId) loadPeriodCounts(activePeriodId);
+                        if (isColdroomParent) {
+                          loadChildPeriods(selectedChildWarehouseIds);
+                        } else if (activePeriodId) {
+                          loadPeriodCounts(activePeriodId);
+                        }
                       }}
                     >
                       Refresh
@@ -1907,6 +2281,37 @@ export default function StocktakesPage() {
                     </button>
                   </div>
                 </div>
+
+                {isColdroomParent && (
+                  <div className={styles.childSelector}>
+                    <div className={styles.childHeader}>
+                      <p className={styles.childTitle}>Child warehouses</p>
+                      <div className={styles.childActions}>
+                        <button type="button" className={styles.ghostButton} onClick={selectAllChildWarehouses}>
+                          Select all
+                        </button>
+                        <button type="button" className={styles.ghostButton} onClick={clearChildWarehouses}>
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className={styles.childList}>
+                      {COLDROOM_CHILDREN.map((child) => (
+                        <label key={child.id} className={styles.childRow}>
+                          <input
+                            type="checkbox"
+                            checked={selectedChildWarehouseIds.includes(child.id)}
+                            onChange={() => toggleChildWarehouse(child.id)}
+                          />
+                          <span>{child.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {!selectedChildWarehouseIds.length && (
+                      <p className={styles.helperText}>Select at least one child warehouse to enter counts.</p>
+                    )}
+                  </div>
+                )}
 
                 <label className={styles.fieldLabel}>
                   Search items
@@ -2139,6 +2544,7 @@ export default function StocktakesPage() {
                 const entryMode = openingLocked ? "closing" : "opening";
                 const isLocked = !activePeriodIsOpen;
                 const hasOpeningCount = openingCountMap.has(qtyKey);
+                const showTally = !isColdroomParent && hasOpeningCount;
                 const label = dialogHasRecipe
                   ? row.item_name || row.item_id
                   : variantKey === "base"
@@ -2152,7 +2558,7 @@ export default function StocktakesPage() {
 
                 return (
                   <div key={qtyKey} className={styles.dialogCard}>
-                    {hasOpeningCount && <span className={styles.tallyBadge}>Tally mark</span>}
+                    {showTally && <span className={styles.tallyBadge}>Tally mark</span>}
                     {imageUrl ? (
                       <img className={styles.dialogImage} src={imageUrl} alt="Item" />
                     ) : (
@@ -2160,51 +2566,124 @@ export default function StocktakesPage() {
                     )}
                     <p className={styles.dialogLabel}>{label}</p>
                     <p className={styles.dialogUom}>{formatUomLabel(uom)}</p>
-                    <div className={styles.qtyControl}>
-                      <button
-                        type="button"
-                        className={styles.qtyButton}
-                        onClick={() => {
-                          const parsed = Number(currentQty) || 0;
-                          const next = Math.max(0, parsed - step);
-                          setDialogQty((prev) => ({
-                            ...prev,
-                            [qtyKey]: formatQty(next, decimals),
-                          }));
-                          setUnsavedKeys((prev) => ({ ...prev, [qtyKey]: true }));
-                        }}
-                        disabled={isLocked}
-                      >
-                        -
-                      </button>
-                      <input
-                        className={styles.qtyInput}
-                        value={currentQty}
-                        onChange={(event) => {
-                          const value = sanitizeQtyInput(event.target.value, decimals);
-                          setDialogQty((prev) => ({ ...prev, [qtyKey]: value }));
-                          setUnsavedKeys((prev) => ({ ...prev, [qtyKey]: true }));
-                        }}
-                        placeholder={fieldPlaceholder}
-                        disabled={isLocked}
-                      />
-                      <button
-                        type="button"
-                        className={styles.qtyButton}
-                        onClick={() => {
-                          const parsed = Number(currentQty) || 0;
-                          const next = parsed + step;
-                          setDialogQty((prev) => ({
-                            ...prev,
-                            [qtyKey]: formatQty(next, decimals),
-                          }));
-                          setUnsavedKeys((prev) => ({ ...prev, [qtyKey]: true }));
-                        }}
-                        disabled={isLocked}
-                      >
-                        +
-                      </button>
-                    </div>
+                    {isColdroomParent ? (
+                      <div className={styles.childQtyGrid}>
+                        {selectedChildWarehouseIds.map((childId) => {
+                          if (!selectedChildSet.has(childId)) return null;
+                          const childKey = makeChildKey(childId, row.item_id, variantKey);
+                          const childQty = dialogQty[childKey] ?? "";
+                          const childPeriod = childOpenPeriods[childId];
+                          const childOpeningLocked = childOpeningLockedKeys[childId]?.has(qtyKey) ?? false;
+                          const childMode = childPeriod
+                            ? childOpeningLocked
+                              ? "Closing"
+                              : "Opening"
+                            : "Will open on save";
+                          const childLocked = readOnly || !hasStocktakeAccess;
+                          const childLabel = COLDROOM_CHILDREN.find((child) => child.id === childId)?.name || childId;
+
+                          return (
+                            <div key={childKey} className={styles.childQtyRow}>
+                              <div className={styles.childMeta}>
+                                <p className={styles.childLabel}>{childLabel}</p>
+                                <p className={styles.childMode}>{childMode}</p>
+                              </div>
+                              <div className={styles.childQtyControl}>
+                                <button
+                                  type="button"
+                                  className={styles.childQtyButton}
+                                  onClick={() => {
+                                    const parsed = Number(childQty) || 0;
+                                    const next = Math.max(0, parsed - step);
+                                    setDialogQty((prev) => ({
+                                      ...prev,
+                                      [childKey]: formatQty(next, decimals),
+                                    }));
+                                    setUnsavedKeys((prev) => ({ ...prev, [childKey]: true }));
+                                  }}
+                                  disabled={childLocked}
+                                >
+                                  -
+                                </button>
+                                <input
+                                  className={styles.childQtyInput}
+                                  value={childQty}
+                                  onChange={(event) => {
+                                    const value = sanitizeQtyInput(event.target.value, decimals);
+                                    setDialogQty((prev) => ({ ...prev, [childKey]: value }));
+                                    setUnsavedKeys((prev) => ({ ...prev, [childKey]: true }));
+                                  }}
+                                  placeholder={childLocked ? "Locked" : "Qty"}
+                                  disabled={childLocked}
+                                />
+                                <button
+                                  type="button"
+                                  className={styles.childQtyButton}
+                                  onClick={() => {
+                                    const parsed = Number(childQty) || 0;
+                                    const next = parsed + step;
+                                    setDialogQty((prev) => ({
+                                      ...prev,
+                                      [childKey]: formatQty(next, decimals),
+                                    }));
+                                    setUnsavedKeys((prev) => ({ ...prev, [childKey]: true }));
+                                  }}
+                                  disabled={childLocked}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className={styles.qtyControl}>
+                        <button
+                          type="button"
+                          className={styles.qtyButton}
+                          onClick={() => {
+                            const parsed = Number(currentQty) || 0;
+                            const next = Math.max(0, parsed - step);
+                            setDialogQty((prev) => ({
+                              ...prev,
+                              [qtyKey]: formatQty(next, decimals),
+                            }));
+                            setUnsavedKeys((prev) => ({ ...prev, [qtyKey]: true }));
+                          }}
+                          disabled={isLocked}
+                        >
+                          -
+                        </button>
+                        <input
+                          className={styles.qtyInput}
+                          value={currentQty}
+                          onChange={(event) => {
+                            const value = sanitizeQtyInput(event.target.value, decimals);
+                            setDialogQty((prev) => ({ ...prev, [qtyKey]: value }));
+                            setUnsavedKeys((prev) => ({ ...prev, [qtyKey]: true }));
+                          }}
+                          placeholder={fieldPlaceholder}
+                          disabled={isLocked}
+                        />
+                        <button
+                          type="button"
+                          className={styles.qtyButton}
+                          onClick={() => {
+                            const parsed = Number(currentQty) || 0;
+                            const next = parsed + step;
+                            setDialogQty((prev) => ({
+                              ...prev,
+                              [qtyKey]: formatQty(next, decimals),
+                            }));
+                            setUnsavedKeys((prev) => ({ ...prev, [qtyKey]: true }));
+                          }}
+                          disabled={isLocked}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2218,6 +2697,15 @@ export default function StocktakesPage() {
                 type="button"
                 className={styles.primaryButton}
                 onClick={() => {
+                  if (isColdroomParent) {
+                    const batch = buildBatchForRowsWithChildren(dialogDisplayRows);
+                    if (!batch || batch.length === 0) {
+                      setInputError("Enter a non-negative number.");
+                      return;
+                    }
+                    recordCountsBatchForChildren(batch, dialogDisplayRows);
+                    return;
+                  }
                   const batch = buildBatchForRows(dialogDisplayRows);
                   if (!batch || batch.length === 0) {
                     setInputError("Enter a non-negative number.");
@@ -2227,8 +2715,14 @@ export default function StocktakesPage() {
                 }}
                 disabled={
                   loading ||
-                  !activePeriodIsOpen ||
-                  !dialogDisplayRows.some((row) => unsavedKeys[makeKey(row.item_id, row.variant_key)])
+                  (isColdroomParent ? (readOnly || !hasStocktakeAccess) : !activePeriodIsOpen) ||
+                  (isColdroomParent
+                    ? !dialogDisplayRows.some((row) =>
+                        selectedChildWarehouseIds.some((childId) =>
+                          unsavedKeys[makeChildKey(childId, row.item_id, normalizeVariantKey(row.variant_key))]
+                        )
+                      )
+                    : !dialogDisplayRows.some((row) => unsavedKeys[makeKey(row.item_id, row.variant_key)]))
                 }
               >
                 Save item

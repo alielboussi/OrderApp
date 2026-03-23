@@ -5,17 +5,11 @@ import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./outlet-warehouse-balances.module.css";
-import { COLDROOM_CHILD_IDS, COLDROOM_PARENT_ID, COLDROOM_WAREHOUSES } from "@/lib/coldrooms";
+import { COLDROOM_CHILD_IDS, COLDROOM_PARENT_ID } from "@/lib/coldrooms";
 
 type OutletOption = {
   id: string;
   name: string;
-};
-
-type WarehouseOption = {
-  id: string;
-  name: string | null;
-  code: string | null;
 };
 
 type StockItem = {
@@ -173,13 +167,17 @@ function formatQtyWithUom(value: number | null, uom?: string): { text: string; u
   return { text: value.toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel(uom) };
 }
 
+function normalizeVariantKey(value?: string | null): string {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length ? trimmed : "base";
+}
+
 export default function OutletWarehouseBalancesPage() {
   const router = useRouter();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
-  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
   const [linkedWarehouseIds, setLinkedWarehouseIds] = useState<string[]>([]);
@@ -196,14 +194,14 @@ export default function OutletWarehouseBalancesPage() {
   const [orderTotals, setOrderTotals] = useState<OrderTotals>({ count: 0, qty: 0, amount: 0 });
   const [ordersLoading, setOrdersLoading] = useState(false);
 
-  const [search, setSearch] = useState("");
-  const [includeIngredients, setIncludeIngredients] = useState(true);
-  const [includeRaw, setIncludeRaw] = useState(true);
-  const [includeFinished, setIncludeFinished] = useState(true);
+  const search = "";
+  const [includeIngredients, setIncludeIngredients] = useState(false);
+  const [includeRaw, setIncludeRaw] = useState(false);
+  const [includeFinished, setIncludeFinished] = useState(false);
   const [baseOnly, setBaseOnly] = useState(false);
   const [showZeroOrNegative, setShowZeroOrNegative] = useState(false);
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
-  const [includePurchases, setIncludePurchases] = useState(true);
+  const [includePurchases, setIncludePurchases] = useState(false);
 
   const coldroomChildSet = useMemo(() => new Set(COLDROOM_CHILD_IDS), []);
 
@@ -276,7 +274,6 @@ export default function OutletWarehouseBalancesPage() {
   useEffect(() => {
     if (status !== "ok") return;
     if (selectedOutletIds.length === 0) {
-      setWarehouses([]);
       setLinkedWarehouseIds([]);
       setSelectedWarehouseId("");
       return;
@@ -298,33 +295,13 @@ export default function OutletWarehouseBalancesPage() {
         ) as string[];
 
         setLinkedWarehouseIds(warehouseIds);
+        if (!active) return;
         if (warehouseIds.length === 0) {
-          setWarehouses([]);
           setSelectedWarehouseId("");
           return;
         }
 
-        const { data, error: warehouseError } = await supabase
-          .from("warehouses")
-          .select("id,name,code,active")
-          .in("id", warehouseIds)
-          .order("name", { ascending: true });
-
-        if (warehouseError) throw warehouseError;
-        if (!active) return;
-
-        const filtered = (data || []).filter((row) => row.active ?? true) as WarehouseOption[];
-        const withAll: WarehouseOption[] = [{ id: "all", name: "All linked warehouses", code: null }, ...filtered];
-        COLDROOM_WAREHOUSES.forEach((warehouse) => {
-          if (!withAll.some((item) => item.id === warehouse.id)) {
-            withAll.push({ id: warehouse.id, name: warehouse.name, code: warehouse.code });
-          }
-        });
-        setWarehouses(withAll);
-        const isValidSelection = selectedWarehouseId && withAll.some((warehouse) => warehouse.id === selectedWarehouseId);
-        if (!isValidSelection && withAll.length > 0) {
-          setSelectedWarehouseId(withAll[0].id);
-        }
+        setSelectedWarehouseId("all");
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -336,7 +313,7 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, selectedOutletIds, selectedWarehouseId, supabase]);
+  }, [status, selectedOutletIds, supabase]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -495,7 +472,7 @@ export default function OutletWarehouseBalancesPage() {
         const openingTimeByKey = new Map<string, number>();
         (openingRows as OpeningCountRow[] | null | undefined)?.forEach((row) => {
           if (!row?.period_id || !row?.item_id) return;
-          const vKey = (row.variant_key ?? "base").toLowerCase();
+          const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           const key = `${row.period_id}::${row.item_id}::${vKey}`;
           openingMap.set(key, parseQty(row.counted_qty));
           const countedAt = typeof row.counted_at === "string" ? Date.parse(row.counted_at) : NaN;
@@ -531,7 +508,7 @@ export default function OutletWarehouseBalancesPage() {
           if (!row?.warehouse_id || !row?.item_id) return;
           const periodId = periodIdByWarehouse.get(row.warehouse_id);
           if (!periodId) return;
-          const vKey = (row.variant_key ?? "base").toLowerCase();
+          const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           const key = `${periodId}::${row.item_id}::${vKey}`;
           const occurredAt = typeof row.occurred_at === "string" ? Date.parse(row.occurred_at) : NaN;
           const openingAt = openingTimeByKey.get(key);
@@ -557,10 +534,10 @@ export default function OutletWarehouseBalancesPage() {
         rows.forEach((row) => {
           const kind = itemKindMap.get(row.item_id) ?? "";
           if (!kinds.includes(kind)) return;
-          const vKey = (row.variant_key ?? "base").toLowerCase();
+          const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           if (baseOnly && vKey !== "base") return;
 
-          const key = `${row.item_id}::${vKey}::${kind}`;
+          const key = `${row.item_id}::${vKey}`;
           const existing = map.get(key);
           const openingKey = `${row.period_id ?? ""}::${row.item_id}::${vKey}`;
           const openingQty = openingMap.get(openingKey) ?? 0;
@@ -579,7 +556,7 @@ export default function OutletWarehouseBalancesPage() {
             map.set(key, {
               item_id: row.item_id,
               item_name: row.item_name,
-              variant_key: row.variant_key,
+              variant_key: normalizeVariantKey(row.variant_key),
               item_kind: kind,
               net_units: onHandUnits,
             });
@@ -612,7 +589,6 @@ export default function OutletWarehouseBalancesPage() {
     includeFinished,
     baseOnly,
     showZeroOrNegative,
-    search,
     selectedOutletIds,
     refreshTick,
     supabase,
@@ -720,7 +696,7 @@ export default function OutletWarehouseBalancesPage() {
 
         <section className={styles.filtersCard}>
           <div className={styles.filterRow}>
-            <div className={styles.filterLabel}>
+            <div className={`${styles.filterLabel} ${styles.outletPicker}`}>
               Outlet
               <div className={styles.outletActions}>
                 <button type="button" className={styles.ghostButton} onClick={selectAllOutlets} disabled={booting}>
@@ -735,52 +711,21 @@ export default function OutletWarehouseBalancesPage() {
                   <span className={styles.emptyNote}>No outlets found</span>
                 ) : (
                   outlets.map((outlet) => (
-                    <label key={outlet.id} className={styles.outletRow}>
+                    <label key={outlet.id} className={styles.outletCard}>
                       <input
                         type="checkbox"
                         checked={selectedOutletIds.includes(outlet.id)}
                         onChange={() => {
                           toggleOutlet(outlet.id);
-                          setSelectedWarehouseId("");
                         }}
                         disabled={booting}
                       />
-                      <span>{outlet.name}</span>
+                      <span className={styles.outletCardName}>{outlet.name}</span>
                     </label>
                   ))
                 )}
               </div>
             </div>
-
-            <label className={styles.filterLabel}>
-              Warehouse
-              <select
-                className={styles.select}
-                value={selectedWarehouseId}
-                onChange={(event) => setSelectedWarehouseId(event.target.value)}
-                disabled={selectedOutletIds.length === 0}
-              >
-                {warehouses.length === 0 ? (
-                  <option value="">No warehouses found</option>
-                ) : (
-                  warehouses.map((warehouse) => (
-                    <option key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name || warehouse.code || warehouse.id}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-
-            <label className={styles.filterLabel}>
-              Search
-              <input
-                className={styles.input}
-                placeholder="Search item name"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
           </div>
 
           <div className={styles.filterRow}>

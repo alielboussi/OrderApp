@@ -113,6 +113,10 @@
   flex-wrap: wrap;
 }
 
+.outletPicker {
+  width: 100%;
+}
+
 .ghostButton {
   background: rgba(148, 163, 184, 0.12);
   color: #e2e8f0;
@@ -124,22 +128,41 @@
 }
 
 .outletList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 180px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  max-height: 220px;
   overflow-y: auto;
   padding-right: 6px;
 }
 
-.outletRow {
+.outletCard {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 14, 27, 0.88);
   font-size: 13px;
   color: #e2e8f0;
   text-transform: none;
   letter-spacing: 0;
+  cursor: pointer;
+  transition: border 0.2s ease, transform 0.2s ease;
+}
+
+.outletCard:hover {
+  border-color: rgba(94, 234, 212, 0.5);
+  transform: translateY(-1px);
+}
+
+.outletCard input {
+  accent-color: #5eead4;
+}
+
+.outletCardName {
+  line-height: 1.2;
 }
 
 .emptyNote {
