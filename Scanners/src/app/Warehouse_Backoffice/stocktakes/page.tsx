@@ -1018,7 +1018,7 @@ export default function StocktakesPage() {
 
     const { data, error } = await supabase
       .from("warehouse_stock_counts")
-      .select("period_id,item_id,variant_key,counted_qty,kind")
+      .select("period_id,item_id,variant_key,counted_qty,kind,counted_at")
       .in("period_id", periodIds)
       .in("item_id", itemIds);
     if (error) throw error;
