@@ -270,6 +270,7 @@
 .assignmentsCard { border-color: rgba(56, 189, 248, 0.6); box-shadow: 0 18px 38px rgba(56, 189, 248, 0.25); }
 .reportsCard { border-color: rgba(251, 191, 36, 0.5); box-shadow: 0 18px 38px rgba(251, 191, 36, 0.22); }
 .warehouseReportsCard { border-color: rgba(129, 140, 248, 0.6); box-shadow: 0 18px 38px rgba(129, 140, 248, 0.24); }
+.coldroomReportsCard { border-color: rgba(56, 189, 248, 0.6); box-shadow: 0 18px 38px rgba(56, 189, 248, 0.24); }
 .vehicleReportsCard { border-color: rgba(45, 212, 191, 0.6); box-shadow: 0 18px 38px rgba(45, 212, 191, 0.24); }
 .bulkCard { border-color: rgba(147, 51, 234, 0.6); box-shadow: 0 18px 38px rgba(147, 51, 234, 0.24); }
 .stockReportsCard { border-color: rgba(16, 185, 129, 0.6); box-shadow: 0 18px 38px rgba(16, 185, 129, 0.24); }
@@ -329,6 +330,10 @@
 
 .warehouseReportsTitle {
   color: #a5b4fc;
+}
+
+.coldroomReportsTitle {
+  color: #7dd3fc;
 }
 
 .vehicleReportsTitle {

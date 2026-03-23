@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./outlet-warehouse-balances.module.css";
+import { COLDROOM_CHILD_IDS, COLDROOM_PARENT_ID, COLDROOM_WAREHOUSES } from "@/lib/coldrooms";
 
 type OutletOption = {
   id: string;
@@ -204,6 +205,8 @@ export default function OutletWarehouseBalancesPage() {
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
   const [includePurchases, setIncludePurchases] = useState(true);
 
+  const coldroomChildSet = useMemo(() => new Set(COLDROOM_CHILD_IDS), []);
+
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
 
@@ -311,7 +314,12 @@ export default function OutletWarehouseBalancesPage() {
         if (!active) return;
 
         const filtered = (data || []).filter((row) => row.active ?? true) as WarehouseOption[];
-        const withAll = [{ id: "all", name: "All linked warehouses", code: null }, ...filtered];
+        const withAll: WarehouseOption[] = [{ id: "all", name: "All linked warehouses", code: null }, ...filtered];
+        COLDROOM_WAREHOUSES.forEach((warehouse) => {
+          if (!withAll.some((item) => item.id === warehouse.id)) {
+            withAll.push({ id: warehouse.id, name: warehouse.name, code: warehouse.code });
+          }
+        });
         setWarehouses(withAll);
         const isValidSelection = selectedWarehouseId && withAll.some((warehouse) => warehouse.id === selectedWarehouseId);
         if (!isValidSelection && withAll.length > 0) {
@@ -417,7 +425,16 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
-        const warehouseIds = selectedWarehouseId === "all" ? linkedWarehouseIds : [selectedWarehouseId];
+        let warehouseIds: string[] = [];
+        if (selectedWarehouseId === "all") {
+          warehouseIds = linkedWarehouseIds;
+        } else if (selectedWarehouseId === COLDROOM_PARENT_ID) {
+          warehouseIds = COLDROOM_CHILD_IDS;
+        } else if (coldroomChildSet.has(selectedWarehouseId)) {
+          warehouseIds = [selectedWarehouseId];
+        } else {
+          warehouseIds = [selectedWarehouseId];
+        }
         if (warehouseIds.length === 0) {
           if (active) setItems([]);
           return;
@@ -869,6 +886,8 @@ export default function OutletWarehouseBalancesPage() {
                 Showing {items.length} items
                 {selectedWarehouseId === "all" && linkedWarehouseIds.length > 0
                   ? ` · Summed across ${linkedWarehouseIds.length} warehouses`
+                  : selectedWarehouseId === COLDROOM_PARENT_ID
+                    ? ` · Summed across ${COLDROOM_CHILD_IDS.length} coldrooms`
                   : ""}
                 {" · Auto-refreshes every 30s"}
               </p>
