@@ -18,6 +18,7 @@ const COLDROOM_CHOICES = [
   { id: '9d0a3a83-1fea-45a8-8771-25cc1db9f07e', label: 'Coldroom # 9' },
   { id: '0c9ddd9e-d42c-475f-9232-5e9d649b0916', label: 'Coldroom # 12' }
 ] as const;
+const COLDROOM_PARENT_ID = 'fad8f3bf-6a13-471f-9198-c46bc65014e4';
 const LOCKED_SOURCE_ID = COLDROOM_CHOICES[0]?.id ?? '';
 const HOMES_PARENT_ID = '';
 const DESTINATION_CHOICES = COLDROOM_CHOICES;
@@ -268,6 +269,49 @@ function createHtml(config: {
     }
     .search-field {
       margin-top: 8px;
+    }
+    .product-card-grid {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .product-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 27, 45, 0.28);
+      border-radius: 16px;
+      padding: 12px 14px;
+      text-align: left;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .product-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 27, 45, 0.75);
+      box-shadow: 0 18px 28px rgba(255, 0, 77, 0.18);
+    }
+    .product-card:active {
+      transform: translateY(0);
+    }
+    .product-card-title {
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .product-card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #b5b5b5;
+    }
+    .product-card-variant {
+      color: #ff6b81;
+      font-weight: 600;
     }
     #auth-section,
     #app-section {
@@ -1588,11 +1632,7 @@ function createHtml(config: {
 
       <article class="panel transfer-panel">
         <form id="transfer-form">
-          <div class="search-field">
-            <label>Search products
-              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
-            </label>
-          </div>
+          <div id="transfer-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -1763,9 +1803,6 @@ function createHtml(config: {
                 <option value="">Select supplier</option>
               </select>
             </label>
-            <label class="search-field">Item search
-              <input id="purchase-item-search" type="text" placeholder="Search items or scan barcode" autocomplete="off" />
-            </label>
             <div class="reference-field">
               <label>Reference / Invoice #
                 <input type="text" id="purchase-reference" placeholder="INV-12345" required />
@@ -1790,6 +1827,7 @@ function createHtml(config: {
               </div>
             </div>
           </div>
+          <div id="purchase-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <section class="purchase-cart-section">
             <div class="cart-head">
               <div>
@@ -1841,11 +1879,7 @@ function createHtml(config: {
       <form id="damage-form">
         <div class="damage-shell">
           <h3>Log Damages</h3>
-          <div class="search-field">
-            <label>Search products
-              <input id="damage-item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
-            </label>
-          </div>
+          <div id="damage-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <div class="cart-head">
             <div>
               <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Damages Cart</h3>
@@ -1944,6 +1978,7 @@ function createHtml(config: {
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
     const SOURCE_CHOICES = DESTINATION_CHOICES;
+    const PRODUCT_HOME_PARENT_ID = ${JSON.stringify(COLDROOM_PARENT_ID)};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SCANNER_NAME = 'Coldrooms';
@@ -2008,6 +2043,7 @@ function createHtml(config: {
       let lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
+      let productHomeIds = [];
       const EXTRA_HOMES_IDS = ${serializeForScript(EXTRA_HOMES_IDS)};
 
       const state = {
@@ -2134,6 +2170,9 @@ function createHtml(config: {
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
       const damageItemSearchInput = document.getElementById('damage-item-search');
+      const transferProductCards = document.getElementById('transfer-product-cards');
+      const purchaseProductCards = document.getElementById('purchase-product-cards');
+      const damageProductCards = document.getElementById('damage-product-cards');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
       const cartCount = document.getElementById('cart-count');
@@ -2523,10 +2562,11 @@ function createHtml(config: {
 
       let latestStorageHomes = [];
 
-      async function fetchProductsForWarehouse(warehouseIds) {
+      async function fetchProductsForWarehouse(warehouseIds, homeWarehouseIds = []) {
         if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
           return [];
         }
+        const homeIds = Array.isArray(homeWarehouseIds) ? homeWarehouseIds.filter(Boolean) : [];
 
         if (state.networkOffline) {
           console.warn('Skipping product fetch: network offline');
@@ -2536,16 +2576,18 @@ function createHtml(config: {
         const loadStockAndDefaults = async () => {
           const [stockResult, defaultItemsResult, storageHomesResult] = await Promise.all([
             supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
-            supabase
-              .from('catalog_items')
-              .select('id')
-              .eq('default_warehouse_id', lockedSourceId)
-              .eq('active', true),
-            lockedSourceId
+            homeIds.length
+              ? supabase
+                  .from('catalog_items')
+                  .select('id')
+                  .in('default_warehouse_id', homeIds)
+                  .eq('active', true)
+              : Promise.resolve({ data: [], error: null }),
+            homeIds.length
               ? supabase
                   .from('item_storage_homes')
                   .select('item_id, normalized_variant_key, storage_warehouse_id')
-                  .eq('storage_warehouse_id', lockedSourceId)
+                  .in('storage_warehouse_id', homeIds)
               : Promise.resolve({ data: [], error: null })
           ]);
 
@@ -2579,7 +2621,7 @@ function createHtml(config: {
           defaultVariants.forEach((variant) => {
             const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
             const variantActive = variant?.active !== false;
-            if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
+            if (variantDefault && homeIds.includes(variantDefault) && variantActive && variant?.item_id) {
               productsWithWarehouseVariations.add(variant.item_id);
               productIds.add(variant.item_id);
             }
@@ -2627,14 +2669,15 @@ function createHtml(config: {
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-              if (variantDefault !== lockedSourceId) return false;
+              if (!variantDefault || !homeIds.includes(variantDefault)) return false;
               return variant?.active !== false;
             });
 
             const hasStorageHomeVariant = latestStorageHomes.some(
               (home) =>
                 home.item_id === product.id &&
-                home.storage_warehouse_id === lockedSourceId &&
+                home.storage_warehouse_id &&
+                homeIds.includes(home.storage_warehouse_id) &&
                 home.normalized_variant_key &&
                 home.normalized_variant_key !== 'base'
             );
@@ -2668,12 +2711,13 @@ function createHtml(config: {
         }
       }
 
-      async function preloadVariations(productIds) {
+      async function preloadVariations(productIds, homeIds = []) {
         state.variations = new Map();
         state.variationIndex = new Map();
         if (!Array.isArray(productIds) || productIds.length === 0) {
           return;
         }
+        const scopedHomeIds = Array.isArray(homeIds) ? homeIds.filter(Boolean) : [];
         const { data, error } = await supabase
           .from('catalog_variants')
           .select(
@@ -2685,6 +2729,7 @@ function createHtml(config: {
         const storageHomeMap = new Map();
         latestStorageHomes.forEach((home) => {
           if (home?.item_id && home?.normalized_variant_key && home?.storage_warehouse_id) {
+            if (scopedHomeIds.length && !scopedHomeIds.includes(home.storage_warehouse_id)) return;
             const storageKey = String(home.item_id) + "::" + String(home.normalized_variant_key);
             storageHomeMap.set(storageKey, home.storage_warehouse_id);
           }
@@ -2700,7 +2745,7 @@ function createHtml(config: {
             variant?.default_warehouse_id ??
             variant?.locked_from_warehouse_id ??
             null;
-          if (variantWarehouse && variantWarehouse !== lockedSourceId) return;
+          if (variantWarehouse && scopedHomeIds.length && !scopedHomeIds.includes(variantWarehouse)) return;
 
           const key = normalizedKey || 'base';
           const variation = {
@@ -2736,7 +2781,7 @@ function createHtml(config: {
         });
       }
 
-      async function safePreloadVariations(productIds) {
+      async function safePreloadVariations(productIds, homeIds = []) {
         if (state.networkOffline) {
           console.warn('Skipping variation preload: network offline');
           state.variations = new Map();
@@ -2744,7 +2789,7 @@ function createHtml(config: {
           return;
         }
         try {
-          await preloadVariations(productIds);
+          await preloadVariations(productIds, homeIds);
         } catch (error) {
           markOfflineIfNetworkError(error);
           console.warn('Variation preload failed; continuing without variation index', error);
@@ -4258,11 +4303,13 @@ function createHtml(config: {
         variantModalBody.innerHTML = '';
 
         const variations = state.variations.get(product.id) ?? [];
-        const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
-        const hasVariants = variations.length > 0;
-        let rows = isIngredient || !hasVariants
+        const uniqueVariations = Array.from(
+          new Map(variations.filter((variant) => variant?.id).map((variant) => [variant.id, variant])).values()
+        );
+        const hasVariants = uniqueVariations.length > 0;
+        let rows = !hasVariants
           ? [{ key: 'base', variation: null, label: 'Base' }]
-          : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
+          : uniqueVariations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
         if (preferredVariation) {
           rows = [{
             key: preferredVariation.id,
@@ -4397,6 +4444,52 @@ function createHtml(config: {
 
         variantModal.style.display = 'flex';
         variantModal.setAttribute('aria-hidden', 'false');
+      }
+
+      function handleProductCardSelect(product, context) {
+        if (!product) return;
+        const targetContext = context || state.mode;
+        if (targetContext !== state.mode) {
+          setMode(targetContext);
+        }
+        const variations = state.variations.get(product.id) ?? [];
+        if (variations.length > 0) {
+          openVariantModal(product, null, targetContext);
+          return;
+        }
+        promptQuantity(product, null, targetContext);
+      }
+
+      function renderProductCards() {
+        const products = Array.isArray(state.products)
+          ? state.products.filter((item) => item && item.id)
+          : [];
+        const renderTo = (container, context) => {
+          if (!container) return;
+          container.innerHTML = '';
+          if (!products.length) {
+            container.style.display = 'none';
+            return;
+          }
+          container.style.display = 'grid';
+          products.forEach((product) => {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'product-card';
+
+            const title = document.createElement('div');
+            title.className = 'product-card-title';
+            title.textContent = product.name ?? 'Product';
+
+            card.appendChild(title);
+            card.addEventListener('click', () => handleProductCardSelect(product, context));
+            container.appendChild(card);
+          });
+        };
+
+        renderTo(transferProductCards, 'transfer');
+        renderTo(purchaseProductCards, 'purchase');
+        renderTo(damageProductCards, 'damage');
       }
 
       function closeQtyPrompt() {
@@ -4559,7 +4652,9 @@ function createHtml(config: {
         const destinationIds = Array.isArray(DESTINATION_CHOICES)
           ? DESTINATION_CHOICES.map((choice) => (choice && typeof choice.id === 'string' ? choice.id : null)).filter(Boolean)
           : [];
-        const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
+        const lockedIds = Array.from(
+          new Set([lockedSourceId, lockedDestId, PRODUCT_HOME_PARENT_ID, ...destinationIds].filter(Boolean))
+        );
 
         const loadViaServiceApi = async () => {
           const params = new URLSearchParams();
@@ -4610,7 +4705,15 @@ function createHtml(config: {
         };
 
         try {
-          return await loadViaServiceApi();
+          const apiList = await loadViaServiceApi();
+          if (PRODUCT_HOME_PARENT_ID) {
+            const hasChildren = apiList.some((row) => row?.parent_warehouse_id === PRODUCT_HOME_PARENT_ID);
+            if (!hasChildren) {
+              const tableList = await loadViaTable();
+              return tableList;
+            }
+          }
+          return apiList;
         } catch (apiError) {
           markOfflineIfNetworkError(apiError);
           try {
@@ -4874,6 +4977,7 @@ function createHtml(config: {
         try {
           const warehouses = await fetchWarehousesMetadata();
           state.warehouses = warehouses ?? [];
+          productHomeIds = collectDescendantIds(state.warehouses, PRODUCT_HOME_PARENT_ID);
           const hydratedSources = (SOURCE_CHOICES || []).map((choice) => {
             const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
             return {
@@ -4984,9 +5088,11 @@ function createHtml(config: {
           throw error;
         }
 
-        const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
-        state.products = await fetchProductsForWarehouse(targetWarehouseIds);
-        await safePreloadVariations(state.products.map((p) => p.id));
+          const targetWarehouseIds = collectDescendantIds(state.warehouses, PRODUCT_HOME_PARENT_ID);
+          const homeScopeIds = productHomeIds.length ? productHomeIds : targetWarehouseIds;
+          state.products = await fetchProductsForWarehouse(targetWarehouseIds, homeScopeIds);
+          await safePreloadVariations(state.products.map((p) => p.id), homeScopeIds);
+        renderProductCards();
         try {
           await fetchSuppliers();
         } catch (error) {
@@ -5471,11 +5577,10 @@ function createHtml(config: {
           return;
         }
 
-        const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
         const variations = state.variations.get(product.id) ?? [];
         const hasVariants = Boolean(product.has_variations) || variations.length > 0;
 
-        if (hasVariants && !isIngredient) {
+        if (hasVariants) {
           openVariantModal(product, null, state.mode);
           return;
         }
@@ -5543,77 +5648,6 @@ function createHtml(config: {
 
       damageNote?.addEventListener('input', () => {
         state.damageNote = damageNote.value ?? '';
-      });
-
-      let searchAutoCommitTimer = null;
-      const scheduleSearchAutoCommit = (input, context) => {
-        if (!input) return;
-        if (qtyModal?.style.display === 'flex') return;
-        if (variantModal?.style.display === 'flex') return;
-        window.clearTimeout(searchAutoCommitTimer);
-        const value = (input.value ?? '').trim();
-        if (value.length < 8) return;
-        if (!/^[0-9]+$/.test(value)) return;
-        searchAutoCommitTimer = window.setTimeout(() => {
-          searchProductsWithScan(value);
-          window.setTimeout(() => {
-            input.select();
-          }, 10);
-        }, 120);
-      };
-
-      itemSearchInput?.addEventListener('focus', () => {
-        state.mode = 'transfer';
-      });
-
-      itemSearchInput?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== 'Tab') return;
-        event.preventDefault();
-        const value = (itemSearchInput.value ?? '').trim();
-        if (!value) return;
-        searchProductsWithScan(value);
-        window.setTimeout(() => {
-          itemSearchInput.select();
-        }, 10);
-      });
-      itemSearchInput?.addEventListener('input', () => {
-        scheduleSearchAutoCommit(itemSearchInput, 'transfer');
-      });
-
-      damageItemSearchInput?.addEventListener('focus', () => {
-        state.mode = 'damage';
-      });
-
-      damageItemSearchInput?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== 'Tab') return;
-        event.preventDefault();
-        const value = (damageItemSearchInput.value ?? '').trim();
-        if (!value) return;
-        searchProductsWithScan(value);
-        window.setTimeout(() => {
-          damageItemSearchInput.select();
-        }, 10);
-      });
-      damageItemSearchInput?.addEventListener('input', () => {
-        scheduleSearchAutoCommit(damageItemSearchInput, 'damage');
-      });
-
-      purchaseItemSearchInput?.addEventListener('focus', () => {
-        state.mode = 'purchase';
-      });
-
-      purchaseItemSearchInput?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== 'Tab') return;
-        event.preventDefault();
-        const value = (purchaseItemSearchInput.value ?? '').trim();
-        if (!value) return;
-        searchProductsWithScan(value);
-        window.setTimeout(() => {
-          purchaseItemSearchInput.select();
-        }, 10);
-      });
-      purchaseItemSearchInput?.addEventListener('input', () => {
-        scheduleSearchAutoCommit(purchaseItemSearchInput, 'purchase');
       });
 
       const openDamageKeyboard = (event) => {

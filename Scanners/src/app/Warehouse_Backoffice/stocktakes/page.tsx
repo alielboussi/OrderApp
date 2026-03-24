@@ -1875,7 +1875,7 @@ export default function StocktakesPage() {
 
             selectedChildWarehouseIds.forEach((childId) => {
               const childKey = makeChildKey(childId, row.item_id, variantKey);
-              if (next[childKey] !== undefined) return;
+              if (unsavedKeys[childKey]) return;
               const openingLocked = maps?.lockedMap?.[childId]?.has(baseKey) ?? false;
               const entryMode = openingLocked ? "closing" : "opening";
               const seed = entryMode === "closing"
@@ -1921,7 +1921,8 @@ export default function StocktakesPage() {
     dialogRecipeLoading,
     dialogIngredientIds.length,
     isColdroomParent,
-    selectedChildWarehouseIds
+    selectedChildWarehouseIds,
+    unsavedKeys
   ]);
 
   if (status !== "ok") return null;
@@ -2593,7 +2594,7 @@ export default function StocktakesPage() {
                 const entryMode = openingLocked ? "closing" : "opening";
                 const isLocked = !activePeriodIsOpen;
                 const hasOpeningCount = openingCountMap.has(qtyKey);
-                const showTally = !isColdroomParent && hasOpeningCount;
+                const showTally = !isColdroomParent && openingLocked;
                 const label = dialogHasRecipe
                   ? row.item_name || row.item_id
                   : variantKey === "base"
