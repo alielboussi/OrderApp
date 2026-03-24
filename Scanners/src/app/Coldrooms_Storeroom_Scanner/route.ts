@@ -15,7 +15,8 @@ const COLDROOM_CHOICES = [
   { id: '9885ad87-66e0-46ec-8872-ce58c524b739', label: 'Coldroom # 6' },
   { id: '6c488b69-e793-45e0-a744-441924f5f4bb', label: 'Coldroom # 7' },
   { id: 'd829d739-7311-4647-af91-cad33c21280e', label: 'Coldroom # 8' },
-  { id: '9d0a3a83-1fea-45a8-8771-25cc1db9f07e', label: 'Coldroom # 9' }
+  { id: '9d0a3a83-1fea-45a8-8771-25cc1db9f07e', label: 'Coldroom # 9' },
+  { id: '0c9ddd9e-d42c-475f-9232-5e9d649b0916', label: 'Coldroom # 12' }
 ] as const;
 const LOCKED_SOURCE_ID = COLDROOM_CHOICES[0]?.id ?? '';
 const HOMES_PARENT_ID = '';

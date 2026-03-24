@@ -642,21 +642,69 @@ export default function StocktakesPage() {
   }, [status, supabase]);
 
   const fetchItemsForWarehouse = async (warehouseId: string) => {
-    const { data: listItems, error: listError } = await supabase.rpc("list_warehouse_items", {
-      p_warehouse_id: warehouseId,
-      p_outlet_id: null,
-      p_search: null,
-    });
-    if (listError) throw listError;
-    const { data: directItems, error: directError } = await supabase
-      .from("warehouse_stock_items")
-      .select("item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url,has_recipe")
-      .eq("warehouse_id", warehouseId)
-      .eq("item_kind", "ingredient")
-      .order("item_name", { ascending: true });
-    if (directError) throw directError;
+    const targetWarehouseIds =
+      warehouseId === COLDROOM_PARENT_ID
+        ? selectedChildWarehouseIds.length
+          ? selectedChildWarehouseIds
+          : COLDROOM_CHILD_IDS
+        : [warehouseId];
 
-    const combined = [...((listItems as WarehouseStockItem[]) ?? []), ...((directItems as WarehouseStockItem[]) ?? [])];
+    const listResponses = await Promise.all(
+      targetWarehouseIds.map((id) =>
+        supabase.rpc("list_warehouse_items", {
+          p_warehouse_id: id,
+          p_outlet_id: null,
+          p_search: null,
+        })
+      )
+    );
+    listResponses.forEach((resp) => {
+      if (resp.error) throw resp.error;
+    });
+
+    const directResponses = await Promise.all(
+      targetWarehouseIds.map((id) =>
+        supabase
+          .from("warehouse_stock_items")
+          .select("item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url,has_recipe")
+          .eq("warehouse_id", id)
+          .eq("item_kind", "ingredient")
+          .order("item_name", { ascending: true })
+      )
+    );
+    directResponses.forEach((resp) => {
+      if (resp.error) throw resp.error;
+    });
+
+    const combined = [
+      ...listResponses.flatMap((resp) => (resp.data as WarehouseStockItem[]) ?? []),
+      ...directResponses.flatMap((resp) => (resp.data as WarehouseStockItem[]) ?? []),
+    ];
+
+    if (warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)) {
+      const { data: storageItems, error: storageError } = await supabase
+        .from("catalog_items")
+        .select("id,name,cost,item_kind,image_url")
+        .eq("active", true)
+        .eq("item_kind", "ingredient")
+        .eq("default_warehouse_id", COLDROOM_PARENT_ID);
+      if (storageError) throw storageError;
+
+      (storageItems ?? []).forEach((item) => {
+        if (!item?.id) return;
+        combined.push({
+          warehouse_id: warehouseId,
+          item_id: item.id,
+          item_name: item.name ?? "Item",
+          variant_key: "base",
+          net_units: 0,
+          unit_cost: typeof item.cost === "number" ? item.cost : 0,
+          item_kind: item.item_kind ?? "ingredient",
+          image_url: item.image_url ?? null,
+          has_recipe: false,
+        });
+      });
+    }
     const deduped = new Map<string, WarehouseStockItem>();
     combined.forEach((row) => {
       const key = makeKey(row.item_id, row.variant_key);
