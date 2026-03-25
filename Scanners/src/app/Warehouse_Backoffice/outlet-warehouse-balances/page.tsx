@@ -595,16 +595,23 @@ export default function OutletWarehouseBalancesPage() {
           movementMap.set(key, (movementMap.get(key) ?? 0) + delta);
         });
 
-        const { data: itemRows, error: itemError } = await supabase
-          .from("catalog_items")
-          .select("id,item_kind")
-          .in("id", itemIds);
+        const [{ data: itemRows, error: itemError }, { data: variantRows, error: variantError }] = await Promise.all([
+          supabase.from("catalog_items").select("id,item_kind").in("id", itemIds),
+          supabase.from("catalog_variants").select("id,item_id,active").in("item_id", itemIds),
+        ]);
 
         if (itemError) throw itemError;
+        if (variantError) throw variantError;
 
         const itemKindMap = new Map<string, string>();
         (itemRows ?? []).forEach((row) => {
           if (row?.id) itemKindMap.set(row.id, row.item_kind ?? "");
+        });
+
+        const itemsWithVariants = new Set<string>();
+        (variantRows ?? []).forEach((row) => {
+          if (row?.active === false) return;
+          if (row?.item_id) itemsWithVariants.add(row.item_id);
         });
 
         const map = new Map<string, StockItem>();
@@ -613,6 +620,7 @@ export default function OutletWarehouseBalancesPage() {
           if (!kinds.includes(kind)) return;
           const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           if (baseOnly && vKey !== "base") return;
+          if (vKey === "base" && itemsWithVariants.has(row.item_id)) return;
 
           const key = `${row.item_id}::${vKey}`;
           const existing = map.get(key);
@@ -621,11 +629,7 @@ export default function OutletWarehouseBalancesPage() {
           const movementQty = movementMap.get(openingKey) ?? 0;
           const onHandUnits = openingQty + movementQty;
           const isZeroNet = Math.abs(onHandUnits) < 1e-9;
-          if (showZeroOrNegative) {
-            if (onHandUnits >= 0 || isZeroNet) return;
-          } else {
-            if (onHandUnits <= 0 || isZeroNet) return;
-          }
+          if (!showZeroOrNegative && (onHandUnits <= 0 || isZeroNet)) return;
 
           if (existing) {
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;

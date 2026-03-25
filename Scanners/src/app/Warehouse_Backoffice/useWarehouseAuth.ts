@@ -8,6 +8,7 @@ import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 const READONLY_USER_IDS = [
   "fd52f4c1-2403-4670-bdd6-97b4ca7580aa",
   "a77c117e-3c48-437d-abb5-ed9fc159372f",
+  "563c0f9e-2561-4256-934b-ac8271c2cc8a",
 ];
 const BACKOFFICE_ROLE_ID = "de9f2075-9c97-4da1-a2a0-59ed162947e7";
 
