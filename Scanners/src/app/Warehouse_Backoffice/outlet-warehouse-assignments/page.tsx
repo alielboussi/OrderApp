@@ -40,7 +40,7 @@ export default function OutletWarehouseAssignmentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
   const [outletId, setOutletId] = useState("");
-  const [warehouseId, setWarehouseId] = useState("");
+  const [warehouseIds, setWarehouseIds] = useState<string[]>([]);
   const [showInStocktake, setShowInStocktake] = useState(true);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
@@ -95,30 +95,45 @@ export default function OutletWarehouseAssignmentsPage() {
     return map;
   }, [warehouses]);
 
+  const toggleWarehouse = (id: string) => {
+    setWarehouseIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  };
+
+  const selectAllWarehouses = () => {
+    setWarehouseIds(warehouses.map((warehouse) => warehouse.id).filter(Boolean));
+  };
+
+  const clearWarehouses = () => {
+    setWarehouseIds([]);
+  };
+
   const handleAssign = async () => {
     if (readOnly) {
       setError("Read-only access: saving is disabled.");
       return;
     }
-    if (!outletId || !warehouseId) {
-      setError("Select both outlet and warehouse.");
+    if (!outletId || warehouseIds.length === 0) {
+      setError("Select an outlet and at least one warehouse.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
+      const payload = warehouseIds.map((id) => ({
+        outlet_id: outletId,
+        warehouse_id: id,
+        show_in_stocktake: showInStocktake,
+      }));
+
       const { error: insertError } = await supabase
         .from("outlet_warehouses")
-        .upsert(
-          { outlet_id: outletId, warehouse_id: warehouseId, show_in_stocktake: showInStocktake },
-          { onConflict: "outlet_id,warehouse_id", ignoreDuplicates: true }
-        );
+        .upsert(payload, { onConflict: "outlet_id,warehouse_id", ignoreDuplicates: true });
       if (insertError) {
         const message = insertError.message || JSON.stringify(insertError);
         throw new Error(message);
       }
       setOutletId("");
-      setWarehouseId("");
+      setWarehouseIds([]);
       setShowInStocktake(true);
       await load();
     } catch (err) {
@@ -221,18 +236,30 @@ export default function OutletWarehouseAssignmentsPage() {
             </label>
             <label className={styles.label}>
               Warehouse
-              <select
-                className={styles.input}
-                value={warehouseId}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) => setWarehouseId(event.target.value)}
-              >
-                <option value="">Select warehouse</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name ?? w.id}
-                  </option>
-                ))}
-              </select>
+              <div className={styles.pickerActions}>
+                <button type="button" className={styles.ghostButton} onClick={selectAllWarehouses}>
+                  Select all
+                </button>
+                <button type="button" className={styles.ghostButton} onClick={clearWarehouses}>
+                  Clear
+                </button>
+              </div>
+              <div className={styles.pickerList}>
+                {warehouses.length === 0 ? (
+                  <span className={styles.empty}>No warehouses found.</span>
+                ) : (
+                  warehouses.map((warehouse) => (
+                    <label key={warehouse.id} className={styles.pickerOption}>
+                      <input
+                        type="checkbox"
+                        checked={warehouseIds.includes(warehouse.id)}
+                        onChange={() => toggleWarehouse(warehouse.id)}
+                      />
+                      <span>{warehouse.name ?? warehouse.id}</span>
+                    </label>
+                  ))
+                )}
+              </div>
             </label>
             <label className={styles.label}>
               Show in stocktake
