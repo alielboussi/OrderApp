@@ -213,6 +213,19 @@ export default function OutletWarehouseBalancesPage() {
     return map;
   }, []);
 
+  const itemHasVariants = useMemo(() => {
+    const map = new Map<string, boolean>();
+    items.forEach((item) => {
+      const vKey = normalizeVariantKey(item.variant_key).toLowerCase();
+      if (vKey !== "base") {
+        map.set(item.item_id, true);
+      } else if (!map.has(item.item_id)) {
+        map.set(item.item_id, false);
+      }
+    });
+    return map;
+  }, [items]);
+
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
 
@@ -991,7 +1004,16 @@ export default function OutletWarehouseBalancesPage() {
                 className={`${styles.tableRow} ${showPackWeightTotals ? styles.tableRowWide : ""}`}
               >
                 <span>{item.item_name || item.item_id}</span>
-                <span>{variantNames[item.variant_key ?? ""] || item.variant_key || "base"}</span>
+                <span>
+                  {(() => {
+                    const rawKey = normalizeVariantKey(item.variant_key).toLowerCase();
+                    const hasVariants = itemHasVariants.get(item.item_id) ?? false;
+                    if (rawKey === "base" && !hasVariants) {
+                      return item.item_name || item.item_id;
+                    }
+                    return variantNames[item.variant_key ?? ""] || item.variant_key || "base";
+                  })()}
+                </span>
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {

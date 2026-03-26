@@ -359,7 +359,7 @@ async function loadRemainingByKey(
   const openedAt = typeof period.opened_at === 'string' ? period.opened_at : null;
   const { data: ledgerRows, error: ledgerError } = await supabase
     .from('stock_ledger')
-    .select('item_id,variant_key,delta_units')
+    .select('item_id,variant_key,delta_units,occurred_at')
     .eq('location_type', 'warehouse')
     .eq('warehouse_id', warehouseId)
     .in('reason', ledgerReasons)
