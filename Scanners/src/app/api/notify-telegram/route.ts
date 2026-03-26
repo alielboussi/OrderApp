@@ -325,25 +325,34 @@ async function loadRemainingByKey(
     return Number.isFinite(numeric) ? numeric : null;
   };
 
-  const { data: openingRows, error: openingError } = await supabase
+  const { data: countRows, error: countError } = await supabase
     .from('warehouse_stock_counts')
-    .select('item_id,variant_key,counted_qty')
+    .select('item_id,variant_key,counted_qty,counted_at')
     .eq('period_id', period.id)
-    .eq('kind', 'opening')
     .in('item_id', itemIds);
 
-  if (openingError || !Array.isArray(openingRows)) {
+  if (countError || !Array.isArray(countRows)) {
     return remainingByKey;
   }
 
-  const openingMap = new Map<string, number>();
-  openingRows.forEach((row) => {
+  const latestCountMap = new Map<string, number>();
+  const latestCountAtMap = new Map<string, number>();
+  countRows.forEach((row) => {
     const itemId = typeof row?.item_id === 'string' ? row.item_id : null;
     if (!itemId) return;
     const variantKey = normalizeVariantKey(row?.variant_key ?? 'base');
     const qty = parseQty(row?.counted_qty);
     if (qty === null) return;
-    openingMap.set(buildItemKey(itemId, variantKey), qty);
+    const key = buildItemKey(itemId, variantKey);
+    const countedAt = typeof row?.counted_at === 'string' ? Date.parse(row.counted_at) : NaN;
+    const existingAt = latestCountAtMap.get(key);
+    const shouldUpdate = Number.isNaN(countedAt)
+      ? existingAt === undefined
+      : (existingAt ?? -Infinity) < countedAt;
+    if (shouldUpdate) {
+      latestCountMap.set(key, qty);
+      if (!Number.isNaN(countedAt)) latestCountAtMap.set(key, countedAt);
+    }
   });
 
   const ledgerReasons = ['warehouse_transfer', 'outlet_sale', 'damage', 'recipe_consumption', 'purchase_receipt'];
@@ -369,6 +378,9 @@ async function loadRemainingByKey(
     const delta = parseQty(row?.delta_units);
     if (delta === null) return;
     const key = buildItemKey(itemId, variantKey);
+    const occurredAt = typeof row?.occurred_at === 'string' ? Date.parse(row.occurred_at) : NaN;
+    const baselineAt = latestCountAtMap.get(key) ?? (openedAt ? Date.parse(openedAt) : NaN);
+    if (!Number.isNaN(occurredAt) && !Number.isNaN(baselineAt) && occurredAt < baselineAt) return;
     movementMap.set(key, (movementMap.get(key) ?? 0) + delta);
   });
 
@@ -381,7 +393,7 @@ async function loadRemainingByKey(
   });
 
   requestedKeys.forEach((key) => {
-    const openingQty = openingMap.get(key);
+    const openingQty = latestCountMap.get(key);
     const movementQty = movementMap.get(key);
     if (openingQty === undefined && movementQty === undefined) {
       remainingByKey.set(key, null);
