@@ -46,6 +46,14 @@ async function hasBackofficeRole(supabase: SupabaseClient, userId: string | null
   return Boolean(data?.role_id);
 }
 
+async function hasBackofficeRoleFromWhoami(supabase: SupabaseClient): Promise<boolean> {
+  const { data, error } = await supabase.rpc("whoami_roles");
+  if (error) return false;
+  const record = (data?.[0] ?? null) as { roles?: string[] | null } | null;
+  const roles = record?.roles ?? [];
+  return roles.some((role) => role.trim().toLowerCase() === "back office manager");
+}
+
 export function useWarehouseAuth() {
   const router = useRouter();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
@@ -65,7 +73,14 @@ export function useWarehouseAuth() {
         setUserId(currentUserId);
 
         const isAdmin = !error && (await isPlatformAdmin(supabase, session));
-        const isBackoffice = !error && (await hasBackofficeRole(supabase, currentUserId));
+        let isBackoffice = false;
+        if (!error) {
+          try {
+            isBackoffice = await hasBackofficeRole(supabase, currentUserId);
+          } catch {
+            isBackoffice = await hasBackofficeRoleFromWhoami(supabase);
+          }
+        }
         const isReadOnlyUser = Boolean(currentUserId && READONLY_USER_IDS.includes(currentUserId));
         const allowed = isAdmin || isBackoffice || isReadOnlyUser;
         setReadOnly(isReadOnlyUser);

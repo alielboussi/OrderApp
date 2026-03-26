@@ -540,8 +540,7 @@ export default function OutletWarehouseBalancesPage() {
         const { data: openingRows, error: openingError } = await supabase
           .from("warehouse_stock_counts")
           .select("period_id,item_id,variant_key,counted_qty,counted_at")
-          .in("period_id", periodIds)
-          .eq("kind", "opening");
+          .in("period_id", periodIds);
 
         if (openingError) throw openingError;
 
@@ -551,11 +550,13 @@ export default function OutletWarehouseBalancesPage() {
           if (!row?.period_id || !row?.item_id) return;
           const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           const key = `${row.period_id}::${row.item_id}::${vKey}`;
-          openingMap.set(key, parseQty(row.counted_qty));
           const countedAt = typeof row.counted_at === "string" ? Date.parse(row.counted_at) : NaN;
-          if (!Number.isNaN(countedAt)) {
-            const current = openingTimeByKey.get(key);
-            if (current === undefined || countedAt > current) openingTimeByKey.set(key, countedAt);
+          const shouldUpdate = Number.isNaN(countedAt)
+            ? !openingMap.has(key)
+            : (openingTimeByKey.get(key) ?? -Infinity) < countedAt;
+          if (shouldUpdate) {
+            openingMap.set(key, parseQty(row.counted_qty));
+            if (!Number.isNaN(countedAt)) openingTimeByKey.set(key, countedAt);
           }
         });
 
