@@ -12,6 +12,36 @@
   {
     "schema_name": "public",
     "table_name": "catalog_items",
+    "policy_name": "catalog_items_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "catalog_items",
+    "policy_name": "catalog_items_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "catalog_items",
+    "policy_name": "catalog_items_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "catalog_items",
     "policy_name": "catalog_items_image_update_stocktake",
     "permissive": "PERMISSIVE",
     "roles": "{public}",
@@ -62,6 +92,36 @@
   {
     "schema_name": "public",
     "table_name": "catalog_variants",
+    "policy_name": "catalog_variants_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "catalog_variants",
+    "policy_name": "catalog_variants_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "catalog_variants",
+    "policy_name": "catalog_variants_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "catalog_variants",
     "policy_name": "catalog_variants_read_kiosk_anon",
     "permissive": "PERMISSIVE",
     "roles": "{anon}",
@@ -98,6 +158,16 @@
     "command": "ALL",
     "using_expression": "(auth.role() = 'service_role'::text)",
     "with_check_expression": "(auth.role() = 'service_role'::text)"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "order_items",
+    "policy_name": "order_items_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
   },
   {
     "schema_name": "public",
@@ -142,6 +212,16 @@
   {
     "schema_name": "public",
     "table_name": "orders",
+    "policy_name": "orders_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "orders",
     "policy_name": "orders_policy_delete",
     "permissive": "PERMISSIVE",
     "roles": "{authenticated}",
@@ -182,6 +262,36 @@
   {
     "schema_name": "public",
     "table_name": "outlet_item_routes",
+    "policy_name": "outlet_item_routes_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_item_routes",
+    "policy_name": "outlet_item_routes_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_item_routes",
+    "policy_name": "outlet_item_routes_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_item_routes",
     "policy_name": "outlet_item_routes_select",
     "permissive": "PERMISSIVE",
     "roles": "{public}",
@@ -212,6 +322,16 @@
   {
     "schema_name": "public",
     "table_name": "outlet_products",
+    "policy_name": "outlet_products_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_products",
     "policy_name": "outlet_products_read_stocktake",
     "permissive": "PERMISSIVE",
     "roles": "{public}",
@@ -238,6 +358,16 @@
     "command": "ALL",
     "using_expression": "is_admin(auth.uid())",
     "with_check_expression": "is_admin(auth.uid())"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_sales",
+    "policy_name": "outlet_sales_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
   },
   {
     "schema_name": "public",
@@ -322,6 +452,36 @@
   {
     "schema_name": "public",
     "table_name": "outlet_warehouses",
+    "policy_name": "outlet_warehouses_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_warehouses",
+    "policy_name": "outlet_warehouses_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_warehouses",
+    "policy_name": "outlet_warehouses_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlet_warehouses",
     "policy_name": "outlet_warehouses_select_backoffice",
     "permissive": "PERMISSIVE",
     "roles": "{authenticated}",
@@ -348,6 +508,36 @@
     "command": "ALL",
     "using_expression": "is_admin(auth.uid())",
     "with_check_expression": "is_admin(auth.uid())"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlets",
+    "policy_name": "outlets_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlets",
+    "policy_name": "outlets_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "outlets",
+    "policy_name": "outlets_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
   },
   {
     "schema_name": "public",
@@ -382,6 +572,36 @@
   {
     "schema_name": "public",
     "table_name": "pos_item_map",
+    "policy_name": "pos_item_map_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "pos_item_map",
+    "policy_name": "pos_item_map_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "pos_item_map",
+    "policy_name": "pos_item_map_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "pos_item_map",
     "policy_name": "pos_item_map_select_any_auth",
     "permissive": "PERMISSIVE",
     "roles": "{authenticated}",
@@ -408,6 +628,36 @@
     "command": "ALL",
     "using_expression": "is_admin(auth.uid())",
     "with_check_expression": "is_admin(auth.uid())"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "recipes",
+    "policy_name": "recipes_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "recipes",
+    "policy_name": "recipes_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "recipes",
+    "policy_name": "recipes_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
   },
   {
     "schema_name": "public",
@@ -512,11 +762,61 @@
   {
     "schema_name": "public",
     "table_name": "stock_ledger",
+    "policy_name": "stock_ledger_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "stock_ledger",
     "policy_name": "stock_ledger_stocktake_read",
     "permissive": "PERMISSIVE",
     "roles": "{authenticated}",
     "command": "SELECT",
     "using_expression": "(is_stocktake_user(auth.uid()) AND (location_type = 'warehouse'::text))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "suppliers",
+    "policy_name": "suppliers_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "suppliers",
+    "policy_name": "suppliers_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "suppliers",
+    "policy_name": "suppliers_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "uom_conversions",
+    "policy_name": "uom_conversions_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
     "with_check_expression": null
   },
   {
@@ -552,6 +852,36 @@
   {
     "schema_name": "public",
     "table_name": "vehicles",
+    "policy_name": "vehicles_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "vehicles",
+    "policy_name": "vehicles_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "vehicles",
+    "policy_name": "vehicles_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "vehicles",
     "policy_name": "vehicles_select_backoffice",
     "permissive": "PERMISSIVE",
     "roles": "{authenticated}",
@@ -567,6 +897,26 @@
     "roles": "{authenticated}",
     "command": "SELECT",
     "using_expression": "(has_stocktake_role(auth.uid()) OR is_admin(auth.uid()))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "warehouse_backoffice_logs",
+    "policy_name": "warehouse_backoffice_logs_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "warehouse_backoffice_logs",
+    "policy_name": "warehouse_backoffice_logs_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
     "with_check_expression": null
   },
   {
@@ -601,6 +951,36 @@
   },
   {
     "schema_name": "public",
+    "table_name": "warehouse_damages",
+    "policy_name": "warehouse_damages_backoffice_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "INSERT",
+    "using_expression": null,
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "warehouse_damages",
+    "policy_name": "warehouse_damages_backoffice_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": null
+  },
+  {
+    "schema_name": "public",
+    "table_name": "warehouse_damages",
+    "policy_name": "warehouse_damages_backoffice_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "command": "UPDATE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
+  },
+  {
+    "schema_name": "public",
     "table_name": "warehouse_purchase_items",
     "policy_name": "warehouse_purchase_items_admin_rw",
     "permissive": "PERMISSIVE",
@@ -611,152 +991,12 @@
   },
   {
     "schema_name": "public",
-    "table_name": "warehouse_purchase_receipts",
-    "policy_name": "warehouse_purchase_receipts_admin_rw",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "ALL",
-    "using_expression": "is_admin(auth.uid())",
-    "with_check_expression": "is_admin(auth.uid())"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_stock_counts",
-    "policy_name": "stocktake_counts_admin",
+    "table_name": "warehouse_purchase_items",
+    "policy_name": "warehouse_purchase_items_backoffice_insert",
     "permissive": "PERMISSIVE",
     "roles": "{public}",
-    "command": "ALL",
-    "using_expression": "(auth.role() = 'service_role'::text)",
-    "with_check_expression": "true"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_stock_counts",
-    "policy_name": "stocktake_counts_stocktakers",
-    "permissive": "PERMISSIVE",
-    "roles": "{public}",
-    "command": "ALL",
-    "using_expression": "is_stocktake_user(auth.uid())",
-    "with_check_expression": "is_stocktake_user(auth.uid())"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_stock_periods",
-    "policy_name": "stocktake_periods_admin",
-    "permissive": "PERMISSIVE",
-    "roles": "{public}",
-    "command": "ALL",
-    "using_expression": "(auth.role() = 'service_role'::text)",
-    "with_check_expression": "true"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_stock_periods",
-    "policy_name": "stocktake_periods_stocktakers",
-    "permissive": "PERMISSIVE",
-    "roles": "{public}",
-    "command": "ALL",
-    "using_expression": "is_stocktake_user(auth.uid())",
-    "with_check_expression": "is_stocktake_user(auth.uid())"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_stock_periods",
-    "policy_name": "warehouse_stock_periods_select_backoffice",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "SELECT",
-    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
-    "with_check_expression": null
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_transfer_items",
-    "policy_name": "warehouse_transfer_items_admin_rw",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "ALL",
-    "using_expression": "is_admin(auth.uid())",
-    "with_check_expression": "is_admin(auth.uid())"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouse_transfers",
-    "policy_name": "warehouse_transfers_admin_rw",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "ALL",
-    "using_expression": "is_admin(auth.uid())",
-    "with_check_expression": "is_admin(auth.uid())"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouses",
-    "policy_name": "warehouses_admin_rw",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "ALL",
-    "using_expression": "is_admin(auth.uid())",
-    "with_check_expression": "is_admin(auth.uid())"
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouses",
-    "policy_name": "warehouses_select_backoffice",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "SELECT",
-    "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
-    "with_check_expression": null
-  },
-  {
-    "schema_name": "public",
-    "table_name": "warehouses",
-    "policy_name": "warehouses_select_stocktake",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "SELECT",
-    "using_expression": "(has_stocktake_role(auth.uid()) OR is_admin(auth.uid()))",
-    "with_check_expression": null
-  },
-  {
-    "schema_name": "storage",
-    "table_name": "objects",
-    "policy_name": "insert_orders_by_outlet_prefix",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
     "command": "INSERT",
     "using_expression": null,
-    "with_check_expression": "((bucket_id = 'orders'::text) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM unnest(member_outlet_ids(auth.uid())) oid(oid)\n  WHERE (objects.path_tokens[1] = (oid.oid)::text)))) AND (name ~ '^[0-9a-fA-F-]+/.+'::text))"
-  },
-  {
-    "schema_name": "storage",
-    "table_name": "objects",
-    "policy_name": "insert_signatures_by_outlet_prefix",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "INSERT",
-    "using_expression": null,
-    "with_check_expression": "((bucket_id = 'signatures'::text) AND (is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM unnest(member_outlet_ids(auth.uid())) oid(oid)\n  WHERE (objects.path_tokens[1] = (oid.oid)::text)))) AND (name ~ '^[0-9a-fA-F-]+/.+'::text))"
-  },
-  {
-    "schema_name": "storage",
-    "table_name": "objects",
-    "policy_name": "stocktake_read_variance_pdf",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "SELECT",
-    "using_expression": "((bucket_id = 'orders'::text) AND (name ~~ 'stocktake/variance/%'::text))",
-    "with_check_expression": null
-  },
-  {
-    "schema_name": "storage",
-    "table_name": "objects",
-    "policy_name": "stocktake_upload_variance_pdf",
-    "permissive": "PERMISSIVE",
-    "roles": "{authenticated}",
-    "command": "INSERT",
-    "using_expression": null,
-    "with_check_expression": "((bucket_id = 'orders'::text) AND (name ~~ 'stocktake/variance/%'::text))"
+    "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
   }
 ]

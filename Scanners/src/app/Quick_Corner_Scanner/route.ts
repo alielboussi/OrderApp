@@ -1680,7 +1680,7 @@ function createHtml(config: {
       <h3 id="qty-title">Enter quantity</h3>
       <p id="qty-uom">UNIT</p>
       <p id="qty-hint" class="qty-hint"></p>
-      <input type="number" id="qty-input" min="0" step="0.01" placeholder="0" required />
+      <input type="text" id="qty-input" inputmode="decimal" min="0" step="0.01" placeholder="0" required />
       <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
         <button type="button" data-key="7">7</button>
         <button type="button" data-key="8">8</button>
@@ -2425,12 +2425,12 @@ function createHtml(config: {
 
       function normalizeQtyInput(value) {
         let text = String(value ?? '');
+        text = text.replace(/,/g, '.');
         text = text.replace(/[^0-9.]/g, '');
-        const dotIndex = text.indexOf('.');
-        if (dotIndex >= 0) {
-          const before = text.slice(0, dotIndex);
-          let after = text.slice(dotIndex + 1).replace(/\./g, '');
-          after = after.slice(0, 2);
+        const parts = text.split('.');
+        if (parts.length > 1) {
+          const before = parts.shift() ?? '';
+          const after = parts.join('').slice(0, 2);
           text = before + '.' + after;
         }
         if (text.startsWith('.')) {
@@ -4025,7 +4025,8 @@ function createHtml(config: {
           decBtn.className = 'variant-qty-button';
           decBtn.textContent = '-';
           const qtyInput = document.createElement('input');
-          qtyInput.type = 'number';
+          qtyInput.type = 'text';
+          qtyInput.inputMode = 'decimal';
           qtyInput.min = '0';
           qtyInput.step = '0.01';
           qtyInput.placeholder = '0';

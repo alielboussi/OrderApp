@@ -28,6 +28,7 @@ const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
   : 'warehouse_stock_items';
+const EXCLUDED_PRODUCT_IDS = ['ddd89b2a-d856-4961-8763-b6d788104d2a'];
 const MULTIPLY_QTY_BY_PACKAGE = true;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;
@@ -2664,7 +2665,7 @@ function createHtml(config: {
             variantsByItem.set(variant.item_id, list);
           });
 
-          return (products ?? []).map((product) => {
+          return (products ?? []).filter((product) => !EXCLUDED_PRODUCT_IDS.includes(product?.id ?? '')).map((product) => {
             if (!product?.id) return product;
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
@@ -3010,7 +3011,8 @@ function createHtml(config: {
           variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
+          unit: item.supplierPackUom ?? item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
+          supplierPackUom: item.supplierPackUom ?? null,
           packUom: item.packUom ?? null,
           unitCost: item.unitCost ?? null
         }));
@@ -3026,7 +3028,7 @@ function createHtml(config: {
               : (item.productName ?? 'Item ' + (index + 1));
             const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = formatUnitLabel(item.packUom ?? item.unit ?? 'unit', qtyLabel);
+            const unitLabel = formatUnitLabel(item.supplierPackUom ?? item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
@@ -4239,6 +4241,7 @@ function createHtml(config: {
           variationName: variation?.name ?? null,
           baseUom,
           uom: effectiveUom,
+          supplierPackUom: packUom,
           packUom,
           qtyMultiplier,
           multiplierMode: context === 'purchase' ? 'package' : 'transfer',
@@ -4253,7 +4256,7 @@ function createHtml(config: {
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = entry.baseUom;
+        qtyUom.textContent = entry.supplierPackUom ?? entry.packUom ?? entry.baseUom ?? entry.uom ?? 'UNIT';
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -4282,6 +4285,7 @@ function createHtml(config: {
           variationName: variation?.name ?? null,
           baseUom,
           uom: effectiveUom,
+          supplierPackUom: packUom,
           packUom,
           qtyMultiplier,
           multiplierMode: context === 'purchase' ? 'package' : 'transfer',
@@ -4346,7 +4350,7 @@ function createHtml(config: {
           name.textContent = row.label;
           const uom = document.createElement('div');
           uom.className = 'variant-uom';
-          uom.textContent = formatUnitLabel(entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit', 2);
+          uom.textContent = formatUnitLabel(entry.supplierPackUom ?? entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit', 2);
           meta.appendChild(name);
           meta.appendChild(uom);
 
@@ -4524,7 +4528,7 @@ function createHtml(config: {
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
+        qtyUom.textContent = target.supplierPackUom ?? target.packUom ?? target.baseUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4611,7 +4615,7 @@ function createHtml(config: {
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
-            uomCell.textContent = item.uom ?? 'UNIT';
+            uomCell.textContent = item.supplierPackUom ?? item.packUom ?? item.uom ?? 'UNIT';
             if (context === 'purchase') {
               const costCell = document.createElement('td');
               costCell.textContent = formatAmount(item.unitCost) ?? '-';

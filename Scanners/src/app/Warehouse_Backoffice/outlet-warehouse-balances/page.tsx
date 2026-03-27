@@ -196,9 +196,9 @@ export default function OutletWarehouseBalancesPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   const search = "";
-  const [includeIngredients, setIncludeIngredients] = useState(false);
-  const [includeRaw, setIncludeRaw] = useState(false);
-  const [includeFinished, setIncludeFinished] = useState(false);
+  const [includeIngredients, setIncludeIngredients] = useState(true);
+  const [includeRaw, setIncludeRaw] = useState(true);
+  const [includeFinished, setIncludeFinished] = useState(true);
   const [baseOnly, setBaseOnly] = useState(false);
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
   const [includePurchases, setIncludePurchases] = useState(true);
