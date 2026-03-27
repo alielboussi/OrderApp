@@ -5,13 +5,11 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
-const HOMES_PARENT_ID = 'c021ea3b-7109-4690-be6c-0c7ae8278a5d';
 const DESTINATION_CHOICES = [
   { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
 const LOCKED_PRODUCT_IDS = ['20de5f8f-cc97-4ae6-aa51-e158225f3703', 'bcacc496-ffd7-430b-8c17-709d0497a1ff'] as const;
-const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', 'a7addcec-bcf5-4eab-94f0-6fb704ad6ca4'] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -1596,13 +1594,6 @@ function createHtml(config: {
                     <option value="">Select...</option>
                   </select>
                 </label>
-                <label class="destination-pill-select">
-                  <span class="destination-pill-hint destination-pill-hint--two-line">Homes &amp;<br />Departments</span>
-                  <button type="button" id="homes-picker" class="destination-pill-button">Select home</button>
-                  <select id="console-homes-select" class="destination-hidden-select">
-                    <option value="">Select...</option>
-                  </select>
-                </label>
               </div>
             </div>
           </div>
@@ -1666,15 +1657,6 @@ function createHtml(config: {
     </div>
   </div>
 
-  <div id="homes-modal" class="select-modal" aria-hidden="true">
-    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="homes-modal-title">
-      <div class="select-modal-header" id="homes-modal-title">Select home</div>
-      <div class="select-modal-grid" id="homes-modal-options"></div>
-      <div class="select-modal-actions">
-        <button type="button" class="select-modal-close" data-modal-close="homes-modal">Close</button>
-      </div>
-    </div>
-  </div>
 
   <div id="operator-modal" class="select-modal" aria-hidden="true">
     <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-modal-title">
@@ -2023,8 +2005,6 @@ function createHtml(config: {
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
-      const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
-      const EXTRA_HOMES_IDS = ${serializeForScript(EXTRA_HOMES_IDS)};
 
       const state = {
         session: null,
@@ -2049,8 +2029,6 @@ function createHtml(config: {
         operators: [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
         destinationSelection: null,
-        homesOptions: [],
-        homesSelection: null,
         purchaseForm: {
           supplierId: '',
           referenceCode: ''
@@ -2267,14 +2245,10 @@ function createHtml(config: {
         damage: document.getElementById('damage-operator-picker')
       };
       const destinationSelect = document.getElementById('console-destination-select');
-      const homesSelect = document.getElementById('console-homes-select');
       const destinationPicker = document.getElementById('destination-picker');
-      const homesPicker = document.getElementById('homes-picker');
       const destinationModal = document.getElementById('destination-modal');
-      const homesModal = document.getElementById('homes-modal');
       const supplierModal = document.getElementById('supplier-modal');
       const destinationModalOptions = document.getElementById('destination-modal-options');
-      const homesModalOptions = document.getElementById('homes-modal-options');
       const supplierModalOptions = document.getElementById('supplier-modal-options');
       const operatorSelectModal = document.getElementById('operator-modal');
       const operatorSelectModalOptions = document.getElementById('operator-modal-options');
@@ -2893,54 +2867,23 @@ function createHtml(config: {
         return 1;
       }
 
-      function resolveTransferQuantity(product, variation) {
-        const qty = Number(variation?.transfer_quantity ?? product?.transfer_quantity);
-        if (Number.isFinite(qty) && qty > 0) {
-          return qty;
-        }
-        return 1;
-      }
-
-      function resolveBaseUom(product, variation, context) {
-        if (context === 'purchase') {
-          return (variation?.uom || product.uom || 'unit').toUpperCase();
-        }
+      function resolvePackUom(product, variation) {
         const unit =
-          variation?.consumption_uom ||
-          product.consumption_uom ||
+          variation?.purchase_pack_unit ||
           variation?.transfer_unit ||
           product.transfer_unit ||
-          variation?.uom ||
           product.uom ||
           'unit';
         return String(unit).toUpperCase();
       }
 
-      function resolveEffectiveUom(product, variation, context) {
-        if (context === 'purchase') {
-          const unit =
-            variation?.consumption_uom ||
-            product.consumption_uom ||
-            variation?.transfer_unit ||
-            product.transfer_unit ||
-            variation?.uom ||
-            product.uom ||
-            'unit';
-          return String(unit).toUpperCase();
-        }
-        return resolveBaseUom(product, variation, context);
-      }
-
-      function resolvePackUom(product, variation, fallbackUom) {
-        const unit = variation?.uom || product.uom || fallbackUom || 'unit';
+      function resolveConsumptionUom(product, variation, packUom) {
+        const unit =
+          variation?.consumption_uom ||
+          product.consumption_uom ||
+          packUom ||
+          'unit';
         return String(unit).toUpperCase();
-      }
-
-      function resolveQtyMultiplier(product, variation, context) {
-        if (context === 'purchase') {
-          return resolvePackageSize(product, variation);
-        }
-        return resolveTransferQuantity(product, variation);
       }
 
       function computeEffectiveQty(rawQty, entry) {
@@ -2948,25 +2891,17 @@ function createHtml(config: {
         if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
           return null;
         }
-        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
-        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 0 ? rawMultiplier : 1;
-        const mode = entry?.multiplierMode || 'transfer';
-        if (mode === 'package') {
-          return qtyNumber * (MULTIPLY_QTY_BY_PACKAGE ? safeMultiplier : 1);
-        }
-        return qtyNumber * safeMultiplier;
+        const multiplier = MULTIPLY_QTY_BY_PACKAGE ? entry.packageSize ?? 1 : 1;
+        return qtyNumber * multiplier;
       }
 
       function describeQty(entry, baseQty, effectiveQty) {
-        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
-        const effectiveUom = entry.uom ?? baseUom;
-        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
-        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
-        const mode = entry?.multiplierMode || 'transfer';
-        if ((mode === 'package' && MULTIPLY_QTY_BY_PACKAGE && safeMultiplier > 1) || (mode === 'transfer' && safeMultiplier > 1)) {
-          return baseQty + ' ' + baseUom + ' → ' + effectiveQty + ' ' + effectiveUom;
+        const unitLabel = entry.uom ?? 'UNIT';
+        if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
+          const packLabel = entry.packUom ?? 'PACK';
+          return baseQty + ' ' + packLabel + ' → ' + effectiveQty + ' ' + unitLabel;
         }
-        return effectiveQty + ' ' + effectiveUom;
+        return effectiveQty + ' ' + unitLabel;
       }
 
       function formatCombinedUom(stockUom, consumptionUom) {
@@ -2985,7 +2920,8 @@ function createHtml(config: {
           variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
+          unit: item.supplierPackUom ?? item.packUom ?? item.uom ?? 'unit',
+          supplierPackUom: item.supplierPackUom ?? null,
           packUom: item.packUom ?? null,
           unitCost: item.unitCost ?? null
         }));
@@ -3001,7 +2937,7 @@ function createHtml(config: {
               : (item.productName ?? 'Item ' + (index + 1));
             const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = formatUnitLabel(item.packUom ?? item.unit ?? 'unit', qtyLabel);
+            const unitLabel = formatUnitLabel(item.supplierPackUom ?? item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
@@ -3011,22 +2947,12 @@ function createHtml(config: {
 
       function updateQtyHint(entry) {
         if (!qtyHint) return;
-        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
-        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
-        const mode = entry?.multiplierMode || 'transfer';
-        if (!entry || safeMultiplier <= 1) {
+        if (!entry || !(MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1)) {
           qtyHint.style.display = 'none';
           qtyHint.textContent = '';
           return;
         }
-        if (mode === 'package' && !MULTIPLY_QTY_BY_PACKAGE) {
-          qtyHint.style.display = 'none';
-          qtyHint.textContent = '';
-          return;
-        }
-        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
-        const effectiveUom = entry.uom ?? baseUom;
-        qtyHint.textContent = 'Each ' + baseUom + ' = ' + safeMultiplier + ' ' + effectiveUom;
+        qtyHint.textContent = 'Each pack = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
         qtyHint.style.display = 'block';
       }
 
@@ -3225,31 +3151,6 @@ function createHtml(config: {
         syncDestinationPillLabel();
       }
 
-      function renderHomesOptions() {
-        if (!homesSelect) return;
-        const existingValue = homesSelect.value;
-        homesSelect.innerHTML = '';
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = state.homesOptions.length ? 'Select home' : 'No homes';
-        homesSelect.appendChild(placeholder);
-        state.homesOptions.forEach((option) => {
-          if (!option?.id) return;
-          const opt = document.createElement('option');
-          opt.value = option.id;
-          opt.textContent = option.label ?? 'Home';
-          homesSelect.appendChild(opt);
-        });
-        const savedValue = state.homesSelection ?? existingValue;
-        homesSelect.value = savedValue || '';
-        homesSelect.disabled = !state.homesOptions.length;
-        if (homesPicker) {
-          homesPicker.textContent = getSelectedHomeDestination()?.label ?? 'Select home';
-          homesPicker.disabled = !state.homesOptions.length;
-        }
-        renderHomesCards();
-        syncDestinationPillLabel();
-      }
 
       function openSelectModal(modal) {
         if (!modal) return;
@@ -3304,34 +3205,6 @@ function createHtml(config: {
         });
       }
 
-      function renderHomesCards() {
-        if (!homesModalOptions) return;
-        homesModalOptions.innerHTML = '';
-        if (!state.homesOptions.length) {
-          const empty = document.createElement('button');
-          empty.type = 'button';
-          empty.className = 'select-card';
-          empty.textContent = 'No homes found';
-          empty.disabled = true;
-          homesModalOptions.appendChild(empty);
-          return;
-        }
-        state.homesOptions.forEach((option) => {
-          if (!option?.id) return;
-          const card = document.createElement('button');
-          card.type = 'button';
-          card.className = 'select-card';
-          card.textContent = option.label ?? 'Home';
-          card.addEventListener('click', () => {
-            if (homesSelect) {
-              homesSelect.value = option.id;
-            }
-            handleHomesSelection(option.id);
-            closeSelectModal(homesModal);
-          });
-          homesModalOptions.appendChild(card);
-        });
-      }
 
       function showOperatorPrompt(context) {
         if (!operatorSelectModal) {
@@ -3486,16 +3359,6 @@ function createHtml(config: {
         return null;
       }
 
-      function getHomesOptionById(id) {
-        if (!id) return null;
-        const optionFromState = state.homesOptions.find((option) => option.id === id);
-        if (optionFromState) return optionFromState;
-        const warehouseRecord = state.warehouses.find((w) => w.id === id);
-        if (warehouseRecord) {
-          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Home' };
-        }
-        return null;
-      }
 
       function getSelectedPrimaryDestination() {
         const id = state.destinationSelection;
@@ -3505,34 +3368,22 @@ function createHtml(config: {
         return { id, label: 'Destination warehouse' };
       }
 
-      function getSelectedHomeDestination() {
-        const id = state.homesSelection;
-        if (!id) return null;
-        const option = getHomesOptionById(id);
-        if (option) return option;
-        return { id, label: 'Home' };
-      }
-
       function getSelectedDestination() {
-        return getSelectedHomeDestination() ?? getSelectedPrimaryDestination();
+        return getSelectedPrimaryDestination();
       }
 
-      function showDestinationPrompt(context) {
-        if (context === 'transfer' && homesSelect && state.homesOptions.length) {
-          openSelectModal(homesModal);
-          return;
-        }
+      function showDestinationPrompt() {
         openSelectModal(destinationModal);
       }
 
       function ensureDestinationSelected(context, shouldPrompt = true) {
-        const selection = context === 'transfer' ? getSelectedDestination() : getSelectedPrimaryDestination();
+        const selection = getSelectedDestination();
         if (selection) {
           return true;
         }
         if (shouldPrompt) {
           showResult('Select a destination warehouse for ' + formatOperatorLabel(context) + '.', true);
-          showDestinationPrompt(context);
+          showDestinationPrompt();
         }
         return false;
       }
@@ -3551,9 +3402,7 @@ function createHtml(config: {
         const trimmed = warehouseId || '';
         if (!trimmed) {
           state.destinationSelection = null;
-          if (!state.homesSelection) {
-            state.lockedDest = null;
-          }
+          state.lockedDest = null;
           if (destinationSelect && destinationSelect.value !== '') {
             destinationSelect.value = '';
           }
@@ -3571,61 +3420,12 @@ function createHtml(config: {
           return;
         }
         state.destinationSelection = trimmed;
-        state.homesSelection = null;
         state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
         if (destinationSelect && destinationSelect.value !== trimmed) {
           destinationSelect.value = trimmed;
         }
-        if (homesSelect && homesSelect.value !== '') {
-          homesSelect.value = '';
-        }
         if (destinationPicker) {
           destinationPicker.textContent = option.label ?? 'Select outlet';
-        }
-        if (homesPicker) {
-          homesPicker.textContent = 'Select home';
-        }
-        syncDestinationPillLabel();
-        enforceOperatorLocks();
-      }
-
-      function handleHomesSelection(warehouseId) {
-        const trimmed = warehouseId || '';
-        if (!trimmed) {
-          state.homesSelection = null;
-          if (!state.destinationSelection) {
-            state.lockedDest = null;
-          }
-          if (homesSelect && homesSelect.value !== '') {
-            homesSelect.value = '';
-          }
-          if (homesPicker) {
-            homesPicker.textContent = 'Select home';
-          }
-          syncDestinationPillLabel();
-          enforceOperatorLocks();
-          return;
-        }
-        const option = getHomesOptionById(trimmed);
-        if (!option) {
-          showResult('Home unavailable. Refresh directory.', true);
-          renderHomesOptions();
-          return;
-        }
-        state.homesSelection = trimmed;
-        state.destinationSelection = null;
-        state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
-        if (homesSelect && homesSelect.value !== trimmed) {
-          homesSelect.value = trimmed;
-        }
-        if (destinationSelect && destinationSelect.value !== '') {
-          destinationSelect.value = '';
-        }
-        if (homesPicker) {
-          homesPicker.textContent = option.label ?? 'Select home';
-        }
-        if (destinationPicker) {
-          destinationPicker.textContent = 'Select outlet';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -4062,22 +3862,26 @@ function createHtml(config: {
 
       function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
-        const baseUom = resolveBaseUom(product, variation, context);
-        const effectiveUom = resolveEffectiveUom(product, variation, context);
-        const packUom = resolvePackUom(product, variation, baseUom);
-        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
+        const packUom = resolvePackUom(product, variation);
+        const consumptionUom = resolveConsumptionUom(product, variation, packUom);
+        const packageSize = resolvePackageSize(product, variation);
         const entry = {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          baseUom,
-          uom: effectiveUom,
+          uom: consumptionUom,
+          supplierPackUom: packUom,
           packUom,
-          qtyMultiplier,
-          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
+          packageSize,
           unitCost: null
         };
+        const isDamage = context === 'damage';
+        if (isDamage) {
+          entry.packageSize = 1;
+          entry.packUom = entry.uom;
+          entry.supplierPackUom = entry.packUom;
+        }
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
@@ -4087,7 +3891,7 @@ function createHtml(config: {
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = entry.baseUom;
+        qtyUom.textContent = entry.packUom ?? entry.uom ?? 'UNIT';
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -4105,20 +3909,18 @@ function createHtml(config: {
       }
 
       function buildEntry(product, variation, context = state.mode) {
-        const baseUom = resolveBaseUom(product, variation, context);
-        const effectiveUom = resolveEffectiveUom(product, variation, context);
-        const packUom = resolvePackUom(product, variation, baseUom);
-        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
+        const packUom = resolvePackUom(product, variation);
+        const consumptionUom = resolveConsumptionUom(product, variation, packUom);
+        const packageSize = resolvePackageSize(product, variation);
         return {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          baseUom,
-          uom: effectiveUom,
+          uom: consumptionUom,
+          supplierPackUom: packUom,
           packUom,
-          qtyMultiplier,
-          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
+          packageSize,
           unitCost: null
         };
       }
@@ -4151,6 +3953,11 @@ function createHtml(config: {
 
         rows.forEach((row) => {
           const entry = buildEntry(product, row.variation, context);
+          if (context === 'damage') {
+            entry.packageSize = 1;
+            entry.packUom = entry.uom;
+            entry.supplierPackUom = entry.packUom;
+          }
           const wrapper = document.createElement('div');
           wrapper.className = 'variant-row';
 
@@ -4177,7 +3984,7 @@ function createHtml(config: {
           name.textContent = row.label;
           const uom = document.createElement('div');
           uom.className = 'variant-uom';
-          uom.textContent = formatUnitLabel(entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit', 2);
+          uom.textContent = formatUnitLabel(entry.supplierPackUom ?? entry.packUom ?? entry.uom ?? 'unit', 2);
           meta.appendChild(name);
           meta.appendChild(uom);
 
@@ -4355,7 +4162,7 @@ function createHtml(config: {
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
+        qtyUom.textContent = target.supplierPackUom ?? target.packUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4818,51 +4625,7 @@ function createHtml(config: {
           } else {
             state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
           }
-          let homesRows = state.warehouses.filter((w) => w.parent_warehouse_id === homesParentId);
-          if (!homesRows.length && homesParentId) {
-            const { data: childRows, error: childErr } = await supabase
-              .from('warehouses')
-              .select('id,name,parent_warehouse_id,active')
-              .eq('parent_warehouse_id', homesParentId);
-            if (!childErr && Array.isArray(childRows)) {
-              homesRows = childRows.map((row) => ({ ...row, active: row?.active ?? true }));
-            }
-          }
-          const extraHomes = EXTRA_HOMES_IDS
-            .map((id) => state.warehouses.find((row) => row.id === id) ?? null)
-            .filter((row) => row && row.active !== false);
-          if (extraHomes.length) {
-            const existingHomes = new Set(homesRows.map((row) => row.id));
-            extraHomes.forEach((row) => {
-              if (!existingHomes.has(row.id)) {
-                homesRows.push(row);
-              }
-            });
-          }
-          state.homesOptions = homesRows
-            .filter((row) => row && row.active !== false)
-            .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
-            .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
-
-          if (state.homesSelection && state.destinationSelection) {
-            state.destinationSelection = null;
-            if (destinationSelect) {
-              destinationSelect.value = '';
-            }
-          }
-
-          const hasSavedHomesSelection = state.homesSelection && state.homesOptions.some((opt) => opt.id === state.homesSelection);
-          if (!hasSavedHomesSelection) {
-            state.homesSelection = null;
-            if (homesSelect) {
-              homesSelect.value = '';
-            }
-          }
-          if (state.homesSelection) {
-            state.lockedDest = state.warehouses.find((w) => w.id === state.homesSelection) ?? null;
-          }
           renderDestinationOptions();
-          renderHomesOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
             destMissingText: 'Select outlet'
           });
@@ -5718,19 +5481,9 @@ function createHtml(config: {
         handleDestinationSelection(value);
       });
 
-      homesSelect?.addEventListener('change', (event) => {
-        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
-        handleHomesSelection(value);
-      });
-
       destinationPicker?.addEventListener('click', () => {
         renderDestinationCards();
         openSelectModal(destinationModal);
-      });
-
-      homesPicker?.addEventListener('click', () => {
-        renderHomesCards();
-        openSelectModal(homesModal);
       });
 
       purchaseSupplierPicker?.addEventListener('click', () => {
@@ -5753,11 +5506,6 @@ function createHtml(config: {
         }
       });
 
-      homesModal?.addEventListener('click', (event) => {
-        if (event.target === homesModal) {
-          closeSelectModal(homesModal);
-        }
-      });
 
       operatorSelectModal?.addEventListener('click', (event) => {
         if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
@@ -5775,7 +5523,6 @@ function createHtml(config: {
         btn.addEventListener('click', () => {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
-          if (targetId === 'homes-modal') closeSelectModal(homesModal);
           if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
             closeSelectModal(operatorSelectModal);
           }
