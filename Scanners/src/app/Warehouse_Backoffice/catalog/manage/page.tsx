@@ -44,7 +44,6 @@ type ProductFormState = {
 };
 
 const qtyUnitOptions = [
-  { value: "each", label: "Each" },
   { value: "pc", label: "Pc(s)" },
   { value: "g", label: "Gram(s)" },
   { value: "kg", label: "Kilogram(s)" },
@@ -74,12 +73,12 @@ const defaultProductForm: ProductFormState = {
   sku: "",
   supplier_sku: "",
   item_kind: "finished",
-  consumption_unit: "each",
-  purchase_pack_unit: "each",
+  consumption_unit: "pc",
+  purchase_pack_unit: "pc",
   units_per_purchase_pack: "1",
   purchase_unit_mass: "",
   purchase_unit_mass_uom: "kg",
-  transfer_unit: "each",
+  transfer_unit: "pc",
   transfer_quantity: "1",
   consumption_qty_per_base: "1",
   qty_decimal_places: "0",
@@ -132,14 +131,14 @@ export default function CatalogManagePage() {
   const [variantSku, setVariantSku] = useState("");
   const [variantSupplierSku, setVariantSupplierSku] = useState("");
   const [variantItemKind, setVariantItemKind] = useState("finished");
-  const [variantConsumptionUom, setVariantConsumptionUom] = useState("each");
+  const [variantConsumptionUom, setVariantConsumptionUom] = useState("pc");
   const [variantStocktakeUom, setVariantStocktakeUom] = useState("");
   const [variantQtyDecimalPlaces, setVariantQtyDecimalPlaces] = useState("0");
-  const [variantPurchasePackUnit, setVariantPurchasePackUnit] = useState("each");
+  const [variantPurchasePackUnit, setVariantPurchasePackUnit] = useState("pc");
   const [variantUnitsPerPurchasePack, setVariantUnitsPerPurchasePack] = useState("1");
   const [variantPurchaseUnitMass, setVariantPurchaseUnitMass] = useState("");
   const [variantPurchaseUnitMassUom, setVariantPurchaseUnitMassUom] = useState("kg");
-  const [variantTransferUnit, setVariantTransferUnit] = useState("each");
+  const [variantTransferUnit, setVariantTransferUnit] = useState("pc");
   const [variantTransferQuantity, setVariantTransferQuantity] = useState("1");
   const [variantCost, setVariantCost] = useState("0");
   const [variantSellingPrice, setVariantSellingPrice] = useState("0");
@@ -338,14 +337,14 @@ export default function CatalogManagePage() {
       setVariantSupplierSku("");
       setVariantCost("0");
       setVariantItemKind("finished");
-      setVariantConsumptionUom("each");
+      setVariantConsumptionUom("pc");
       setVariantStocktakeUom("");
       setVariantQtyDecimalPlaces("0");
-      setVariantPurchasePackUnit("each");
+      setVariantPurchasePackUnit("pc");
       setVariantUnitsPerPurchasePack("1");
       setVariantPurchaseUnitMass("");
       setVariantPurchaseUnitMassUom("kg");
-      setVariantTransferUnit("each");
+      setVariantTransferUnit("pc");
       setVariantTransferQuantity("1");
       setVariantSellingPrice("0");
       setVariantOutletOrderVisible(true);

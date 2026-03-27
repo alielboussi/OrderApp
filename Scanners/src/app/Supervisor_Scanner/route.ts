@@ -5,23 +5,16 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
-const DESTINATION_CHOICES = [] as const;
+const EXTRA_SOURCE_IDS = ['d829d739-7311-4647-af91-cad33c21280e'] as const;
+const DESTINATION_CHOICES = [
+  { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' }
+] as const;
 const LOCKED_DEST_ID = '';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
   : 'warehouse_stock_items';
-const ALLOWED_DESTINATION_IDS = [
-  'c77376f7-1ede-4518-8180-b3efeecda128',
-  '0cdfba88-b3b9-43d5-a2a8-4e852bf9300b'
-] as const;
-const STORAGE_HOME_ALLOWED_IDS = [
-  '89e4a592-1385-4b40-9685-2178f124a9da',
-  '94f86655-bed8-404c-8614-007a846f89f2',
-  '9d0a3a83-1fea-45a8-8771-25cc1db9f07e',
-  'd829d739-7311-4647-af91-cad33c21280e',
-  '587fcdb9-c998-42d6-b88e-bbcd1a66b088'
-] as const;
+const ALLOWED_DESTINATION_IDS = ['c77376f7-1ede-4518-8180-b3efeecda128'] as const;
 const MULTIPLY_QTY_BY_PACKAGE = true;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;
@@ -64,7 +57,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 }
 
 async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
-  const ids = [LOCKED_SOURCE_ID, LOCKED_DEST_ID].filter(Boolean);
+  const ids = [LOCKED_SOURCE_ID, ...EXTRA_SOURCE_IDS, LOCKED_DEST_ID].filter(Boolean);
   if (!ids.length) {
     return [];
   }
@@ -263,6 +256,36 @@ function createHtml(config: {
     }
     .search-field {
       margin-top: 8px;
+    }
+    .product-card-grid {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .product-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 27, 45, 0.28);
+      border-radius: 16px;
+      padding: 12px 14px;
+      text-align: left;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .product-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 27, 45, 0.75);
+      box-shadow: 0 18px 28px rgba(255, 0, 77, 0.18);
+    }
+    .product-card:active {
+      transform: translateY(0);
+    }
+    .product-card-title {
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
     }
     .ingredient-panel {
       display: flex;
@@ -1544,14 +1567,7 @@ function createHtml(config: {
 
       <article class="panel transfer-panel">
         <form id="transfer-form">
-          <section class="ingredient-panel">
-            <div class="ingredient-head">
-              <h3>Ingredients</h3>
-              <p>Tap an ingredient or variant to enter quantity.</p>
-            </div>
-            <div id="ingredient-grid" class="ingredient-grid" aria-live="polite"></div>
-            <p id="ingredient-empty" class="ingredient-empty">No ingredients available.</p>
-          </section>
+          <div id="transfer-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -1701,9 +1717,7 @@ function createHtml(config: {
                 <option value="">Select supplier</option>
               </select>
             </label>
-            <label class="search-field">Item search
-              <input id="purchase-item-search" type="text" placeholder="Search items or scan barcode" autocomplete="off" />
-            </label>
+            <div id="purchase-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
             <div class="reference-field">
               <label>Reference / Invoice #
                 <input type="text" id="purchase-reference" placeholder="INV-12345" required />
@@ -1779,14 +1793,7 @@ function createHtml(config: {
       <form id="damage-form">
         <div class="damage-shell">
           <h3>Log Damages</h3>
-          <section class="ingredient-panel">
-            <div class="ingredient-head">
-              <h3>Ingredients</h3>
-              <p>Tap an ingredient to log damages.</p>
-            </div>
-            <div id="damage-ingredient-grid" class="ingredient-grid" aria-live="polite"></div>
-            <p id="damage-ingredient-empty" class="ingredient-empty">No ingredients available.</p>
-          </section>
+          <div id="damage-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <div class="cart-head">
             <div>
               <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Damages Cart</h3>
@@ -1885,7 +1892,6 @@ function createHtml(config: {
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
     const ALLOWED_DESTINATION_IDS = ${serializeForScript(ALLOWED_DESTINATION_IDS)};
-    const STORAGE_HOME_ALLOWED_IDS = ${serializeForScript(STORAGE_HOME_ALLOWED_IDS)};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
     const SCANNER_NAME = 'Supervisor';
@@ -1953,12 +1959,14 @@ function createHtml(config: {
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
+      const extraSourceIds = ${serializeForScript(EXTRA_SOURCE_IDS)};
+      const sourceWarehouseIds = [lockedSourceId, ...(Array.isArray(extraSourceIds) ? extraSourceIds : [])]
+        .filter(Boolean);
 
       const state = {
         session: null,
         warehouses: initialWarehouses,
         products: [],
-        ingredients: [],
         variations: new Map(),
         variationIndex: new Map(),
         mode: 'transfer',
@@ -2069,10 +2077,9 @@ function createHtml(config: {
       const destLabel = document.getElementById('dest-label');
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
-      const ingredientGrid = document.getElementById('ingredient-grid');
-      const ingredientEmpty = document.getElementById('ingredient-empty');
-      const damageIngredientGrid = document.getElementById('damage-ingredient-grid');
-      const damageIngredientEmpty = document.getElementById('damage-ingredient-empty');
+      const transferProductCards = document.getElementById('transfer-product-cards');
+      const purchaseProductCards = document.getElementById('purchase-product-cards');
+      const damageProductCards = document.getElementById('damage-product-cards');
       const damageItemSearchInput = document.getElementById('damage-item-search');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
@@ -2254,7 +2261,7 @@ function createHtml(config: {
         destMissingText: state.lockedDest ? undefined : 'Choose destination'
       });
 
-      openOperatorGate();
+      // Operators are opened after the directory loads to avoid an empty modal on first paint.
 
       window.setTimeout(() => {
         focusActiveScanner();
@@ -2811,7 +2818,7 @@ function createHtml(config: {
 
         const loadStockAndDefaults = async () => {
           const activeDestId = state.destinationSelection;
-          const allowedWarehouses = [lockedSourceId, activeDestId].filter(Boolean);
+          const allowedWarehouses = [...sourceWarehouseIds, activeDestId].filter(Boolean);
           const [stockResult, destStockResult, defaultItemsResult, outletRouteResult, storageHomesResult] = await Promise.all([
             supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
             activeDestId
@@ -2881,6 +2888,7 @@ function createHtml(config: {
             }
           });
 
+          const sourceWarehouseSet = new Set(sourceWarehouseIds.filter(Boolean));
           latestStorageHomes.forEach((home) => {
             if (home?.storage_warehouse_id === activeDestId && home?.item_id) {
               destIds.add(home.item_id);
@@ -2888,7 +2896,7 @@ function createHtml(config: {
                 productsWithWarehouseVariations.add(home.item_id);
               }
             }
-            if (home?.storage_warehouse_id === lockedSourceId && home?.item_id) {
+            if (home?.storage_warehouse_id && sourceWarehouseSet.has(home.storage_warehouse_id) && home?.item_id) {
               sourceIds.add(home.item_id);
               if (home.normalized_variant_key && home.normalized_variant_key !== 'base') {
                 productsWithWarehouseVariations.add(home.item_id);
@@ -2946,14 +2954,15 @@ function createHtml(config: {
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-              if (variantDefault !== lockedSourceId) return false;
+              if (!variantDefault || !sourceWarehouseIds.includes(variantDefault)) return false;
               return variant?.active !== false;
             });
 
             const hasStorageHomeVariant = latestStorageHomes.some(
               (home) =>
                 home.item_id === product.id &&
-                home.storage_warehouse_id === lockedSourceId &&
+                home.storage_warehouse_id &&
+                sourceWarehouseIds.includes(home.storage_warehouse_id) &&
                 home.normalized_variant_key &&
                 home.normalized_variant_key !== 'base'
             );
@@ -3002,7 +3011,7 @@ function createHtml(config: {
         if (error) throw error;
 
         const activeDestId = state.destinationSelection;
-        const allowedVariantWarehouses = new Set([lockedSourceId, activeDestId].filter(Boolean));
+        const allowedVariantWarehouses = new Set([...sourceWarehouseIds, activeDestId].filter(Boolean));
 
         const storageHomeMap = new Map();
         latestStorageHomes.forEach((home) => {
@@ -4293,59 +4302,54 @@ function createHtml(config: {
         }
       }
 
-      function isIngredientLike(product) {
-        const kind = (product?.item_kind || product?.itemKind || '').toString().toLowerCase();
-        return kind === 'ingredient';
-      }
-
-      function resolveIngredientList() {
-        const all = Array.isArray(state.ingredients) ? state.ingredients : [];
-        return all.filter((product) => isIngredientLike(product));
-      }
-
-      function renderIngredientGrid(context) {
-        const grid = context === 'damage' ? damageIngredientGrid : ingredientGrid;
-        const empty = context === 'damage' ? damageIngredientEmpty : ingredientEmpty;
-        if (!grid || !empty) return;
-        grid.innerHTML = '';
-        const list = resolveIngredientList();
-        if (!list.length) {
-          empty.style.display = 'block';
+      function handleProductCardSelect(product, context) {
+        if (!product) return;
+        const targetContext = context || state.mode;
+        if (targetContext !== state.mode) {
+          setMode(targetContext);
+        }
+        const variations = state.variations.get(product.id) ?? [];
+        if (variations.length > 0) {
+          openVariantModal(product, null, targetContext);
           return;
         }
-        empty.style.display = 'none';
-        list.forEach((product) => {
-          if (!product?.id) return;
-          const card = document.createElement('button');
-          card.type = 'button';
-          card.className = 'ingredient-card';
+        promptQuantity(product, null, targetContext);
+      }
 
-          const name = document.createElement('div');
-          name.className = 'ingredient-card-name';
-          name.textContent = product.name ?? 'Ingredient';
+      function renderProductCards() {
+        const products = Array.isArray(state.products)
+          ? state.products.filter((item) => item && item.id)
+          : [];
+        const renderTo = (container, context) => {
+          if (!container) return;
+          container.innerHTML = '';
+          if (!products.length) {
+            container.style.display = 'none';
+            return;
+          }
+          container.style.display = 'grid';
+          products.forEach((product) => {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'product-card';
 
-          const entry = buildEntryForProduct(product, null);
-          const meta = document.createElement('div');
-          meta.className = 'ingredient-card-meta';
-          meta.textContent = formatUomPair(entry);
+            const title = document.createElement('div');
+            title.className = 'product-card-title';
+            title.textContent = product.name ?? 'Product';
 
-          card.appendChild(name);
-          card.appendChild(meta);
-
-          card.addEventListener('click', () => {
-            if (product.has_variations) {
-              openVariantModal(product, null, context, null);
-              return;
-            }
-            promptQuantity(product, null, context, null);
+            card.appendChild(title);
+            card.addEventListener('click', () => handleProductCardSelect(product, context));
+            container.appendChild(card);
           });
+        };
 
-          grid.appendChild(card);
-        });
+        renderTo(transferProductCards, 'transfer');
+        renderTo(purchaseProductCards, 'purchase');
+        renderTo(damageProductCards, 'damage');
       }
 
       async function fetchWarehousesMetadata() {
-        const lockedIds = Array.from(new Set([lockedSourceId].filter(Boolean)));
+        const lockedIds = Array.from(new Set(sourceWarehouseIds.filter(Boolean)));
 
         const loadViaRpc = async () => {
           const { data, error } = await supabase.rpc('console_locked_warehouses', {
@@ -4632,28 +4636,6 @@ function createHtml(config: {
         }
       }
 
-      async function fetchIngredientCatalog() {
-        if (state.networkOffline) {
-          console.warn('Skipping ingredient catalog fetch: network offline');
-          return [];
-        }
-        const storageHomeIds = Array.isArray(STORAGE_HOME_ALLOWED_IDS) ? STORAGE_HOME_ALLOWED_IDS : [];
-        const url = new URL('/api/ingredient-catalog', window.location.origin);
-        storageHomeIds.forEach((id) => url.searchParams.append('storage_home_id', id));
-
-        const response = await fetch(url.toString(), {
-          headers: { Accept: 'application/json' }
-        });
-        if (!response.ok) {
-          const payload = await response.text();
-          const error = new Error(payload || 'Failed to load ingredient catalog');
-          error.status = response.status;
-          throw error;
-        }
-        const payload = await response.json();
-        return Array.isArray(payload?.items) ? payload.items : [];
-      }
-
       async function refreshMetadata() {
         try {
           const warehouses = await fetchWarehousesMetadata();
@@ -4662,10 +4644,11 @@ function createHtml(config: {
           const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
           state.lockedSource = sourceWarehouse;
           const allowedDestSet = new Set(ALLOWED_DESTINATION_IDS);
+          const sourceIdSet = new Set(sourceWarehouseIds.filter(Boolean));
           const hydratedDestinations = (state.warehouses || [])
             .filter((warehouse) =>
               warehouse?.id &&
-              warehouse.id !== lockedSourceId &&
+              !sourceIdSet.has(warehouse.id) &&
               warehouse.active !== false &&
               allowedDestSet.has(warehouse.id)
             )
@@ -4710,22 +4693,17 @@ function createHtml(config: {
           throw error;
         }
 
-        const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
+        const targetWarehouseIds = Array.from(
+          new Set(
+            sourceWarehouseIds.flatMap((id) => collectDescendantIds(state.warehouses, id))
+          )
+        );
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
-        try {
-          state.ingredients = await fetchIngredientCatalog();
-        } catch (error) {
-          markOfflineIfNetworkError(error);
-          console.warn('Ingredient catalog fetch failed', error);
-          state.ingredients = [];
-        }
         const variationIds = Array.from(new Set([
-          ...state.products.map((p) => p.id),
-          ...state.ingredients.map((p) => p.id)
+          ...state.products.map((p) => p.id)
         ]));
         await safePreloadVariations(variationIds);
-        renderIngredientGrid('transfer');
-        renderIngredientGrid('damage');
+        renderProductCards();
         try {
           await fetchSuppliers();
         } catch (error) {

@@ -34,7 +34,6 @@ type VariantSummary = {
 };
 
 const qtyUnits = [
-  "each",
   "pc",
   "g",
   "kg",

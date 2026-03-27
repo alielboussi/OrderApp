@@ -6,7 +6,6 @@ import styles from "./variant.module.css";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 
 const qtyUnits = [
-  "each",
   "pc",
   "g",
   "kg",
@@ -66,6 +65,12 @@ const formatUnitLabel = (unit: string) => {
 type Warehouse = { id: string; name: string };
 type Item = { id: string; name: string; sku?: string | null };
 
+const normalizeUomValue = (value?: string | null) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
+};
+
 
 type FormState = {
   item_id: string;
@@ -96,12 +101,12 @@ const defaultForm: FormState = {
   sku: "",
   supplier_sku: "",
   item_kind: "finished",
-  consumption_uom: "each",
-  purchase_pack_unit: "each",
+  consumption_uom: "pc",
+  purchase_pack_unit: "pc",
   units_per_purchase_pack: "1",
   purchase_unit_mass: "",
   purchase_unit_mass_uom: "kg",
-  transfer_unit: "each",
+  transfer_unit: "pc",
   transfer_quantity: "1",
   qty_decimal_places: "0",
   stocktake_uom: "",
@@ -162,15 +167,15 @@ function VariantCreatePage() {
             sku: variant.sku ?? "",
             supplier_sku: variant.supplier_sku ?? "",
             item_kind: variant.item_kind ?? "finished",
-            consumption_uom: variant.consumption_uom ?? "each",
-            purchase_pack_unit: variant.purchase_pack_unit ?? "each",
+            consumption_uom: normalizeUomValue(variant.consumption_uom) || "pc",
+            purchase_pack_unit: normalizeUomValue(variant.purchase_pack_unit) || "pc",
             units_per_purchase_pack: (variant.units_per_purchase_pack ?? 1).toString(),
             purchase_unit_mass: variant.purchase_unit_mass != null ? variant.purchase_unit_mass.toString() : "",
             purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? "kg",
-            transfer_unit: variant.transfer_unit ?? "each",
+            transfer_unit: normalizeUomValue(variant.transfer_unit) || "pc",
             transfer_quantity: (variant.transfer_quantity ?? 1).toString(),
             qty_decimal_places: (variant.qty_decimal_places ?? 0).toString(),
-            stocktake_uom: variant.stocktake_uom ?? "",
+            stocktake_uom: normalizeUomValue(variant.stocktake_uom) || "",
             cost: (variant.cost ?? 0).toString(),
             selling_price: (variant.selling_price ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,

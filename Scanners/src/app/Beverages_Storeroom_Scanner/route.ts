@@ -5007,6 +5007,7 @@ function createHtml(config: {
             reference,
             referenceRaw: rawReference,
             warehouseId: sourceId,
+            destinationWarehouseId: destId,
             processedBy: getOperatorDisplayName('transfer'),
             operator: getOperatorDisplayName('transfer'),
             sourceLabel: sourceLabel.textContent,

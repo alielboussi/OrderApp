@@ -122,6 +122,18 @@ export default function PosItemMapPage() {
 
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
   const filteredKeys = useMemo(() => filtered.map((m) => getMappingKey(m)), [filtered]);
+  const filteredRows = useMemo(() => {
+    const counts = new Map<string, number>();
+    return filtered.map((m) => {
+      const baseKey = getMappingKey(m);
+      const count = counts.get(baseKey) ?? 0;
+      counts.set(baseKey, count + 1);
+      return {
+        key: count === 0 ? baseKey : `${baseKey}__dup${count}`,
+        mapping: m,
+      };
+    });
+  }, [filtered]);
   const allFilteredSelected = filteredKeys.length > 0 && filteredKeys.every((key) => selectedSet.has(key));
 
   const toggleSelection = (key: string) => {
@@ -364,11 +376,8 @@ export default function PosItemMapPage() {
               {filtered.length === 0 ? (
                 <div className={styles.empty}>No mappings found.</div>
               ) : (
-                filtered.map((m) => (
-                  <div
-                    key={`${m.pos_item_id}-${m.pos_flavour_id ?? "_"}-${m.catalog_item_id}-${m.catalog_variant_key ?? "base"}-${m.outlet_id}`}
-                    className={styles.tableRow}
-                  >
+                filteredRows.map(({ key, mapping: m }) => (
+                  <div key={key} className={styles.tableRow}>
                     <span>
                       <input
                         type="checkbox"

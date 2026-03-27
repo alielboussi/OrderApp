@@ -6,7 +6,6 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "./product.module.css";
 
 const qtyUnitOptions = [
-  { value: "each", label: "Each" },
   { value: "pc", label: "Pc(s)" },
   { value: "g", label: "Gram(s)" },
   { value: "kg", label: "Kilogram(s)" },
@@ -62,12 +61,12 @@ const defaultForm: FormState = {
   sku: "",
   supplier_sku: "",
   item_kind: "finished",
-  consumption_unit: "each",
-  purchase_pack_unit: "each",
+  consumption_unit: "pc",
+  purchase_pack_unit: "pc",
   units_per_purchase_pack: "1",
   purchase_unit_mass: "",
   purchase_unit_mass_uom: "kg",
-  transfer_unit: "each",
+  transfer_unit: "pc",
   transfer_quantity: "1",
   consumption_qty_per_base: "1",
   qty_decimal_places: "0",
@@ -102,6 +101,12 @@ function formatConversion(value: number, uom: string) {
   }
   return "";
 }
+
+const normalizeUomValue = (value?: string | null) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
+};
 
 function ProductCreatePage() {
   const router = useRouter();
@@ -145,16 +150,17 @@ function ProductCreatePage() {
             sku: item.sku ?? "",
             supplier_sku: item.supplier_sku ?? "",
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
-            consumption_unit: item.consumption_unit ?? item.consumption_uom ?? "each",
-            purchase_pack_unit: item.purchase_pack_unit ?? item.storage_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
+            consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
+            purchase_pack_unit:
+              normalizeUomValue(item.purchase_pack_unit ?? item.storage_unit ?? item.consumption_unit ?? item.consumption_uom) || "pc",
             units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
             purchase_unit_mass: item.purchase_unit_mass != null ? item.purchase_unit_mass.toString() : "",
             purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? "kg",
-            transfer_unit: item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom ?? "each",
+            transfer_unit: normalizeUomValue(item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom) || "pc",
             transfer_quantity: (item.transfer_quantity ?? 1).toString(),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
             qty_decimal_places: (item.qty_decimal_places ?? 0).toString(),
-            stocktake_uom: item.stocktake_uom ?? "",
+            stocktake_uom: normalizeUomValue(item.stocktake_uom) || "",
             storage_unit: item.storage_unit ?? "",
             storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
             storage_home_id: item.storage_home_id ?? item.default_warehouse_id ?? "",

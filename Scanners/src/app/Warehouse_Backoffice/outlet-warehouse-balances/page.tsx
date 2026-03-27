@@ -200,9 +200,9 @@ export default function OutletWarehouseBalancesPage() {
   const [includeRaw, setIncludeRaw] = useState(false);
   const [includeFinished, setIncludeFinished] = useState(false);
   const [baseOnly, setBaseOnly] = useState(false);
-  const [showZeroOrNegative, setShowZeroOrNegative] = useState(false);
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
-  const [includePurchases, setIncludePurchases] = useState(false);
+  const [includePurchases, setIncludePurchases] = useState(true);
+  const [includeDamages, setIncludeDamages] = useState(true);
 
   const coldroomChildSet = useMemo(() => new Set(COLDROOM_CHILD_IDS), []);
   const coldroomLabelMap = useMemo(() => {
@@ -578,7 +578,7 @@ export default function OutletWarehouseBalancesPage() {
         const ledgerReasons = [
           "warehouse_transfer",
           "outlet_sale",
-          "damage",
+          ...(includeDamages ? ["damage"] : []),
           "recipe_consumption",
           ...(includePurchases ? ["purchase_receipt"] : []),
         ];
@@ -642,8 +642,6 @@ export default function OutletWarehouseBalancesPage() {
           const openingQty = openingMap.get(openingKey) ?? 0;
           const movementQty = movementMap.get(openingKey) ?? 0;
           const onHandUnits = openingQty + movementQty;
-          const isZeroNet = Math.abs(onHandUnits) < 1e-9;
-          if (!showZeroOrNegative && (onHandUnits <= 0 || isZeroNet)) return;
 
           if (existing) {
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;
@@ -684,7 +682,8 @@ export default function OutletWarehouseBalancesPage() {
     includeRaw,
     includeFinished,
     baseOnly,
-    showZeroOrNegative,
+    includePurchases,
+    includeDamages,
     selectedOutletIds,
     refreshTick,
     supabase,
@@ -907,14 +906,6 @@ export default function OutletWarehouseBalancesPage() {
             <label className={styles.toggle}>
               <input
                 type="checkbox"
-                checked={showZeroOrNegative}
-                onChange={(event) => setShowZeroOrNegative(event.target.checked)}
-              />
-              Show zero/negative
-            </label>
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
                 checked={showPackWeightTotals}
                 onChange={(event) => setShowPackWeightTotals(event.target.checked)}
               />
@@ -927,6 +918,14 @@ export default function OutletWarehouseBalancesPage() {
                 onChange={(event) => setIncludePurchases(event.target.checked)}
               />
               Purchases
+            </label>
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={includeDamages}
+                onChange={(event) => setIncludeDamages(event.target.checked)}
+              />
+              Damages
             </label>
           </div>
         </section>

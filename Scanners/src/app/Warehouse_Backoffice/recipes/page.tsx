@@ -31,7 +31,6 @@ type PendingLine = {
 };
 
 const qtyUnits = [
-  "each",
   "pc",
   "g",
   "kg",
@@ -45,9 +44,25 @@ const qtyUnits = [
   "Jar",
   "Bucket",
   "Bag",
+  "plastic",
   "Packet",
   "Box",
 ] as const;
+
+const RECIPE_UOM_ALIASES: Record<string, string> = {
+  each: "pc",
+  pcs: "pc",
+  piece: "pc",
+  pieces: "pc",
+};
+
+const normalizeRecipeUom = (value: string) => {
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  return RECIPE_UOM_ALIASES[lower] ?? lower;
+};
+
+const isAllowedRecipeUom = (value: string) => qtyUnits.includes(value as (typeof qtyUnits)[number]);
 
 type UomOption = { value: string; label: string };
 
@@ -56,10 +71,8 @@ const formatUnitLabel = (unit: string) => {
   if (!trimmed) return "";
   const lower = trimmed.toLowerCase();
   const mapped =
-    lower === "each"
-      ? "Each"
-      : lower === "pc" || lower === "pcs"
-        ? "Pc(s)"
+    lower === "pc" || lower === "pcs"
+      ? "Pc(s)"
       : lower === "g"
         ? "Gram(s)"
         : lower === "kg"
@@ -170,8 +183,14 @@ export default function RecipesPage() {
         setWarehouses((warehouseRes.data as WarehouseOption[]) || []);
         const uomSet = new Set<string>(qtyUnits);
         (uomRes.data || []).forEach((row) => {
-          if (row.from_uom) uomSet.add(row.from_uom);
-          if (row.to_uom) uomSet.add(row.to_uom);
+          if (row.from_uom) {
+            const normalized = normalizeRecipeUom(row.from_uom);
+            if (isAllowedRecipeUom(normalized)) uomSet.add(normalized);
+          }
+          if (row.to_uom) {
+            const normalized = normalizeRecipeUom(row.to_uom);
+            if (isAllowedRecipeUom(normalized)) uomSet.add(normalized);
+          }
         });
         const nextUoms = Array.from(uomSet)
           .sort((a, b) => a.localeCompare(b))
@@ -220,7 +239,7 @@ export default function RecipesPage() {
             data.map((row) => ({
               ingredientId: row.ingredient_item_id || "",
               qty: row.qty_per_unit?.toString() || "",
-              uom: row.qty_unit || "g",
+              uom: normalizeRecipeUom(row.qty_unit || "g"),
             }))
           );
         } else {
@@ -270,7 +289,7 @@ export default function RecipesPage() {
             data.map((row) => ({
               ingredientId: row.ingredient_item_id || "",
               qty: row.qty_per_unit?.toString() || "",
-              uom: row.qty_unit || "g",
+              uom: normalizeRecipeUom(row.qty_unit || "g"),
             }))
           );
         } else {
@@ -438,15 +457,21 @@ export default function RecipesPage() {
         if (deactivateError) throw deactivateError;
       }
 
-      const payload = validFinishedLines.map((line) => ({
-        finished_item_id: selectedFinished,
-        finished_variant_key: "base",
-        ingredient_item_id: line.ingredientId,
-        qty_per_unit: Number(line.qty),
-        qty_unit: line.uom,
-        recipe_for_kind: "finished",
-        active: true,
-      }));
+      const payload = validFinishedLines.map((line) => {
+        const normalizedUom = normalizeRecipeUom(line.uom);
+        if (!isAllowedRecipeUom(normalizedUom)) {
+          throw new Error(`Invalid unit: ${line.uom}`);
+        }
+        return {
+          finished_item_id: selectedFinished,
+          finished_variant_key: "base",
+          ingredient_item_id: line.ingredientId,
+          qty_per_unit: Number(line.qty),
+          qty_unit: normalizedUom,
+          recipe_for_kind: "finished",
+          active: true,
+        };
+      });
 
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
@@ -486,15 +511,21 @@ export default function RecipesPage() {
         if (deactivateError) throw deactivateError;
       }
 
-      const payload = validIngredientLines.map((line) => ({
-        finished_item_id: selectedIngredientTarget,
-        finished_variant_key: "base",
-        ingredient_item_id: line.ingredientId,
-        qty_per_unit: Number(line.qty),
-        qty_unit: line.uom,
-        recipe_for_kind: "ingredient",
-        active: true,
-      }));
+      const payload = validIngredientLines.map((line) => {
+        const normalizedUom = normalizeRecipeUom(line.uom);
+        if (!isAllowedRecipeUom(normalizedUom)) {
+          throw new Error(`Invalid unit: ${line.uom}`);
+        }
+        return {
+          finished_item_id: selectedIngredientTarget,
+          finished_variant_key: "base",
+          ingredient_item_id: line.ingredientId,
+          qty_per_unit: Number(line.qty),
+          qty_unit: normalizedUom,
+          recipe_for_kind: "ingredient",
+          active: true,
+        };
+      });
 
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;

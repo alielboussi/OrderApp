@@ -36,6 +36,10 @@ type SummaryPayload = {
   warehouse_id?: unknown;
   sourceWarehouseId?: unknown;
   source_warehouse_id?: unknown;
+  destinationWarehouseId?: unknown;
+  destination_warehouse_id?: unknown;
+  destWarehouseId?: unknown;
+  dest_warehouse_id?: unknown;
 };
 
 type NotifyRequest = {
@@ -119,9 +123,10 @@ function normalizeVariantKey(value: unknown): string {
   return raw.length ? raw : 'base';
 }
 
-function resolveWarehouseId(summary: SummaryPayload): string | null {
-  const candidates = [summary.warehouseId, summary.warehouse_id, summary.sourceWarehouseId, summary.source_warehouse_id];
-  for (const candidate of candidates) {
+function resolveWarehouseId(summary: SummaryPayload, context: 'transfer' | 'purchase' | 'damage'): string | null {
+  const sourceCandidates = [summary.warehouseId, summary.warehouse_id, summary.sourceWarehouseId, summary.source_warehouse_id];
+  const ordered = sourceCandidates;
+  for (const candidate of ordered) {
     if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
   }
   return null;
@@ -272,16 +277,16 @@ function buildMessage(
   const operator = normalizeLabel(summary.processedBy) ?? normalizeLabel(summary.operator) ?? 'Unknown operator';
   const reference = normalizeLabel(summary.reference) ?? normalizeLabel(summary.referenceRaw);
   const supplierName = normalizeLabel(summary.sourceLabel);
-  const destination = String(
-    summary.destLabel ?? summary.destinationLabel ?? summary.route ?? 'Unknown destination'
-  );
+  const destination = String(summary.destLabel ?? summary.destinationLabel ?? 'Unknown destination');
+  const sourceLabel = normalizeLabel(summary.sourceLabel) ?? 'Unknown source';
   const dateTime = String(summary.dateTime ?? summary.window ?? '');
   const itemsBlock = formatItemsBlock(summary, context, remainingByKey, damageByKey);
   const scannerLabel = getScannerLabel(scanner);
 
   const lines = [
     `<b>${escapeHtml(scannerLabel)}</b>`,
-    `<b>Outlet/Home &amp; Department: ${escapeHtml(destination)}</b>`,
+    `From: ${escapeHtml(sourceLabel)}`,
+    `To: ${escapeHtml(destination)}`,
     `Type: ${escapeHtml(typeLabel)}`,
     context === 'purchase' && reference ? `Reference / Invoice #: ${escapeHtml(reference)}` : '',
     context === 'purchase' && supplierName ? `Supplier: ${escapeHtml(supplierName)}` : '',
@@ -297,10 +302,11 @@ function buildMessage(
 async function loadRemainingByKey(
   supabase: ReturnType<typeof getServiceClient>,
   summary: SummaryPayload,
-  items: SummaryItem[]
+  items: SummaryItem[],
+  context: 'transfer' | 'purchase' | 'damage'
 ): Promise<Map<string, number | null>> {
   const remainingByKey = new Map<string, number | null>();
-  const warehouseId = resolveWarehouseId(summary);
+  const warehouseId = resolveWarehouseId(summary, context);
   if (!warehouseId) return remainingByKey;
   const itemIds = Array.from(new Set(items.map((item) => resolveItemId(item)).filter(Boolean))) as string[];
   if (!itemIds.length) return remainingByKey;
@@ -408,10 +414,11 @@ async function loadRemainingByKey(
 async function loadDamageTotalsByKey(
   supabase: ReturnType<typeof getServiceClient>,
   summary: SummaryPayload,
-  items: SummaryItem[]
+  items: SummaryItem[],
+  context: 'transfer' | 'purchase' | 'damage'
 ): Promise<Map<string, number>> {
   const damageByKey = new Map<string, number>();
-  const warehouseId = resolveWarehouseId(summary);
+  const warehouseId = resolveWarehouseId(summary, context);
   if (!warehouseId) return damageByKey;
   const itemIds = Array.from(new Set(items.map((item) => resolveItemId(item)).filter(Boolean))) as string[];
   if (!itemIds.length) return damageByKey;
@@ -469,8 +476,8 @@ export async function POST(request: Request) {
 
   const supabase = getServiceClient();
   const items = Array.isArray(summary.items) ? summary.items : [];
-  const remainingByKey = await loadRemainingByKey(supabase, summary, items);
-  const damageByKey = context === 'damage' ? await loadDamageTotalsByKey(supabase, summary, items) : null;
+  const remainingByKey = await loadRemainingByKey(supabase, summary, items, context);
+  const damageByKey = context === 'damage' ? await loadDamageTotalsByKey(supabase, summary, items, context) : null;
   const message = buildMessage(summary, context, scanner, remainingByKey, damageByKey);
   const response = await fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, {
     method: 'POST',

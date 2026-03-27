@@ -1858,31 +1858,21 @@ export default function StocktakesPage() {
     }
     if (isColdroomParent) {
       (async () => {
-        const maps = await loadChildCountsForDialog(dialogDisplayRows, childOpenPeriods);
+        await loadChildCountsForDialog(dialogDisplayRows, childOpenPeriods);
         setDialogQty((prev) => {
           let changed = false;
           const next = { ...prev };
           dialogDisplayRows.forEach((row) => {
             const variantKey = normalizeVariantKey(row.variant_key);
-            const baseKey = makeKey(row.item_id, variantKey);
-            const uom =
-              variantStocktakeUomMap.get(variantKey) ||
-              stocktakeUoms[row.item_id] ||
-              variantUomMap.get(variantKey) ||
-              productUoms[row.item_id] ||
-              "each";
-            const decimals = resolveDecimals(row.item_id, variantKey, uom);
 
             selectedChildWarehouseIds.forEach((childId) => {
               const childKey = makeChildKey(childId, row.item_id, variantKey);
               if (unsavedKeys[childKey]) return;
-              const openingLocked = maps?.lockedMap?.[childId]?.has(baseKey) ?? false;
-              const entryMode = openingLocked ? "closing" : "opening";
-              const seed = entryMode === "closing"
-                ? maps?.closingMap?.[childId]?.[baseKey] ?? 0
-                : maps?.openingMap?.[childId]?.[baseKey] ?? 0;
-              next[childKey] = seed === 0 ? "" : formatQty(seed, decimals);
-              changed = true;
+              // NOTE: Keep dialog inputs empty on open; do not prefill with prior counts.
+              if (next[childKey] !== "") {
+                next[childKey] = "";
+                changed = true;
+              }
             });
           });
           return changed ? next : prev;
@@ -1896,20 +1886,12 @@ export default function StocktakesPage() {
       const next = { ...prev };
       dialogDisplayRows.forEach((row) => {
         const key = makeKey(row.item_id, row.variant_key);
-        if (next[key] !== undefined) return;
-
-        const uom =
-          variantStocktakeUomMap.get(normalizeVariantKey(row.variant_key)) ||
-          stocktakeUoms[row.item_id] ||
-          variantUomMap.get(normalizeVariantKey(row.variant_key)) ||
-          productUoms[row.item_id] ||
-          "each";
-        const decimals = resolveDecimals(row.item_id, row.variant_key, uom);
-        const openingLocked = openingLockedKeys.has(key);
-        const entryMode = openingLocked ? "closing" : "opening";
-        const seed = entryMode === "closing" ? closingCountMap.get(key) ?? 0 : openingCountMap.get(key) ?? 0;
-        next[key] = seed === 0 ? "" : formatQty(seed, decimals);
-        changed = true;
+        if (unsavedKeys[key]) return;
+        // NOTE: Keep dialog inputs empty on open; do not prefill with prior counts.
+        if (next[key] !== "") {
+          next[key] = "";
+          changed = true;
+        }
       });
       return changed ? next : prev;
     });
