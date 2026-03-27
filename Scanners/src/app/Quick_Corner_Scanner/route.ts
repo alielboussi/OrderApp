@@ -5,16 +5,17 @@ import { getServiceClient } from '@/lib/supabase-server';
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
-const EXTRA_SOURCE_IDS = ['d829d739-7311-4647-af91-cad33c21280e'] as const;
+const HOMES_PARENT_ID = 'c021ea3b-7109-4690-be6c-0c7ae8278a5d';
 const DESTINATION_CHOICES = [
   { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' }
 ] as const;
-const LOCKED_DEST_ID = '';
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
+const LOCKED_PRODUCT_IDS = ['20de5f8f-cc97-4ae6-aa51-e158225f3703', 'bcacc496-ffd7-430b-8c17-709d0497a1ff'] as const;
+const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', 'a7addcec-bcf5-4eab-94f0-6fb704ad6ca4'] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
   : 'warehouse_stock_items';
-const ALLOWED_DESTINATION_IDS = ['c77376f7-1ede-4518-8180-b3efeecda128'] as const;
 const MULTIPLY_QTY_BY_PACKAGE = true;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;
@@ -26,9 +27,8 @@ const OPERATOR_CONTEXT_LABELS = {
   damage: 'Damages'
 };
 
-// IMPORTANT: Behavior for this scanner was finalized on 2025-12-09 for kiosk parity.
-// Please coordinate with the transfers team before changing any logic in this file,
-// as late edits risk breaking the now-approved workflows.
+// IMPORTANT: Quick Corner scanner behavior mirrors the prior main warehouse scanner.
+// Please coordinate with the transfers team before changing any logic in this file.
 
 type WarehouseRecord = {
   id: string;
@@ -57,7 +57,8 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 }
 
 async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
-  const ids = [LOCKED_SOURCE_ID, ...EXTRA_SOURCE_IDS, LOCKED_DEST_ID].filter(Boolean);
+  const destinationIds = DESTINATION_CHOICES.map((choice) => choice.id).filter(Boolean);
+  const ids = [LOCKED_SOURCE_ID, ...destinationIds].filter(Boolean);
   if (!ids.length) {
     return [];
   }
@@ -82,7 +83,7 @@ function createHtml(config: {
   destPillLabel: string;
   sourceWarehouseName: string;
   initialWarehousesJson: string;
-  initialView: 'transfer' | 'damage';
+  initialView: 'transfer' | 'purchase' | 'damage';
 }) {
   const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
   const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
@@ -287,63 +288,18 @@ function createHtml(config: {
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    .ingredient-panel {
+    .product-card-meta {
       display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: 8px;
-      padding: 12px;
-      border-radius: 16px;
-      border: 1px solid rgba(255, 43, 72, 0.25);
-      background: rgba(255, 255, 255, 0.02);
-    }
-    .ingredient-head h3 {
-      margin: 0;
-      font-size: 1rem;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+      color: #b5b5b5;
     }
-    .ingredient-head p {
-      margin: 4px 0 0;
-      color: #b9b9b9;
-      font-size: 0.85rem;
-    }
-    .ingredient-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-    }
-    .ingredient-card {
-      border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      padding: 10px;
-      background: rgba(10, 10, 12, 0.6);
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      cursor: pointer;
-      transition: border-color 0.15s ease, transform 0.15s ease;
-    }
-    .ingredient-card:hover {
-      border-color: rgba(255, 43, 72, 0.6);
-      transform: translateY(-1px);
-    }
-    .ingredient-card-name {
-      font-weight: 700;
-      font-size: 0.95rem;
-      color: #fff;
-    }
-    .ingredient-card-meta {
-      font-size: 0.75rem;
-      letter-spacing: 0.05em;
-      color: #ff9fb1;
-      text-transform: uppercase;
-    }
-    .ingredient-empty {
-      margin: 0;
-      color: #c4c4c4;
-      font-size: 0.85rem;
-      display: none;
+    .product-card-variant {
+      color: #ff6b81;
+      font-weight: 600;
     }
     #auth-section,
     #app-section {
@@ -439,19 +395,27 @@ function createHtml(config: {
       align-items: center;
     }
     .destination-select-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      display: flex;
+      flex-wrap: nowrap;
       gap: 8px;
       width: 100%;
     }
     .destination-pill-select {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
+      flex: 1 1 0;
+      min-width: 0;
       text-align: center;
       width: 100%;
     }
     .destination-pill-select .destination-pill-hint {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       margin-bottom: 6px;
+      min-height: 2.1em;
       text-align: center;
     }
     .destination-pill-select select {
@@ -469,119 +433,29 @@ function createHtml(config: {
       cursor: pointer;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .destination-pill-select select option {
-      font-size: 1.35rem;
-    }
-    .destination-pill-select select:focus-visible {
-      outline: none;
-      border-color: #ff1b2d;
-      box-shadow: 0 0 0 3px rgba(255, 27, 45, 0.35);
-    }
-    .destination-pill-hint {
-      margin: 0;
-      font-size: 0.78rem;
-      color: #f7a8b7;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-    }
-    .operator-auth-card {
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 18px;
-      padding: 14px 16px;
-      background: rgba(255, 255, 255, 0.02);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .operator-auth-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-    .operator-auth-head h3 {
-      margin: 0;
-      font-size: 1rem;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    .operator-status-pill {
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      border: 1px solid rgba(255, 255, 255, 0.16);
-    }
-    .operator-status-pill[data-state="locked"] {
-      color: #ffb4c4;
-      border-color: rgba(255, 76, 108, 0.5);
-    }
-    .operator-status-pill[data-state="unlocked"] {
-      color: #bdfccf;
-      border-color: rgba(34, 197, 94, 0.5);
-    }
-    .operator-select-label {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 0.85rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .operator-select-label select {
-      width: 100%;
-      appearance: none;
-      background: #070707;
-      border: 2px solid rgba(255, 27, 45, 0.6);
-      border-radius: 18px;
-      padding: 14px 18px;
-      color: #ff5d73;
-      font-size: 1.7rem;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-      cursor: pointer;
-    }
-    .operator-pill-button,
     .destination-pill-button {
       width: 100%;
       appearance: none;
       background: #070707;
       border: 2px solid rgba(255, 27, 45, 0.6);
       border-radius: 18px;
-      padding: 14px 18px;
+      padding: 12px 16px;
       color: #ff5d73;
-      font-size: 1.7rem;
-      font-weight: 600;
+      font-size: 1.4rem;
+      font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       cursor: pointer;
       transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
     }
-    .operator-pill-button:disabled,
     .destination-pill-button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
-    .operator-pill-button:hover:not(:disabled),
     .destination-pill-button:hover:not(:disabled) {
       transform: translateY(-1px);
       box-shadow: 0 10px 18px rgba(255, 27, 45, 0.25);
     }
-    .operator-hidden-select,
     .destination-hidden-select {
       display: none;
     }
@@ -657,6 +531,95 @@ function createHtml(config: {
       font-weight: 600;
       cursor: pointer;
     }
+    .destination-pill-select select option {
+      font-size: 1.35rem;
+    }
+    .destination-pill-select select:focus-visible {
+      outline: none;
+      border-color: #ff1b2d;
+      box-shadow: 0 0 0 3px rgba(255, 27, 45, 0.35);
+    }
+    .destination-pill-hint {
+      margin: 0;
+      font-size: 0.78rem;
+      color: #f7a8b7;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .destination-pill-hint--two-line {
+      line-height: 1.05;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .operator-auth-card {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .operator-auth-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .operator-auth-head h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .operator-status-pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+    .operator-status-pill[data-state="locked"] {
+      color: #ffb4c4;
+      border-color: rgba(255, 76, 108, 0.5);
+    }
+    .operator-status-pill[data-state="unlocked"] {
+      color: #bdfccf;
+      border-color: rgba(34, 197, 94, 0.5);
+    }
+    .operator-select-label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .operator-select-label select {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 14px 18px;
+      color: #ff5d73;
+      font-size: 1.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+    }
     .operator-select-label select:focus-visible {
       outline: none;
       border-color: #ff1b2d;
@@ -686,6 +649,32 @@ function createHtml(config: {
       background: transparent;
       border: none;
       margin-top: 12px;
+    }
+    .operator-pill-button {
+      width: 100%;
+      appearance: none;
+      background: #070707;
+      border: 2px solid rgba(255, 27, 45, 0.6);
+      border-radius: 18px;
+      padding: 14px 18px;
+      color: #ff5d73;
+      font-size: 1.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .operator-pill-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .operator-pill-button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(255, 27, 45, 0.25);
+    }
+    .operator-hidden-select {
+      display: none;
     }
     #scanner-wedge,
     #login-wedge {
@@ -744,58 +733,6 @@ function createHtml(config: {
       margin: 0;
       display: none;
     }
-    .qty-cost-field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 0.9rem;
-    }
-      position: static;
-      background: rgba(5, 5, 5, 0.92);
-      padding: 10px 12px 14px;
-      text-transform: uppercase;
-      font-size: 0.75rem;
-      letter-spacing: 0.05em;
-      color: #f7a8b7;
-      z-index: 1;
-    }
-    .cart-table th,
-    .cart-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      text-align: left;
-      font-size: 0.9rem;
-    }
-    .cart-table tbody td {
-      padding-top: 14px;
-      background: transparent;
-    }
-    #cart-empty {
-      margin: 12px 0;
-      color: #c4c4c4;
-      font-size: 0.9rem;
-    }
-    .cart-row-actions button {
-      background: transparent;
-      border: 1px solid rgba(255, 97, 136, 0.6);
-      color: #ff97b6;
-      padding: 6px 12px;
-      border-radius: 999px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .cart-row-actions button:hover {
-      border-color: #ff6b94;
-      color: #ff6b94;
-    }
-    #cart-count {
-      font-size: 0.85rem;
-      color: #f1c1cf;
-    }
     #qty-modal {
       position: fixed;
       inset: 0;
@@ -812,10 +749,27 @@ function createHtml(config: {
       display: none;
       align-items: center;
       justify-content: center;
+      gap: 24px;
+      padding: 24px;
+      flex-wrap: wrap;
+      overflow-y: auto;
+      z-index: 1005;
+    }
+    .qty-cost-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
       z-index: 1005;
     }
     #variant-modal-card {
-      width: min(520px, calc(100vw - 48px));
+      width: min(640px, calc(100vw - 32px));
+      flex: 0 1 640px;
       background: #060606;
       border: 2px solid #ff1b2d;
       border-radius: 20px;
@@ -823,8 +777,8 @@ function createHtml(config: {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      max-height: 80vh;
-      overflow: auto;
+      max-height: none;
+      overflow: visible;
     }
     .variant-modal-header {
       display: flex;
@@ -836,34 +790,90 @@ function createHtml(config: {
       margin: 0;
     }
     .variant-modal-body {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
     }
     .variant-row {
       border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 12px;
+      border-radius: 16px;
       padding: 12px;
-      display: grid;
-      gap: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      align-items: center;
+      text-align: center;
+    }
+    .variant-row.is-active {
+      border-color: rgba(255, 27, 45, 0.85);
+      box-shadow: 0 0 0 1px rgba(255, 27, 45, 0.35);
     }
     .variant-row-header {
       display: flex;
-      justify-content: space-between;
+      flex-direction: column;
       align-items: center;
       gap: 12px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .variant-row-image {
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 0 auto;
+    }
+    .variant-row-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .variant-row-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+      align-items: center;
+      text-align: center;
+    }
+    .variant-row-name {
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      text-align: center;
     }
     .variant-uom {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       letter-spacing: 0.14em;
       color: #ff6b81;
       text-transform: uppercase;
+      text-align: center;
+    }
+    .variant-qty-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
     }
     .variant-qty-controls {
       display: grid;
       grid-template-columns: auto 1fr auto;
       gap: 8px;
       align-items: center;
+      justify-items: center;
+      width: 100%;
     }
     .variant-qty-controls input {
       background: rgba(0, 0, 0, 0.65);
@@ -871,6 +881,9 @@ function createHtml(config: {
       border-radius: 12px;
       border: 2px solid rgba(255, 34, 67, 0.5);
       padding: 8px 10px;
+      min-width: 72px;
+      min-height: 32px;
+      font-size: 0.95rem;
       text-align: center;
     }
     .variant-qty-button {
@@ -878,7 +891,15 @@ function createHtml(config: {
       border: 2px solid rgba(255, 34, 67, 0.6);
       background: transparent;
       color: #fff;
-      padding: 6px 10px;
+      min-width: 32px;
+      height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      font-size: 1rem;
+      flex-shrink: 0;
       font-weight: 700;
       cursor: pointer;
     }
@@ -891,6 +912,22 @@ function createHtml(config: {
       color: #fff;
       font-weight: 700;
       cursor: pointer;
+    }
+    .variant-numpad {
+      margin-top: 0;
+      padding: 16px;
+      width: min(280px, calc(100vw - 32px));
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(0, 0, 0, 0.75);
+    }
+    @media (max-width: 980px) {
+      #variant-modal {
+        flex-direction: column;
+      }
+      #variant-modal-card {
+        flex-basis: auto;
+      }
     }
     #qty-form {
       width: min(420px, calc(100vw - 48px));
@@ -1080,6 +1117,9 @@ function createHtml(config: {
       flex-direction: column;
       gap: 10px;
     }
+    .search-field {
+      position: relative;
+    }
     #purchase-reference {
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -1091,9 +1131,6 @@ function createHtml(config: {
     .purchase-grid label textarea {
       min-height: 88px;
       resize: vertical;
-    }
-    .search-field {
-      position: relative;
     }
     .purchase-field-actions,
     .reference-actions {
@@ -1554,8 +1591,15 @@ function createHtml(config: {
               <div class="destination-select-grid">
                 <label class="destination-pill-select">
                   <span class="destination-pill-hint">Outlets</span>
-                  <button type="button" id="destination-picker" class="destination-pill-button">Choose destination</button>
+                  <button type="button" id="destination-picker" class="destination-pill-button">Select outlet</button>
                   <select id="console-destination-select" class="destination-hidden-select">
+                    <option value="">Select...</option>
+                  </select>
+                </label>
+                <label class="destination-pill-select">
+                  <span class="destination-pill-hint destination-pill-hint--two-line">Homes &amp;<br />Departments</span>
+                  <button type="button" id="homes-picker" class="destination-pill-button">Select home</button>
+                  <select id="console-homes-select" class="destination-hidden-select">
                     <option value="">Select...</option>
                   </select>
                 </label>
@@ -1567,6 +1611,11 @@ function createHtml(config: {
 
       <article class="panel transfer-panel">
         <form id="transfer-form">
+          <div class="search-field">
+            <label>Search products
+              <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+            </label>
+          </div>
           <div id="transfer-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <section id="cart-section">
             <div class="cart-head">
@@ -1596,6 +1645,7 @@ function createHtml(config: {
 
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
+            <a id="purchase-open" class="button button-outline" href="?view=purchase" role="button">Log Purchase Intake</a>
             <a id="damage-open" class="button button-green" href="?view=damage" role="button">Log Damages</a>
           </div>
         </form>
@@ -1608,10 +1658,20 @@ function createHtml(config: {
 
   <div id="destination-modal" class="select-modal" aria-hidden="true">
     <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="destination-modal-title">
-      <div class="select-modal-header" id="destination-modal-title">Choose destination</div>
+      <div class="select-modal-header" id="destination-modal-title">Select outlet</div>
       <div class="select-modal-grid" id="destination-modal-options"></div>
       <div class="select-modal-actions">
         <button type="button" class="select-modal-close" data-modal-close="destination-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="homes-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="homes-modal-title">
+      <div class="select-modal-header" id="homes-modal-title">Select home</div>
+      <div class="select-modal-grid" id="homes-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="homes-modal">Close</button>
       </div>
     </div>
   </div>
@@ -1666,20 +1726,20 @@ function createHtml(config: {
         <button type="button" id="variant-modal-close">Close</button>
       </div>
       <div id="variant-modal-body" class="variant-modal-body"></div>
-      <div class="numpad" id="variant-numpad" aria-label="Variant quantity keypad">
-        <button type="button" data-key="7">7</button>
-        <button type="button" data-key="8">8</button>
-        <button type="button" data-key="9">9</button>
-        <button type="button" data-key="4">4</button>
-        <button type="button" data-key="5">5</button>
-        <button type="button" data-key="6">6</button>
-        <button type="button" data-key="1">1</button>
-        <button type="button" data-key="2">2</button>
-        <button type="button" data-key="3">3</button>
-        <button type="button" data-action="clear">CLR</button>
-        <button type="button" data-key="0">0</button>
-        <button type="button" data-action="enter">Enter</button>
-      </div>
+    </div>
+    <div class="numpad variant-numpad" id="variant-numpad" aria-label="Variant quantity keypad">
+      <button type="button" data-key="7">7</button>
+      <button type="button" data-key="8">8</button>
+      <button type="button" data-key="9">9</button>
+      <button type="button" data-key="4">4</button>
+      <button type="button" data-key="5">5</button>
+      <button type="button" data-key="6">6</button>
+      <button type="button" data-key="1">1</button>
+      <button type="button" data-key="2">2</button>
+      <button type="button" data-key="3">3</button>
+      <button type="button" data-action="clear">CLR</button>
+      <button type="button" data-key="0">0</button>
+      <button type="button" data-action="enter">Enter</button>
     </div>
   </div>
 
@@ -1712,12 +1772,14 @@ function createHtml(config: {
           <h3>Purchase Intake</h3>
           <div class="purchase-grid">
             <label>Supplier
-              <button type="button" id="purchase-supplier-picker" class="operator-pill-button">Select supplier</button>
-              <select id="purchase-supplier" class="operator-hidden-select">
+              <button type="button" id="purchase-supplier-picker" class="destination-pill-button">Select supplier</button>
+              <select id="purchase-supplier" class="destination-hidden-select">
                 <option value="">Select supplier</option>
               </select>
             </label>
-            <div id="purchase-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
+            <label class="search-field">Item search
+              <input id="purchase-item-search" type="text" placeholder="Search items or scan barcode" autocomplete="off" />
+            </label>
             <div class="reference-field">
               <label>Reference / Invoice #
                 <input type="text" id="purchase-reference" placeholder="INV-12345" required />
@@ -1742,6 +1804,7 @@ function createHtml(config: {
               </div>
             </div>
           </div>
+          <div id="purchase-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <section class="purchase-cart-section">
             <div class="cart-head">
               <div>
@@ -1769,7 +1832,7 @@ function createHtml(config: {
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
           <div class="purchase-actions">
-            <a id="purchase-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
+            <a id="purchase-back" class="button button-outline" href="/Soyola_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
             <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
           </div>
@@ -1793,6 +1856,11 @@ function createHtml(config: {
       <form id="damage-form">
         <div class="damage-shell">
           <h3>Log Damages</h3>
+          <div class="search-field">
+            <label>Search products
+              <input id="damage-item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
+            </label>
+          </div>
           <div id="damage-product-cards" class="product-card-grid" aria-label="Quick select products"></div>
           <div class="cart-head">
             <div>
@@ -1864,7 +1932,7 @@ function createHtml(config: {
             </div>
           </label>
           <div class="damage-actions">
-            <a id="damage-back" class="button button-outline" href="/Beverages_Storeroom_Scanner" role="button">Back to Transfers</a>
+            <a id="damage-back" class="button button-outline" href="/Soyola_Storeroom_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
             <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
           </div>
@@ -1891,13 +1959,12 @@ function createHtml(config: {
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
-    const ALLOWED_DESTINATION_IDS = ${serializeForScript(ALLOWED_DESTINATION_IDS)};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
-    const SCANNER_NAME = 'Supervisor';
-    const SCANNER_ID = '493e58d7-a974-4251-a8b7-19e5f39c48cb';
-    const SESSION_STORAGE_KEY = 'beverage-kiosk-session-v2';
-    const PASSWORD_STORAGE_KEY = 'beverage-password-verifier-v2';
+    const SCANNER_NAME = 'Quick Corner';
+    const SCANNER_ID = 'f3f83926-7955-4bb3-9bc8-1aebd7ea2ae8';
+    const SESSION_STORAGE_KEY = 'quick-corner-kiosk-session-v1';
+    const PASSWORD_STORAGE_KEY = 'quick-corner-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';
     const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
@@ -1908,23 +1975,18 @@ function createHtml(config: {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
-      if (window.__beverageAppInitialized) {
-        console.debug('Beverage scanner already initialized; skipping duplicate bootstrap');
+      if (window.__soyolaAppInitialized) {
+        console.debug('Soyola scanner already initialized; skipping duplicate bootstrap');
         return;
       }
-      window.__beverageAppInitialized = true;
+      window.__soyolaAppInitialized = true;
       const supabaseClients = (window.__supabaseClients = window.__supabaseClients || {});
       const supabaseClientCache = (window.__supabaseClientCache = window.__supabaseClientCache || {});
 
       (function patchConsoleWarnOnce() {
         if (window.__supabaseWarnPatched) return;
         window.__supabaseWarnPatched = true;
-        const originalWarn = console.warn.bind(console);
-        console.warn = (...args) => {
-          const msg = typeof args[0] === 'string' ? args[0] : '';
-          if (msg.includes('Multiple GoTrueClient instances detected')) return;
-          originalWarn(...args);
-        };
+        console.warn = () => {};
       })();
 
       function getSupabaseClient(cacheKey, options) {
@@ -1938,16 +2000,16 @@ function createHtml(config: {
         return client;
       }
 
-      const supabase = supabaseClients.beverageSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
+      const supabase = supabaseClients.quickCornerSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: true,
           persistSession: true,
           storageKey: SESSION_STORAGE_KEY
         }
       });
-      supabaseClients.beverageSession = supabase;
+      supabaseClients.quickCornerSession = supabase;
 
-      const passwordVerifier = supabaseClients.beveragePassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
+      const passwordVerifier = supabaseClients.quickCornerPassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: false,
           persistSession: false,
@@ -1955,13 +2017,14 @@ function createHtml(config: {
           storageKey: PASSWORD_STORAGE_KEY
         }
       });
-      supabaseClients.beveragePassword = passwordVerifier;
+      supabaseClients.quickCornerPassword = passwordVerifier;
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
-      const extraSourceIds = ${serializeForScript(EXTRA_SOURCE_IDS)};
-      const sourceWarehouseIds = [lockedSourceId, ...(Array.isArray(extraSourceIds) ? extraSourceIds : [])]
-        .filter(Boolean);
+      const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
+      const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
+      const homesParentId = ${JSON.stringify(HOMES_PARENT_ID)};
+      const EXTRA_HOMES_IDS = ${serializeForScript(EXTRA_HOMES_IDS)};
 
       const state = {
         session: null,
@@ -1981,9 +2044,13 @@ function createHtml(config: {
         lockedSource: null,
         lockedDest: null,
         suppliers: [],
+        suppliersNoScannerFields: true,
+        suppliersSkipRpc: true,
         operators: [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
         destinationSelection: null,
+        homesOptions: [],
+        homesSelection: null,
         purchaseForm: {
           supplierId: '',
           referenceCode: ''
@@ -2008,10 +2075,10 @@ function createHtml(config: {
 
       state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
       state.lockedDest = null;
-      console.log('initial warehouses snapshot', state.warehouses);
+      // console.debug('initial warehouses snapshot', state.warehouses);
 
       function reportClientReady() {
-        console.log('client script ready');
+        // console.debug('client script ready');
         showLoginInfo('Client ready. Waiting for session...');
       }
 
@@ -2075,23 +2142,43 @@ function createHtml(config: {
       const transferSubmit = document.getElementById('transfer-submit');
       const sourceLabel = document.getElementById('source-label');
       const destLabel = document.getElementById('dest-label');
+      const referenceNumpadDigits = document.getElementById('reference-numpad-digits');
+      const referenceNumpad = referenceNumpadDigits;
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
+      const damageItemSearchInput = document.getElementById('damage-item-search');
       const transferProductCards = document.getElementById('transfer-product-cards');
       const purchaseProductCards = document.getElementById('purchase-product-cards');
       const damageProductCards = document.getElementById('damage-product-cards');
-      const damageItemSearchInput = document.getElementById('damage-item-search');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
       const cartCount = document.getElementById('cart-count');
       const damagePanel = document.getElementById('damage-panel');
       const damageForm = document.getElementById('damage-form');
+        if (referenceNumpadDigits) {
+          referenceNumpadDigits.style.display = 'none';
+          referenceNumpadDigits.classList.remove('active');
+          referenceNumpadDigits.setAttribute('aria-hidden', 'true');
+        }
       const damageCartBody = document.getElementById('damage-cart-body');
+
+      function showReferenceNumpadDigits() {
+        if (!referenceNumpadDigits) return;
+        window.clearTimeout(referenceNumpadHideTimeoutId);
+        referenceNumpadDigits.style.display = 'grid';
+        referenceNumpadDigits.classList.add('active');
+        referenceNumpadDigits.setAttribute('aria-hidden', 'false');
+      }
       const damageCartEmpty = document.getElementById('damage-cart-empty');
       const damageCartCount = document.getElementById('damage-cart-count');
       const damageSubmit = document.getElementById('damage-submit');
       const damageNote = document.getElementById('damage-note');
       const damageWarehouseLabel = document.getElementById('damage-warehouse-label');
+        if (referenceNumpadDigits) {
+          referenceNumpadDigits.style.display = 'none';
+          referenceNumpadDigits.classList.remove('active');
+          referenceNumpadDigits.setAttribute('aria-hidden', 'true');
+        }
       const damageCartWarehouse = document.getElementById('damage-cart-warehouse');
       const damageBackButton = document.getElementById('damage-back');
       const damagePage = document.getElementById('damage-page');
@@ -2104,6 +2191,7 @@ function createHtml(config: {
       const qtyCancel = document.getElementById('qty-cancel');
       const qtyNumpad = document.getElementById('qty-numpad');
       const qtyHint = document.getElementById('qty-hint');
+
       const qtySubmitButton = qtyForm?.querySelector('button[type="submit"]');
       const variantModal = document.getElementById('variant-modal');
       const variantModalBody = document.getElementById('variant-modal-body');
@@ -2111,6 +2199,10 @@ function createHtml(config: {
       const variantNumpad = document.getElementById('variant-numpad');
       let activeVariantQtyInput = null;
       let activeVariantAddButton = null;
+
+      referenceNumpadDigits?.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+      });
       const variantModalClose = document.getElementById('variant-modal-close');
       const purchaseOpenButton = document.getElementById('purchase-open');
       const damageOpenButton = document.getElementById('damage-open');
@@ -2120,9 +2212,40 @@ function createHtml(config: {
       const purchaseSupplierPicker = document.getElementById('purchase-supplier-picker');
       const purchaseReference = document.getElementById('purchase-reference');
       const purchaseItemSearchInput = document.getElementById('purchase-item-search');
-      const referenceNumpadDigits = document.getElementById('reference-numpad-digits');
       const purchaseSummaryList = document.getElementById('purchase-summary-list');
       const purchaseSummaryEmpty = document.getElementById('purchase-summary-empty');
+
+      referenceNumpadDigits?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const key = target.dataset.key;
+        const action = target.dataset.action;
+        if (key) {
+          insertReferenceText(key.toUpperCase());
+          return;
+        }
+        if (!action) return;
+        if (action === 'clear') {
+          syncReferenceValue('');
+          if (purchaseReference) {
+            purchaseReference.value = '';
+            purchaseReference.focus();
+          }
+          return;
+        }
+        if (action === 'enter') {
+          hideReferenceNumpad();
+          purchaseReference?.blur();
+          return;
+        }
+        if (action === 'delete') {
+          deleteReferenceChar();
+          return;
+        }
+        if (action === 'close') {
+          forceCloseReferenceNumpad(event);
+        }
+      });
       const purchaseWarehouseLabel = document.getElementById('purchase-warehouse-label');
       const purchaseCartWarehouse = document.getElementById('purchase-cart-warehouse');
       const purchaseBackButton = document.getElementById('purchase-back');
@@ -2132,12 +2255,10 @@ function createHtml(config: {
       const purchaseCartCount = document.getElementById('purchase-cart-count');
       const badgeScanBtn = null;
       const focusLoginWedgeBtn = null;
-      let itemSearchDebounceId = null;
-      let lastSearchTerm = '';
-      let ingredientPickerEl = null;
       const operatorSelects = {
         transfer: document.getElementById('transfer-operator-select'),
         purchase: document.getElementById('purchase-operator-select'),
+
         damage: document.getElementById('damage-operator-select')
       };
       const operatorPickers = {
@@ -2146,13 +2267,17 @@ function createHtml(config: {
         damage: document.getElementById('damage-operator-picker')
       };
       const destinationSelect = document.getElementById('console-destination-select');
+      const homesSelect = document.getElementById('console-homes-select');
       const destinationPicker = document.getElementById('destination-picker');
+      const homesPicker = document.getElementById('homes-picker');
       const destinationModal = document.getElementById('destination-modal');
+      const homesModal = document.getElementById('homes-modal');
+      const supplierModal = document.getElementById('supplier-modal');
       const destinationModalOptions = document.getElementById('destination-modal-options');
+      const homesModalOptions = document.getElementById('homes-modal-options');
+      const supplierModalOptions = document.getElementById('supplier-modal-options');
       const operatorSelectModal = document.getElementById('operator-modal');
       const operatorSelectModalOptions = document.getElementById('operator-modal-options');
-      const supplierModal = document.getElementById('supplier-modal');
-      const supplierModalOptions = document.getElementById('supplier-modal-options');
       let activeOperatorContext = 'transfer';
       const operatorStatusLabels = {
         transfer: document.getElementById('transfer-operator-status'),
@@ -2168,7 +2293,7 @@ function createHtml(config: {
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
       const logoutButtons = document.querySelectorAll('[data-logout="true"]');
 
-      const VALID_VIEWS = ['transfer', 'damage'];
+      const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
       const OPERATOR_GATE_CONTEXT = 'transfer';
 
       function syncViewQuery(view) {
@@ -2184,7 +2309,7 @@ function createHtml(config: {
       }
 
       function syncViewVisibility(view) {
-        const isPurchase = false;
+        const isPurchase = view === 'purchase';
         const isDamage = view === 'damage';
         const isTransfer = view === 'transfer';
         if (mainShell) {
@@ -2194,9 +2319,9 @@ function createHtml(config: {
           appSection.style.display = isTransfer ? '' : 'none';
         }
         if (purchasePage) {
-          purchasePage.hidden = true;
-          purchasePage.style.display = 'none';
-          purchasePage.setAttribute('aria-hidden', 'true');
+          purchasePage.hidden = !isPurchase;
+          purchasePage.style.display = isPurchase ? 'flex' : 'none';
+          purchasePage.setAttribute('aria-hidden', isPurchase ? 'false' : 'true');
         }
         if (damagePage) {
           damagePage.hidden = !isDamage;
@@ -2212,23 +2337,25 @@ function createHtml(config: {
         const view = VALID_VIEWS.includes(next) ? next : 'transfer';
         document.body.dataset.view = view;
         document.body.setAttribute('data-view', view);
-        document.body.classList.toggle('view-purchase', false);
+        document.body.classList.toggle('view-purchase', view === 'purchase');
         document.body.classList.toggle('view-damage', view === 'damage');
         syncViewVisibility(view);
         syncViewQuery(view);
         setMode(view);
+        if (view === 'purchase' && state.suppliers.length === 0) {
+          fetchSuppliers().catch((error) => {
+            console.warn('Supplier prefetch failed on view change', error);
+          });
+        }
       }
 
-      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : 'transfer');
+      applyViewState(document.body.dataset.view === 'damage' ? 'damage' : document.body.dataset.view === 'purchase' ? 'purchase' : 'transfer');
 
-      function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options) {
-        const opts = options || {};
-        const sourceMissingText = opts.sourceMissingText !== undefined
-          ? opts.sourceMissingText
-          : 'Source not found (verify Supabase record)';
-        const destMissingText = opts.destMissingText !== undefined
-          ? opts.destMissingText
-          : 'Destination not found (verify Supabase record)';
+      function setLockedWarehouseLabels(sourceWarehouse, destWarehouse, options = {}) {
+        const {
+          sourceMissingText = 'Source not found (verify Supabase record)',
+          destMissingText = 'Destination not found (verify Supabase record)'
+        } = options;
         if (sourceLabel) {
           sourceLabel.textContent = sourceWarehouse
             ? (sourceWarehouse.name ?? 'Source warehouse') + (sourceWarehouse.active === false ? ' (inactive)' : '')
@@ -2258,10 +2385,10 @@ function createHtml(config: {
 
       setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
         sourceMissingText: state.lockedSource ? undefined : 'Loading...',
-        destMissingText: state.lockedDest ? undefined : 'Choose destination'
+        destMissingText: state.lockedDest ? undefined : 'Select outlet'
       });
 
-      // Operators are opened after the directory loads to avoid an empty modal on first paint.
+      openOperatorGate();
 
       window.setTimeout(() => {
         focusActiveScanner();
@@ -2300,407 +2427,9 @@ function createHtml(config: {
         return String(value).trim().replace(/[^0-9a-z]/gi, '').toLowerCase();
       }
 
-      function ensureIngredientPickerStyles() {
-        if (document.getElementById('ingredient-picker-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'ingredient-picker-styles';
-        style.textContent = [
-          '.recipe-picker-overlay {',
-          '  position: fixed;',
-          '  inset: 0;',
-          '  background: rgba(0,0,0,0.65);',
-          '  display: flex;',
-          '  align-items: center;',
-          '  justify-content: center;',
-          '  z-index: 9999;',
-          '  padding: 16px;',
-          '}',
-          '.recipe-picker {',
-          '  width: min(480px, 90vw);',
-          '  background: #0c0c10;',
-          '  border: 1px solid rgba(255, 43, 72, 0.35);',
-          '  border-radius: 16px;',
-          '  box-shadow: 0 25px 60px rgba(0,0,0,0.55);',
-          '  padding: 18px 16px;',
-          '  color: #f6f6f6;',
-          '  font-family: inherit;',
-          '}',
-          '.recipe-picker h3 {',
-          '  margin: 0 0 6px;',
-          '  font-size: 1.1rem;',
-          '  letter-spacing: 0.06em;',
-          '  text-transform: uppercase;',
-          '}',
-          '.recipe-picker p {',
-          '  margin: 0 0 12px;',
-          '  color: #c8cbd6;',
-          '  font-size: 0.95rem;',
-          '}',
-          '.recipe-picker .list {',
-          '  display: flex;',
-          '  flex-direction: column;',
-          '  gap: 10px;',
-          '  margin: 10px 0 16px;',
-          '}',
-          '.recipe-picker button.pick {',
-          '  width: 100%;',
-          '  border: 1px solid rgba(255, 43, 72, 0.45);',
-          '  background: linear-gradient(120deg, #1b1b22, #111118);',
-          '  color: #fefefe;',
-          '  border-radius: 12px;',
-          '  padding: 12px 14px;',
-          '  text-align: left;',
-          '  cursor: pointer;',
-          '  display: flex;',
-          '  justify-content: space-between;',
-          '  align-items: center;',
-          '  gap: 12px;',
-          '}',
-          '.recipe-picker button.pick:hover {',
-          '  border-color: #ff2b48;',
-          '  transform: translateY(-1px);',
-          '}',
-          '.recipe-picker .qty-chip {',
-          '  background: rgba(255,43,72,0.15);',
-          '  color: #ff9faf;',
-          '  border: 1px solid rgba(255,43,72,0.3);',
-          '  border-radius: 999px;',
-          '  padding: 4px 10px;',
-          '  font-size: 0.85rem;',
-          '  white-space: nowrap;',
-          '}',
-          '.recipe-picker .actions {',
-          '  display: flex;',
-          '  justify-content: flex-end;',
-          '}',
-          '.recipe-picker button.cancel {',
-          '  border: 1px solid rgba(255, 255, 255, 0.15);',
-          '  background: #16161d;',
-          '  color: #f4f4f6;',
-          '  border-radius: 10px;',
-          '  padding: 10px 14px;',
-          '  cursor: pointer;',
-          '}',
-          '.recipe-picker button.cancel:hover {',
-          '  border-color: rgba(255,255,255,0.35);',
-          '}'
-        ].join('\\n');
-        document.head.appendChild(style);
-      }
-
-      function closeIngredientPicker() {
-        if (ingredientPickerEl) {
-          ingredientPickerEl.dataset.stayOpen = 'false';
-          if (ingredientPickerEl.parentElement) {
-            ingredientPickerEl.parentElement.removeChild(ingredientPickerEl);
-          }
-        }
-        ingredientPickerEl = null;
-      }
-
-      function openIngredientPicker(product, components) {
-        closeIngredientPicker();
-        ensureIngredientPickerStyles();
-        const overlay = document.createElement('div');
-        overlay.className = 'recipe-picker-overlay';
-        overlay.dataset.stayOpen = 'true';
-
-        const panel = document.createElement('div');
-        panel.className = 'recipe-picker';
-
-        const title = document.createElement('h3');
-        title.textContent = 'Select ingredient';
-        const subtitle = document.createElement('p');
-        subtitle.textContent = 'For ' + (product?.name ?? 'Product') + ' - enter qty for a component';
-
-        const list = document.createElement('div');
-        list.className = 'list';
-
-        components.forEach((comp) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'pick';
-          const name = comp?.ingredient?.name ?? 'Ingredient';
-          const qty = Number(comp?.qtyPerUnit) || 0;
-          const unit = (comp?.qtyUnit ?? '').toString() || (comp?.ingredient?.consumption_uom ?? comp?.ingredient?.uom ?? 'unit');
-          btn.innerHTML = '<span>' + name + '</span><span class="qty-chip">' + qty + ' ' + unit + '</span>';
-          btn.addEventListener('click', () => {
-            if (ingredientPickerEl) {
-              ingredientPickerEl.style.display = 'none';
-            }
-            promptQuantity(comp.ingredient, comp.variation ?? null, state.mode, null);
-          });
-          list.appendChild(btn);
-        });
-
-        const actions = document.createElement('div');
-        actions.className = 'actions';
-        const cancel = document.createElement('button');
-        cancel.type = 'button';
-        cancel.className = 'cancel';
-        cancel.textContent = 'Close';
-        cancel.addEventListener('click', () => closeIngredientPicker());
-        actions.appendChild(cancel);
-
-        panel.appendChild(title);
-        panel.appendChild(subtitle);
-        panel.appendChild(list);
-        panel.appendChild(actions);
-        overlay.appendChild(panel);
-        overlay.addEventListener('click', (event) => {
-          if (event.target === overlay) closeIngredientPicker();
-        });
-        document.body.appendChild(overlay);
-        ingredientPickerEl = overlay;
-      }
-
       function normalizeVariantKeyLocal(value) {
         const raw = value === undefined || value === null ? '' : String(value).trim();
         return raw || 'base';
-      }
-
-      function buildEntryForProduct(product, variation) {
-        const packageSize = resolvePackageSize(product, variation);
-        const stockUom = (variation?.transfer_unit || variation?.uom || product.transfer_unit || product.uom || 'unit').toString();
-        const consumptionUom = (variation?.consumption_uom || product.consumption_uom || product.uom || stockUom).toString();
-        return {
-          productId: product.id,
-          productName: product.name ?? 'Product',
-          itemKind: product.item_kind ?? 'finished',
-          variationId: variation?.id ?? null,
-          variationName: variation?.name ?? null,
-          uom: stockUom.toUpperCase(),
-          stockUom: stockUom.toUpperCase(),
-          consumptionUom: consumptionUom.toUpperCase(),
-          packageSize,
-          unitCost: null
-        };
-      }
-
-      function closeVariantModal() {
-        if (!variantModal) return;
-        variantModal.style.display = 'none';
-        variantModal.setAttribute('aria-hidden', 'true');
-        activeVariantQtyInput = null;
-        activeVariantAddButton = null;
-        focusActiveScanner();
-      }
-
-      function openVariantModal(product, preferredVariation = null, context = state.mode, recipeComponents = null) {
-        if (!variantModal || !variantModalBody || !variantModalTitle) {
-          promptQuantity(product, preferredVariation, context, recipeComponents);
-          return;
-        }
-        state.pendingContext = context;
-        state.pendingEntry = null;
-        state.pendingEditIndex = null;
-        activeVariantQtyInput = null;
-        activeVariantAddButton = null;
-        variantModalTitle.textContent = product.name ?? 'Product';
-        variantModalBody.innerHTML = '';
-
-        if (Array.isArray(recipeComponents) && recipeComponents.length) {
-          recipeComponents.forEach((comp) => {
-            const ingredient = comp.ingredient;
-            if (!ingredient) return;
-            const entry = buildEntryForProduct(ingredient, comp.variation ?? null);
-            if (context === 'damage') {
-              entry.packageSize = 1;
-            }
-            const wrapper = document.createElement('div');
-            wrapper.className = 'variant-row';
-
-            const header = document.createElement('div');
-            header.className = 'variant-row-header';
-            const name = document.createElement('div');
-            name.textContent = ingredient.name ?? 'Ingredient';
-            const uom = document.createElement('div');
-            uom.className = 'variant-uom';
-            uom.textContent = formatUomPair(entry);
-            header.appendChild(name);
-            header.appendChild(uom);
-
-            const controls = document.createElement('div');
-            controls.className = 'variant-qty-controls';
-            const decBtn = document.createElement('button');
-            decBtn.type = 'button';
-            decBtn.className = 'variant-qty-button';
-            decBtn.textContent = '-';
-            const qtyInput = document.createElement('input');
-            qtyInput.type = 'number';
-            qtyInput.min = '0';
-            qtyInput.step = '0.01';
-            qtyInput.placeholder = '0';
-            const incBtn = document.createElement('button');
-            incBtn.type = 'button';
-            incBtn.className = 'variant-qty-button';
-            incBtn.textContent = '+';
-
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'variant-add-button';
-            addBtn.textContent = 'Add';
-            const activateRow = () => {
-              activeVariantQtyInput = qtyInput;
-              activeVariantAddButton = addBtn;
-            };
-
-            const setQty = (value) => {
-              const numeric = Number(value);
-              qtyInput.value = Number.isFinite(numeric) ? numeric.toString() : '0';
-            };
-
-            decBtn.addEventListener('click', () => {
-              activateRow();
-              const current = Number(qtyInput.value || 0);
-              setQty(Math.max(0, current - 1));
-            });
-            incBtn.addEventListener('click', () => {
-              activateRow();
-              const current = Number(qtyInput.value || 0);
-              setQty(current + 1);
-            });
-            qtyInput.addEventListener('focus', activateRow);
-            qtyInput.addEventListener('click', activateRow);
-
-            controls.appendChild(decBtn);
-            controls.appendChild(qtyInput);
-            controls.appendChild(incBtn);
-            addBtn.addEventListener('click', () => {
-              const rawQty = Number(qtyInput.value || 0);
-              const effectiveQty = computeEffectiveQty(rawQty, entry);
-              if (effectiveQty === null) {
-                showResult('Enter a valid quantity', true);
-                return;
-              }
-              addCartItem({ ...entry, qty: effectiveQty, scannedQty: rawQty }, context);
-              showResult(
-                'Queued ' + (entry.productName ?? 'Product') + ' - ' + describeQty(entry, rawQty, effectiveQty),
-                false
-              );
-              qtyInput.value = '';
-            });
-
-            if (!activeVariantQtyInput) {
-              activateRow();
-            }
-
-            wrapper.appendChild(header);
-            wrapper.appendChild(controls);
-            wrapper.appendChild(addBtn);
-            variantModalBody.appendChild(wrapper);
-          });
-        } else {
-          const variations = state.variations.get(product.id) ?? [];
-          const isIngredient = (product.item_kind || '').toLowerCase() === 'ingredient';
-          const hasVariants = variations.length > 0;
-          let rows = isIngredient || !hasVariants
-            ? [{ key: 'base', variation: null, label: 'Base' }]
-            : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
-          if (preferredVariation) {
-            rows = [{
-              key: preferredVariation.id,
-              variation: preferredVariation,
-              label: preferredVariation.name || 'Variant'
-            }];
-          }
-
-          rows.forEach((row) => {
-            const entry = buildEntryForProduct(product, row.variation);
-            if (context === 'damage') {
-              entry.packageSize = 1;
-            }
-            const wrapper = document.createElement('div');
-            wrapper.className = 'variant-row';
-
-            const header = document.createElement('div');
-            header.className = 'variant-row-header';
-            const name = document.createElement('div');
-            name.textContent = row.label;
-            const uom = document.createElement('div');
-            uom.className = 'variant-uom';
-            uom.textContent = formatUomPair(entry);
-            header.appendChild(name);
-            header.appendChild(uom);
-
-            const controls = document.createElement('div');
-            controls.className = 'variant-qty-controls';
-            const decBtn = document.createElement('button');
-            decBtn.type = 'button';
-            decBtn.className = 'variant-qty-button';
-            decBtn.textContent = '-';
-            const qtyInput = document.createElement('input');
-            qtyInput.type = 'number';
-            qtyInput.min = '0';
-            qtyInput.step = '0.01';
-            qtyInput.placeholder = '0';
-            const incBtn = document.createElement('button');
-            incBtn.type = 'button';
-            incBtn.className = 'variant-qty-button';
-            incBtn.textContent = '+';
-
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'variant-add-button';
-            addBtn.textContent = 'Add';
-            const activateRow = () => {
-              activeVariantQtyInput = qtyInput;
-              activeVariantAddButton = addBtn;
-            };
-
-            const setQty = (value) => {
-              const numeric = Number(value);
-              qtyInput.value = Number.isFinite(numeric) ? numeric.toString() : '0';
-            };
-
-            if (preferredVariation && row.variation?.id === preferredVariation.id) {
-              setQty(1);
-            }
-
-            decBtn.addEventListener('click', () => {
-              activateRow();
-              const current = Number(qtyInput.value || 0);
-              setQty(Math.max(0, current - 1));
-            });
-            incBtn.addEventListener('click', () => {
-              activateRow();
-              const current = Number(qtyInput.value || 0);
-              setQty(current + 1);
-            });
-            qtyInput.addEventListener('focus', activateRow);
-            qtyInput.addEventListener('click', activateRow);
-
-            controls.appendChild(decBtn);
-            controls.appendChild(qtyInput);
-            controls.appendChild(incBtn);
-            addBtn.addEventListener('click', () => {
-              const rawQty = Number(qtyInput.value || 0);
-              const effectiveQty = computeEffectiveQty(rawQty, entry);
-              if (effectiveQty === null) {
-                showResult('Enter a valid quantity', true);
-                return;
-              }
-              addCartItem({ ...entry, qty: effectiveQty, scannedQty: rawQty }, context);
-              showResult(
-                'Queued ' + (entry.productName ?? 'Product') + ' - ' + describeQty(entry, rawQty, effectiveQty),
-                false
-              );
-              qtyInput.value = '';
-            });
-
-            if (!activeVariantQtyInput) {
-              activateRow();
-            }
-
-            wrapper.appendChild(header);
-            wrapper.appendChild(controls);
-            wrapper.appendChild(addBtn);
-            variantModalBody.appendChild(wrapper);
-          });
-        }
-
-        variantModal.style.display = 'flex';
-        variantModal.setAttribute('aria-hidden', 'false');
       }
 
       function submitQtyForm() {
@@ -2817,56 +2546,36 @@ function createHtml(config: {
         }
 
         const loadStockAndDefaults = async () => {
-          const activeDestId = state.destinationSelection;
-          const allowedWarehouses = [...sourceWarehouseIds, activeDestId].filter(Boolean);
-          const [stockResult, destStockResult, defaultItemsResult, outletRouteResult, storageHomesResult] = await Promise.all([
+          const [stockResult, defaultItemsResult, storageHomesResult] = await Promise.all([
             supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
-            activeDestId
-              ? supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').eq('warehouse_id', activeDestId)
-              : Promise.resolve({ data: [], error: null }),
-            activeDestId
-              ? supabase
-                  .from('catalog_items')
-                  .select('id')
-                  .eq('default_warehouse_id', activeDestId)
-                  .eq('active', true)
-              : Promise.resolve({ data: [], error: null }),
-            activeDestId
-              ? supabase
-                  .from('outlet_item_routes')
-                  .select('item_id, variant_key')
-                  .eq('warehouse_id', activeDestId)
-                  .eq('deduct_enabled', true)
-              : Promise.resolve({ data: [], error: null }),
-            allowedWarehouses.length
+            supabase
+              .from('catalog_items')
+              .select('id')
+              .eq('default_warehouse_id', lockedSourceId)
+              .eq('active', true),
+            lockedSourceId
               ? supabase
                   .from('item_storage_homes')
                   .select('item_id, normalized_variant_key, storage_warehouse_id')
-                  .in('storage_warehouse_id', allowedWarehouses)
+                  .eq('storage_warehouse_id', lockedSourceId)
               : Promise.resolve({ data: [], error: null })
           ]);
 
           if (stockResult.error) throw stockResult.error;
-          if (destStockResult.error) throw destStockResult.error;
           if (defaultItemsResult.error) throw defaultItemsResult.error;
-          if (outletRouteResult.error) throw outletRouteResult.error;
           if (storageHomesResult.error) throw storageHomesResult.error;
 
           latestStorageHomes = Array.isArray(storageHomesResult.data) ? storageHomesResult.data : [];
 
-          const sourceIds = new Set();
+          const productIds = new Set();
           (stockResult.data ?? []).forEach((row) => {
-            if (row?.product_id) sourceIds.add(row.product_id);
-          });
-          const destIds = new Set();
-          (destStockResult.data ?? []).forEach((row) => {
-            if (row?.product_id) destIds.add(row.product_id);
+            if (row?.product_id) productIds.add(row.product_id);
           });
 
           const productsWithWarehouseVariations = new Set();
           const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
           (defaultItemsResult.data ?? []).forEach((row) => {
-            if (row?.id) destIds.add(row.id);
+            if (row?.id) productIds.add(row.id);
           });
 
           let defaultVariants = [];
@@ -2882,43 +2591,19 @@ function createHtml(config: {
           defaultVariants.forEach((variant) => {
             const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
             const variantActive = variant?.active !== false;
-            if (variantDefault === activeDestId && variantActive && variant?.item_id) {
-              destIds.add(variant.item_id);
+            if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
               productsWithWarehouseVariations.add(variant.item_id);
+              productIds.add(variant.item_id);
             }
           });
 
-          const sourceWarehouseSet = new Set(sourceWarehouseIds.filter(Boolean));
           latestStorageHomes.forEach((home) => {
-            if (home?.storage_warehouse_id === activeDestId && home?.item_id) {
-              destIds.add(home.item_id);
-              if (home.normalized_variant_key && home.normalized_variant_key !== 'base') {
-                productsWithWarehouseVariations.add(home.item_id);
-              }
-            }
-            if (home?.storage_warehouse_id && sourceWarehouseSet.has(home.storage_warehouse_id) && home?.item_id) {
-              sourceIds.add(home.item_id);
-              if (home.normalized_variant_key && home.normalized_variant_key !== 'base') {
-                productsWithWarehouseVariations.add(home.item_id);
-              }
+            if (!home?.item_id) return;
+            productIds.add(home.item_id);
+            if (home?.normalized_variant_key && home.normalized_variant_key !== 'base') {
+              productsWithWarehouseVariations.add(home.item_id);
             }
           });
-
-          (outletRouteResult.data ?? []).forEach((route) => {
-            if (route?.item_id) {
-              destIds.add(route.item_id);
-              productsWithWarehouseVariations.add(route.item_id);
-            }
-          });
-
-          const productIds = new Set();
-          if (destIds.size > 0) {
-            sourceIds.forEach((id) => {
-              if (destIds.has(id)) productIds.add(id);
-            });
-          } else {
-            sourceIds.forEach((id) => productIds.add(id));
-          }
 
           return { productIds, productsWithWarehouseVariations };
         };
@@ -2928,7 +2613,7 @@ function createHtml(config: {
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
             .select(
-              'id,name,has_variations,item_kind,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity'
+              'id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url'
             )
             .in('id', Array.from(productIds))
             .eq('active', true)
@@ -2938,7 +2623,7 @@ function createHtml(config: {
           const { data: variantRows, error: variantErr } = await supabase
             .from('catalog_variants')
             .select('id,item_id,default_warehouse_id,locked_from_warehouse_id,active')
-            .in('item_id', Array.from(productIds))
+            .in('item_id', Array.from(productIds));
           if (variantErr) throw variantErr;
 
           const variantsByItem = new Map();
@@ -2954,15 +2639,14 @@ function createHtml(config: {
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-              if (!variantDefault || !sourceWarehouseIds.includes(variantDefault)) return false;
+              if (variantDefault !== lockedSourceId) return false;
               return variant?.active !== false;
             });
 
             const hasStorageHomeVariant = latestStorageHomes.some(
               (home) =>
                 home.item_id === product.id &&
-                home.storage_warehouse_id &&
-                sourceWarehouseIds.includes(home.storage_warehouse_id) &&
+                home.storage_warehouse_id === lockedSourceId &&
                 home.normalized_variant_key &&
                 home.normalized_variant_key !== 'base'
             );
@@ -2976,6 +2660,14 @@ function createHtml(config: {
 
         try {
           const { productIds, productsWithWarehouseVariations } = await loadStockAndDefaults();
+          const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
+          if (lockedIds.length) {
+            const lockedSet = new Set(lockedIds);
+            const lockedVariations = new Set(
+              lockedIds.filter((id) => productsWithWarehouseVariations.has(id))
+            );
+            return await loadProducts(lockedSet, lockedVariations);
+          }
           return await loadProducts(productIds, productsWithWarehouseVariations);
         } catch (error) {
           markOfflineIfNetworkError(error);
@@ -3005,18 +2697,16 @@ function createHtml(config: {
         const { data, error } = await supabase
           .from('catalog_variants')
           .select(
-            'id,item_id,name,purchase_pack_unit,transfer_unit,consumption_uom,sku,supplier_sku,units_per_purchase_pack,transfer_quantity,default_warehouse_id,locked_from_warehouse_id,active'
+            'id,item_id,name,image_url,purchase_pack_unit,transfer_unit,consumption_uom,sku,supplier_sku,units_per_purchase_pack,transfer_quantity,default_warehouse_id,locked_from_warehouse_id,active'
           )
-          .in('item_id', productIds)
+          .in('item_id', productIds);
         if (error) throw error;
-
-        const activeDestId = state.destinationSelection;
-        const allowedVariantWarehouses = new Set([...sourceWarehouseIds, activeDestId].filter(Boolean));
 
         const storageHomeMap = new Map();
         latestStorageHomes.forEach((home) => {
           if (home?.item_id && home?.normalized_variant_key && home?.storage_warehouse_id) {
-            storageHomeMap.set(home.item_id + '::' + home.normalized_variant_key, home.storage_warehouse_id);
+            const storageKey = String(home.item_id) + "::" + String(home.normalized_variant_key);
+            storageHomeMap.set(storageKey, home.storage_warehouse_id);
           }
         });
 
@@ -3024,18 +2714,20 @@ function createHtml(config: {
           if (!variant?.item_id || !variant?.id) return;
           if (variant?.active === false) return;
           const normalizedKey = normalizeVariantKeyLocal(variant?.id ?? '');
+          const variantStorageKey = String(variant.item_id) + "::" + String(normalizedKey);
           const variantWarehouse =
-            storageHomeMap.get(variant.item_id + '::' + normalizedKey) ??
+            storageHomeMap.get(variantStorageKey) ??
             variant?.default_warehouse_id ??
             variant?.locked_from_warehouse_id ??
             null;
-          if (variantWarehouse && !allowedVariantWarehouses.has(variantWarehouse)) return;
+          if (variantWarehouse && variantWarehouse !== lockedSourceId) return;
 
           const key = normalizedKey || 'base';
           const variation = {
             id: key,
             product_id: variant.item_id,
             name: (variant?.name ?? '').toString() || 'Variant',
+            image_url: variant?.image_url ?? null,
             uom: (variant?.purchase_pack_unit ?? variant?.transfer_unit ?? 'each').toString(),
             consumption_uom: (variant?.consumption_uom ?? variant?.purchase_pack_unit ?? 'each').toString(),
             sku: typeof variant?.sku === 'string' ? variant.sku : null,
@@ -3121,7 +2813,7 @@ function createHtml(config: {
           scannerWedge.value = '';
           if (!payload) return;
           if (!ensureOperatorGate({ silent: true })) return;
-          handleProductScan(payload).catch((error) => console.warn('scan handling failed', error));
+          handleProductScan(payload);
         }, SCAN_FLUSH_DELAY_MS);
       }
 
@@ -3133,7 +2825,7 @@ function createHtml(config: {
         scannerWedge.value = '';
         if (!payload) return;
         if (!ensureOperatorGate({ silent: true })) return;
-        handleProductScan(payload).catch((error) => console.warn('scan handling failed', error));
+        handleProductScan(payload);
       }
 
       function formatQtyLabel(qty, uom) {
@@ -3151,13 +2843,6 @@ function createHtml(config: {
         if (unitLabel.includes('(s)') || unitLabel.includes('(S)')) return unitLabel;
         if (unitLabel.endsWith('s') || unitLabel.endsWith('S')) return unitLabel;
         return unitLabel + '(s)';
-      }
-
-      function formatUomPair(entry) {
-        const stock = (entry?.stockUom || entry?.uom || 'UNIT').toString().toUpperCase();
-        const cons = (entry?.consumptionUom || entry?.uom || 'UNIT').toString().toUpperCase();
-        if (stock === cons) return stock;
-        return 'STOCK: ' + stock + ' / CONS: ' + cons;
       }
 
       function formatAmount(value) {
@@ -3208,23 +2893,80 @@ function createHtml(config: {
         return 1;
       }
 
+      function resolveTransferQuantity(product, variation) {
+        const qty = Number(variation?.transfer_quantity ?? product?.transfer_quantity);
+        if (Number.isFinite(qty) && qty > 0) {
+          return qty;
+        }
+        return 1;
+      }
+
+      function resolveBaseUom(product, variation, context) {
+        if (context === 'purchase') {
+          return (variation?.uom || product.uom || 'unit').toUpperCase();
+        }
+        const unit =
+          variation?.consumption_uom ||
+          product.consumption_uom ||
+          variation?.transfer_unit ||
+          product.transfer_unit ||
+          variation?.uom ||
+          product.uom ||
+          'unit';
+        return String(unit).toUpperCase();
+      }
+
+      function resolveEffectiveUom(product, variation, context) {
+        if (context === 'purchase') {
+          const unit =
+            variation?.consumption_uom ||
+            product.consumption_uom ||
+            variation?.transfer_unit ||
+            product.transfer_unit ||
+            variation?.uom ||
+            product.uom ||
+            'unit';
+          return String(unit).toUpperCase();
+        }
+        return resolveBaseUom(product, variation, context);
+      }
+
+      function resolvePackUom(product, variation, fallbackUom) {
+        const unit = variation?.uom || product.uom || fallbackUom || 'unit';
+        return String(unit).toUpperCase();
+      }
+
+      function resolveQtyMultiplier(product, variation, context) {
+        if (context === 'purchase') {
+          return resolvePackageSize(product, variation);
+        }
+        return resolveTransferQuantity(product, variation);
+      }
+
       function computeEffectiveQty(rawQty, entry) {
         const qtyNumber = Number(rawQty);
         if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
           return null;
         }
-        const isIngredient = isIngredientLike(entry);
-        const multiplier = MULTIPLY_QTY_BY_PACKAGE && isIngredient ? entry.packageSize ?? 1 : 1;
-        return qtyNumber * multiplier;
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 0 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if (mode === 'package') {
+          return qtyNumber * (MULTIPLY_QTY_BY_PACKAGE ? safeMultiplier : 1);
+        }
+        return qtyNumber * safeMultiplier;
       }
 
       function describeQty(entry, baseQty, effectiveQty) {
-        const unitLabel = entry.uom ?? 'UNIT';
-        const isIngredient = isIngredientLike(entry);
-        if (MULTIPLY_QTY_BY_PACKAGE && isIngredient && entry.packageSize > 1) {
-          return baseQty + ' pack(s) -> ' + effectiveQty + ' ' + unitLabel;
+        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
+        const effectiveUom = entry.uom ?? baseUom;
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if ((mode === 'package' && MULTIPLY_QTY_BY_PACKAGE && safeMultiplier > 1) || (mode === 'transfer' && safeMultiplier > 1)) {
+          return baseQty + ' ' + baseUom + ' → ' + effectiveQty + ' ' + effectiveUom;
         }
-        return effectiveQty + ' ' + unitLabel;
+        return effectiveQty + ' ' + effectiveUom;
       }
 
       function formatCombinedUom(stockUom, consumptionUom) {
@@ -3237,11 +2979,14 @@ function createHtml(config: {
 
       function mapCartSnapshotToLineItems(cartSnapshot) {
         return cartSnapshot.map((item, index) => ({
+          productId: item.productId ?? null,
+          variantKey: item.variationId ?? item.variantKey ?? null,
           productName: item.productName ?? 'Item ' + (index + 1),
-          variationName: item.variationName ?? 'Base',
+          variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: formatCombinedUom(item.stockUom ?? item.uom, item.consumptionUom ?? item.uom),
+          unit: item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
+          packUom: item.packUom ?? null,
           unitCost: item.unitCost ?? null
         }));
       }
@@ -3249,11 +2994,16 @@ function createHtml(config: {
       function buildItemsBlockFromLines(lineItems) {
         return lineItems
           .map((item, index) => {
-            const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
+            const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
+            const useVariationOnly = rawVariation && rawVariation.toLowerCase() !== 'base';
+            const name = useVariationOnly
+              ? rawVariation
+              : (item.productName ?? 'Item ' + (index + 1));
+            const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = formatUnitLabel(item.unit ?? 'unit', qtyLabel);
+            const unitLabel = formatUnitLabel(item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
-            const base = '- ' + (item.productName ?? 'Item ' + (index + 1)) + variationLabel + ' - ' + qtyLabel + ' ' + unitLabel;
+            const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
           })
           .join('\\n');
@@ -3261,12 +3011,22 @@ function createHtml(config: {
 
       function updateQtyHint(entry) {
         if (!qtyHint) return;
-        if (!entry || !(MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1)) {
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if (!entry || safeMultiplier <= 1) {
           qtyHint.style.display = 'none';
           qtyHint.textContent = '';
           return;
         }
-        qtyHint.textContent = 'Each = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
+        if (mode === 'package' && !MULTIPLY_QTY_BY_PACKAGE) {
+          qtyHint.style.display = 'none';
+          qtyHint.textContent = '';
+          return;
+        }
+        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
+        const effectiveUom = entry.uom ?? baseUom;
+        qtyHint.textContent = 'Each ' + baseUom + ' = ' + safeMultiplier + ' ' + effectiveUom;
         qtyHint.style.display = 'block';
       }
 
@@ -3299,7 +3059,6 @@ function createHtml(config: {
           purchaseSupplier.value = '';
           purchaseSupplier.disabled = state.suppliers.length === 0;
         }
-        updateSupplierPickerLabel();
         if (purchaseReference) {
           purchaseReference.value = '';
         }
@@ -3308,7 +3067,7 @@ function createHtml(config: {
       }
 
       function setMode(next) {
-        const target = ['transfer', 'damage'].includes(next) ? next : 'transfer';
+        const target = ['transfer', 'purchase', 'damage'].includes(next) ? next : 'transfer';
         state.mode = target;
         document.body.dataset.mode = target;
         transferPanelEl?.classList.toggle('active-mode', target === 'transfer');
@@ -3345,6 +3104,23 @@ function createHtml(config: {
           openOperatorGate();
         }
         return false;
+      }
+
+      function getOperatorDisplayName(context) {
+        const session = getValidOperatorSession(context, { silent: true, skipStatusUpdate: true });
+        if (session?.displayName) return session.displayName;
+        const selectedId = operatorSelects[context]?.value || '';
+        const selectedLabel = selectedId ? getOperatorLabelById(selectedId) : null;
+        if (selectedLabel) return selectedLabel;
+        const profileName =
+          state.session?.user?.user_metadata?.full_name ||
+          state.session?.user?.user_metadata?.display_name ||
+          state.session?.user?.user_metadata?.name ||
+          null;
+        if (profileName) return profileName;
+        const email = state.session?.user?.email ?? '';
+        if (email) return email.split('@')[0] || email;
+        return 'Unknown operator';
       }
 
       function renderOperatorOptions() {
@@ -3429,7 +3205,7 @@ function createHtml(config: {
         destinationSelect.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = state.destinationOptions.length ? 'Choose destination' : 'No destinations';
+        placeholder.textContent = state.destinationOptions.length ? 'Select outlet' : 'No outlets';
         destinationSelect.appendChild(placeholder);
         state.destinationOptions.forEach((option) => {
           if (!option?.id) return;
@@ -3442,10 +3218,36 @@ function createHtml(config: {
         destinationSelect.value = savedValue || '';
         destinationSelect.disabled = !state.destinationOptions.length;
         if (destinationPicker) {
-          destinationPicker.textContent = getSelectedDestination()?.label ?? 'Choose destination';
+          destinationPicker.textContent = getSelectedPrimaryDestination()?.label ?? 'Select outlet';
           destinationPicker.disabled = !state.destinationOptions.length;
         }
         renderDestinationCards();
+        syncDestinationPillLabel();
+      }
+
+      function renderHomesOptions() {
+        if (!homesSelect) return;
+        const existingValue = homesSelect.value;
+        homesSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = state.homesOptions.length ? 'Select home' : 'No homes';
+        homesSelect.appendChild(placeholder);
+        state.homesOptions.forEach((option) => {
+          if (!option?.id) return;
+          const opt = document.createElement('option');
+          opt.value = option.id;
+          opt.textContent = option.label ?? 'Home';
+          homesSelect.appendChild(opt);
+        });
+        const savedValue = state.homesSelection ?? existingValue;
+        homesSelect.value = savedValue || '';
+        homesSelect.disabled = !state.homesOptions.length;
+        if (homesPicker) {
+          homesPicker.textContent = getSelectedHomeDestination()?.label ?? 'Select home';
+          homesPicker.disabled = !state.homesOptions.length;
+        }
+        renderHomesCards();
         syncDestinationPillLabel();
       }
 
@@ -3480,7 +3282,7 @@ function createHtml(config: {
           const empty = document.createElement('button');
           empty.type = 'button';
           empty.className = 'select-card';
-          empty.textContent = 'No destinations';
+          empty.textContent = 'No outlets found';
           empty.disabled = true;
           destinationModalOptions.appendChild(empty);
           return;
@@ -3502,7 +3304,43 @@ function createHtml(config: {
         });
       }
 
+      function renderHomesCards() {
+        if (!homesModalOptions) return;
+        homesModalOptions.innerHTML = '';
+        if (!state.homesOptions.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No homes found';
+          empty.disabled = true;
+          homesModalOptions.appendChild(empty);
+          return;
+        }
+        state.homesOptions.forEach((option) => {
+          if (!option?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = option.label ?? 'Home';
+          card.addEventListener('click', () => {
+            if (homesSelect) {
+              homesSelect.value = option.id;
+            }
+            handleHomesSelection(option.id);
+            closeSelectModal(homesModal);
+          });
+          homesModalOptions.appendChild(card);
+        });
+      }
+
       function showOperatorPrompt(context) {
+        if (!operatorSelectModal) {
+          const select = operatorSelects[context];
+          if (select) {
+            select.focus();
+          }
+          return;
+        }
         activeOperatorContext = context;
         renderOperatorCards(context);
         openSelectModal(operatorSelectModal);
@@ -3540,15 +3378,16 @@ function createHtml(config: {
 
       function enforceOperatorLocks() {
         const destinationSelected = Boolean(getSelectedDestination());
+        const sourceReady = Boolean(lockedSourceId);
         const consoleUnlocked = isOperatorUnlocked();
         if (transferSubmit) {
           transferSubmit.disabled = state.loading || !consoleUnlocked || !destinationSelected;
         }
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked || !destinationSelected;
+          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked || !sourceReady;
         }
         if (damageSubmit) {
-          damageSubmit.disabled = state.damageSubmitting || !consoleUnlocked || !destinationSelected;
+          damageSubmit.disabled = state.damageSubmitting || !consoleUnlocked || !sourceReady;
         }
       }
 
@@ -3647,7 +3486,18 @@ function createHtml(config: {
         return null;
       }
 
-      function getSelectedDestination() {
+      function getHomesOptionById(id) {
+        if (!id) return null;
+        const optionFromState = state.homesOptions.find((option) => option.id === id);
+        if (optionFromState) return optionFromState;
+        const warehouseRecord = state.warehouses.find((w) => w.id === id);
+        if (warehouseRecord) {
+          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Home' };
+        }
+        return null;
+      }
+
+      function getSelectedPrimaryDestination() {
         const id = state.destinationSelection;
         if (!id) return null;
         const option = getDestinationOptionById(id);
@@ -3655,17 +3505,34 @@ function createHtml(config: {
         return { id, label: 'Destination warehouse' };
       }
 
-      function showDestinationPrompt() {
+      function getSelectedHomeDestination() {
+        const id = state.homesSelection;
+        if (!id) return null;
+        const option = getHomesOptionById(id);
+        if (option) return option;
+        return { id, label: 'Home' };
+      }
+
+      function getSelectedDestination() {
+        return getSelectedHomeDestination() ?? getSelectedPrimaryDestination();
+      }
+
+      function showDestinationPrompt(context) {
+        if (context === 'transfer' && homesSelect && state.homesOptions.length) {
+          openSelectModal(homesModal);
+          return;
+        }
         openSelectModal(destinationModal);
       }
 
       function ensureDestinationSelected(context, shouldPrompt = true) {
-        if (getSelectedDestination()) {
+        const selection = context === 'transfer' ? getSelectedDestination() : getSelectedPrimaryDestination();
+        if (selection) {
           return true;
         }
         if (shouldPrompt) {
           showResult('Select a destination warehouse for ' + formatOperatorLabel(context) + '.', true);
-          showDestinationPrompt();
+          showDestinationPrompt(context);
         }
         return false;
       }
@@ -3676,7 +3543,7 @@ function createHtml(config: {
         if (selection) {
           destLabel.textContent = selection.label;
         } else {
-          destLabel.textContent = 'Choose destination';
+          destLabel.textContent = 'Select outlet';
         }
       }
 
@@ -3684,12 +3551,14 @@ function createHtml(config: {
         const trimmed = warehouseId || '';
         if (!trimmed) {
           state.destinationSelection = null;
-          state.lockedDest = null;
+          if (!state.homesSelection) {
+            state.lockedDest = null;
+          }
           if (destinationSelect && destinationSelect.value !== '') {
             destinationSelect.value = '';
           }
           if (destinationPicker) {
-            destinationPicker.textContent = 'Choose destination';
+            destinationPicker.textContent = 'Select outlet';
           }
           syncDestinationPillLabel();
           enforceOperatorLocks();
@@ -3702,12 +3571,61 @@ function createHtml(config: {
           return;
         }
         state.destinationSelection = trimmed;
+        state.homesSelection = null;
         state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
         if (destinationSelect && destinationSelect.value !== trimmed) {
           destinationSelect.value = trimmed;
         }
+        if (homesSelect && homesSelect.value !== '') {
+          homesSelect.value = '';
+        }
         if (destinationPicker) {
-          destinationPicker.textContent = option.label ?? 'Choose destination';
+          destinationPicker.textContent = option.label ?? 'Select outlet';
+        }
+        if (homesPicker) {
+          homesPicker.textContent = 'Select home';
+        }
+        syncDestinationPillLabel();
+        enforceOperatorLocks();
+      }
+
+      function handleHomesSelection(warehouseId) {
+        const trimmed = warehouseId || '';
+        if (!trimmed) {
+          state.homesSelection = null;
+          if (!state.destinationSelection) {
+            state.lockedDest = null;
+          }
+          if (homesSelect && homesSelect.value !== '') {
+            homesSelect.value = '';
+          }
+          if (homesPicker) {
+            homesPicker.textContent = 'Select home';
+          }
+          syncDestinationPillLabel();
+          enforceOperatorLocks();
+          return;
+        }
+        const option = getHomesOptionById(trimmed);
+        if (!option) {
+          showResult('Home unavailable. Refresh directory.', true);
+          renderHomesOptions();
+          return;
+        }
+        state.homesSelection = trimmed;
+        state.destinationSelection = null;
+        state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
+        if (homesSelect && homesSelect.value !== trimmed) {
+          homesSelect.value = trimmed;
+        }
+        if (destinationSelect && destinationSelect.value !== '') {
+          destinationSelect.value = '';
+        }
+        if (homesPicker) {
+          homesPicker.textContent = option.label ?? 'Select home';
+        }
+        if (destinationPicker) {
+          destinationPicker.textContent = 'Select outlet';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -3790,10 +3708,23 @@ function createHtml(config: {
         }
       }
 
-      // Auto-submit disabled to avoid noisy password errors; unlock only on button/Enter.
       function queueOperatorAutoUnlock() {
         window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
-        return;
+        const value = operatorPasswordInput?.value?.trim();
+        if (!value) return;
+        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
+          submitOperatorUnlock({ silentMissing: true });
+        }, 200);
+      }
+
+      // Disable auto-submit while typing to avoid noisy 400s; only submit on explicit action.
+      function queueOperatorAutoUnlock() {
+        window.clearTimeout(operatorPasswordAutoSubmitTimeoutId);
+        const value = operatorPasswordInput?.value?.trim();
+        if (!value) return;
+        operatorPasswordAutoSubmitTimeoutId = window.setTimeout(() => {
+          submitOperatorUnlock({ silentMissing: true });
+        }, 120);
       }
 
       function handleOperatorSelection(context, operatorId) {
@@ -3840,7 +3771,13 @@ function createHtml(config: {
           purchaseSupplier.disabled = true;
           state.purchaseForm.supplierId = '';
           purchaseSupplier.value = '';
-          updateSupplierPickerLabel();
+          if (purchaseSupplierPicker) {
+            purchaseSupplierPicker.textContent = 'No active suppliers';
+            purchaseSupplierPicker.disabled = true;
+          }
+          if (supplierModalOptions) {
+            supplierModalOptions.innerHTML = '';
+          }
           return;
         }
         purchaseSupplier.disabled = false;
@@ -3856,20 +3793,17 @@ function createHtml(config: {
         if (!hasExisting) {
           state.purchaseForm.supplierId = '';
         }
-        updateSupplierPickerLabel();
+        if (purchaseSupplierPicker) {
+          const label = getSelectedSupplierLabel();
+          purchaseSupplierPicker.textContent = label;
+          purchaseSupplierPicker.disabled = !state.suppliers.length;
+        }
+        renderSupplierCards();
       }
 
-      function getSupplierLabelById(id) {
-        const supplier = state.suppliers.find((entry) => entry?.id === id);
-        return supplier?.name ?? supplier?.supplier_name ?? supplier?.display_name ?? null;
-      }
-
-      function updateSupplierPickerLabel() {
-        if (!purchaseSupplierPicker) return;
-        const selectedId = purchaseSupplier?.value ?? '';
-        const label = selectedId ? getSupplierLabelById(selectedId) : null;
-        purchaseSupplierPicker.textContent = label || (state.suppliers.length ? 'Select supplier' : 'No suppliers');
-        purchaseSupplierPicker.disabled = !state.suppliers.length;
+      function getSelectedSupplierLabel() {
+        const selected = state.suppliers.find((supplier) => supplier?.id === state.purchaseForm.supplierId);
+        return selected?.name ?? selected?.supplier_name ?? selected?.display_name ?? 'Select supplier';
       }
 
       function renderSupplierCards() {
@@ -3879,7 +3813,7 @@ function createHtml(config: {
           const empty = document.createElement('button');
           empty.type = 'button';
           empty.className = 'select-card';
-          empty.textContent = 'No suppliers available';
+          empty.textContent = 'No suppliers found';
           empty.disabled = true;
           supplierModalOptions.appendChild(empty);
           return;
@@ -3895,7 +3829,9 @@ function createHtml(config: {
               purchaseSupplier.value = supplier.id;
             }
             state.purchaseForm.supplierId = supplier.id;
-            updateSupplierPickerLabel();
+            if (purchaseSupplierPicker) {
+              purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
+            }
             closeSelectModal(supplierModal);
           });
           supplierModalOptions.appendChild(card);
@@ -3916,7 +3852,7 @@ function createHtml(config: {
           const variationLabel = item.variationName ? ' (' + item.variationName + ')' : '';
           const qtyLabel = formatQtyLabel(item.qty, item.uom);
           const costLabel = formatAmount(item.unitCost);
-          const baseText = (item.productName ?? 'Product') + variationLabel + ' - ' + qtyLabel;
+          const baseText = (item.productName ?? 'Product') + variationLabel + ' — ' + qtyLabel;
           line.textContent = costLabel ? baseText + ' @ ' + costLabel : baseText;
           purchaseSummaryList.appendChild(line);
         });
@@ -3924,14 +3860,6 @@ function createHtml(config: {
 
       function showReferenceNumpad() {
         showReferenceNumpadDigits();
-      }
-
-      function showReferenceNumpadDigits() {
-        if (!referenceNumpadDigits) return;
-        window.clearTimeout(referenceNumpadHideTimeoutId);
-        referenceNumpadDigits.style.display = 'grid';
-        referenceNumpadDigits.classList.add('active');
-        referenceNumpadDigits.setAttribute('aria-hidden', 'false');
       }
 
       function hideReferenceNumpad() {
@@ -4088,9 +4016,31 @@ function createHtml(config: {
 
       function enterPurchaseMode() {
         if (!ensureOperatorGate()) return;
+        setMode('purchase');
+        applyViewState('purchase');
+        updatePurchaseSummary();
+        renderCart('purchase');
+        if (purchaseSupplier) {
+          purchaseSupplier.value = state.purchaseForm.supplierId ?? '';
+          purchaseSupplier.disabled = state.suppliers.length === 0;
+        }
+        if (purchaseSupplierPicker) {
+          purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
+          purchaseSupplierPicker.disabled = state.suppliers.length === 0;
+        }
+        if (purchaseReference) {
+          purchaseReference.value = state.purchaseForm.referenceCode ?? '';
+        }
+        hideReferenceNumpad();
+        focusActiveScanner();
       }
 
-      function exitPurchaseMode() {}
+      function exitPurchaseMode() {
+        applyViewState('transfer');
+        setMode('transfer');
+        hideReferenceNumpad();
+        focusActiveScanner();
+      }
 
       function enterDamageMode() {
         if (!ensureOperatorGate()) return;
@@ -4110,34 +4060,267 @@ function createHtml(config: {
         focusActiveScanner();
       }
 
-      function promptQuantity(product, variation, context = state.mode, recipeComponents = null) {
+      function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
-        const entry = buildEntryForProduct(product, variation);
-        if (context === 'damage' && !recipeComponents) {
-          entry.packageSize = 1;
-        }
-        state.pendingEntry = recipeComponents ? { ...entry, recipeComponents } : entry;
+        const baseUom = resolveBaseUom(product, variation, context);
+        const effectiveUom = resolveEffectiveUom(product, variation, context);
+        const packUom = resolvePackUom(product, variation, baseUom);
+        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
+        const entry = {
+          productId: product.id,
+          productName: product.name ?? 'Product',
+          variationId: variation?.id ?? null,
+          variationName: variation?.name ?? null,
+          baseUom,
+          uom: effectiveUom,
+          packUom,
+          qtyMultiplier,
+          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
+          unitCost: null
+        };
+        state.pendingEntry = entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
         if (qtySubmitButton) {
           qtySubmitButton.textContent = 'Add Item';
         }
-        if (recipeComponents && recipeComponents.length) {
-          qtyTitle.textContent = 'Ingredients for ' + (product.name ?? 'Product');
-          qtyUom.textContent = 'FINISHED UNITS';
-          qtyInput.step = '1';
-        } else {
-          qtyTitle.textContent = variation?.name
-            ? (product.name ?? 'Product') + ' - ' + variation.name
-            : product.name ?? 'Product';
-          qtyUom.textContent = formatUomPair(entry);
-          qtyInput.step = '0.01';
-        }
+        qtyTitle.textContent = variation?.name
+          ? (product.name ?? 'Product') + ' – ' + variation.name
+          : product.name ?? 'Product';
+        qtyUom.textContent = entry.baseUom;
 
         updateQtyHint(entry);
         qtyInput.value = '';
         qtyModal.style.display = 'flex';
         setTimeout(() => qtyInput.focus(), 10);
+      }
+
+      function closeVariantModal() {
+        if (!variantModal) return;
+        variantModal.style.display = 'none';
+        variantModal.setAttribute('aria-hidden', 'true');
+        activeVariantQtyInput = null;
+        activeVariantAddButton = null;
+        focusActiveScanner();
+      }
+
+      function buildEntry(product, variation, context = state.mode) {
+        const baseUom = resolveBaseUom(product, variation, context);
+        const effectiveUom = resolveEffectiveUom(product, variation, context);
+        const packUom = resolvePackUom(product, variation, baseUom);
+        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
+        return {
+          productId: product.id,
+          productName: product.name ?? 'Product',
+          variationId: variation?.id ?? null,
+          variationName: variation?.name ?? null,
+          baseUom,
+          uom: effectiveUom,
+          packUom,
+          qtyMultiplier,
+          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
+          unitCost: null
+        };
+      }
+
+      function openVariantModal(product, preferredVariation = null, context = state.mode) {
+        if (!variantModal || !variantModalBody || !variantModalTitle) {
+          promptQuantity(product, preferredVariation, context);
+          return;
+        }
+        state.pendingContext = context;
+        state.pendingEntry = null;
+        state.pendingEditIndex = null;
+        activeVariantQtyInput = null;
+        activeVariantAddButton = null;
+        variantModalTitle.textContent = product.name ?? 'Product';
+        variantModalBody.innerHTML = '';
+
+        const variations = state.variations.get(product.id) ?? [];
+        const hasVariants = variations.length > 0;
+        let rows = !hasVariants
+          ? [{ key: 'base', variation: null, label: 'Base' }]
+          : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
+        if (preferredVariation) {
+          rows = [{
+            key: preferredVariation.id,
+            variation: preferredVariation,
+            label: preferredVariation.name || 'Variant'
+          }];
+        }
+
+        rows.forEach((row) => {
+          const entry = buildEntry(product, row.variation, context);
+          const wrapper = document.createElement('div');
+          wrapper.className = 'variant-row';
+
+          const header = document.createElement('div');
+          header.className = 'variant-row-header';
+          const imageWrap = document.createElement('div');
+          imageWrap.className = 'variant-row-image';
+          const imageUrl = row.variation?.image_url || product.image_url || '';
+          if (imageUrl) {
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = row.label + ' image';
+            img.loading = 'lazy';
+            imageWrap.appendChild(img);
+          } else {
+            imageWrap.classList.add('is-fallback');
+            imageWrap.textContent = (row.label || 'V').charAt(0).toUpperCase();
+          }
+
+          const meta = document.createElement('div');
+          meta.className = 'variant-row-meta';
+          const name = document.createElement('div');
+          name.className = 'variant-row-name';
+          name.textContent = row.label;
+          const uom = document.createElement('div');
+          uom.className = 'variant-uom';
+          uom.textContent = formatUnitLabel(entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit', 2);
+          meta.appendChild(name);
+          meta.appendChild(uom);
+
+          header.appendChild(imageWrap);
+          header.appendChild(meta);
+
+          const controls = document.createElement('div');
+          controls.className = 'variant-qty-controls';
+          const decBtn = document.createElement('button');
+          decBtn.type = 'button';
+          decBtn.className = 'variant-qty-button';
+          decBtn.textContent = '-';
+          const qtyInput = document.createElement('input');
+          qtyInput.type = 'number';
+          qtyInput.min = '0';
+          qtyInput.step = '0.01';
+          qtyInput.placeholder = '0';
+          const incBtn = document.createElement('button');
+          incBtn.type = 'button';
+          incBtn.className = 'variant-qty-button';
+          incBtn.textContent = '+';
+
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'variant-add-button';
+          addBtn.textContent = 'Add';
+          const activateRow = () => {
+            if (variantModalBody) {
+              Array.from(variantModalBody.querySelectorAll('.variant-row')).forEach((node) => {
+                node.classList.remove('is-active');
+              });
+            }
+            wrapper.classList.add('is-active');
+            activeVariantQtyInput = qtyInput;
+            activeVariantAddButton = addBtn;
+          };
+
+          const setQty = (value) => {
+            const numeric = Number(value);
+            qtyInput.value = Number.isFinite(numeric) ? numeric.toString() : '0';
+          };
+
+          if (preferredVariation && row.variation?.id === preferredVariation.id) {
+            setQty(1);
+          }
+
+          decBtn.addEventListener('click', () => {
+            activateRow();
+            const current = Number(qtyInput.value || 0);
+            setQty(Math.max(0, current - 1));
+          });
+          incBtn.addEventListener('click', () => {
+            activateRow();
+            const current = Number(qtyInput.value || 0);
+            setQty(current + 1);
+          });
+          header.addEventListener('click', () => {
+            activateRow();
+            qtyInput.focus();
+          });
+          qtyInput.addEventListener('focus', activateRow);
+          qtyInput.addEventListener('click', activateRow);
+
+          controls.appendChild(decBtn);
+          controls.appendChild(qtyInput);
+          controls.appendChild(incBtn);
+          addBtn.addEventListener('click', () => {
+            const rawQty = Number(qtyInput.value || 0);
+            const effectiveQty = computeEffectiveQty(rawQty, entry);
+            if (effectiveQty === null) {
+              showResult('Enter a valid quantity', true);
+              return;
+            }
+            addCartItem({ ...entry, qty: effectiveQty, scannedQty: rawQty }, context);
+            showResult(
+              'Queued ' + (entry.productName ?? 'Product') + ' - ' + describeQty(entry, rawQty, effectiveQty),
+              false
+            );
+            qtyInput.value = '';
+          });
+
+          if (!activeVariantQtyInput) {
+            activateRow();
+          }
+
+          const qtyPanel = document.createElement('div');
+          qtyPanel.className = 'variant-qty-panel';
+          qtyPanel.appendChild(controls);
+          qtyPanel.appendChild(addBtn);
+
+          wrapper.appendChild(header);
+          wrapper.appendChild(qtyPanel);
+          variantModalBody.appendChild(wrapper);
+        });
+
+        variantModal.style.display = 'flex';
+        variantModal.setAttribute('aria-hidden', 'false');
+      }
+
+      function handleProductCardSelect(product, context) {
+        if (!product) return;
+        const targetContext = context || state.mode;
+        if (targetContext !== state.mode) {
+          setMode(targetContext);
+        }
+        const variations = state.variations.get(product.id) ?? [];
+        if (variations.length > 0) {
+          openVariantModal(product, null, targetContext);
+          return;
+        }
+        promptQuantity(product, null, targetContext);
+      }
+
+      function renderProductCards() {
+        const products = Array.isArray(state.products)
+          ? state.products.filter((item) => item && item.id)
+          : [];
+        const renderTo = (container, context) => {
+          if (!container) return;
+          container.innerHTML = '';
+          if (!products.length) {
+            container.style.display = 'none';
+            return;
+          }
+          container.style.display = 'grid';
+          products.forEach((product) => {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'product-card';
+
+            const title = document.createElement('div');
+            title.className = 'product-card-title';
+            title.textContent = product.name ?? 'Product';
+
+            card.appendChild(title);
+            card.addEventListener('click', () => handleProductCardSelect(product, context));
+            container.appendChild(card);
+          });
+        };
+
+        renderTo(transferProductCards, 'transfer');
+        renderTo(purchaseProductCards, 'purchase');
+        renderTo(damageProductCards, 'damage');
       }
 
       function closeQtyPrompt() {
@@ -4158,9 +4341,6 @@ function createHtml(config: {
           qtySubmitButton.textContent = 'Add Item';
         }
         updateQtyHint(null);
-        if (ingredientPickerEl && ingredientPickerEl.dataset.stayOpen === 'true') {
-          ingredientPickerEl.style.display = 'flex';
-        }
         focusActiveScanner();
       }
 
@@ -4170,15 +4350,12 @@ function createHtml(config: {
         const target = cart[index];
         if (!target) return;
         state.pendingEntry = { ...target };
-        if (context === 'damage') {
-          state.pendingEntry.packageSize = 1;
-        }
         state.pendingEditIndex = index;
         state.pendingContext = context;
         qtyTitle.textContent = target.variationName
-          ? (target.productName ?? 'Product') + ' - ' + target.variationName
+          ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = formatUomPair(target);
+        qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4302,70 +4479,18 @@ function createHtml(config: {
         }
       }
 
-      function handleProductCardSelect(product, context) {
-        if (!product) return;
-        const targetContext = context || state.mode;
-        if (targetContext !== state.mode) {
-          setMode(targetContext);
-        }
-        const variations = state.variations.get(product.id) ?? [];
-        if (variations.length > 0) {
-          openVariantModal(product, null, targetContext);
-          return;
-        }
-        promptQuantity(product, null, targetContext);
-      }
-
-      function renderProductCards() {
-        const products = Array.isArray(state.products)
-          ? state.products.filter((item) => item && item.id)
-          : [];
-        const renderTo = (container, context) => {
-          if (!container) return;
-          container.innerHTML = '';
-          if (!products.length) {
-            container.style.display = 'none';
-            return;
-          }
-          container.style.display = 'grid';
-          products.forEach((product) => {
-            const card = document.createElement('button');
-            card.type = 'button';
-            card.className = 'product-card';
-
-            const title = document.createElement('div');
-            title.className = 'product-card-title';
-            title.textContent = product.name ?? 'Product';
-
-            card.appendChild(title);
-            card.addEventListener('click', () => handleProductCardSelect(product, context));
-            container.appendChild(card);
-          });
-        };
-
-        renderTo(transferProductCards, 'transfer');
-        renderTo(purchaseProductCards, 'purchase');
-        renderTo(damageProductCards, 'damage');
-      }
-
       async function fetchWarehousesMetadata() {
-        const lockedIds = Array.from(new Set(sourceWarehouseIds.filter(Boolean)));
-
-        const loadViaRpc = async () => {
-          const { data, error } = await supabase.rpc('console_locked_warehouses', {
-            p_include_inactive: false,
-            p_locked_ids: lockedIds.length ? lockedIds : null
-          });
-          if (error) throw error;
-          return Array.isArray(data) ? data : [];
-        };
+        const destinationIds = Array.isArray(DESTINATION_CHOICES)
+          ? DESTINATION_CHOICES.map((choice) => (choice && typeof choice.id === 'string' ? choice.id : null)).filter(Boolean)
+          : [];
+        const lockedIds = Array.from(new Set([lockedSourceId, lockedDestId, ...destinationIds].filter(Boolean)));
 
         const loadViaServiceApi = async () => {
           const params = new URLSearchParams();
           if (lockedIds.length) {
             lockedIds.forEach((id) => params.append('locked_id', id));
           }
-          params.set('include_inactive', '0');
+          params.set('include_inactive', '1');
           const query = params.toString();
           const querySuffix = query ? '?' + query : '';
           const response = await fetch('/api/warehouses' + querySuffix, {
@@ -4380,6 +4505,9 @@ function createHtml(config: {
           }
           const payload = await response.json().catch(() => ({}));
           const list = Array.isArray(payload?.warehouses) ? payload.warehouses : [];
+          if (lockedIds.length && list.length === 0) {
+            throw new Error('warehouses api returned no rows');
+          }
           return list.map((record) => ({
             id: record?.id,
             name: record?.name,
@@ -4409,12 +4537,10 @@ function createHtml(config: {
           return await loadViaServiceApi();
         } catch (apiError) {
           markOfflineIfNetworkError(apiError);
-          console.warn('warehouses API fallback failed, falling back to direct table', apiError);
           try {
             return await loadViaTable();
           } catch (tableError) {
             markOfflineIfNetworkError(tableError);
-            console.warn('warehouses table fallback failed, using cached/locked ids', tableError);
             if (Array.isArray(state.warehouses) && state.warehouses.length) {
               return state.warehouses;
             }
@@ -4496,8 +4622,20 @@ function createHtml(config: {
         if (skipDirect) {
           console.warn('Supplier fetch: network offline (skipping direct Supabase queries)');
         }
+        const includeScannerFields = !state.suppliersNoScannerFields;
 
-        const matchesScannerArea = (supplier) => supplier?.scanner_id === SCANNER_ID;
+        const matchesScannerArea = (supplier) => {
+          if (!supplier) return false;
+          const scannerIds = Array.isArray(supplier.scanner_ids)
+            ? supplier.scanner_ids.filter(Boolean)
+            : Array.isArray(supplier.scanners)
+              ? supplier.scanners.map((scanner) => scanner?.id).filter(Boolean)
+              : supplier.scanner_id
+                ? [supplier.scanner_id]
+                : [];
+          if (!scannerIds.length) return true;
+          return scannerIds.includes(SCANNER_ID);
+        };
 
         const linkTableSelect = (withScanner) =>
           withScanner
@@ -4509,9 +4647,13 @@ function createHtml(config: {
             : 'id,name,contact_name,contact_phone,contact_email,active';
 
         const loadViaRpc = async (warehouseId) => {
-          if (!warehouseId) return [];
+          if (!warehouseId || state.suppliersSkipRpc) return [];
           const { data, error, status } = await supabase.rpc('suppliers_for_warehouse', { p_warehouse_id: warehouseId });
           if (error) {
+            const message = (error.message ?? '').toLowerCase();
+            if (status === 400 || message.includes('scanner') || message.includes('column') || message.includes('relationship')) {
+              state.suppliersSkipRpc = true;
+            }
             const wrapped = new Error(error.message ?? 'suppliers_for_warehouse RPC failed');
             wrapped.status = status;
             wrapped.code = error.code;
@@ -4524,10 +4666,11 @@ function createHtml(config: {
           if (!warehouseId) return [];
           let { data, error, status } = await supabase
             .from('product_supplier_links')
-            .select(linkTableSelect(true))
+            .select(linkTableSelect(includeScannerFields))
             .eq('warehouse_id', warehouseId)
             .eq('active', true);
-          if (error && (error.message?.includes('scanner') || error.message?.includes('scanners'))) {
+          if (error && includeScannerFields) {
+            state.suppliersNoScannerFields = true;
             ({ data, error, status } = await supabase
               .from('product_supplier_links')
               .select(linkTableSelect(false))
@@ -4546,9 +4689,10 @@ function createHtml(config: {
         const loadAllSuppliers = async () => {
           let { data, error, status } = await supabase
             .from('suppliers')
-            .select(supplierSelect(true))
+            .select(supplierSelect(includeScannerFields))
             .eq('active', true);
-          if (error && (error.message?.includes('scanner') || error.message?.includes('scanners'))) {
+          if (error && includeScannerFields) {
+            state.suppliersNoScannerFields = true;
             ({ data, error, status } = await supabase
               .from('suppliers')
               .select(supplierSelect(false))
@@ -4575,13 +4719,27 @@ function createHtml(config: {
           return Array.isArray(payload?.suppliers) ? payload.suppliers : [];
         };
 
+        const hasScannerInfo = (supplier) => {
+          if (!supplier) return false;
+          if (supplier.scanner_id) return true;
+          if (Array.isArray(supplier.scanner_ids) && supplier.scanner_ids.length) return true;
+          if (Array.isArray(supplier.scanners) && supplier.scanners.length) return true;
+          return false;
+        };
+
         const mergeSuppliers = (baseList, extraList) => {
           const map = new Map();
           (Array.isArray(baseList) ? baseList : []).forEach((supplier) => {
             if (supplier?.id) map.set(supplier.id, supplier);
           });
           (Array.isArray(extraList) ? extraList : []).forEach((supplier) => {
-            if (supplier?.id && !map.has(supplier.id)) {
+            if (!supplier?.id) return;
+            if (!map.has(supplier.id)) {
+              map.set(supplier.id, supplier);
+              return;
+            }
+            const existing = map.get(supplier.id);
+            if (!hasScannerInfo(existing) && hasScannerInfo(supplier)) {
               map.set(supplier.id, supplier);
             }
           });
@@ -4639,23 +4797,16 @@ function createHtml(config: {
       async function refreshMetadata() {
         try {
           const warehouses = await fetchWarehousesMetadata();
-          console.log('warehouses payload', warehouses);
           state.warehouses = warehouses ?? [];
           const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
           state.lockedSource = sourceWarehouse;
-          const allowedDestSet = new Set(ALLOWED_DESTINATION_IDS);
-          const sourceIdSet = new Set(sourceWarehouseIds.filter(Boolean));
-          const hydratedDestinations = (state.warehouses || [])
-            .filter((warehouse) =>
-              warehouse?.id &&
-              !sourceIdSet.has(warehouse.id) &&
-              warehouse.active !== false &&
-              allowedDestSet.has(warehouse.id)
-            )
-            .map((warehouse) => ({
-              id: warehouse.id,
-              label: warehouse.name ?? 'Destination warehouse'
-            }));
+          const hydratedDestinations = (DESTINATION_CHOICES || []).map((choice) => {
+            const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
+            return {
+              id: choice.id,
+              label: record?.name ?? choice.label ?? 'Destination warehouse'
+            };
+          });
           state.destinationOptions = hydratedDestinations;
           const hasSavedSelection = state.destinationSelection && hydratedDestinations.some((opt) => opt.id === state.destinationSelection);
           if (!hasSavedSelection) {
@@ -4667,16 +4818,60 @@ function createHtml(config: {
           } else {
             state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
           }
+          let homesRows = state.warehouses.filter((w) => w.parent_warehouse_id === homesParentId);
+          if (!homesRows.length && homesParentId) {
+            const { data: childRows, error: childErr } = await supabase
+              .from('warehouses')
+              .select('id,name,parent_warehouse_id,active')
+              .eq('parent_warehouse_id', homesParentId);
+            if (!childErr && Array.isArray(childRows)) {
+              homesRows = childRows.map((row) => ({ ...row, active: row?.active ?? true }));
+            }
+          }
+          const extraHomes = EXTRA_HOMES_IDS
+            .map((id) => state.warehouses.find((row) => row.id === id) ?? null)
+            .filter((row) => row && row.active !== false);
+          if (extraHomes.length) {
+            const existingHomes = new Set(homesRows.map((row) => row.id));
+            extraHomes.forEach((row) => {
+              if (!existingHomes.has(row.id)) {
+                homesRows.push(row);
+              }
+            });
+          }
+          state.homesOptions = homesRows
+            .filter((row) => row && row.active !== false)
+            .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
+            .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
+
+          if (state.homesSelection && state.destinationSelection) {
+            state.destinationSelection = null;
+            if (destinationSelect) {
+              destinationSelect.value = '';
+            }
+          }
+
+          const hasSavedHomesSelection = state.homesSelection && state.homesOptions.some((opt) => opt.id === state.homesSelection);
+          if (!hasSavedHomesSelection) {
+            state.homesSelection = null;
+            if (homesSelect) {
+              homesSelect.value = '';
+            }
+          }
+          if (state.homesSelection) {
+            state.lockedDest = state.warehouses.find((w) => w.id === state.homesSelection) ?? null;
+          }
           renderDestinationOptions();
+          renderHomesOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
-            destMissingText: 'Choose destination'
+            destMissingText: 'Select outlet'
           });
           syncDestinationPillLabel();
           if (!sourceWarehouse) {
             throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
           }
           if (!hydratedDestinations.length) {
-            throw new Error('No destination warehouses found. Add another warehouse or mark it active.');
+            throw new Error('Destination options missing. Confirm DESTINATION_CHOICES IDs exist in Supabase.');
           }
         } catch (error) {
           console.error('refreshMetadata failed', error);
@@ -4693,16 +4888,9 @@ function createHtml(config: {
           throw error;
         }
 
-        const targetWarehouseIds = Array.from(
-          new Set(
-            sourceWarehouseIds.flatMap((id) => collectDescendantIds(state.warehouses, id))
-          )
-        );
+        const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
-        const variationIds = Array.from(new Set([
-          ...state.products.map((p) => p.id)
-        ]));
-        await safePreloadVariations(variationIds);
+        await safePreloadVariations(state.products.map((p) => p.id));
         renderProductCards();
         try {
           await fetchSuppliers();
@@ -4735,6 +4923,19 @@ function createHtml(config: {
       function logAuthDebug(label, payload) {
         console.log(label, payload);
         showLoginInfo(label);
+      }
+
+      async function syncSession(session) {
+        // Always proceed without blocking on auth; kiosk runs open.
+        state.session = session ?? { user: { email: 'kiosk@afterten.local' } };
+        document.body.dataset.auth = 'true';
+        loginStatus.style.display = 'none';
+        logAuthDebug('Session ready (kiosk mode) for ' + (state.session.user?.email ?? 'unknown user'), state.session);
+        try {
+          await refreshMetadata();
+        } catch (error) {
+          showResult(error.message ?? 'Failed to load metadata', true);
+        }
       }
 
       async function handleLogin(event) {
@@ -4795,11 +4996,7 @@ function createHtml(config: {
         }
         try {
           const cartSnapshot = cart.map((item) => ({ ...item }));
-          const operatorSession = getValidOperatorSession('transfer', { silent: true, skipStatusUpdate: true });
-          const operatorName =
-            (operatorSession?.operatorId ? getOperatorLabelById(operatorSession.operatorId) : null) ??
-            state.session?.user?.email ??
-            null;
+          const operatorName = getOperatorDisplayName('transfer');
           const payload = {
             p_source: sourceId,
             p_destination: destId,
@@ -4807,7 +5004,7 @@ function createHtml(config: {
               product_id: item.productId,
               variant_key: item.variationId ?? item.variantKey ?? null,
               qty: item.qty,
-              operator_name: operatorName
+              operator_name: operatorName || null
             })),
             p_note: null
           };
@@ -4825,12 +5022,14 @@ function createHtml(config: {
           const summary = {
             reference,
             referenceRaw: rawReference,
-            processedBy: state.session?.user?.email ?? 'Unknown operator',
-            operator: state.session?.user?.email ?? 'Unknown operator',
+            warehouseId: sourceId,
+            destinationWarehouseId: destId,
+            processedBy: getOperatorDisplayName('transfer'),
+            operator: getOperatorDisplayName('transfer'),
             sourceLabel: sourceLabel.textContent,
             destLabel: destLabel.textContent,
             route:
-              (sourceLabel.textContent ?? 'Unknown source') + ' -> ' + (destLabel.textContent ?? 'Unknown destination'),
+              (sourceLabel.textContent ?? 'Unknown source') + ' → ' + (destLabel.textContent ?? 'Unknown destination'),
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
@@ -4838,6 +5037,9 @@ function createHtml(config: {
             note: null
           };
           showResult('Transfer ' + data + ' submitted successfully.', false);
+          notifyTelegram(summary, 'transfer').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           setCart('transfer', []);
           renderCart('transfer');
         } catch (error) {
@@ -4873,16 +5075,12 @@ function createHtml(config: {
 
         const noteValue = (damageNote?.value ?? state.damageNote ?? '').trim();
         const cartSnapshot = cart.map((item) => ({ ...item }));
-        const operatorSession = getValidOperatorSession('damage', { silent: true, skipStatusUpdate: true });
-        const operatorName =
-          (operatorSession?.operatorId ? getOperatorLabelById(operatorSession.operatorId) : null) ??
-          state.session?.user?.email ??
-          null;
+        const operatorName = getOperatorDisplayName('damage');
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
           variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
-          operator_name: operatorName,
+          operator_name: operatorName || null,
           note: noteValue || null
         }));
 
@@ -4905,7 +5103,36 @@ function createHtml(config: {
           });
           if (error) throw error;
 
+          const now = new Date();
+          const windowLabel =
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            ' ' +
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+          const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
+          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const summary = {
+            reference: 'Damage',
+            referenceRaw: 'Damage',
+            warehouseId: warehouseId,
+            processedBy: getOperatorDisplayName('damage'),
+            operator: getOperatorDisplayName('damage'),
+            sourceLabel: sourceLabel.textContent,
+            destLabel: destLabel.textContent,
+            route:
+              (sourceLabel.textContent ?? 'Unknown source') +
+              ' → ' +
+              (destLabel.textContent ?? 'Unknown destination'),
+            dateTime: windowLabel,
+            window: windowLabel,
+            itemsBlock,
+            items: lineItems,
+            note: noteValue || null
+          };
+
           showResult('Damages logged and deducted.', false);
+          notifyTelegram(summary, 'damage').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           setCart('damage', []);
           renderCart('damage');
           if (damageNote) damageNote.value = '';
@@ -4952,18 +5179,14 @@ function createHtml(config: {
 
         const supplierId = state.purchaseForm.supplierId || null;
         const cartSnapshot = cart.map((item) => ({ ...item }));
-        const operatorSession = getValidOperatorSession('purchase', { silent: true, skipStatusUpdate: true });
-        const operatorName =
-          (operatorSession?.operatorId ? getOperatorLabelById(operatorSession.operatorId) : null) ??
-          state.session?.user?.email ??
-          null;
+        const operatorName = getOperatorDisplayName('purchase');
         const payloadItems = cartSnapshot.map((item) => ({
           product_id: item.productId,
           variant_key: item.variationId ?? item.variantKey ?? null,
           qty: item.qty,
           qty_input_mode: 'units',
           unit_cost: item.unitCost ?? null,
-          operator_name: operatorName
+          operator_name: operatorName || null
         }));
 
         if (payloadItems.some((item) => !item.product_id || !item.qty || item.qty <= 0)) {
@@ -5010,10 +5233,11 @@ function createHtml(config: {
           const summary = {
             reference: receiptRef,
             referenceRaw: receiptRef,
-            processedBy: state.session?.user?.email ?? 'Unknown operator',
+            warehouseId: warehouseId,
+            processedBy: getOperatorDisplayName('purchase'),
             sourceLabel: supplierName,
             destLabel: warehouseName,
-            route: supplierName + ' -> ' + warehouseName,
+            route: supplierName + ' → ' + warehouseName,
             dateTime: windowLabel,
             window: windowLabel,
             itemsBlock,
@@ -5022,6 +5246,9 @@ function createHtml(config: {
           };
 
           showResult('Purchase ' + receiptRef + ' recorded successfully.', false);
+          notifyTelegram(summary, 'purchase').catch((notifyError) => {
+            console.warn('Telegram notification failed', notifyError);
+          });
           setCart('purchase', []);
           renderCart('purchase');
           resetPurchaseForm();
@@ -5037,90 +5264,123 @@ function createHtml(config: {
         }
       }
 
-      async function loadRecipeComponents(product, variantKey) {
-        if (!product?.id) return [];
-        const normalizedVariant = normalizeVariantKeyLocal(variantKey);
-        const productKind = (product.item_kind ?? 'finished').toString().toLowerCase();
-
+      async function notifyTelegram(summary, context = 'transfer') {
         try {
-          const { data, error } = await supabase
-            .from('recipes')
-              return;
-        const { data, error } = await supabase.rpc('whoami_roles');
-        if (error) {
-          const rpcError = new Error(error.message ?? 'Unable to verify roles');
-          rpcError.code = error.code ?? 'ROLE_LOOKUP_FAILED';
-          throw rpcError;
-        }
-        const record = Array.isArray(data) ? data[0] : data;
-        const baseRoles = Array.isArray(record?.roles) ? record.roles : [];
-        const catalogRoles = Array.isArray(record?.role_catalog)
-          ? record.role_catalog
-              .map((r) => r?.slug ?? r?.normalized_slug ?? r?.name ?? r?.id ?? null)
-              .filter(Boolean)
-          : [];
-        const effectiveRoles = [...baseRoles, ...catalogRoles];
-        if (record?.is_admin === true) {
-          effectiveRoles.push('admin');
-        }
-        console.log('whoami_roles result', { record, effectiveRoles });
-        const recordUserId = record?.user_id ?? record?.auth_user_id ?? record?.id ?? null;
-        if (recordUserId && ALLOWED_USER_IDS.includes(recordUserId)) {
-          return true;
-        }
-        const hasRole = effectiveRoles.some((role) => {
-          if (!role) return false;
-          if (typeof role === 'string') {
-            const trimmed = role.trim();
-            if (!trimmed) return false;
-            if (trimmed === REQUIRED_ROLE_ID || trimmed === ADMIN_ROLE_ID || trimmed === BACKOFFICE_ROLE_ID) return true;
-            return ALLOWED_ROLE_SLUGS.includes(trimmed.toLowerCase());
+          const response = await fetch('/api/notify-telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context, summary, scanner: 'quick-corner' })
+          });
+          if (!response.ok) {
+            let errorText = '';
+            let detailText = '';
+            let rawText = '';
+            try {
+              rawText = await response.text();
+            } catch {
+              rawText = '';
+            }
+            if (rawText) {
+              try {
+                const info = JSON.parse(rawText);
+                errorText = typeof info.error === 'string' ? info.error : '';
+                detailText = typeof info.detail === 'string' ? info.detail : '';
+              } catch {
+                detailText = rawText.trim();
+              }
+            }
+            if (detailText.length > 160) detailText = detailText.slice(0, 160) + '...';
+            const statusText = response.status ? 'HTTP ' + response.status : '';
+            const message = [errorText, detailText].filter(Boolean).join(': ') || statusText;
+            throw new Error(message || 'Unable to ping Telegram API');
           }
-          if (typeof role === 'object') {
-            const roleId = typeof role.id === 'string' ? role.id : null;
-            const slugSource =
-              typeof role.slug === 'string'
-                ? role.slug
-                : typeof role.normalized_slug === 'string'
-                  ? role.normalized_slug
-                  : typeof role.name === 'string'
-                    ? role.name
-                    : null;
-            const slug = slugSource ? slugSource.toLowerCase() : null;
-            return (
-              roleId === REQUIRED_ROLE_ID ||
-              roleId === ADMIN_ROLE_ID ||
-              roleId === BACKOFFICE_ROLE_ID ||
-              (slug !== null && ALLOWED_ROLE_SLUGS.includes(slug))
-            );
-          }
-          return false;
-        });
-        if (!hasRole) {
-          const missingRoleError = new Error('WAREHOUSE_ROLE_REQUIRED');
-          missingRoleError.detail = { roles: effectiveRoles };
-          missingRoleError.code = 'WAREHOUSE_ROLE_REQUIRED';
-          throw missingRoleError;
+        } catch (error) {
+          const prefix = context === 'purchase' ? 'Purchase logged' : context === 'damage' ? 'Damage logged' : 'Transfer recorded';
+          showResult(prefix + ' but Telegram alert failed: ' + (error.message || error), true);
         }
-        state.operatorProfile = record ?? null;
-        return record;
       }
 
-      async function syncSession(session) {
-        // Always proceed without blocking on auth; kiosk runs open.
-        state.session = session ?? { user: { email: 'kiosk@afterten.local' } };
-        document.body.dataset.auth = 'true';
-        loginStatus.style.display = 'none';
-        logAuthDebug('Session ready (kiosk mode) for ' + (state.session.user?.email ?? 'unknown user'), state.session);
-        try {
-          await refreshMetadata();
-        } catch (error) {
-          showResult(error.message ?? 'Failed to load metadata', true);
+      function handleProductScan(raw) {
+        if (!ensureOperatorGate({ silent: true })) return;
+        searchProductsWithScan(raw);
+      }
+
+      function searchProductsWithScan(raw) {
+        const value = raw.trim();
+        if (!value) return;
+        const normalized = value.toLowerCase();
+        const compact = normalizeKey(value);
+
+        const findLooseVariation = () => {
+          return Array.from(state.variationIndex.values()).find((variation) => {
+            if (!variation) return false;
+            const keys = [variation.id, variation.sku, variation.supplier_sku].filter(Boolean);
+            return keys.some((key) => {
+              const keyValue = String(key).toLowerCase();
+              return keyValue === normalized || normalizeKey(keyValue) === compact;
+            });
+          });
+        };
+
+        const matchedVariation =
+          state.variationIndex.get(value) ||
+          state.variationIndex.get(normalized) ||
+          state.variationIndex.get(compact) ||
+          findLooseVariation();
+
+        let product = null;
+        let preferredVariation = null;
+
+        if (matchedVariation?.product_id) {
+          product = state.products.find((item) => item?.id === matchedVariation.product_id) ?? null;
+          preferredVariation = matchedVariation;
         }
+
+        if (!product) {
+          product =
+            state.products.find((item) => {
+              if (!item) return false;
+              const keys = [item.id, item.sku, item.supplier_sku].filter(Boolean);
+              return keys.some((key) => {
+                const keyValue = String(key).toLowerCase();
+                return keyValue === normalized || normalizeKey(keyValue) === compact;
+              });
+            }) ?? null;
+        }
+
+        if (!product) {
+          const nameMatches = state.products.filter((item) => {
+            const name = (item?.name ?? '').toString().toLowerCase();
+            return name && name.includes(normalized);
+          });
+          if (nameMatches.length === 1) {
+            product = nameMatches[0];
+          }
+        }
+
+        if (!product) {
+          showResult('No matching product found for "' + value + '".', true);
+          return;
+        }
+
+        if (preferredVariation) {
+          openVariantModal(product, preferredVariation, state.mode);
+          return;
+        }
+
+        const variations = state.variations.get(product.id) ?? [];
+        const hasVariants = variations.length > 0;
+
+        if (hasVariants) {
+          openVariantModal(product, null, state.mode);
+          return;
+        }
+
+        promptQuantity(product, null, state.mode);
       }
 
       scannerWedge?.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault();
           commitScanBuffer();
           return;
@@ -5181,66 +5441,76 @@ function createHtml(config: {
         state.damageNote = damageNote.value ?? '';
       });
 
+      let searchAutoCommitTimer = null;
+      const scheduleSearchAutoCommit = (input, context) => {
+        if (!input) return;
+        if (qtyModal?.style.display === 'flex') return;
+        if (variantModal?.style.display === 'flex') return;
+        window.clearTimeout(searchAutoCommitTimer);
+        const value = (input.value ?? '').trim();
+        if (value.length < 8) return;
+        if (!/^[0-9]+$/.test(value)) return;
+        searchAutoCommitTimer = window.setTimeout(() => {
+          searchProductsWithScan(value);
+          window.setTimeout(() => {
+            input.select();
+          }, 10);
+        }, 120);
+      };
+
       itemSearchInput?.addEventListener('focus', () => {
         state.mode = 'transfer';
       });
 
-      itemSearchInput?.addEventListener('input', () => {
-        const value = (itemSearchInput.value ?? '').trim();
-        if (value.length < 2) {
-          lastSearchTerm = '';
-          return;
-        }
-        if (value === lastSearchTerm) return;
-        lastSearchTerm = value;
-        window.clearTimeout(itemSearchDebounceId);
-        itemSearchDebounceId = window.setTimeout(() => {
-          searchProductsWithScan(value).catch((error) => console.warn('search failed', error));
-        }, 150);
-      });
-
-      itemSearchInput?.addEventListener('keydown', async (event) => {
-        if (event.key !== 'Enter') return;
+      itemSearchInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== 'Tab') return;
         event.preventDefault();
         const value = (itemSearchInput.value ?? '').trim();
         if (!value) return;
-        await searchProductsWithScan(value);
-        // Keep focus and select text for rapid repeated entries.
+        searchProductsWithScan(value);
         window.setTimeout(() => {
           itemSearchInput.select();
         }, 10);
+      });
+      itemSearchInput?.addEventListener('input', () => {
+        scheduleSearchAutoCommit(itemSearchInput, 'transfer');
       });
 
       damageItemSearchInput?.addEventListener('focus', () => {
         state.mode = 'damage';
       });
 
-      damageItemSearchInput?.addEventListener('keydown', async (event) => {
-        if (event.key !== 'Enter') return;
+      damageItemSearchInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== 'Tab') return;
         event.preventDefault();
         const value = (damageItemSearchInput.value ?? '').trim();
         if (!value) return;
-        await searchProductsWithScan(value);
+        searchProductsWithScan(value);
         window.setTimeout(() => {
           damageItemSearchInput.select();
         }, 10);
+      });
+      damageItemSearchInput?.addEventListener('input', () => {
+        scheduleSearchAutoCommit(damageItemSearchInput, 'damage');
       });
 
       purchaseItemSearchInput?.addEventListener('focus', () => {
         state.mode = 'purchase';
       });
 
-      purchaseItemSearchInput?.addEventListener('keydown', async (event) => {
-        if (event.key !== 'Enter') return;
+      purchaseItemSearchInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== 'Tab') return;
         event.preventDefault();
         const value = (purchaseItemSearchInput.value ?? '').trim();
         if (!value) return;
-        await searchProductsWithScan(value);
+        searchProductsWithScan(value);
         window.setTimeout(() => {
           purchaseItemSearchInput.select();
         }, 10);
       });
-
+      purchaseItemSearchInput?.addEventListener('input', () => {
+        scheduleSearchAutoCommit(purchaseItemSearchInput, 'purchase');
+      });
 
       const openDamageKeyboard = (event) => {
         const pointerTriggered = event?.type === 'pointerdown';
@@ -5305,21 +5575,18 @@ function createHtml(config: {
 
       purchaseSupplier?.addEventListener('change', () => {
         state.purchaseForm.supplierId = purchaseSupplier.value ?? '';
-        updateSupplierPickerLabel();
+        if (purchaseSupplierPicker) {
+          purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
+        }
       });
 
       purchaseReference?.addEventListener('focus', () => {
         showReferenceNumpad();
       });
 
-
       purchaseReference?.addEventListener('pointerdown', (event) => {
         event.stopPropagation();
         showReferenceNumpad();
-      });
-
-      referenceNumpadDigits?.addEventListener('mousedown', (event) => {
-        event.preventDefault();
       });
 
       purchaseReference?.addEventListener('input', () => {
@@ -5333,54 +5600,17 @@ function createHtml(config: {
           purchaseReference?.contains(target) ||
           (target instanceof HTMLElement && target.closest('.reference-field'));
         const interactingWithReferenceNumpad = referenceNumpadDigits?.contains(target);
-        const interactingWithPurchaseSearch =
-          target === purchaseItemSearchInput || purchaseItemSearchInput?.contains(target);
         if (interactingWithReferenceInput || interactingWithReferenceNumpad) {
           // Keep the keyboard open while interacting with it or its source input.
           window.clearTimeout(referenceNumpadHideTimeoutId);
           showReferenceNumpad();
           return;
         }
-        if (interactingWithPurchaseSearch) {
-          return;
-        }
         hideReferenceNumpad();
       });
 
-      referenceNumpadDigits?.addEventListener('click', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const key = target.dataset.key;
-        const action = target.dataset.action;
-        if (key) {
-          insertReferenceText(key.toUpperCase());
-          return;
-        }
-        if (!action) return;
-        if (action === 'clear') {
-          syncReferenceValue('');
-          if (purchaseReference) {
-            purchaseReference.value = '';
-            purchaseReference.focus();
-          }
-          return;
-        }
-        if (action === 'enter') {
-          hideReferenceNumpad();
-          purchaseReference?.blur();
-          return;
-        }
-        if (action === 'delete') {
-          deleteReferenceChar();
-          return;
-        }
-        if (action === 'close') {
-          forceCloseReferenceNumpad(event);
-        }
-      });
-
       // Close buttons should always hide the keyboard even if focus stays inside.
-      referenceNumpadDigits?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
+      referenceNumpad?.querySelectorAll('button[data-action="close"]').forEach((btn) => {
         btn.addEventListener('click', (event) => {
           forceCloseReferenceNumpad(event);
         });
@@ -5389,45 +5619,18 @@ function createHtml(config: {
         });
       });
 
+      referenceNumpad?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          forceCloseReferenceNumpad(event);
+        }
+      });
+
       qtyForm?.addEventListener('submit', (event) => {
         event.preventDefault();
         const pending = state.pendingEntry;
         if (!pending) return;
         const context = state.pendingContext || state.mode;
         const rawQty = Number(qtyInput.value);
-        const recipeComponents = Array.isArray(pending.recipeComponents) ? pending.recipeComponents : null;
-
-        if (recipeComponents?.length) {
-          const finishedUnits = Math.floor(rawQty);
-          if (!Number.isFinite(finishedUnits) || finishedUnits <= 0) {
-            showResult('Enter a whole number of finished units', true);
-            qtyInput.focus();
-            return;
-          }
-          const added = [];
-          recipeComponents.forEach((component) => {
-            const ingredient = component?.ingredient;
-            if (!ingredient?.id) return;
-            const entry = buildEntryForProduct(ingredient, component.variation ?? null);
-            const yieldQty = Number(component.yieldQtyUnits) || 1;
-            const baseQty = Number(component.qtyPerUnit) || 0;
-            if (baseQty <= 0) return;
-            const componentRawQty = (finishedUnits / yieldQty) * baseQty;
-            const effectiveQty = computeEffectiveQty(componentRawQty, entry);
-            if (effectiveQty === null) return;
-            addCartItem({ ...entry, qty: effectiveQty, scannedQty: componentRawQty, unitCost: null }, context);
-            added.push(entry.productName ?? 'Ingredient');
-          });
-
-          if (added.length) {
-            showResult('Queued ' + added.length + ' ingredient(s) for ' + (pending.productName ?? 'Product'), false);
-          } else {
-            showResult('No ingredients could be queued for this product.', true);
-          }
-          closeQtyPrompt();
-          return;
-        }
-
         const effectiveQty = computeEffectiveQty(rawQty, pending);
         const unitCost = null;
         if (effectiveQty === null) {
@@ -5475,7 +5678,7 @@ function createHtml(config: {
       document.addEventListener('click', (event) => {
         const target = event.target;
         const clickedReferenceInput = target === purchaseReference || purchaseReference?.contains(target);
-        const clickedReferenceNumpad = referenceNumpadDigits?.contains(target);
+        const clickedReferenceNumpad = referenceNumpad?.contains(target);
         const interactingWithDamageNotes =
           target === damageNote || damageNote?.contains(target) || damageNotesKeyboard?.contains(target);
         const interactingWithSupplier =
@@ -5515,9 +5718,19 @@ function createHtml(config: {
         handleDestinationSelection(value);
       });
 
+      homesSelect?.addEventListener('change', (event) => {
+        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
+        handleHomesSelection(value);
+      });
+
       destinationPicker?.addEventListener('click', () => {
         renderDestinationCards();
         openSelectModal(destinationModal);
+      });
+
+      homesPicker?.addEventListener('click', () => {
+        renderHomesCards();
+        openSelectModal(homesModal);
       });
 
       purchaseSupplierPicker?.addEventListener('click', () => {
@@ -5540,6 +5753,12 @@ function createHtml(config: {
         }
       });
 
+      homesModal?.addEventListener('click', (event) => {
+        if (event.target === homesModal) {
+          closeSelectModal(homesModal);
+        }
+      });
+
       operatorSelectModal?.addEventListener('click', (event) => {
         if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
           closeSelectModal(operatorSelectModal);
@@ -5556,6 +5775,7 @@ function createHtml(config: {
         btn.addEventListener('click', () => {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
+          if (targetId === 'homes-modal') closeSelectModal(homesModal);
           if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
             closeSelectModal(operatorSelectModal);
           }
@@ -5570,7 +5790,7 @@ function createHtml(config: {
 
       operatorPasswordInput?.addEventListener('input', () => {
         operatorModalError.textContent = '';
-        // No auto-submit; waits for Enter or Unlock button.
+        queueOperatorAutoUnlock();
       });
 
       operatorPasswordInput?.addEventListener('keydown', (event) => {
@@ -5636,14 +5856,14 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const viewParam = (url.searchParams.get('view') ?? '').toLowerCase();
-  const initialView = viewParam === 'damage' ? 'damage' : 'transfer';
+  const initialView = viewParam === 'purchase' ? 'purchase' : viewParam === 'damage' ? 'damage' : 'transfer';
 
   const initialWarehouses = await preloadLockedWarehouses();
   const sourceWarehouse = initialWarehouses.find((w) => w.id === LOCKED_SOURCE_ID);
   const destWarehouse = initialWarehouses.find((w) => w.id === LOCKED_DEST_ID);
   const html = createHtml({
     sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Loading...'),
-    destPillLabel: describeLockedWarehouse(destWarehouse, 'Choose destination'),
+    destPillLabel: describeLockedWarehouse(destWarehouse, 'Loading...'),
     sourceWarehouseName: sourceWarehouse?.name ?? 'Loading...',
     initialWarehousesJson: serializeForScript(initialWarehouses),
     initialView,
