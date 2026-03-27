@@ -1693,6 +1693,7 @@ function createHtml(config: {
         <button type="button" data-key="3">3</button>
         <button type="button" data-action="clear">CLR</button>
         <button type="button" data-key="0">0</button>
+        <button type="button" data-key=".">.</button>
         <button type="button" data-action="enter">Enter</button>
       </div>
       <div class="qty-actions">
@@ -1721,6 +1722,7 @@ function createHtml(config: {
       <button type="button" data-key="3">3</button>
       <button type="button" data-action="clear">CLR</button>
       <button type="button" data-key="0">0</button>
+      <button type="button" data-key=".">.</button>
       <button type="button" data-action="enter">Enter</button>
     </div>
   </div>
@@ -2421,9 +2423,30 @@ function createHtml(config: {
         }
       }
 
+      function normalizeQtyInput(value) {
+        let text = String(value ?? '');
+        text = text.replace(/[^0-9.]/g, '');
+        const dotIndex = text.indexOf('.');
+        if (dotIndex >= 0) {
+          const before = text.slice(0, dotIndex);
+          let after = text.slice(dotIndex + 1).replace(/\./g, '');
+          after = after.slice(0, 2);
+          text = before + '.' + after;
+        }
+        if (text.startsWith('.')) {
+          text = '0' + text;
+        }
+        return text;
+      }
+
+      function setQtyInputValue(input, nextValue) {
+        if (!input) return;
+        input.value = normalizeQtyInput(nextValue);
+      }
+
       function appendQtyDigit(digit) {
         if (!qtyInput) return;
-        qtyInput.value = (qtyInput.value ?? '') + digit;
+        setQtyInputValue(qtyInput, (qtyInput.value ?? '') + digit);
         qtyInput.focus();
       }
 
@@ -2435,7 +2458,7 @@ function createHtml(config: {
 
       function appendVariantQtyDigit(digit) {
         if (!activeVariantQtyInput) return;
-        activeVariantQtyInput.value = (activeVariantQtyInput.value ?? '') + digit;
+        setQtyInputValue(activeVariantQtyInput, (activeVariantQtyInput.value ?? '') + digit);
         activeVariantQtyInput.focus();
       }
 
@@ -2444,6 +2467,10 @@ function createHtml(config: {
         activeVariantQtyInput.value = '';
         activeVariantQtyInput.focus();
       }
+
+      qtyInput?.addEventListener('input', () => {
+        setQtyInputValue(qtyInput, qtyInput.value ?? '');
+      });
 
       if (qtyNumpad) {
         qtyNumpad.addEventListener('click', (event) => {
@@ -4002,6 +4029,9 @@ function createHtml(config: {
           qtyInput.min = '0';
           qtyInput.step = '0.01';
           qtyInput.placeholder = '0';
+          qtyInput.addEventListener('input', () => {
+            setQtyInputValue(qtyInput, qtyInput.value ?? '');
+          });
           const incBtn = document.createElement('button');
           incBtn.type = 'button';
           incBtn.className = 'variant-qty-button';
