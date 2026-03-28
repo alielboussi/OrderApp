@@ -2568,6 +2568,7 @@ function createHtml(config: {
           return [];
         }
         const homeIds = Array.isArray(homeWarehouseIds) ? homeWarehouseIds.filter(Boolean) : [];
+        const scopedHomeIds = homeIds.length ? homeIds : warehouseIds;
 
         if (state.networkOffline) {
           console.warn('Skipping product fetch: network offline');
@@ -2575,26 +2576,39 @@ function createHtml(config: {
         }
 
         const loadStockAndDefaults = async () => {
-          const [stockResult, defaultItemsResult, storageHomesResult] = await Promise.all([
+          const [stockResult, defaultItemsResult, storageHomesResult, variantDefaultResult, variantLockedResult] = await Promise.all([
             supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
-            homeIds.length
+            scopedHomeIds.length
               ? supabase
                   .from('catalog_items')
                   .select('id')
-                  .in('default_warehouse_id', homeIds)
-                  .eq('active', true)
+                  .in('default_warehouse_id', scopedHomeIds)
               : Promise.resolve({ data: [], error: null }),
-            homeIds.length
+            scopedHomeIds.length
               ? supabase
                   .from('item_storage_homes')
                   .select('item_id, normalized_variant_key, storage_warehouse_id')
-                  .in('storage_warehouse_id', homeIds)
+                  .in('storage_warehouse_id', scopedHomeIds)
+              : Promise.resolve({ data: [], error: null }),
+            scopedHomeIds.length
+              ? supabase
+                  .from('catalog_variants')
+                  .select('item_id,default_warehouse_id,locked_from_warehouse_id,active')
+                  .in('default_warehouse_id', scopedHomeIds)
+              : Promise.resolve({ data: [], error: null }),
+            scopedHomeIds.length
+              ? supabase
+                  .from('catalog_variants')
+                  .select('item_id,default_warehouse_id,locked_from_warehouse_id,active')
+                  .in('locked_from_warehouse_id', scopedHomeIds)
               : Promise.resolve({ data: [], error: null })
           ]);
 
           if (stockResult.error) throw stockResult.error;
           if (defaultItemsResult.error) throw defaultItemsResult.error;
           if (storageHomesResult.error) throw storageHomesResult.error;
+          if (variantDefaultResult.error) throw variantDefaultResult.error;
+          if (variantLockedResult.error) throw variantLockedResult.error;
 
           latestStorageHomes = Array.isArray(storageHomesResult.data) ? storageHomesResult.data : [];
 
@@ -2607,6 +2621,21 @@ function createHtml(config: {
           const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
           (defaultItemsResult.data ?? []).forEach((row) => {
             if (row?.id) productIds.add(row.id);
+          });
+
+          const variantHomesRows = [
+            ...(variantDefaultResult.data ?? []),
+            ...(variantLockedResult.data ?? [])
+          ];
+
+          variantHomesRows.forEach((variant) => {
+            const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
+            if (!variantDefault || !scopedHomeIds.includes(variantDefault)) return;
+            if (variant?.active === false) return;
+            if (variant?.item_id) {
+              productIds.add(variant.item_id);
+              productsWithWarehouseVariations.add(variant.item_id);
+            }
           });
 
           let defaultVariants = [];
@@ -2644,10 +2673,9 @@ function createHtml(config: {
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
             .select(
-              'id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url'
+              'id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url,active'
             )
             .in('id', Array.from(productIds))
-            .eq('active', true)
             .order('name');
           if (prodErr) throw prodErr;
 
@@ -2665,12 +2693,15 @@ function createHtml(config: {
             variantsByItem.set(variant.item_id, list);
           });
 
-          return (products ?? []).filter((product) => !EXCLUDED_PRODUCT_IDS.includes(product?.id ?? '')).map((product) => {
+          return (products ?? [])
+            .filter((product) => product?.active !== false)
+            .filter((product) => !EXCLUDED_PRODUCT_IDS.includes(product?.id ?? ''))
+            .map((product) => {
             if (!product?.id) return product;
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-              if (!variantDefault || !homeIds.includes(variantDefault)) return false;
+              if (!variantDefault || !scopedHomeIds.includes(variantDefault)) return false;
               return variant?.active !== false;
             });
 
@@ -2678,7 +2709,7 @@ function createHtml(config: {
               (home) =>
                 home.item_id === product.id &&
                 home.storage_warehouse_id &&
-                homeIds.includes(home.storage_warehouse_id) &&
+                scopedHomeIds.includes(home.storage_warehouse_id) &&
                 home.normalized_variant_key &&
                 home.normalized_variant_key !== 'base'
             );
@@ -4472,10 +4503,18 @@ function createHtml(config: {
           if (!container) return;
           container.innerHTML = '';
           if (!products.length) {
-            container.style.display = 'none';
+            container.style.display = 'grid';
+            const empty = document.createElement('div');
+            empty.className = 'message';
+            empty.textContent = 'No products loaded for coldroom scope.';
+            container.appendChild(empty);
             return;
           }
           container.style.display = 'grid';
+          const count = document.createElement('div');
+          count.className = 'message';
+          count.textContent = products.length + ' products loaded.';
+          container.appendChild(count);
           products.forEach((product) => {
             const card = document.createElement('button');
             card.type = 'button';
@@ -4982,6 +5021,14 @@ function createHtml(config: {
           const warehouses = await fetchWarehousesMetadata();
           state.warehouses = warehouses ?? [];
           productHomeIds = collectDescendantIds(state.warehouses, PRODUCT_HOME_PARENT_ID);
+          const homeScope = new Set(productHomeIds);
+          if (PRODUCT_HOME_PARENT_ID) {
+            homeScope.add(PRODUCT_HOME_PARENT_ID);
+          }
+          (DESTINATION_CHOICES || []).forEach((choice) => {
+            if (choice?.id) homeScope.add(choice.id);
+          });
+          productHomeIds = Array.from(homeScope);
           const hydratedSources = (SOURCE_CHOICES || []).map((choice) => {
             const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
             return {
@@ -5092,9 +5139,10 @@ function createHtml(config: {
           throw error;
         }
 
-          const targetWarehouseIds = collectDescendantIds(state.warehouses, PRODUCT_HOME_PARENT_ID);
-          const homeScopeIds = productHomeIds.length ? productHomeIds : targetWarehouseIds;
-          state.products = await fetchProductsForWarehouse(targetWarehouseIds, homeScopeIds);
+          const homeScopeIds = productHomeIds.length
+            ? productHomeIds
+            : collectDescendantIds(state.warehouses, PRODUCT_HOME_PARENT_ID);
+          state.products = await fetchProductsForWarehouse(homeScopeIds, homeScopeIds);
           await safePreloadVariations(state.products.map((p) => p.id), homeScopeIds);
         renderProductCards();
         try {

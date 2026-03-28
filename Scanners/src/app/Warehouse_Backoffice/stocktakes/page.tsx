@@ -789,10 +789,12 @@ export default function StocktakesPage() {
             merged.push({ id: warehouse.id, name: warehouse.name, code: warehouse.code });
           }
         });
-        setWarehouses(merged);
-        const isValidSelection = selectedWarehouseId && merged.some((warehouse) => warehouse.id === selectedWarehouseId);
-        if (!isValidSelection && merged.length > 0) {
-          setSelectedWarehouseId(merged[0].id);
+        const selectable = merged.filter((warehouse) => warehouse.id !== COLDROOM_PARENT_ID);
+        setWarehouses(selectable);
+        const isValidSelection =
+          selectedWarehouseId && selectable.some((warehouse) => warehouse.id === selectedWarehouseId);
+        if (!isValidSelection && selectable.length > 0) {
+          setSelectedWarehouseId(selectable[0].id);
         }
       } catch (err) {
         if (!active) return;

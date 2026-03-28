@@ -7,6 +7,8 @@ type SummaryItem = {
   qty?: unknown;
   scannedQty?: unknown;
   unit?: unknown;
+  consumptionUom?: unknown;
+  consumption_uom?: unknown;
   packUom?: unknown;
   packUnit?: unknown;
   pack_unit?: unknown;
@@ -165,6 +167,11 @@ function resolveItemUnit(item: SummaryItem): string {
   return String(raw ?? '').trim();
 }
 
+function resolveConsumptionUnit(item: SummaryItem): string {
+  const raw = item.consumptionUom ?? item.consumption_uom ?? '';
+  return String(raw ?? '').trim();
+}
+
 function pickSupplierUnit(unit: unknown): string {
   const raw = String(unit ?? '').trim();
   if (!raw) return '';
@@ -195,12 +202,17 @@ function buildItemKey(itemId: string, variantKey: string): string {
   return `${itemId}::${normalizeVariantKey(variantKey)}`;
 }
 
-function formatRemainingLine(item: SummaryItem, remainingByKey: Map<string, number | null> | null): string {
+function formatRemainingLine(
+  item: SummaryItem,
+  remainingByKey: Map<string, number | null> | null,
+  consumptionUomByKey: Map<string, string> | null
+): string {
   const itemId = resolveItemId(item);
   const variantKey = resolveVariantKey(item);
   const key = itemId ? buildItemKey(itemId, variantKey) : null;
   const remainingQty = key && remainingByKey ? remainingByKey.get(key) ?? null : null;
-  const unitLabel = remainingQty === null ? '' : formatUnitLabel(resolveItemUnit(item), remainingQty);
+  const preferredUnit = (key && consumptionUomByKey ? consumptionUomByKey.get(key) : null) || resolveConsumptionUnit(item);
+  const unitLabel = remainingQty === null ? '' : formatUnitLabel(preferredUnit || resolveItemUnit(item), remainingQty);
   const qtyText = remainingQty === null ? 'Null' : formatQtyValue(remainingQty);
   const combined = unitLabel ? `${qtyText} ${unitLabel}` : qtyText;
   return `<b>- Remaining Qty - ${escapeHtml(combined)}</b>`;
@@ -221,7 +233,8 @@ function formatItemsBlock(
   summary: SummaryPayload,
   context: 'transfer' | 'purchase' | 'damage',
   remainingByKey: Map<string, number | null> | null,
-  damageByKey: Map<string, number> | null
+  damageByKey: Map<string, number> | null,
+  consumptionUomByKey: Map<string, string> | null
 ) {
   const items = Array.isArray(summary.items) ? summary.items : [];
 
@@ -236,7 +249,7 @@ function formatItemsBlock(
       const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : baseName;
       const qty = item.scannedQty ?? item.qty ?? 0;
       const unit = formatUnitLabel(resolveItemUnit(item), qty);
-      const remainingLine = formatRemainingLine(item, remainingByKey);
+      const remainingLine = formatRemainingLine(item, remainingByKey, consumptionUomByKey);
       const damageLine = context === 'damage' ? formatDamageLine(item, damageByKey) : null;
       const bucket = grouped.get(baseName) ?? [];
       bucket.push({ variation, qty, unit, remainingLine, damageLine });
@@ -280,7 +293,8 @@ function buildMessage(
   context: 'transfer' | 'purchase' | 'damage',
   scanner: string | null,
   remainingByKey: Map<string, number | null> | null,
-  damageByKey: Map<string, number> | null
+  damageByKey: Map<string, number> | null,
+  consumptionUomByKey: Map<string, string> | null
 ) {
   const typeLabel = context === 'purchase' ? 'Purchase' : context === 'damage' ? 'Damage' : 'Transfer';
   const operator = normalizeLabel(summary.processedBy) ?? normalizeLabel(summary.operator) ?? 'Unknown operator';
@@ -289,7 +303,7 @@ function buildMessage(
   const destination = String(summary.destLabel ?? summary.destinationLabel ?? 'Unknown destination');
   const sourceLabel = normalizeLabel(summary.sourceLabel) ?? 'Unknown source';
   const dateTime = String(summary.dateTime ?? summary.window ?? '');
-  const itemsBlock = formatItemsBlock(summary, context, remainingByKey, damageByKey);
+  const itemsBlock = formatItemsBlock(summary, context, remainingByKey, damageByKey, consumptionUomByKey);
   const scannerLabel = getScannerLabel(scanner);
 
   const lines = [
@@ -420,6 +434,70 @@ async function loadRemainingByKey(
   return remainingByKey;
 }
 
+async function loadConsumptionUomByKey(
+  supabase: ReturnType<typeof getServiceClient>,
+  items: SummaryItem[]
+): Promise<Map<string, string>> {
+  const consumptionByKey = new Map<string, string>();
+  const itemIds = Array.from(new Set(items.map((item) => resolveItemId(item)).filter(Boolean))) as string[];
+  if (!itemIds.length) return consumptionByKey;
+
+  const variantKeys = new Set<string>();
+  items.forEach((item) => {
+    const variantKey = resolveVariantKey(item);
+    if (variantKey && variantKey !== 'base') {
+      variantKeys.add(variantKey);
+    }
+  });
+
+  const { data: itemRows } = await supabase
+    .from('catalog_items')
+    .select('id,consumption_uom')
+    .in('id', itemIds);
+
+  const itemUomById = new Map<string, string>();
+  if (Array.isArray(itemRows)) {
+    itemRows.forEach((row) => {
+      const id = typeof row?.id === 'string' ? row.id : null;
+      const uom = typeof row?.consumption_uom === 'string' ? row.consumption_uom.trim() : '';
+      if (id && uom) itemUomById.set(id, uom);
+    });
+  }
+
+  if (variantKeys.size) {
+    const { data: variantRows } = await supabase
+      .from('catalog_variants')
+      .select('id,item_id,consumption_uom')
+      .in('id', Array.from(variantKeys));
+
+    if (Array.isArray(variantRows)) {
+      variantRows.forEach((row) => {
+        const variantId = typeof row?.id === 'string' ? row.id : null;
+        const itemId = typeof row?.item_id === 'string' ? row.item_id : null;
+        const uom = typeof row?.consumption_uom === 'string' ? row.consumption_uom.trim() : '';
+        if (!variantId || !itemId) return;
+        const key = buildItemKey(itemId, variantId);
+        if (uom) {
+          consumptionByKey.set(key, uom);
+        } else {
+          const fallback = itemUomById.get(itemId);
+          if (fallback) consumptionByKey.set(key, fallback);
+        }
+      });
+    }
+  }
+
+  itemIds.forEach((itemId) => {
+    const key = buildItemKey(itemId, 'base');
+    const uom = itemUomById.get(itemId);
+    if (uom && !consumptionByKey.has(key)) {
+      consumptionByKey.set(key, uom);
+    }
+  });
+
+  return consumptionByKey;
+}
+
 async function loadDamageTotalsByKey(
   supabase: ReturnType<typeof getServiceClient>,
   summary: SummaryPayload,
@@ -487,7 +565,8 @@ export async function POST(request: Request) {
   const items = Array.isArray(summary.items) ? summary.items : [];
   const remainingByKey = await loadRemainingByKey(supabase, summary, items, context);
   const damageByKey = context === 'damage' ? await loadDamageTotalsByKey(supabase, summary, items, context) : null;
-  const message = buildMessage(summary, context, scanner, remainingByKey, damageByKey);
+  const consumptionUomByKey = await loadConsumptionUomByKey(supabase, items);
+  const message = buildMessage(summary, context, scanner, remainingByKey, damageByKey, consumptionUomByKey);
   const response = await fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -44,6 +44,8 @@ async function proxy(request: NextRequest, params: Promise<{ path: string[] }>) 
   const authKey = SERVICE_ROLE_KEY || ANON_KEY;
   if (authKey) {
     headers.set("apikey", authKey);
+  }
+  if (!headers.has("authorization") && authKey) {
     headers.set("authorization", `Bearer ${authKey}`);
   }
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();

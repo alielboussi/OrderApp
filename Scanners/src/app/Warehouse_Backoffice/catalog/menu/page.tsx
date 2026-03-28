@@ -212,7 +212,13 @@ export default function CatalogMenuPage() {
 
   useEffect(() => {
     if (!variantPopover) return;
-    const handleClose = () => {
+    const handleClose = (event?: Event) => {
+      if (event && variantPopoverRef.current) {
+        const target = event.target as Node | null;
+        if (target && variantPopoverRef.current.contains(target)) {
+          return;
+        }
+      }
       setVariantPopover(null);
     };
     window.addEventListener("resize", handleClose);
@@ -301,9 +307,9 @@ export default function CatalogMenuPage() {
                           <div className={styles.cardTitleBlock}>
                           <div className={styles.rowTop}>
                             <p className={styles.itemKind}>{item.item_kind || "product"}</p>
-                            <button className={styles.linkButton} onClick={() => router.push(`/Warehouse_Backoffice/catalog/product?id=${item.id}`)}>
+                            <a className={styles.linkButton} href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}>
                               Edit product
-                            </button>
+                            </a>
                             <button className={styles.linkButton} onClick={() => handleDeleteItem(item.id)} disabled={readOnly}>
                               Delete
                             </button>
@@ -396,16 +402,12 @@ export default function CatalogMenuPage() {
                           {variant.has_recipe && (
                             <span className={`${styles.badge} ${styles.badgeRecipe}`}>Recipe</span>
                           )}
-                          <button
+                          <a
                             className={styles.linkButton}
-                            onClick={() =>
-                              router.push(
-                                `/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${variantPopover.itemId}`
-                              )
-                            }
+                            href={`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${variantPopover.itemId}`}
                           >
                             Edit
-                          </button>
+                          </a>
                           <button
                             className={styles.linkButton}
                             onClick={() => handleDeleteVariant(variant.id, variantPopover.itemId)}

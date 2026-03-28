@@ -21,33 +21,6 @@ type StockItem = {
   item_kind: "raw" | "ingredient" | "finished" | string | null;
 };
 
-type WarehouseVarianceRow = {
-  period_id: string | null;
-  warehouse_id: string | null;
-  item_id: string;
-  item_name: string | null;
-  variant_key: string | null;
-  opening_qty: number | null;
-  movement_qty: number | null;
-  expected_qty: number | null;
-};
-
-type OpeningCountRow = {
-  period_id: string;
-  item_id: string;
-  variant_key: string | null;
-  counted_qty: number | null;
-  counted_at: string | null;
-};
-
-type StockLedgerRow = {
-  warehouse_id: string | null;
-  item_id: string | null;
-  variant_key: string | null;
-  delta_units: number | null;
-  reason: string | null;
-  occurred_at: string | null;
-};
 
 type OrderTotals = {
   count: number;
@@ -69,12 +42,6 @@ function toErrorMessage(error: unknown): string {
   }
 }
 
-function parseQty(value: number | string | null): number {
-  if (value === null || value === undefined) return 0;
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return parsed;
-}
 
 function formatUomLabel(raw?: string | null): string {
   const trimmed = raw?.trim() ?? "";
@@ -149,10 +116,11 @@ function formatUomLabel(raw?: string | null): string {
   }
 }
 
-function formatQtyWithUom(value: number | null, uom?: string): { text: string; uom: string } {
+function formatQtyWithUom(value: number | null, uom?: string): { text: string; uom: string; detail?: string } {
   if (value === null || Number.isNaN(value)) return { text: "-", uom: formatUomLabel(uom) };
   const unit = (uom ?? "").toLowerCase();
   const abs = Math.abs(value);
+  const isKgUnit = unit === "kg" || unit === "kilogram" || unit === "kilograms" || unit === "kg(s)";
 
   if (unit === "g" && abs >= 1000) {
     return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("kg") };
@@ -162,6 +130,24 @@ function formatQtyWithUom(value: number | null, uom?: string): { text: string; u
   }
   if (unit === "ml" && abs >= 1000) {
     return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("l") };
+  }
+  if (isKgUnit) {
+    const sign = value < 0 ? "-" : "";
+    const wholeKg = Math.floor(abs);
+    let remainderGrams = Math.round((abs - wholeKg) * 1000);
+    let kgDisplay = wholeKg;
+    if (remainderGrams === 1000) {
+      kgDisplay += 1;
+      remainderGrams = 0;
+    }
+    const detail = remainderGrams > 0
+      ? `${remainderGrams.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${formatUomLabel("g")}`
+      : undefined;
+    return {
+      text: `${sign}${kgDisplay.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      uom: formatUomLabel("kg"),
+      detail
+    };
   }
 
   return { text: value.toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel(uom) };
@@ -185,7 +171,6 @@ export default function OutletWarehouseBalancesPage() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
-  const [variantUoms, setVariantUoms] = useState<Record<string, string>>({});
   const [itemPackMass, setItemPackMass] = useState<Record<string, { mass: number | null; uom: string | null }>>({});
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
@@ -201,8 +186,6 @@ export default function OutletWarehouseBalancesPage() {
   const [includeFinished, setIncludeFinished] = useState(true);
   const [baseOnly, setBaseOnly] = useState(false);
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
-  const [includePurchases, setIncludePurchases] = useState(true);
-  const [includeDamages, setIncludeDamages] = useState(true);
 
   const coldroomChildSet = useMemo(() => new Set(COLDROOM_CHILD_IDS), []);
   const coldroomLabelMap = useMemo(() => {
@@ -509,118 +492,27 @@ export default function OutletWarehouseBalancesPage() {
 
         const searchValue = search.trim() || null;
 
-        const { data: periodRows, error: periodError } = await supabase
-          .from("warehouse_stock_periods")
-          .select("id,warehouse_id,status,opened_at")
-          .in("warehouse_id", warehouseIds)
-          .eq("status", "open");
-
-        if (periodError) throw periodError;
-
-        const periodIds = Array.from(new Set((periodRows ?? []).map((row) => row?.id).filter(Boolean))) as string[];
-        if (periodIds.length === 0) {
-          if (active) {
-            setItems([]);
-            setError("No open stock period for the selected warehouse(s). Start a stocktake to view opening balances.");
-          }
-          return;
-        }
-
-        let varianceQuery = supabase
-          .from("warehouse_stock_variances")
-          .select("period_id,warehouse_id,item_id,item_name,variant_key,opening_qty,movement_qty,expected_qty")
-          .in("period_id", periodIds);
+        let stockQuery = supabase
+          .from("warehouse_stock_items")
+          .select("warehouse_id,item_id,item_name,variant_key,net_units,item_kind")
+          .in("warehouse_id", warehouseIds);
 
         if (searchValue) {
-          varianceQuery = varianceQuery.ilike("item_name", `%${searchValue}%`);
+          stockQuery = stockQuery.ilike("item_name", `%${searchValue}%`);
         }
 
-        const { data: varianceRows, error: varianceError } = await varianceQuery;
-        if (varianceError) throw varianceError;
+        const { data: stockRows, error: stockError } = await stockQuery;
+        if (stockError) throw stockError;
 
-        const rows = (varianceRows as WarehouseVarianceRow[]) || [];
+        const rows = (stockRows as StockItem[]) || [];
         const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
 
-        const periodOpenedAtById = new Map<string, number>();
-        const periodIdByWarehouse = new Map<string, string>();
-        (periodRows ?? []).forEach((row) => {
-          if (!row?.id || !row?.warehouse_id) return;
-          periodIdByWarehouse.set(row.warehouse_id, row.id);
-          const openedAt = typeof row.opened_at === "string" ? Date.parse(row.opened_at) : NaN;
-          if (!Number.isNaN(openedAt)) periodOpenedAtById.set(row.id, openedAt);
-        });
+        const { data: variantRows, error: variantError } = await supabase
+          .from("catalog_variants")
+          .select("id,item_id,active")
+          .in("item_id", itemIds);
 
-        const { data: openingRows, error: openingError } = await supabase
-          .from("warehouse_stock_counts")
-          .select("period_id,item_id,variant_key,counted_qty,counted_at")
-          .in("period_id", periodIds);
-
-        if (openingError) throw openingError;
-
-        const openingMap = new Map<string, number>();
-        const openingTimeByKey = new Map<string, number>();
-        (openingRows as OpeningCountRow[] | null | undefined)?.forEach((row) => {
-          if (!row?.period_id || !row?.item_id) return;
-          const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
-          const key = `${row.period_id}::${row.item_id}::${vKey}`;
-          const countedAt = typeof row.counted_at === "string" ? Date.parse(row.counted_at) : NaN;
-          const shouldUpdate = Number.isNaN(countedAt)
-            ? !openingMap.has(key)
-            : (openingTimeByKey.get(key) ?? -Infinity) < countedAt;
-          if (shouldUpdate) {
-            openingMap.set(key, parseQty(row.counted_qty));
-            if (!Number.isNaN(countedAt)) openingTimeByKey.set(key, countedAt);
-          }
-        });
-
-        const minOpenedAt = Math.min(...Array.from(periodOpenedAtById.values()).filter(Number.isFinite));
-        const hasOpenedAt = Number.isFinite(minOpenedAt);
-        const ledgerReasons = [
-          "warehouse_transfer",
-          "outlet_sale",
-          ...(includeDamages ? ["damage"] : []),
-          "recipe_consumption",
-          ...(includePurchases ? ["purchase_receipt"] : []),
-        ];
-
-        const { data: ledgerRows, error: ledgerError } = await supabase
-          .from("stock_ledger")
-          .select("warehouse_id,item_id,variant_key,delta_units,reason,occurred_at")
-          .eq("location_type", "warehouse")
-          .in("warehouse_id", warehouseIds)
-          .in("reason", ledgerReasons)
-          .in("item_id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"])
-          .gte("occurred_at", hasOpenedAt ? new Date(minOpenedAt).toISOString() : "1970-01-01T00:00:00Z");
-
-        if (ledgerError) throw ledgerError;
-
-        const movementMap = new Map<string, number>();
-        (ledgerRows as StockLedgerRow[] | null | undefined)?.forEach((row) => {
-          if (!row?.warehouse_id || !row?.item_id) return;
-          const periodId = periodIdByWarehouse.get(row.warehouse_id);
-          if (!periodId) return;
-          const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
-          const key = `${periodId}::${row.item_id}::${vKey}`;
-          const occurredAt = typeof row.occurred_at === "string" ? Date.parse(row.occurred_at) : NaN;
-          const openingAt = openingTimeByKey.get(key);
-          const baselineAt = openingAt ?? periodOpenedAtById.get(periodId);
-          if (baselineAt !== undefined && !Number.isNaN(occurredAt) && occurredAt < baselineAt) return;
-          const delta = parseQty(row.delta_units);
-          movementMap.set(key, (movementMap.get(key) ?? 0) + delta);
-        });
-
-        const [{ data: itemRows, error: itemError }, { data: variantRows, error: variantError }] = await Promise.all([
-          supabase.from("catalog_items").select("id,item_kind").in("id", itemIds),
-          supabase.from("catalog_variants").select("id,item_id,active").in("item_id", itemIds),
-        ]);
-
-        if (itemError) throw itemError;
         if (variantError) throw variantError;
-
-        const itemKindMap = new Map<string, string>();
-        (itemRows ?? []).forEach((row) => {
-          if (row?.id) itemKindMap.set(row.id, row.item_kind ?? "");
-        });
 
         const itemsWithVariants = new Set<string>();
         (variantRows ?? []).forEach((row) => {
@@ -630,7 +522,7 @@ export default function OutletWarehouseBalancesPage() {
 
         const map = new Map<string, StockItem>();
         rows.forEach((row) => {
-          const kind = itemKindMap.get(row.item_id) ?? "";
+          const kind = row.item_kind ?? "";
           if (!kinds.includes(kind)) return;
           const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           if (baseOnly && vKey !== "base") return;
@@ -638,10 +530,7 @@ export default function OutletWarehouseBalancesPage() {
 
           const key = `${row.item_id}::${vKey}`;
           const existing = map.get(key);
-          const openingKey = `${row.period_id ?? ""}::${row.item_id}::${vKey}`;
-          const openingQty = openingMap.get(openingKey) ?? 0;
-          const movementQty = movementMap.get(openingKey) ?? 0;
-          const onHandUnits = openingQty + movementQty;
+          const onHandUnits = typeof row.net_units === "number" ? row.net_units : 0;
 
           if (existing) {
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;
@@ -682,8 +571,6 @@ export default function OutletWarehouseBalancesPage() {
     includeRaw,
     includeFinished,
     baseOnly,
-    includePurchases,
-    includeDamages,
     selectedOutletIds,
     refreshTick,
     supabase,
@@ -708,7 +595,7 @@ export default function OutletWarehouseBalancesPage() {
             .from("catalog_items")
             .select("id,consumption_unit,consumption_uom,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom")
             .in("id", ids),
-          supabase.from("catalog_variants").select("id,item_id,name,active,purchase_pack_unit").in("item_id", ids),
+          supabase.from("catalog_variants").select("id,item_id,name,active").in("item_id", ids),
         ]);
 
         if (itemError) throw itemError;
@@ -717,10 +604,9 @@ export default function OutletWarehouseBalancesPage() {
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
-        const variantUomMap: Record<string, string> = {};
         const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
         (itemData || []).forEach((row) => {
-          const fallbackUom = row.purchase_pack_unit ?? row.consumption_unit ?? row.consumption_uom ?? "each";
+          const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? row.purchase_pack_unit ?? "each";
           if (row.id) uomMap[row.id] = fallbackUom;
           if (row.id) {
             packMap[row.id] = {
@@ -737,15 +623,6 @@ export default function OutletWarehouseBalancesPage() {
 
         (variantData || []).forEach((variant) => {
           if (variant?.active === false) return;
-          if (variant?.id) {
-            const variantUom = variant.purchase_pack_unit?.trim();
-            if (variantUom) {
-              const normalizedKey = normalizeVariantKey(variant.id).toLowerCase();
-              variantUomMap[normalizedKey] = variantUom;
-              variantUomMap[variant.id] = variantUom;
-            }
-          }
-
           const name = variant?.name?.trim();
           if (!name || !variant?.id) return;
           map[variant.id] = name;
@@ -754,13 +631,11 @@ export default function OutletWarehouseBalancesPage() {
 
         setVariantNames(map);
         setItemUoms(uomMap);
-        setVariantUoms(variantUomMap);
         setItemPackMass(packMap);
       } catch {
         if (active) {
           setVariantNames({});
           setItemUoms({});
-          setVariantUoms({});
           setItemPackMass({});
         }
       }
@@ -911,22 +786,6 @@ export default function OutletWarehouseBalancesPage() {
               />
               Pack weight total
             </label>
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={includePurchases}
-                onChange={(event) => setIncludePurchases(event.target.checked)}
-              />
-              Purchases
-            </label>
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={includeDamages}
-                onChange={(event) => setIncludeDamages(event.target.checked)}
-              />
-              Damages
-            </label>
           </div>
         </section>
 
@@ -1016,10 +875,9 @@ export default function OutletWarehouseBalancesPage() {
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {
-                    const variantKey = (item.variant_key ?? "base").toLowerCase();
-                    const uom = variantUoms[variantKey] ?? itemUoms[item.item_id];
+                    const uom = itemUoms[item.item_id];
                     const formatted = formatQtyWithUom(item.net_units, uom);
-                    return `${formatted.text} ${formatted.uom}`.trim();
+                    return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                   })()}
                 </span>
                 {showPackWeightTotals && (
@@ -1029,7 +887,7 @@ export default function OutletWarehouseBalancesPage() {
                       if (!packInfo || packInfo.mass == null || item.net_units == null) return "-";
                       const total = item.net_units * packInfo.mass;
                       const formatted = formatQtyWithUom(total, packInfo.uom ?? undefined);
-                      return `${formatted.text} ${formatted.uom}`.trim();
+                      return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                     })()}
                   </span>
                 )}
