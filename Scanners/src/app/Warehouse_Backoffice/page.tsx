@@ -11,6 +11,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
   const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
   const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
+  const goToPurchaseEntry = () => router.push("/Warehouse_Backoffice/purchase-entry");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
   const goToStocktakes = () => router.push("/Warehouse_Backoffice/stocktakes");
   const goToSetup = () => router.push("/Warehouse_Backoffice/setup");
@@ -51,6 +52,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToSuppliers} className={`${styles.actionCard} ${styles.suppliersCard}`}>
             <p className={`${styles.cardTitle} ${styles.suppliersTitle}`}>Suppliers</p>
             <p className={styles.cardBody}>Create supplier contacts for purchase intake and scanner logs.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToPurchaseEntry} className={`${styles.actionCard} ${styles.purchaseEntryCard}`}>
+            <p className={`${styles.cardTitle} ${styles.purchaseEntryTitle}`}>Purchase Entry</p>
+            <p className={styles.cardBody}>Record scanner purchase receipts from backoffice.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

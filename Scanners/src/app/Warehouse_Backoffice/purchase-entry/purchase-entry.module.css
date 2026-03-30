@@ -1,0 +1,250 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+.page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(96, 165, 250, 0.12), transparent 35%),
+    radial-gradient(circle at 82% 8%, rgba(244, 114, 182, 0.12), transparent 38%),
+    radial-gradient(circle at 50% 70%, rgba(34, 197, 94, 0.08), transparent 42%),
+    #050a16;
+  display: flex;
+  justify-content: center;
+  padding: 36px 26px 50px;
+  color: #e8edff;
+  font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+}
+
+.shell {
+  width: 100%;
+  max-width: 1280px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 24px 26px;
+  background: rgba(12, 18, 36, 0.9);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
+.grow {
+  flex: 1;
+}
+
+.kicker {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #8da2ff;
+}
+
+.title {
+  margin: 8px 0 8px;
+  font-size: 36px;
+  letter-spacing: -0.5px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: #97a7c6;
+  max-width: 520px;
+  line-height: 1.6;
+}
+
+.headerButtons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.backButton {
+  background: transparent;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.panel {
+  background: rgba(12, 18, 36, 0.9);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panelHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+.input,
+.select,
+.textarea {
+  background: rgba(7, 12, 26, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #f8fafc;
+  font-family: inherit;
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.itemList {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.itemOption {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #e2e8f0;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.itemOptionActive {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.2);
+}
+
+.itemTag {
+  font-size: 12px;
+  color: #bfdbfe;
+}
+
+.variantPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.primaryButton {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(14, 116, 144, 0.9));
+  color: #eff6ff;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
+.outlineButton,
+.ghostButton {
+  background: transparent;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cartList {
+  display: grid;
+  gap: 12px;
+}
+
+.cartRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.cartTitle {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.cartMeta {
+  margin: 0;
+  color: #97a7c6;
+  font-size: 12px;
+}
+
+.helperText {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.errorBanner {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fecaca;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+
+.successBanner {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #bbf7d0;
+  padding: 10px 14px;
+  border-radius: 12px;
+}

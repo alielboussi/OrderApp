@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
+const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? "warehouse_stock_items";
+
 function parseQty(value: number | null): number {
   if (typeof value !== "number" || Number.isNaN(value)) return 0;
   return value;
@@ -36,8 +38,25 @@ export async function GET(request: Request) {
   }
 
   const openedAt = periodRow.opened_at;
-  const closedAt = periodRow.closed_at ?? new Date().toISOString();
+  const closedAtRaw = periodRow.closed_at ?? null;
+  const isOpenPeriod = !closedAtRaw;
+  const closedAt = closedAtRaw ?? new Date().toISOString();
   const warehouseId = periodRow.warehouse_id;
+
+  let includeSales = true;
+  try {
+    const { data: outletRows, error: outletError } = await supabase
+      .from("outlets")
+      .select("id")
+      .eq("default_sales_warehouse_id", warehouseId)
+      .eq("active", true)
+      .limit(1);
+    if (outletError) throw outletError;
+    includeSales = Array.isArray(outletRows) && outletRows.length > 0;
+  } catch (error) {
+    console.warn("stocktake-variance: outlet lookup failed", error);
+    includeSales = true;
+  }
 
   const { data: countRows, error: countError } = await supabase
     .from("warehouse_stock_counts")
@@ -96,8 +115,52 @@ export async function GET(request: Request) {
     }
   });
 
+  const liveMap = new Map<string, number>();
+  if (isOpenPeriod) {
+    let stockRows: Array<{
+      item_id?: string | null;
+      product_id?: string | null;
+      variant_key?: string | null;
+      net_units?: number | string | null;
+      qty?: number | string | null;
+    }> = [];
+    try {
+      const primary = await supabase
+        .from(STOCK_VIEW_NAME)
+        .select("item_id,product_id,variant_key,net_units")
+        .eq("warehouse_id", warehouseId);
+      stockRows = (primary.data as typeof stockRows) ?? [];
+      if (primary.error?.code === "42703") {
+        const fallback = await supabase
+          .from(STOCK_VIEW_NAME)
+          .select("product_id,variant_key,qty")
+          .eq("warehouse_id", warehouseId);
+        stockRows = (fallback.data as typeof stockRows) ?? [];
+        if (fallback.error) throw fallback.error;
+      } else if (primary.error) {
+        throw primary.error;
+      }
+    } catch (error) {
+      console.warn("stocktake-variance: live stock lookup failed", error);
+    }
+
+    stockRows.forEach((row) => {
+      const itemId = row.item_id ?? row.product_id;
+      if (!itemId) return;
+      const key = toKey(itemId, row.variant_key);
+      const qtyRaw = row.net_units ?? row.qty;
+      const qty = typeof qtyRaw === "number" ? qtyRaw : Number(qtyRaw) || 0;
+      liveMap.set(key, qty);
+    });
+  }
+
+  if (isOpenPeriod) {
+    liveMap.forEach((_value, key) => countedKeys.add(key));
+  }
+
   if (countedKeys.size === 0) {
     return NextResponse.json({
+      include_sales: includeSales,
       period: {
         id: periodRow.id,
         opened_at: periodRow.opened_at,
@@ -129,6 +192,11 @@ export async function GET(request: Request) {
   });
 
   const keys = new Set<string>(countedKeys);
+  if (isOpenPeriod) {
+    liveMap.forEach((_value, key) => {
+      keys.add(key);
+    });
+  }
 
   const itemIds = Array.from(new Set(Array.from(keys).map((key) => key.split("::")[0])));
 
@@ -169,10 +237,13 @@ export async function GET(request: Request) {
     .map((key) => {
       const [itemId, variantKeyRaw] = key.split("::");
       const openingQty = openingMap.get(key) ?? 0;
-      const closingQty = closingMap.get(key) ?? 0;
+      const closingQty =
+        closingMap.has(key)
+          ? (closingMap.get(key) ?? 0)
+          : (isOpenPeriod ? (liveMap.get(key) ?? 0) : 0);
       const transferQty = transferMap.get(key) ?? 0;
       const damageQty = damageMap.get(key) ?? 0;
-      const salesQty = salesMap.get(key) ?? 0;
+      const salesQty = includeSales ? (salesMap.get(key) ?? 0) : 0;
       const expectedQty = openingQty + transferQty + damageQty + salesQty;
       const varianceQty = closingQty - expectedQty;
       const itemName = itemMap.get(itemId)?.name ?? itemId;
@@ -211,6 +282,7 @@ export async function GET(request: Request) {
     .sort((a, b) => (a!.variant_label ?? "").localeCompare(b!.variant_label ?? ""));
 
   return NextResponse.json({
+    include_sales: includeSales,
     period: {
       id: periodRow.id,
       opened_at: periodRow.opened_at,

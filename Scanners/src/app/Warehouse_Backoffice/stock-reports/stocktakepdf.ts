@@ -16,6 +16,7 @@ type StocktakePdfOptions = {
   rows: VarianceRow[];
   logoDataUrl?: string;
   watermarkText?: string;
+  includeSales?: boolean;
 };
 
 function escapeHtml(value: string): string {
@@ -39,6 +40,7 @@ function formatCurrency(value: number): string {
 
 export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): string {
   const { warehouseText, periodText, rows, logoDataUrl } = options;
+  const includeSales = options.includeSales !== false;
   const rowChunks = [rows];
 
   const totals = rows.reduce(
@@ -46,7 +48,7 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
       acc.opening += row.opening_qty;
       acc.transfer += Math.abs(row.transfer_qty);
       acc.damage += Math.abs(row.damage_qty);
-      acc.sales += Math.abs(row.sales_qty);
+      acc.sales += includeSales ? Math.abs(row.sales_qty) : 0;
       acc.closing += row.closing_qty;
       acc.expected += row.expected_qty;
       acc.variance += row.variance_qty;
@@ -56,30 +58,40 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
     { opening: 0, transfer: 0, damage: 0, sales: 0, closing: 0, expected: 0, variance: 0, varianceCost: 0 }
   );
 
-  const renderRowsHtml = (pageRows: VarianceRow[]) =>
-    pageRows.length
-      ? pageRows
-          .map(
-            (row) => `
+  const renderRowsHtml = (pageRows: VarianceRow[]) => {
+    if (!pageRows.length) {
+      const colSpan = includeSales ? 9 : 8;
+      return `
         <tr>
-          <td>${escapeHtml(row.variant_label)}</td>
-          <td>${formatQty(row.opening_qty)}</td>
-          <td>${formatQty(row.transfer_qty)}</td>
-          <td>${formatQty(row.damage_qty)}</td>
-          <td>${formatQty(row.sales_qty)}</td>
-          <td>${formatQty(row.closing_qty)}</td>
-          <td>${formatQty(row.expected_qty)}</td>
-          <td>${formatQty(row.variance_qty)}</td>
-          <td>${formatCurrency(row.variant_amount)}</td>
-        </tr>
-      `
-          )
-          .join("")
-      : `
-        <tr>
-          <td colspan="9">No variance rows found for this period.</td>
+          <td colspan="${colSpan}">No variance rows found for this period.</td>
         </tr>
       `;
+    }
+
+    return pageRows
+      .map((row) => {
+        const cells = [
+          `<td>${escapeHtml(row.variant_label)}</td>`,
+          `<td>${formatQty(row.opening_qty)}</td>`,
+          `<td>${formatQty(row.transfer_qty)}</td>`,
+          `<td>${formatQty(row.damage_qty)}</td>`,
+        ];
+
+        if (includeSales) {
+          cells.push(`<td>${formatQty(row.sales_qty)}</td>`);
+        }
+
+        cells.push(
+          `<td>${formatQty(row.closing_qty)}</td>`,
+          `<td>${formatQty(row.expected_qty)}</td>`,
+          `<td>${formatQty(row.variance_qty)}</td>`,
+          `<td>${formatCurrency(row.variant_amount)}</td>`
+        );
+
+        return `<tr>${cells.join("")}</tr>`;
+      })
+      .join("");
+  };
 
   return `
     <!doctype html>
@@ -206,31 +218,31 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
                     <th>Opening</th>
                     <th>Transfers</th>
                     <th>Damages</th>
-                    <th>Sales</th>
+                    ${includeSales ? "<th>Sales</th>" : ""}
                     <th>Closing</th>
-                    <th>Expected</th>
+                    <th>${includeSales ? "Expected" : "Predicted"}</th>
                     <th>Variance</th>
-                    <th>Variant Amount</th>
+                    <th>Variance Cost</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${renderRowsHtml(pageRows)}
                 </tbody>
-                ${isLastPage ? `
+                ${isLastPage ? (() => {
+                  const columnCount = includeSales ? 9 : 8;
+                  const emptyCells = Array.from({ length: columnCount - 2 })
+                    .map(() => "<td></td>")
+                    .join("");
+                  return `
                 <tfoot>
                   <tr>
                     <td>Totals</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
+                    ${emptyCells}
                     <td>${formatCurrency(totals.varianceCost)}</td>
                   </tr>
                 </tfoot>
-                ` : ""}
+                `;
+                })() : ""}
               </table>
             </div>
           </div>

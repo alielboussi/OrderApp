@@ -91,6 +91,7 @@ type VarianceRow = {
 };
 
 type VarianceApiResponse = {
+  include_sales?: boolean;
   period: {
     id: string;
     opened_at: string | null;
@@ -366,6 +367,7 @@ export default function StocktakesPage() {
   const [recipeIngredients, setRecipeIngredients] = useState<Record<string, string[]>>({});
   const [recipeIngredientsLoading, setRecipeIngredientsLoading] = useState<Set<string>>(new Set());
   const [variance, setVariance] = useState<VarianceRow[]>([]);
+  const [varianceIncludeSales, setVarianceIncludeSales] = useState(true);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [periodsError, setPeriodsError] = useState<string | null>(null);
@@ -1179,15 +1181,37 @@ export default function StocktakesPage() {
       setVarianceLoading(true);
       setError(null);
 
-      const { data, error: varianceError } = await supabase
-        .from("warehouse_stock_variances")
-        .select(
-          "period_id,warehouse_id,outlet_id,item_id,item_name,variant_key,opening_qty,movement_qty,closing_qty,expected_qty,variance_qty,unit_cost,variance_cost"
-        )
-        .eq("period_id", periodId)
-        .order("item_id", { ascending: true });
-      if (varianceError) throw varianceError;
-      setVariance((data as VarianceRow[]) ?? []);
+      const response = await fetch(`/api/stocktake-variance?period_id=${periodId}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to load variance data");
+      }
+
+      const payload = (await response.json()) as VarianceApiResponse;
+      const includeSales = payload.include_sales !== false;
+      const includeSales = payload.include_sales !== false;
+      setVarianceIncludeSales(includeSales);
+      const rows = (payload.rows ?? []).map((row) => {
+        const transferQty = row.transfer_qty ?? 0;
+        const damageQty = row.damage_qty ?? 0;
+        const salesQty = includeSales ? (row.sales_qty ?? 0) : 0;
+        return {
+          period_id: periodId,
+          warehouse_id: payload.period.warehouse_id,
+          outlet_id: null,
+          item_id: row.item_id ?? "",
+          item_name: row.item_name ?? null,
+          variant_key: row.variant_key ?? null,
+          opening_qty: row.opening_qty ?? 0,
+          movement_qty: transferQty + damageQty + salesQty,
+          closing_qty: row.closing_qty ?? 0,
+          expected_qty: row.expected_qty ?? 0,
+          variance_qty: row.variance_qty ?? 0,
+          unit_cost: row.unit_cost ?? null,
+          variance_cost: row.variance_cost ?? null,
+        } as VarianceRow;
+      });
+      setVariance(rows);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -1738,6 +1762,7 @@ export default function StocktakesPage() {
         warehouseText: warehouseName,
         periodText,
         logoDataUrl,
+        includeSales,
         rows: filteredRows.map((row) => ({
           variant_label: row.is_variant
             ? row.variant_name ?? row.variant_label ?? row.item_name ?? ""
@@ -1745,7 +1770,7 @@ export default function StocktakesPage() {
           opening_qty: row.opening_qty ?? 0,
           transfer_qty: Math.abs(row.transfer_qty ?? 0),
           damage_qty: Math.abs(row.damage_qty ?? 0),
-          sales_qty: Math.abs(row.sales_qty ?? 0),
+          sales_qty: includeSales ? Math.abs(row.sales_qty ?? 0) : 0,
           closing_qty: row.closing_qty ?? 0,
           expected_qty: row.expected_qty ?? 0,
           variance_qty: row.variance_qty ?? 0,
@@ -2505,7 +2530,9 @@ export default function StocktakesPage() {
                       <p className={styles.periodMeta}>Variant: {row.variant_key || "base"}</p>
                       <p className={styles.periodMeta}>Opening: {formatQty(row.opening_qty ?? 0, 2)}</p>
                       <p className={styles.periodMeta}>Movement: {formatQty(row.movement_qty ?? 0, 2)}</p>
-                      <p className={styles.periodMeta}>Expected: {formatQty(row.expected_qty ?? 0, 2)}</p>
+                      <p className={styles.periodMeta}>
+                        {varianceIncludeSales ? "Expected" : "Predicted"}: {formatQty(row.expected_qty ?? 0, 2)}
+                      </p>
                       <p className={styles.periodMeta}>Counted: {formatQty(row.closing_qty ?? 0, 2)}</p>
                       <p className={`${styles.periodMeta} ${varianceColor}`}>
                         Variance: {formatQty(row.variance_qty ?? 0, 2)}
