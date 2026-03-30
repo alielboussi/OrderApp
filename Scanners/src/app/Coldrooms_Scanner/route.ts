@@ -5887,7 +5887,7 @@ export async function GET(request: Request) {
 
   const initialWarehouses = await preloadLockedWarehouses();
   const sourceWarehouse = initialWarehouses.find((w) => w.id === DEFAULT_SOURCE_ID);
-  const destWarehouse = null;
+  const destWarehouse = undefined;
   const html = createHtml({
     sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Select coldroom'),
     destPillLabel: describeLockedWarehouse(destWarehouse, 'Select destination'),
