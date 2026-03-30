@@ -1189,7 +1189,6 @@ export default function StocktakesPage() {
 
       const payload = (await response.json()) as VarianceApiResponse;
       const includeSales = payload.include_sales !== false;
-      const includeSales = payload.include_sales !== false;
       setVarianceIncludeSales(includeSales);
       const rows = (payload.rows ?? []).map((row) => {
         const transferQty = row.transfer_qty ?? 0;
