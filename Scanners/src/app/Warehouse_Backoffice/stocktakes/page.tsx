@@ -114,6 +114,7 @@ type VarianceApiResponse = {
     closing_qty: number | null;
     expected_qty: number | null;
     variance_qty: number | null;
+    unit_cost?: number | null;
     variance_cost: number | null;
     variant_amount?: number | null;
   }>;
@@ -1737,6 +1738,7 @@ export default function StocktakesPage() {
       const apiRows = payload.rows ?? [];
       const openedAt = payload.period.opened_at;
       const closedAt = payload.period.closed_at;
+      const includeSales = payload.include_sales !== false;
 
       const logoDataUrl = await loadLogoDataUrl();
       const warehouseName =
