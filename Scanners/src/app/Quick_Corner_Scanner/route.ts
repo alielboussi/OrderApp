@@ -49,6 +49,92 @@ function serializeForScript(value: unknown): string {
 }
 
 function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallback: string): string {
+  if (!warehouse) return fallback;
+  const base = warehouse.name ?? fallback;
+  return warehouse.active === false ? base + ' (inactive)' : base;
+}
+
+async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
+  const destinationIds = DESTINATION_CHOICES.map((choice) => choice.id).filter(Boolean);
+  const ids = [LOCKED_SOURCE_ID, ...destinationIds].filter(Boolean);
+  if (!ids.length) {
+    return [];
+  }
+  try {
+    const supabase = getServiceClient();
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('id,name,parent_warehouse_id,active')
+      .in('id', ids);
+    if (error) {
+      throw error;
+    }
+    return data ?? [];
+  } catch (error) {
+    console.error('initial warehouse preload failed', error);
+    return [];
+  }
+}
+
+function createHtml(config: {
+  sourcePillLabel: string;
+  destPillLabel: string;
+  sourceWarehouseName: string;
+  initialWarehousesJson: string;
+  initialView: 'transfer' | 'purchase' | 'damage';
+}) {
+  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
+  const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
+  const operatorContextLabelsJson = serializeForScript(OPERATOR_CONTEXT_LABELS);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AfterTen Transfer Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color-scheme: dark;
+      font-size: 13px;
+      --shell-pad: 10px;
+      --sticky-overlay: rgba(5, 5, 5, 0.92);
+      --sticky-stack-offset: 360px;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #1f1f1f 0%, #050505 60%);
+      color: #f5f5f5;
+      min-height: 100vh;
+      min-width: 320px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: var(--shell-pad);
+      overflow-x: hidden;
+      overflow-y: auto;
+      zoom: 0.78;
+    }
+    body[data-view="purchase"],
+    body[data-view="damage"] {
+      display: block;
+    }
+    body[data-view="purchase"] #auth-section,
+    body[data-view="purchase"] #app-section,
+    body[data-view="purchase"] .console-sticky,
+    body[data-view="purchase"] main,
+    body[data-view="damage"] #auth-section,
+    body[data-view="damage"] #app-section,
+    body[data-view="damage"] .console-sticky,
+    body[data-view="damage"] main {
+      display: none !important;
+      width: 0 !important;
       height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
