@@ -4,12 +4,29 @@ import { getServiceClient } from '@/lib/supabase-server';
 // Bracket access to avoid compile-time inlining of stale envs.
 const PROJECT_URL = process.env['NEXT_PUBLIC_SUPABASE_URL'] ?? '';
 const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
-const LOCKED_SOURCE_ID = '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
-const DESTINATION_CHOICES = [
-  { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' }
+const LOCKED_SOURCE_ID = 'fad8f3bf-6a13-471f-9198-c46bc65014e4';
+const SOURCE_CHOICES = [
+  { id: 'd4ad6512-6d0b-448f-b407-e74b0eb80edb', label: 'Coldroom # 1' },
+  { id: '647ca589-f688-4c9a-b137-78efedd5dbf5', label: 'Coldroom # 2' },
+  { id: '32ad8045-1526-4aaa-85d9-e762b9ec8bcc', label: 'Coldroom # 3' },
+  { id: '99547ec7-3220-40c8-859b-29d26ca5a4ca', label: 'Coldroom # 4' },
+  { id: '9a55ecbd-aa45-4f02-9e16-f567b8779674', label: 'Coldroom # 5' },
+  { id: '9885ad87-66e0-46ec-8872-ce58c524b739', label: 'Coldroom # 6' },
+  { id: '6c488b69-e793-45e0-a744-441924f5f4bb', label: 'Coldroom # 7' },
+  { id: 'd829d739-7311-4647-af91-cad33c21280e', label: 'Coldroom # 8' },
+  { id: '9d0a3a83-1fea-45a8-8771-25cc1db9f07e', label: 'Coldroom # 9' },
+  { id: '89e4a592-1385-4b40-9685-2178f124a9da', label: 'Coldroom # 10' },
+  { id: '94f86655-bed8-404c-8614-007a846f89f2', label: 'Coldroom # 11' }
 ] as const;
-const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
-const LOCKED_PRODUCT_IDS = ['20de5f8f-cc97-4ae6-aa51-e158225f3703', 'bcacc496-ffd7-430b-8c17-709d0497a1ff'] as const;
+const DESTINATION_CHOICES = [
+  ...SOURCE_CHOICES,
+  { id: '0c9ddd9e-d42c-475f-9232-5e9d649b0916', label: 'Ingredients Storeroom' }
+] as const;
+const DEFAULT_SOURCE_ID = SOURCE_CHOICES[0]?.id ?? '';
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'd4ad6512-6d0b-448f-b407-e74b0eb80edb';
+const LOCKED_PRODUCT_IDS = [
+  'c446a48f-7193-44c8-a828-d6888543de6f'
+] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -25,7 +42,7 @@ const OPERATOR_CONTEXT_LABELS = {
   damage: 'Damages'
 };
 
-// IMPORTANT: Quick Corner scanner behavior mirrors the prior main warehouse scanner.
+// IMPORTANT: Coldrooms scanner behavior mirrors the prior main warehouse scanner.
 // Please coordinate with the transfers team before changing any logic in this file.
 
 type WarehouseRecord = {
@@ -49,6 +66,94 @@ function serializeForScript(value: unknown): string {
 }
 
 function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallback: string): string {
+  if (!warehouse) return fallback;
+  const base = warehouse.name ?? fallback;
+  return warehouse.active === false ? base + ' (inactive)' : base;
+}
+
+async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
+  const sourceIds = SOURCE_CHOICES.map((choice) => choice.id).filter(Boolean);
+  const destinationIds = DESTINATION_CHOICES.map((choice) => choice.id).filter(Boolean);
+  const ids = [LOCKED_SOURCE_ID, ...sourceIds, ...destinationIds].filter(Boolean);
+  if (!ids.length) {
+    return [];
+  }
+  try {
+    const supabase = getServiceClient();
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('id,name,parent_warehouse_id,active')
+      .in('id', ids);
+    if (error) {
+      throw error;
+    }
+    return data ?? [];
+  } catch (error) {
+    console.error('initial warehouse preload failed', error);
+    return [];
+  }
+}
+
+function createHtml(config: {
+  sourcePillLabel: string;
+  destPillLabel: string;
+  sourceWarehouseName: string;
+  initialWarehousesJson: string;
+  initialView: 'transfer' | 'purchase' | 'damage';
+}) {
+  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
+  const sourceChoicesJson = serializeForScript(SOURCE_CHOICES);
+  const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
+  const operatorContextLabelsJson = serializeForScript(OPERATOR_CONTEXT_LABELS);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AfterTen Transfer Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color-scheme: dark;
+      font-size: 13px;
+      --shell-pad: 10px;
+      --sticky-overlay: rgba(5, 5, 5, 0.92);
+      --sticky-stack-offset: 360px;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #1f1f1f 0%, #050505 60%);
+      color: #f5f5f5;
+      min-height: 100vh;
+      min-width: 320px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: var(--shell-pad);
+      overflow-x: hidden;
+      overflow-y: auto;
+      zoom: 0.78;
+    }
+    body[data-view="purchase"],
+    body[data-view="damage"] {
+      display: block;
+    }
+    body[data-view="purchase"] #auth-section,
+    body[data-view="purchase"] #app-section,
+    body[data-view="purchase"] .console-sticky,
+    body[data-view="purchase"] main,
+    body[data-view="damage"] #auth-section,
+    body[data-view="damage"] #app-section,
+    body[data-view="damage"] .console-sticky,
+    body[data-view="damage"] main {
+      display: none !important;
+      width: 0 !important;
       height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
@@ -1496,14 +1601,23 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
             <div class="locked-pill">
               <h3>From</h3>
               <p id="source-label">${escapeHtml(sourcePillLabel)}</p>
+              <div class="destination-select-grid">
+                <label class="destination-pill-select">
+                  <span class="destination-pill-hint">Coldrooms</span>
+                  <button type="button" id="source-picker" class="destination-pill-button">Select coldroom</button>
+                  <select id="console-source-select" class="destination-hidden-select">
+                    <option value="">Select...</option>
+                  </select>
+                </label>
+              </div>
             </div>
             <div class="locked-pill locked-pill--destination">
               <h3>To</h3>
               <p id="dest-label">${escapeHtml(destPillLabel)}</p>
               <div class="destination-select-grid">
                 <label class="destination-pill-select">
-                  <span class="destination-pill-hint">Outlets</span>
-                  <button type="button" id="destination-picker" class="destination-pill-button">Select outlet</button>
+                  <span class="destination-pill-hint">Destination</span>
+                  <button type="button" id="destination-picker" class="destination-pill-button">Select destination</button>
                   <select id="console-destination-select" class="destination-hidden-select">
                     <option value="">Select...</option>
                   </select>
@@ -1550,6 +1664,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
           <div class="transfer-actions">
             <button type="submit" id="transfer-submit">Submit Transfer</button>
+            <a id="purchase-open" class="button button-outline" href="?view=purchase" role="button">Log Purchase Intake</a>
             <a id="damage-open" class="button button-green" href="?view=damage" role="button">Log Damages</a>
           </div>
         </form>
@@ -1562,7 +1677,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
   <div id="destination-modal" class="select-modal" aria-hidden="true">
     <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="destination-modal-title">
-      <div class="select-modal-header" id="destination-modal-title">Select outlet</div>
+      <div class="select-modal-header" id="destination-modal-title">Select destination</div>
       <div class="select-modal-grid" id="destination-modal-options"></div>
       <div class="select-modal-actions">
         <button type="button" class="select-modal-close" data-modal-close="destination-modal">Close</button>
@@ -1570,6 +1685,15 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
     </div>
   </div>
 
+  <div id="source-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
+      <div class="select-modal-header" id="source-modal-title">Select coldroom</div>
+      <div class="select-modal-grid" id="source-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="source-modal">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="operator-modal" class="select-modal" aria-hidden="true">
     <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-modal-title">
@@ -1593,7 +1717,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
       <h3 id="qty-title">Enter quantity</h3>
       <p id="qty-uom">UNIT</p>
       <p id="qty-hint" class="qty-hint"></p>
-      <input type="text" id="qty-input" inputmode="decimal" min="0" step="0.01" placeholder="0" required />
+      <input type="number" id="qty-input" min="0" step="0.01" placeholder="0" required />
       <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
         <button type="button" data-key="7">7</button>
         <button type="button" data-key="8">8</button>
@@ -1606,7 +1730,6 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         <button type="button" data-key="3">3</button>
         <button type="button" data-action="clear">CLR</button>
         <button type="button" data-key="0">0</button>
-        <button type="button" data-key=".">.</button>
         <button type="button" data-action="enter">Enter</button>
       </div>
       <div class="qty-actions">
@@ -1635,7 +1758,6 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
       <button type="button" data-key="3">3</button>
       <button type="button" data-action="clear">CLR</button>
       <button type="button" data-key="0">0</button>
-      <button type="button" data-key=".">.</button>
       <button type="button" data-action="enter">Enter</button>
     </div>
   </div>
@@ -1729,7 +1851,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
             <p id="purchase-cart-empty">No items scanned yet.</p>
           </section>
           <div class="purchase-actions">
-            <a id="purchase-back" class="button button-outline" href="/Soyola_Storeroom_Scanner" role="button">Back to Transfers</a>
+            <a id="purchase-back" class="button button-outline" href="/Coldrooms_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="purchase-submit">Record Purchase</button>
             <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
           </div>
@@ -1829,7 +1951,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
             </div>
           </label>
           <div class="damage-actions">
-            <a id="damage-back" class="button button-outline" href="/Soyola_Storeroom_Scanner" role="button">Back to Transfers</a>
+            <a id="damage-back" class="button button-outline" href="/Coldrooms_Scanner" role="button">Back to Transfers</a>
             <button type="submit" id="damage-submit" class="button-green">Log Damages</button>
             <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
           </div>
@@ -1855,13 +1977,15 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
     const MULTIPLY_QTY_BY_PACKAGE = ${JSON.stringify(MULTIPLY_QTY_BY_PACKAGE)};
     const INITIAL_WAREHOUSES = ${initialWarehousesJson};
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
+    const SOURCE_CHOICES = ${sourceChoicesJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
+    const DEFAULT_SOURCE_ID = ${JSON.stringify(DEFAULT_SOURCE_ID)};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
-    const SCANNER_NAME = 'Quick Corner';
-    const SCANNER_ID = 'f3f83926-7955-4bb3-9bc8-1aebd7ea2ae8';
-    const SESSION_STORAGE_KEY = 'quick-corner-kiosk-session-v1';
-    const PASSWORD_STORAGE_KEY = 'quick-corner-password-verifier-v1';
+    const SCANNER_NAME = 'Coldrooms';
+    const SCANNER_ID = '5711eb3d-1e23-4912-b3ae-548252bd2024';
+    const SESSION_STORAGE_KEY = 'coldrooms-kiosk-session-v1';
+    const PASSWORD_STORAGE_KEY = 'coldrooms-password-verifier-v1';
     const REQUIRED_ROLE = 'supervisor';
     const REQUIRED_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
     const ADMIN_ROLE_ID = '6b9e657a-6131-4a0b-8afa-0ce260f8ed0c';
@@ -1872,11 +1996,11 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       document.body.innerHTML = '<main><p style="color:#fecaca">Supabase environment variables are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.</p></main>';
     } else {
-      if (window.__soyolaAppInitialized) {
-        console.debug('Soyola scanner already initialized; skipping duplicate bootstrap');
+      if (window.__coldroomsAppInitialized) {
+        console.debug('Coldrooms scanner already initialized; skipping duplicate bootstrap');
         return;
       }
-      window.__soyolaAppInitialized = true;
+      window.__coldroomsAppInitialized = true;
       const supabaseClients = (window.__supabaseClients = window.__supabaseClients || {});
       const supabaseClientCache = (window.__supabaseClientCache = window.__supabaseClientCache || {});
 
@@ -1897,16 +2021,16 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         return client;
       }
 
-      const supabase = supabaseClients.quickCornerSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
+      const supabase = supabaseClients.coldroomsSession ?? getSupabaseClient(SESSION_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: true,
           persistSession: true,
           storageKey: SESSION_STORAGE_KEY
         }
       });
-      supabaseClients.quickCornerSession = supabase;
+      supabaseClients.coldroomsSession = supabase;
 
-      const passwordVerifier = supabaseClients.quickCornerPassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
+      const passwordVerifier = supabaseClients.coldroomsPassword ?? getSupabaseClient(PASSWORD_STORAGE_KEY, {
         auth: {
           detectSessionInUrl: false,
           persistSession: false,
@@ -1914,7 +2038,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           storageKey: PASSWORD_STORAGE_KEY
         }
       });
-      supabaseClients.quickCornerPassword = passwordVerifier;
+      supabaseClients.coldroomsPassword = passwordVerifier;
 
       const initialWarehouses = Array.isArray(INITIAL_WAREHOUSES) ? INITIAL_WAREHOUSES : [];
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
@@ -1942,7 +2066,9 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         suppliersNoScannerFields: true,
         suppliersSkipRpc: true,
         operators: [],
+        sourceOptions: Array.isArray(SOURCE_CHOICES) ? SOURCE_CHOICES : [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
+        sourceSelection: ${JSON.stringify(DEFAULT_SOURCE_ID)} || null,
         destinationSelection: null,
         purchaseForm: {
           supplierId: '',
@@ -1966,7 +2092,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         networkOffline: false
       };
 
-      state.lockedSource = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
+      state.lockedSource = state.warehouses.find((w) => w.id === state.sourceSelection) ?? null;
       state.lockedDest = null;
       // console.debug('initial warehouses snapshot', state.warehouses);
 
@@ -2159,10 +2285,14 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         purchase: document.getElementById('purchase-operator-picker'),
         damage: document.getElementById('damage-operator-picker')
       };
+      const sourceSelect = document.getElementById('console-source-select');
       const destinationSelect = document.getElementById('console-destination-select');
+      const sourcePicker = document.getElementById('source-picker');
       const destinationPicker = document.getElementById('destination-picker');
+      const sourceModal = document.getElementById('source-modal');
       const destinationModal = document.getElementById('destination-modal');
       const supplierModal = document.getElementById('supplier-modal');
+      const sourceModalOptions = document.getElementById('source-modal-options');
       const destinationModalOptions = document.getElementById('destination-modal-options');
       const supplierModalOptions = document.getElementById('supplier-modal-options');
       const operatorSelectModal = document.getElementById('operator-modal');
@@ -2182,7 +2312,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
       const operatorModalCancel = document.getElementById('operator-modal-cancel');
       const logoutButtons = document.querySelectorAll('[data-logout="true"]');
 
-      const VALID_VIEWS = ['transfer', 'damage'];
+      const VALID_VIEWS = ['transfer', 'purchase', 'damage'];
       const OPERATOR_GATE_CONTEXT = 'transfer';
 
       function syncViewQuery(view) {
@@ -2256,25 +2386,13 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
             : destMissingText;
         }
         if (sourceWarehouse) {
-          const sourceName = sourceWarehouse.name ?? 'Warehouse';
-          if (purchaseWarehouseLabel) {
-            purchaseWarehouseLabel.textContent = sourceName;
-          }
-          if (purchaseCartWarehouse) {
-            purchaseCartWarehouse.textContent = sourceName;
-          }
-          if (damageWarehouseLabel) {
-            damageWarehouseLabel.textContent = sourceName;
-          }
-          if (damageCartWarehouse) {
-            damageCartWarehouse.textContent = sourceName;
-          }
+          updateSourceWarehouseLabels(sourceWarehouse);
         }
       }
 
       setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
-        sourceMissingText: state.lockedSource ? undefined : 'Loading...',
-        destMissingText: state.lockedDest ? undefined : 'Select outlet'
+        sourceMissingText: state.lockedSource ? undefined : 'Select coldroom',
+        destMissingText: state.lockedDest ? undefined : 'Select destination'
       });
 
       openOperatorGate();
@@ -2336,30 +2454,9 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         }
       }
 
-      function normalizeQtyInput(value) {
-        let text = String(value ?? '');
-        text = text.replace(/,/g, '.');
-        text = text.replace(/[^0-9.]/g, '');
-        const parts = text.split('.');
-        if (parts.length > 1) {
-          const before = parts.shift() ?? '';
-          const after = parts.join('').slice(0, 2);
-          text = before + '.' + after;
-        }
-        if (text.startsWith('.')) {
-          text = '0' + text;
-        }
-        return text;
-      }
-
-      function setQtyInputValue(input, nextValue) {
-        if (!input) return;
-        input.value = normalizeQtyInput(nextValue);
-      }
-
       function appendQtyDigit(digit) {
         if (!qtyInput) return;
-        setQtyInputValue(qtyInput, (qtyInput.value ?? '') + digit);
+        qtyInput.value = (qtyInput.value ?? '') + digit;
         qtyInput.focus();
       }
 
@@ -2371,7 +2468,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
       function appendVariantQtyDigit(digit) {
         if (!activeVariantQtyInput) return;
-        setQtyInputValue(activeVariantQtyInput, (activeVariantQtyInput.value ?? '') + digit);
+        activeVariantQtyInput.value = (activeVariantQtyInput.value ?? '') + digit;
         activeVariantQtyInput.focus();
       }
 
@@ -2380,10 +2477,6 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         activeVariantQtyInput.value = '';
         activeVariantQtyInput.focus();
       }
-
-      qtyInput?.addEventListener('input', () => {
-        setQtyInputValue(qtyInput, qtyInput.value ?? '');
-      });
 
       if (qtyNumpad) {
         qtyNumpad.addEventListener('click', (event) => {
@@ -2574,13 +2667,13 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
         try {
           const { productIds, productsWithWarehouseVariations } = await loadStockAndDefaults();
-          const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
-          if (lockedIds.length) {
-            const lockedSet = new Set(lockedIds);
-            const lockedVariations = new Set(
-              lockedIds.filter((id) => productsWithWarehouseVariations.has(id))
-            );
-            return await loadProducts(lockedSet, lockedVariations);
+          if (LOCKED_PRODUCT_IDS.length) {
+            const lockedIds = new Set(LOCKED_PRODUCT_IDS);
+            const lockedVariations = new Set();
+            LOCKED_PRODUCT_IDS.forEach((id) => {
+              if (productsWithWarehouseVariations.has(id)) lockedVariations.add(id);
+            });
+            return await loadProducts(lockedIds, lockedVariations);
           }
           return await loadProducts(productIds, productsWithWarehouseVariations);
         } catch (error) {
@@ -2706,6 +2799,9 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         if (active === itemSearchInput) return true;
         if (active === damageItemSearchInput) return true;
         if (active === purchaseItemSearchInput) return true;
+        if (sourceSelect && active === sourceSelect) {
+          return true;
+        }
         if (destinationSelect && (active === destinationSelect || active.closest('.destination-pill-select'))) {
           return true;
         }
@@ -2807,23 +2903,54 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         return 1;
       }
 
-      function resolvePackUom(product, variation) {
+      function resolveTransferQuantity(product, variation) {
+        const qty = Number(variation?.transfer_quantity ?? product?.transfer_quantity);
+        if (Number.isFinite(qty) && qty > 0) {
+          return qty;
+        }
+        return 1;
+      }
+
+      function resolveBaseUom(product, variation, context) {
+        if (context === 'purchase') {
+          return (variation?.uom || product.uom || 'unit').toUpperCase();
+        }
         const unit =
-          variation?.purchase_pack_unit ||
+          variation?.consumption_uom ||
+          product.consumption_uom ||
           variation?.transfer_unit ||
           product.transfer_unit ||
+          variation?.uom ||
           product.uom ||
           'unit';
         return String(unit).toUpperCase();
       }
 
-      function resolveConsumptionUom(product, variation, packUom) {
-        const unit =
-          variation?.consumption_uom ||
-          product.consumption_uom ||
-          packUom ||
-          'unit';
+      function resolveEffectiveUom(product, variation, context) {
+        if (context === 'purchase') {
+          const unit =
+            variation?.consumption_uom ||
+            product.consumption_uom ||
+            variation?.transfer_unit ||
+            product.transfer_unit ||
+            variation?.uom ||
+            product.uom ||
+            'unit';
+          return String(unit).toUpperCase();
+        }
+        return resolveBaseUom(product, variation, context);
+      }
+
+      function resolvePackUom(product, variation, fallbackUom) {
+        const unit = variation?.uom || product.uom || fallbackUom || 'unit';
         return String(unit).toUpperCase();
+      }
+
+      function resolveQtyMultiplier(product, variation, context) {
+        if (context === 'purchase') {
+          return resolvePackageSize(product, variation);
+        }
+        return resolveTransferQuantity(product, variation);
       }
 
       function computeEffectiveQty(rawQty, entry) {
@@ -2831,17 +2958,25 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
           return null;
         }
-        const multiplier = MULTIPLY_QTY_BY_PACKAGE ? entry.packageSize ?? 1 : 1;
-        return qtyNumber * multiplier;
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 0 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if (mode === 'package') {
+          return qtyNumber * (MULTIPLY_QTY_BY_PACKAGE ? safeMultiplier : 1);
+        }
+        return qtyNumber * safeMultiplier;
       }
 
       function describeQty(entry, baseQty, effectiveQty) {
-        const unitLabel = entry.uom ?? 'UNIT';
-        if (MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1) {
-          const packLabel = entry.packUom ?? 'PACK';
-          return baseQty + ' ' + packLabel + ' → ' + effectiveQty + ' ' + unitLabel;
+        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
+        const effectiveUom = entry.uom ?? baseUom;
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if ((mode === 'package' && MULTIPLY_QTY_BY_PACKAGE && safeMultiplier > 1) || (mode === 'transfer' && safeMultiplier > 1)) {
+          return baseQty + ' ' + baseUom + ' → ' + effectiveQty + ' ' + effectiveUom;
         }
-        return effectiveQty + ' ' + unitLabel;
+        return effectiveQty + ' ' + effectiveUom;
       }
 
       function formatCombinedUom(stockUom, consumptionUom) {
@@ -2860,8 +2995,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           variationName: item.variationName ?? null,
           qty: item.qty,
           scannedQty: item.scannedQty ?? item.qty,
-          unit: item.supplierPackUom ?? item.packUom ?? item.uom ?? 'unit',
-          supplierPackUom: item.supplierPackUom ?? null,
+          unit: item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
           packUom: item.packUom ?? null,
           unitCost: item.unitCost ?? null
         }));
@@ -2877,7 +3011,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
               : (item.productName ?? 'Item ' + (index + 1));
             const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = formatUnitLabel(item.supplierPackUom ?? item.packUom ?? item.unit ?? 'unit', qtyLabel);
+            const unitLabel = formatUnitLabel(item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
@@ -2887,12 +3021,22 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
       function updateQtyHint(entry) {
         if (!qtyHint) return;
-        if (!entry || !(MULTIPLY_QTY_BY_PACKAGE && entry.packageSize > 1)) {
+        const rawMultiplier = Number(entry?.qtyMultiplier ?? 1);
+        const safeMultiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 1 ? rawMultiplier : 1;
+        const mode = entry?.multiplierMode || 'transfer';
+        if (!entry || safeMultiplier <= 1) {
           qtyHint.style.display = 'none';
           qtyHint.textContent = '';
           return;
         }
-        qtyHint.textContent = 'Each pack = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
+        if (mode === 'package' && !MULTIPLY_QTY_BY_PACKAGE) {
+          qtyHint.style.display = 'none';
+          qtyHint.textContent = '';
+          return;
+        }
+        const baseUom = entry.baseUom ?? entry.uom ?? 'UNIT';
+        const effectiveUom = entry.uom ?? baseUom;
+        qtyHint.textContent = 'Each ' + baseUom + ' = ' + safeMultiplier + ' ' + effectiveUom;
         qtyHint.style.display = 'block';
       }
 
@@ -3065,13 +3209,39 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         });
       }
 
+      function renderSourceOptions() {
+        if (!sourceSelect) return;
+        const existingValue = sourceSelect.value;
+        sourceSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = state.sourceOptions.length ? 'Select coldroom' : 'No coldrooms';
+        sourceSelect.appendChild(placeholder);
+        state.sourceOptions.forEach((option) => {
+          if (!option?.id) return;
+          const opt = document.createElement('option');
+          opt.value = option.id;
+          opt.textContent = option.label ?? 'Coldroom';
+          sourceSelect.appendChild(opt);
+        });
+        const savedValue = state.sourceSelection ?? existingValue;
+        sourceSelect.value = savedValue || '';
+        sourceSelect.disabled = !state.sourceOptions.length;
+        if (sourcePicker) {
+          sourcePicker.textContent = getSelectedSource()?.label ?? 'Select coldroom';
+          sourcePicker.disabled = !state.sourceOptions.length;
+        }
+        renderSourceCards();
+        syncSourcePillLabel();
+      }
+
       function renderDestinationOptions() {
         if (!destinationSelect) return;
         const existingValue = destinationSelect.value;
         destinationSelect.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = state.destinationOptions.length ? 'Select outlet' : 'No outlets';
+        placeholder.textContent = state.destinationOptions.length ? 'Select destination' : 'No destinations';
         destinationSelect.appendChild(placeholder);
         state.destinationOptions.forEach((option) => {
           if (!option?.id) return;
@@ -3084,13 +3254,12 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         destinationSelect.value = savedValue || '';
         destinationSelect.disabled = !state.destinationOptions.length;
         if (destinationPicker) {
-          destinationPicker.textContent = getSelectedPrimaryDestination()?.label ?? 'Select outlet';
+          destinationPicker.textContent = getSelectedDestination()?.label ?? 'Select destination';
           destinationPicker.disabled = !state.destinationOptions.length;
         }
         renderDestinationCards();
         syncDestinationPillLabel();
       }
-
 
       function openSelectModal(modal) {
         if (!modal) return;
@@ -3116,6 +3285,35 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         modal.setAttribute('inert', '');
       }
 
+      function renderSourceCards() {
+        if (!sourceModalOptions) return;
+        sourceModalOptions.innerHTML = '';
+        if (!state.sourceOptions.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No coldrooms found';
+          empty.disabled = true;
+          sourceModalOptions.appendChild(empty);
+          return;
+        }
+        state.sourceOptions.forEach((option) => {
+          if (!option?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = option.label ?? 'Coldroom';
+          card.addEventListener('click', () => {
+            if (sourceSelect) {
+              sourceSelect.value = option.id;
+            }
+            handleSourceSelection(option.id);
+            closeSelectModal(sourceModal);
+          });
+          sourceModalOptions.appendChild(card);
+        });
+      }
+
       function renderDestinationCards() {
         if (!destinationModalOptions) return;
         destinationModalOptions.innerHTML = '';
@@ -3123,7 +3321,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           const empty = document.createElement('button');
           empty.type = 'button';
           empty.className = 'select-card';
-          empty.textContent = 'No outlets found';
+          empty.textContent = 'No destinations found';
           empty.disabled = true;
           destinationModalOptions.appendChild(empty);
           return;
@@ -3144,7 +3342,6 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           destinationModalOptions.appendChild(card);
         });
       }
-
 
       function showOperatorPrompt(context) {
         if (!operatorSelectModal) {
@@ -3190,17 +3387,17 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
       }
 
       function enforceOperatorLocks() {
+        const sourceSelected = Boolean(getSelectedSource());
         const destinationSelected = Boolean(getSelectedDestination());
-        const sourceReady = Boolean(lockedSourceId);
         const consoleUnlocked = isOperatorUnlocked();
         if (transferSubmit) {
-          transferSubmit.disabled = state.loading || !consoleUnlocked || !destinationSelected;
+          transferSubmit.disabled = state.loading || !consoleUnlocked || !sourceSelected || !destinationSelected;
         }
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked || !sourceReady;
+          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked || !sourceSelected;
         }
         if (damageSubmit) {
-          damageSubmit.disabled = state.damageSubmitting || !consoleUnlocked || !sourceReady;
+          damageSubmit.disabled = state.damageSubmitting || !consoleUnlocked || !sourceSelected;
         }
       }
 
@@ -3288,6 +3485,17 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         return false;
       }
 
+      function getSourceOptionById(id) {
+        if (!id) return null;
+        const optionFromState = state.sourceOptions.find((option) => option.id === id);
+        if (optionFromState) return optionFromState;
+        const warehouseRecord = state.warehouses.find((w) => w.id === id);
+        if (warehouseRecord) {
+          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Coldroom' };
+        }
+        return null;
+      }
+
       function getDestinationOptionById(id) {
         if (!id) return null;
         const optionFromState = state.destinationOptions.find((option) => option.id === id);
@@ -3299,8 +3507,15 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         return null;
       }
 
+      function getSelectedSource() {
+        const id = state.sourceSelection;
+        if (!id) return null;
+        const option = getSourceOptionById(id);
+        if (option) return option;
+        return { id, label: 'Coldroom' };
+      }
 
-      function getSelectedPrimaryDestination() {
+      function getSelectedDestination() {
         const id = state.destinationSelection;
         if (!id) return null;
         const option = getDestinationOptionById(id);
@@ -3308,12 +3523,20 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         return { id, label: 'Destination warehouse' };
       }
 
-      function getSelectedDestination() {
-        return getSelectedPrimaryDestination();
-      }
-
       function showDestinationPrompt() {
         openSelectModal(destinationModal);
+      }
+
+      function ensureSourceSelected(shouldPrompt = true) {
+        const selection = getSelectedSource();
+        if (selection) {
+          return true;
+        }
+        if (shouldPrompt) {
+          showResult('Select a source coldroom to continue.', true);
+          openSelectModal(sourceModal);
+        }
+        return false;
       }
 
       function ensureDestinationSelected(context, shouldPrompt = true) {
@@ -3323,9 +3546,19 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         }
         if (shouldPrompt) {
           showResult('Select a destination warehouse for ' + formatOperatorLabel(context) + '.', true);
-          showDestinationPrompt();
+          showDestinationPrompt(context);
         }
         return false;
+      }
+
+      function syncSourcePillLabel() {
+        if (!sourceLabel) return;
+        const selection = getSelectedSource();
+        if (selection) {
+          sourceLabel.textContent = selection.label;
+        } else {
+          sourceLabel.textContent = 'Select coldroom';
+        }
       }
 
       function syncDestinationPillLabel() {
@@ -3334,8 +3567,59 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         if (selection) {
           destLabel.textContent = selection.label;
         } else {
-          destLabel.textContent = 'Select outlet';
+          destLabel.textContent = 'Select destination';
         }
+      }
+
+      function updateSourceWarehouseLabels(sourceWarehouse) {
+        const sourceName = sourceWarehouse?.name ?? getSelectedSource()?.label ?? 'Warehouse';
+        if (purchaseWarehouseLabel) {
+          purchaseWarehouseLabel.textContent = sourceName;
+        }
+        if (purchaseCartWarehouse) {
+          purchaseCartWarehouse.textContent = sourceName;
+        }
+        if (damageWarehouseLabel) {
+          damageWarehouseLabel.textContent = sourceName;
+        }
+        if (damageCartWarehouse) {
+          damageCartWarehouse.textContent = sourceName;
+        }
+      }
+
+      function handleSourceSelection(warehouseId) {
+        const trimmed = warehouseId || '';
+        if (!trimmed) {
+          state.sourceSelection = null;
+          state.lockedSource = null;
+          if (sourceSelect && sourceSelect.value !== '') {
+            sourceSelect.value = '';
+          }
+          if (sourcePicker) {
+            sourcePicker.textContent = 'Select coldroom';
+          }
+          syncSourcePillLabel();
+          updateSourceWarehouseLabels(null);
+          enforceOperatorLocks();
+          return;
+        }
+        const option = getSourceOptionById(trimmed);
+        if (!option) {
+          showResult('Source unavailable. Refresh directory.', true);
+          renderSourceOptions();
+          return;
+        }
+        state.sourceSelection = trimmed;
+        state.lockedSource = state.warehouses.find((w) => w.id === trimmed) ?? null;
+        if (sourceSelect && sourceSelect.value !== trimmed) {
+          sourceSelect.value = trimmed;
+        }
+        if (sourcePicker) {
+          sourcePicker.textContent = option.label ?? 'Select coldroom';
+        }
+        syncSourcePillLabel();
+        updateSourceWarehouseLabels(state.warehouses.find((w) => w.id === trimmed) ?? null);
+        enforceOperatorLocks();
       }
 
       function handleDestinationSelection(warehouseId) {
@@ -3347,7 +3631,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
             destinationSelect.value = '';
           }
           if (destinationPicker) {
-            destinationPicker.textContent = 'Select outlet';
+            destinationPicker.textContent = 'Select destination';
           }
           syncDestinationPillLabel();
           enforceOperatorLocks();
@@ -3365,7 +3649,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           destinationSelect.value = trimmed;
         }
         if (destinationPicker) {
-          destinationPicker.textContent = option.label ?? 'Select outlet';
+          destinationPicker.textContent = option.label ?? 'Select destination';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -3756,6 +4040,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
       function enterPurchaseMode() {
         if (!ensureOperatorGate()) return;
+        if (!ensureSourceSelected()) return;
         setMode('purchase');
         applyViewState('purchase');
         updatePurchaseSummary();
@@ -3784,6 +4069,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
       function enterDamageMode() {
         if (!ensureOperatorGate()) return;
+        if (!ensureSourceSelected()) return;
         setMode('damage');
         applyViewState('damage');
         renderCart('damage');
@@ -3802,26 +4088,22 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
       function promptQuantity(product, variation, context = state.mode) {
         if (!qtyModal || !qtyInput) return;
-        const packUom = resolvePackUom(product, variation);
-        const consumptionUom = resolveConsumptionUom(product, variation, packUom);
-        const packageSize = resolvePackageSize(product, variation);
+        const baseUom = resolveBaseUom(product, variation, context);
+        const effectiveUom = resolveEffectiveUom(product, variation, context);
+        const packUom = resolvePackUom(product, variation, baseUom);
+        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
         const entry = {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: consumptionUom,
-          supplierPackUom: packUom,
+          baseUom,
+          uom: effectiveUom,
           packUom,
-          packageSize,
+          qtyMultiplier,
+          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
           unitCost: null
         };
-        const isDamage = context === 'damage';
-        if (isDamage) {
-          entry.packageSize = 1;
-          entry.packUom = entry.uom;
-          entry.supplierPackUom = entry.packUom;
-        }
         state.pendingEntry = entry;
         state.pendingEditIndex = null;
         state.pendingContext = context;
@@ -3831,7 +4113,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         qtyTitle.textContent = variation?.name
           ? (product.name ?? 'Product') + ' – ' + variation.name
           : product.name ?? 'Product';
-        qtyUom.textContent = entry.packUom ?? entry.uom ?? 'UNIT';
+        qtyUom.textContent = entry.baseUom;
 
         updateQtyHint(entry);
         qtyInput.value = '';
@@ -3849,18 +4131,20 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
       }
 
       function buildEntry(product, variation, context = state.mode) {
-        const packUom = resolvePackUom(product, variation);
-        const consumptionUom = resolveConsumptionUom(product, variation, packUom);
-        const packageSize = resolvePackageSize(product, variation);
+        const baseUom = resolveBaseUom(product, variation, context);
+        const effectiveUom = resolveEffectiveUom(product, variation, context);
+        const packUom = resolvePackUom(product, variation, baseUom);
+        const qtyMultiplier = resolveQtyMultiplier(product, variation, context);
         return {
           productId: product.id,
           productName: product.name ?? 'Product',
           variationId: variation?.id ?? null,
           variationName: variation?.name ?? null,
-          uom: consumptionUom,
-          supplierPackUom: packUom,
+          baseUom,
+          uom: effectiveUom,
           packUom,
-          packageSize,
+          qtyMultiplier,
+          multiplierMode: context === 'purchase' ? 'package' : 'transfer',
           unitCost: null
         };
       }
@@ -3879,10 +4163,18 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         variantModalBody.innerHTML = '';
 
         const variations = state.variations.get(product.id) ?? [];
-        const hasVariants = variations.length > 0;
-        let rows = !hasVariants
-          ? [{ key: 'base', variation: null, label: 'Base' }]
-          : variations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }));
+        const uniqueVariations = [];
+        const variationIds = new Set();
+        variations.forEach((variation) => {
+          const key = variation?.id ?? '';
+          if (!key || variationIds.has(key)) return;
+          variationIds.add(key);
+          uniqueVariations.push(variation);
+        });
+        const hasVariants = uniqueVariations.length > 0;
+        let rows = hasVariants
+          ? uniqueVariations.map((variation) => ({ key: variation.id, variation, label: variation.name || 'Variant' }))
+          : [{ key: 'base', variation: null, label: 'Base' }];
         if (preferredVariation) {
           rows = [{
             key: preferredVariation.id,
@@ -3893,11 +4185,6 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
         rows.forEach((row) => {
           const entry = buildEntry(product, row.variation, context);
-          if (context === 'damage') {
-            entry.packageSize = 1;
-            entry.packUom = entry.uom;
-            entry.supplierPackUom = entry.packUom;
-          }
           const wrapper = document.createElement('div');
           wrapper.className = 'variant-row';
 
@@ -3924,7 +4211,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           name.textContent = row.label;
           const uom = document.createElement('div');
           uom.className = 'variant-uom';
-          uom.textContent = formatUnitLabel(entry.supplierPackUom ?? entry.packUom ?? entry.uom ?? 'unit', 2);
+          uom.textContent = formatUnitLabel(entry.packUom ?? entry.baseUom ?? entry.uom ?? 'unit', 2);
           meta.appendChild(name);
           meta.appendChild(uom);
 
@@ -3938,14 +4225,10 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           decBtn.className = 'variant-qty-button';
           decBtn.textContent = '-';
           const qtyInput = document.createElement('input');
-          qtyInput.type = 'text';
-          qtyInput.inputMode = 'decimal';
+          qtyInput.type = 'number';
           qtyInput.min = '0';
           qtyInput.step = '0.01';
           qtyInput.placeholder = '0';
-          qtyInput.addEventListener('input', () => {
-            setQtyInputValue(qtyInput, qtyInput.value ?? '');
-          });
           const incBtn = document.createElement('button');
           incBtn.type = 'button';
           incBtn.className = 'variant-qty-button';
@@ -4106,7 +4389,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         qtyTitle.textContent = target.variationName
           ? (target.productName ?? 'Product') + ' – ' + target.variationName
           : target.productName ?? 'Product';
-        qtyUom.textContent = target.supplierPackUom ?? target.packUom ?? target.uom ?? 'UNIT';
+        qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
@@ -4377,6 +4660,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
 
         const matchesScannerArea = (supplier) => {
           if (!supplier) return false;
+          if (!SCANNER_ID) return true;
           const scannerIds = Array.isArray(supplier.scanner_ids)
             ? supplier.scanner_ids.filter(Boolean)
             : Array.isArray(supplier.scanners)
@@ -4549,7 +4833,23 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         try {
           const warehouses = await fetchWarehousesMetadata();
           state.warehouses = warehouses ?? [];
-          const sourceWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
+          const parentWarehouse = state.warehouses.find((w) => w.id === lockedSourceId) ?? null;
+          const hydratedSources = (SOURCE_CHOICES || []).map((choice) => {
+            const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
+            return {
+              id: choice.id,
+              label: record?.name ?? choice.label ?? 'Coldroom'
+            };
+          });
+          state.sourceOptions = hydratedSources;
+          const hasSavedSource = state.sourceSelection && hydratedSources.some((opt) => opt.id === state.sourceSelection);
+          if (!hasSavedSource) {
+            state.sourceSelection = DEFAULT_SOURCE_ID || null;
+            if (sourceSelect) {
+              sourceSelect.value = state.sourceSelection ?? '';
+            }
+          }
+          const sourceWarehouse = state.warehouses.find((w) => w.id === state.sourceSelection) ?? null;
           state.lockedSource = sourceWarehouse;
           const hydratedDestinations = (DESTINATION_CHOICES || []).map((choice) => {
             const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
@@ -4569,13 +4869,20 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           } else {
             state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
           }
+          renderSourceOptions();
           renderDestinationOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
-            destMissingText: 'Select outlet'
+            sourceMissingText: 'Select coldroom',
+            destMissingText: 'Select destination'
           });
+          updateSourceWarehouseLabels(sourceWarehouse);
+          syncSourcePillLabel();
           syncDestinationPillLabel();
-          if (!sourceWarehouse) {
-            throw new Error('Locked source warehouse is missing. Confirm the ID or mark it active in Supabase.');
+          if (!parentWarehouse) {
+            throw new Error('Locked parent warehouse is missing. Confirm the ID or mark it active in Supabase.');
+          }
+          if (!hydratedSources.length) {
+            throw new Error('Source options missing. Confirm SOURCE_CHOICES IDs exist in Supabase.');
           }
           if (!hydratedDestinations.length) {
             throw new Error('Destination options missing. Confirm DESTINATION_CHOICES IDs exist in Supabase.');
@@ -4680,7 +4987,14 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         if (!ensureOperatorGate()) {
           return;
         }
-        const sourceId = lockedSourceId;
+        if (!ensureSourceSelected()) {
+          return;
+        }
+        const sourceId = getSelectedSource()?.id;
+        if (!sourceId) {
+          showResult('Select a source coldroom before submitting.', true);
+          return;
+        }
         if (!ensureDestinationSelected('transfer')) {
           return;
         }
@@ -4769,7 +5083,10 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         if (!ensureDestinationSelected('damage')) {
           return;
         }
-        const warehouseId = lockedSourceId;
+        if (!ensureSourceSelected()) {
+          return;
+        }
+        const warehouseId = getSelectedSource()?.id;
         if (!warehouseId) {
           showResult('Source warehouse unavailable for damages.', true);
           return;
@@ -4866,7 +5183,10 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         if (!ensureDestinationSelected('purchase')) {
           return;
         }
-        const warehouseId = lockedSourceId;
+        if (!ensureSourceSelected()) {
+          return;
+        }
+        const warehouseId = getSelectedSource()?.id;
         if (!warehouseId) {
           showResult('Source warehouse unavailable for purchase intake.', true);
           return;
@@ -4976,7 +5296,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
           const response = await fetch('/api/notify-telegram', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ context, summary, scanner: 'quick-corner' })
+            body: JSON.stringify({ context, summary, scanner: 'coldrooms' })
           });
           if (!response.ok) {
             let errorText = '';
@@ -5420,9 +5740,19 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         });
       });
 
+      sourceSelect?.addEventListener('change', (event) => {
+        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
+        handleSourceSelection(value);
+      });
+
       destinationSelect?.addEventListener('change', (event) => {
         const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
         handleDestinationSelection(value);
+      });
+
+      sourcePicker?.addEventListener('click', () => {
+        renderSourceCards();
+        openSelectModal(sourceModal);
       });
 
       destinationPicker?.addEventListener('click', () => {
@@ -5444,12 +5774,17 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
         });
       });
 
+      sourceModal?.addEventListener('click', (event) => {
+        if (event.target === sourceModal) {
+          closeSelectModal(sourceModal);
+        }
+      });
+
       destinationModal?.addEventListener('click', (event) => {
         if (event.target === destinationModal) {
           closeSelectModal(destinationModal);
         }
       });
-
 
       operatorSelectModal?.addEventListener('click', (event) => {
         if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
@@ -5466,6 +5801,7 @@ function describeLockedWarehouse(warehouse: WarehouseRecord | undefined, fallbac
       document.querySelectorAll('[data-modal-close]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const targetId = btn.getAttribute('data-modal-close');
+          if (targetId === 'source-modal') closeSelectModal(sourceModal);
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
           if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
             closeSelectModal(operatorSelectModal);
@@ -5547,15 +5883,15 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const viewParam = (url.searchParams.get('view') ?? '').toLowerCase();
-  const initialView = viewParam === 'damage' ? 'damage' : 'transfer';
+  const initialView = viewParam === 'purchase' ? 'purchase' : viewParam === 'damage' ? 'damage' : 'transfer';
 
   const initialWarehouses = await preloadLockedWarehouses();
-  const sourceWarehouse = initialWarehouses.find((w) => w.id === LOCKED_SOURCE_ID);
-  const destWarehouse = initialWarehouses.find((w) => w.id === LOCKED_DEST_ID);
+  const sourceWarehouse = initialWarehouses.find((w) => w.id === DEFAULT_SOURCE_ID);
+  const destWarehouse = null;
   const html = createHtml({
-    sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Loading...'),
-    destPillLabel: describeLockedWarehouse(destWarehouse, 'Loading...'),
-    sourceWarehouseName: sourceWarehouse?.name ?? 'Loading...',
+    sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Select coldroom'),
+    destPillLabel: describeLockedWarehouse(destWarehouse, 'Select destination'),
+    sourceWarehouseName: sourceWarehouse?.name ?? 'Select coldroom',
     initialWarehousesJson: serializeForScript(initialWarehouses),
     initialView,
   });
