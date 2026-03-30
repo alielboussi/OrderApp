@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PROJECT_URL = process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? "";
+const PROJECT_URL = process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? process.env["SUPABASE_URL"] ?? "";
 const ANON_KEY = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ?? "";
 const SERVICE_ROLE_KEY = process.env["SUPABASE_SERVICE_ROLE_KEY"] ?? "";
 
@@ -63,6 +63,14 @@ async function proxy(request: NextRequest, params: Promise<{ path: string[] }>) 
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("content-encoding");
   responseHeaders.set("x-supabase-proxy", "1");
+
+  if (response.status === 204 || response.status === 205) {
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+    });
+  }
 
   return new Response(await response.arrayBuffer(), {
     status: response.status,
