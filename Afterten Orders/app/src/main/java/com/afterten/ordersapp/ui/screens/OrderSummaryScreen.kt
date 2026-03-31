@@ -18,22 +18,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.afterten.ordersapp.RootViewModel
-import com.afterten.ordersapp.ui.components.SignaturePad
-import com.afterten.ordersapp.ui.components.rememberSignatureState
+import com.afterten.shared.ui.components.SignaturePad
+import com.afterten.shared.ui.components.rememberSignatureState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import com.afterten.ordersapp.data.SupabaseProvider
-import com.afterten.ordersapp.util.PdfLine
-import com.afterten.ordersapp.util.PdfProductGroup
-import com.afterten.ordersapp.util.formatMoney
-import com.afterten.ordersapp.util.generateOrderPdf
-import com.afterten.ordersapp.util.rememberScreenLogger
-import com.afterten.ordersapp.util.sanitizeForFile
-import com.afterten.ordersapp.util.toBlackInk
+import com.afterten.shared.data.SupabaseProvider
+import com.afterten.shared.util.PdfLine
+import com.afterten.shared.util.PdfProductGroup
+import com.afterten.shared.util.formatMoney
+import com.afterten.shared.util.generateOrderPdf
+import com.afterten.shared.util.rememberScreenLogger
+import com.afterten.shared.util.sanitizeForFile
+import com.afterten.shared.util.toBlackInk
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -46,15 +46,15 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import com.afterten.ordersapp.ui.components.AppOutlinedTextField
+import com.afterten.shared.ui.components.AppOutlinedTextField
 import androidx.compose.material3.HorizontalDivider
-import com.afterten.ordersapp.data.repo.ProductRepository
-import com.afterten.ordersapp.db.AppDatabase
+import com.afterten.shared.data.repo.ProductRepository
+import com.afterten.shared.db.AppDatabase
 import android.app.Activity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.clipToBounds
-import com.afterten.ordersapp.db.PendingOrderEntity
+import com.afterten.shared.db.PendingOrderEntity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
 import com.afterten.ordersapp.sync.OrderSyncWorker
@@ -62,9 +62,9 @@ import kotlinx.coroutines.withContext
 import android.graphics.BitmapFactory
 // Use fully qualified android.graphics.Color where needed to avoid Compose Color conflict
 import kotlinx.coroutines.delay
-import com.afterten.ordersapp.data.RoleGuards
-import com.afterten.ordersapp.data.hasRole
-import com.afterten.ordersapp.ui.components.AccessDeniedCard
+import com.afterten.shared.data.RoleGuards
+import com.afterten.shared.data.hasRole
+import com.afterten.shared.ui.components.AccessDeniedCard
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -523,4 +523,4 @@ fun OrderSummaryScreen(
     }
 }
 
-// Legacy PDF helpers moved to com.afterten.ordersapp.util.OrderPdf
+// Legacy PDF helpers moved to com.afterten.shared.util.OrderPdf

@@ -35,14 +35,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.window.Dialog
 import com.afterten.ordersapp.RootViewModel
-import com.afterten.ordersapp.data.repo.ProductRepository
-import com.afterten.ordersapp.db.AppDatabase
-import com.afterten.ordersapp.db.ProductEntity
-import com.afterten.ordersapp.db.VariationEntity
-import com.afterten.ordersapp.util.formatMoney
-import com.afterten.ordersapp.util.formatPackageUnits
-import com.afterten.ordersapp.util.ScreenLogger
-import com.afterten.ordersapp.util.rememberScreenLogger
+import com.afterten.shared.data.repo.ProductRepository
+import com.afterten.shared.db.AppDatabase
+import com.afterten.shared.db.ProductEntity
+import com.afterten.shared.db.VariationEntity
+import com.afterten.shared.util.formatMoney
+import com.afterten.shared.util.formatPackageUnits
+import com.afterten.shared.util.ScreenLogger
+import com.afterten.shared.util.rememberScreenLogger
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -51,11 +51,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.afterten.ordersapp.ui.components.AppOutlinedTextField
+import com.afterten.shared.ui.components.AppOutlinedTextField
 import androidx.compose.ui.platform.LocalContext
-import com.afterten.ordersapp.data.RoleGuards
-import com.afterten.ordersapp.data.hasRole
-import com.afterten.ordersapp.ui.components.AccessDeniedCard
+import com.afterten.shared.data.RoleGuards
+import com.afterten.shared.data.hasRole
+import com.afterten.shared.ui.components.AccessDeniedCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

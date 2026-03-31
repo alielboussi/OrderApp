@@ -17,10 +17,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.afterten.ordersapp.ui.screens.HomeScreen
 import com.afterten.ordersapp.ui.screens.LoginScreen
-import com.afterten.ordersapp.ui.theme.AppTheme
-import com.afterten.ordersapp.data.RoleGuards
-import com.afterten.ordersapp.data.hasRole
-import com.afterten.ordersapp.data.OutletSession
+import com.afterten.shared.ui.theme.AppTheme
+import com.afterten.shared.data.RoleGuards
+import com.afterten.shared.data.hasRole
+import com.afterten.shared.data.OutletSession
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,13 +41,7 @@ sealed class Routes(val route: String) {
     data object ProductList : Routes("product_list")
     data object CartReview : Routes("cart_review")
     data object Summary : Routes("summary")
-    data object Orders : Routes("orders")
     data object ReceiveOrders : Routes("receive_orders")
-    data object SupervisorOrders : Routes("supervisor_orders")
-    data object SupervisorOffloadedOrders : Routes("supervisor_offloaded_orders")
-    data object SupervisorOrderDetail : Routes("supervisor_order_detail/{orderId}") {
-        fun route(orderId: String) = "supervisor_order_detail/$orderId"
-    }
 }
 
 @Composable
@@ -57,7 +51,6 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
 
     fun routeFor(session: OutletSession): String = when {
         session.hasRole(RoleGuards.Branch) -> Routes.Home.route
-        session.hasRole(RoleGuards.Supervisor) -> Routes.SupervisorOrders.route
         else -> Routes.Login.route
     }
 
@@ -80,7 +73,6 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         composable(Routes.Home.route) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
-                onViewOrders = { navController.navigate(Routes.Orders.route) },
                 onReceiveOrders = { navController.navigate(Routes.ReceiveOrders.route) },
                 onLogout = {
                     appViewModel.setSession(null)
@@ -112,39 +104,10 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onFinished = { navController.navigate(Routes.Home.route) { popUpTo(Routes.Home.route) { inclusive = true } } }
             )
         }
-        composable(Routes.Orders.route) {
-            com.afterten.ordersapp.ui.screens.OrdersScreen(
-                root = appViewModel,
-                onBack = { navController.popBackStack() }
-            )
-        }
         composable(Routes.ReceiveOrders.route) {
             com.afterten.ordersapp.ui.screens.ReceiveOrdersScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() }
-            )
-        }
-        composable(Routes.SupervisorOrders.route) {
-            com.afterten.ordersapp.ui.screens.SupervisorOrdersScreen(
-                root = appViewModel,
-                onBack = { navController.popBackStack() },
-                onOpenOrder = { id -> navController.navigate(Routes.SupervisorOrderDetail.route(id)) },
-                onOpenOffloaded = { navController.navigate(Routes.SupervisorOffloadedOrders.route) }
-            )
-        }
-        composable(Routes.SupervisorOffloadedOrders.route) {
-            com.afterten.ordersapp.ui.screens.SupervisorOffloadedOrdersScreen(
-                root = appViewModel,
-                onBack = { navController.popBackStack() }
-            )
-        }
-        composable(Routes.SupervisorOrderDetail.route) { backStackEntry ->
-            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
-            com.afterten.ordersapp.ui.screens.SupervisorOrderDetailScreen(
-                root = appViewModel,
-                orderId = orderId,
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() }
             )
         }
     }

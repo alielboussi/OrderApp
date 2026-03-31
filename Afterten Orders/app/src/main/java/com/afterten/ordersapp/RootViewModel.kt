@@ -3,21 +3,21 @@ package com.afterten.ordersapp
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.afterten.ordersapp.data.OutletSession
-import com.afterten.ordersapp.data.SupabaseProvider
+import com.afterten.shared.data.OutletSession
+import com.afterten.shared.data.SupabaseProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import com.afterten.ordersapp.db.AppDatabase
-import com.afterten.ordersapp.db.DraftCartItemEntity
+import com.afterten.shared.db.AppDatabase
+import com.afterten.shared.db.DraftCartItemEntity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import com.afterten.ordersapp.data.SessionStore
+import com.afterten.shared.data.SessionStore
 import com.afterten.ordersapp.sync.OrderSyncWorker
 
 class RootViewModel(application: Application) : AndroidViewModel(application) {
-    val supabaseProvider = SupabaseProvider(application)
+    val supabaseProvider = SupabaseProvider(application, AppConfig.supabaseConfig)
     private val db = AppDatabase.get(application)
     private val cartDao = db.cartDao()
 

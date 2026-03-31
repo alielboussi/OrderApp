@@ -22,19 +22,19 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import com.afterten.ordersapp.data.repo.ProductRepository
-import com.afterten.ordersapp.db.AppDatabase
+import com.afterten.shared.data.repo.ProductRepository
+import com.afterten.shared.db.AppDatabase
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.afterten.ordersapp.RootViewModel
-import com.afterten.ordersapp.util.formatMoney
-import com.afterten.ordersapp.util.formatPackageUnits
-import com.afterten.ordersapp.util.rememberScreenLogger
+import com.afterten.shared.util.formatMoney
+import com.afterten.shared.util.formatPackageUnits
+import com.afterten.shared.util.rememberScreenLogger
 import androidx.compose.material3.HorizontalDivider
-import com.afterten.ordersapp.data.RoleGuards
-import com.afterten.ordersapp.data.hasRole
-import com.afterten.ordersapp.ui.components.AccessDeniedCard
+import com.afterten.shared.data.RoleGuards
+import com.afterten.shared.data.hasRole
+import com.afterten.shared.ui.components.AccessDeniedCard
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)

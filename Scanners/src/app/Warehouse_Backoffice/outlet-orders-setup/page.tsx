@@ -169,28 +169,6 @@ export default function OutletOrdersSetupPage() {
           </ol>
         </section>
 
-        <section className={styles.actionsGrid}>
-          <button type="button" className={styles.actionCard} onClick={() => router.push("/Warehouse_Backoffice/outlet-setup")}>
-            <p className={styles.cardTitle}>Item to Warehouse Assignments</p>
-            <p className={styles.cardBody}>Deduction routing for items, ingredients, and raws.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-          <button type="button" className={styles.actionCard} onClick={() => router.push("/Warehouse_Backoffice/outlet-warehouse-assignments")}>
-            <p className={styles.cardTitle}>Outlet to Warehouse Setup</p>
-            <p className={styles.cardBody}>Attach outlets to sales/receiving warehouses and stocktake.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-          <button type="button" className={styles.actionCard} onClick={() => router.push("/Warehouse_Backoffice/catalog/manage")}>
-            <p className={styles.cardTitle}>Menu Items & Recipes</p>
-            <p className={styles.cardBody}>Manage item visibility and recipe flags.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-          <button type="button" className={styles.actionCard} onClick={() => router.push("/Warehouse_Backoffice/outlet-orders")}>
-            <p className={styles.cardTitle}>Outlet Orders</p>
-            <p className={styles.cardBody}>Verify order creation and totals.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-        </section>
       </main>
     </div>
   );

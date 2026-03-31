@@ -21,15 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.afterten.ordersapp.RootViewModel
-import com.afterten.ordersapp.util.rememberScreenLogger
-import com.afterten.ordersapp.data.RoleGuards
-import com.afterten.ordersapp.data.hasRole
-import com.afterten.ordersapp.ui.components.AccessDeniedCard
+import com.afterten.shared.util.rememberScreenLogger
+import com.afterten.shared.data.RoleGuards
+import com.afterten.shared.data.hasRole
+import com.afterten.shared.ui.components.AccessDeniedCard
 
 @Composable
 fun HomeScreen(
     onCreateOrder: () -> Unit,
-    onViewOrders: () -> Unit,
     onReceiveOrders: () -> Unit,
     onLogout: () -> Unit,
     viewModel: RootViewModel
@@ -111,15 +110,5 @@ fun HomeScreen(
             enabled = (session?.outletId?.isNotEmpty() == true),
             colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
         ) { Text("Receive Orders") }
-        Spacer(Modifier.height(12.dp))
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                logger.event("OrdersTapped")
-                onViewOrders()
-            },
-            enabled = (session?.outletId?.isNotEmpty() == true),
-            colors = ButtonDefaults.buttonColors(containerColor = primaryRed, contentColor = contentWhite)
-        ) { Text("Orders") }
     }
 }

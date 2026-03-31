@@ -8,12 +8,12 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkManager
 import androidx.work.Constraints
 import androidx.work.NetworkType
-import com.afterten.ordersapp.db.AppDatabase
-import com.afterten.ordersapp.data.SupabaseProvider
-import com.afterten.ordersapp.data.SessionStore
-import com.afterten.ordersapp.data.relaxedJson
+import com.afterten.shared.db.AppDatabase
+import com.afterten.shared.data.SupabaseProvider
+import com.afterten.shared.data.SessionStore
+import com.afterten.shared.data.relaxedJson
 import kotlinx.serialization.builtins.ListSerializer
-import com.afterten.ordersapp.data.SupabaseProvider.PlaceOrderItem
+import com.afterten.shared.data.SupabaseProvider.PlaceOrderItem
 
 class OrderSyncWorker(
     appContext: Context,
@@ -23,7 +23,7 @@ class OrderSyncWorker(
     override suspend fun doWork(): Result {
         val db = AppDatabase.get(applicationContext)
         val dao = db.pendingOrderDao()
-        val provider = SupabaseProvider(applicationContext)
+        val provider = SupabaseProvider(applicationContext, com.afterten.ordersapp.AppConfig.supabaseConfig)
         val due = dao.due(System.currentTimeMillis())
         if (due.isEmpty()) return Result.success()
         val json = relaxedJson

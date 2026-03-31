@@ -9,13 +9,12 @@ export default function WarehouseBackofficeDashboard() {
   const { status } = useWarehouseAuth();
 
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
-  const goToVariantBulkUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
-  const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
-  const goToPurchaseEntry = () => router.push("/Warehouse_Backoffice/purchase-entry");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
   const goToStocktakes = () => router.push("/Warehouse_Backoffice/stocktakes");
-  const goToSetup = () => router.push("/Warehouse_Backoffice/setup");
   const goToReports = () => router.push("/Warehouse_Backoffice/reports-hub");
+  const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup-hub");
+  const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
+  const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
 
   if (status !== "ok") {
     return null;
@@ -38,26 +37,26 @@ export default function WarehouseBackofficeDashboard() {
 
         <section className={styles.actionsGrid}>
           <button onClick={goToCatalog} className={`${styles.actionCard} ${styles.catalogCard}`}>
-            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Menu Items & Recipes</p>
-            <p className={styles.cardBody}>Manage items, variants, and recipes that drive outlet_item_routes and storage homes.</p>
+            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Product Setup & Purchase Entry</p>
+            <p className={styles.cardBody}>Manage items, variants, and recipes that drive outlet routing and storage homes.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToVariantBulkUpdate} className={`${styles.actionCard} ${styles.bulkCard}`}>
-            <p className={`${styles.cardTitle} ${styles.bulkTitle}`}>Bulk Variant Update</p>
-            <p className={styles.cardBody}>Apply a single value to multiple variants in one step.</p>
+          <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Outlet Setup</p>
+            <p className={styles.cardBody}>Configure outlet routes and warehouse mapping in one place.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToSuppliers} className={`${styles.actionCard} ${styles.suppliersCard}`}>
-            <p className={`${styles.cardTitle} ${styles.suppliersTitle}`}>Suppliers</p>
-            <p className={styles.cardBody}>Create supplier contacts for purchase intake and scanner logs.</p>
+          <button onClick={goToPosMatch} className={`${styles.actionCard} ${styles.mappingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>MIntpos-App Match</p>
+            <p className={styles.cardBody}>Map POS items/flavours to catalog item + variant + warehouse for deductions.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToPurchaseEntry} className={`${styles.actionCard} ${styles.purchaseEntryCard}`}>
-            <p className={`${styles.cardTitle} ${styles.purchaseEntryTitle}`}>Purchase Entry</p>
-            <p className={styles.cardBody}>Record scanner purchase receipts from backoffice.</p>
+          <button onClick={goToOutletOrders} className={`${styles.actionCard} ${styles.outletOrdersCard}`}>
+            <p className={`${styles.cardTitle} ${styles.outletOrdersTitle}`}>Outlet Orders</p>
+            <p className={styles.cardBody}>Verify order creation, approvals, and totals.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
@@ -79,11 +78,6 @@ export default function WarehouseBackofficeDashboard() {
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToSetup} className={`${styles.actionCard} ${styles.assignmentsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.assignmentsTitle}`}>Setup</p>
-            <p className={styles.cardBody}>Assignments, outlet routing, POS mapping, and outlet orders setup.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
         </section>
       </main>
     </div>

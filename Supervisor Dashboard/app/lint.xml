@@ -1,0 +1,7 @@
+<lint>
+    <!-- Intentionally pinned versions due to toolchain compatibility; suppress noisy upgrade suggestions -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <!-- Binary PNGs live in densityless folder by design; treat as no-op -->
+    <issue id="IconLocation" severity="ignore" />
+</lint>

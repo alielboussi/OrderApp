@@ -113,6 +113,7 @@ tasks.named<Delete>("clean") {
 // Note: If you need to disable test variants for performance, update to the new AGP hostTests API.
 
 dependencies {
+    implementation(project(":shared"))
     // (Removed BOM due to Kotlin/AGP constraints)
     // Compose BOM
     implementation(platform("androidx.compose:compose-bom:2024.10.00"))

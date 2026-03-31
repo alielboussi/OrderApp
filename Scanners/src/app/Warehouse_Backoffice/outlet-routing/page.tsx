@@ -164,7 +164,7 @@ export default function OutletRoutingPage() {
             <p className={styles.kicker}>Routing</p>
             <h1 className={styles.title}>Warehouse Assign</h1>
             <p className={styles.subtitle}>
-              Set per-item outlet routes for deductions. Defaults come from each outlet’s sales warehouse; overrides here write to outlet_item_routes (normalized_variant_key = base).
+              Set per-item outlet routes for sales deductions. Defaults come from each outlet’s sales warehouse; overrides here write to outlet_item_routes (normalized_variant_key = base).
             </p>
           </div>
           <div className={styles.headerButtons}>

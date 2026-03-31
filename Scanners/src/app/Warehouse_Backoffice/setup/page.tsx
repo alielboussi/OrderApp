@@ -39,10 +39,6 @@ export default function WarehouseBackofficeSetupPage() {
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
 
-  const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup");
-  const goToOutletWarehouseAssignments = () => router.push("/Warehouse_Backoffice/outlet-warehouse-assignments");
-  const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
-  const goToOutletOrdersSetup = () => router.push("/Warehouse_Backoffice/outlet-orders-setup");
 
   if (status !== "ok") return null;
 
@@ -90,33 +86,7 @@ export default function WarehouseBackofficeSetupPage() {
             </form>
             {error ? <p className={lockStyles.lockError}>{error}</p> : null}
           </section>
-        ) : (
-          <section className={styles.actionsGrid}>
-            <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
-              <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Item To Warehouse Assignments</p>
-              <p className={styles.cardBody}>Set outlet sales defaults, per-item routing, and storage homes.</p>
-              <span className={styles.cardCta}>Open</span>
-            </button>
-
-            <button onClick={goToOutletWarehouseAssignments} className={`${styles.actionCard} ${styles.assignmentsCard}`}>
-              <p className={`${styles.cardTitle} ${styles.assignmentsTitle}`}>Outlet → Warehouse Setup</p>
-              <p className={styles.cardBody}>Assign outlets to warehouses for stock periods and POS validation.</p>
-              <span className={styles.cardCta}>Open</span>
-            </button>
-
-            <button onClick={goToPosMatch} className={`${styles.actionCard} ${styles.mappingCard}`}>
-              <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>MIntpos-App Match</p>
-              <p className={styles.cardBody}>Map POS items/flavours to catalog item + variant + warehouse for deductions.</p>
-              <span className={styles.cardCta}>Open</span>
-            </button>
-
-            <button onClick={goToOutletOrdersSetup} className={`${styles.actionCard} ${styles.mappingCard}`}>
-              <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>Outlet Orders Setup</p>
-              <p className={styles.cardBody}>Step-by-step flow to add outlets, users, and item mappings for orders.</p>
-              <span className={styles.cardCta}>Open</span>
-            </button>
-          </section>
-        )}
+        ) : null}
       </main>
     </div>
   );

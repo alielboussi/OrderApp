@@ -38,11 +38,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.afterten.ordersapp.R
-import com.afterten.ordersapp.ui.components.AppOutlinedTextField
+import com.afterten.shared.ui.components.AppOutlinedTextField
 import com.afterten.ordersapp.RootViewModel
-import com.afterten.ordersapp.data.OutletSession
-import com.afterten.ordersapp.data.repo.OutletRepository
-import com.afterten.ordersapp.util.rememberScreenLogger
+import com.afterten.shared.data.OutletSession
+import com.afterten.shared.data.repo.OutletRepository
+import com.afterten.shared.util.rememberScreenLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -18,9 +18,9 @@ export default function CatalogMenu() {
         <header className={styles.hero}>
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Catalog Builder</h1>
+            <h1 className={styles.title}>Product Setup & Purchase Entry</h1>
             <p className={styles.subtitle}>
-              Create items, variants, and recipes that back outlet_item_routes, storage homes, and POS matching.
+              Create items, variants, recipes, supplier links, and purchase entries for outlet routing and POS matching.
             </p>
           </div>
           <div className={styles.headerButtons}>
@@ -65,6 +65,42 @@ export default function CatalogMenu() {
             <p className={`${styles.cardTitle} ${styles.cardTitleVehicle}`}>Vehicles</p>
             <p className={styles.cardBody}>Manage vehicles, plates, and assignments for fuel transfers.</p>
             <span className={styles.cardCta}>Open vehicles</span>
+          </button>
+
+          <button
+            onClick={() => go("/Warehouse_Backoffice/variant-bulk-update")}
+            className={`${styles.actionCard} ${styles.bulkCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleBulk}`}>Bulk Variant Update</p>
+            <p className={styles.cardBody}>Apply a single value to multiple variants in one step.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button
+            onClick={() => go("/Warehouse_Backoffice/suppliers")}
+            className={`${styles.actionCard} ${styles.suppliersCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleSuppliers}`}>Suppliers</p>
+            <p className={styles.cardBody}>Create supplier contacts for purchase intake and scanner logs.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button
+            onClick={() => go("/Warehouse_Backoffice/purchase-entry")}
+            className={`${styles.actionCard} ${styles.purchaseCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitlePurchase}`}>Purchase Entry</p>
+            <p className={styles.cardBody}>Record scanner purchase receipts from backoffice.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button
+            onClick={() => go("/Warehouse_Backoffice/outlet-setup")}
+            className={`${styles.actionCard} ${styles.routingCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleRouting}`}>Item To Warehouse Assignments</p>
+            <p className={styles.cardBody}>Set outlet sales defaults, per-item routing, and storage homes.</p>
+            <span className={styles.cardCta}>Open</span>
           </button>
         </section>
       </main>
