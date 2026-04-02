@@ -174,7 +174,7 @@ function VariantCreatePage() {
             : [];
           const mergedStorageHomeIds = mergeStorageHomeIds(
             storageHomeId,
-            storageHomeIds.filter((id) => id !== storageHomeId)
+            storageHomeIds.filter((id: string) => id !== storageHomeId)
           );
           setForm({
             item_id: variant.item_id ?? incomingItemId ?? "",
