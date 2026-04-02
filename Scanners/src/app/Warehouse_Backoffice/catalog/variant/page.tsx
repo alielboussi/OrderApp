@@ -88,6 +88,8 @@ type FormState = {
   units_per_purchase_pack: string;
   purchase_unit_mass: string;
   purchase_unit_mass_uom: string;
+  inner_pack_unit_mass: string;
+  inner_pack_unit_mass_uom: string;
   transfer_unit: string;
   transfer_quantity: string;
   qty_decimal_places: string;
@@ -112,6 +114,8 @@ const defaultForm: FormState = {
   units_per_purchase_pack: "1",
   purchase_unit_mass: "",
   purchase_unit_mass_uom: "kg",
+  inner_pack_unit_mass: "",
+  inner_pack_unit_mass_uom: "kg",
   transfer_unit: "pc",
   transfer_quantity: "1",
   qty_decimal_places: "0",
