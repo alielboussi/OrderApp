@@ -162,7 +162,7 @@ function ProductCreatePage() {
             : [];
           const mergedStorageHomeIds = mergeStorageHomeIds(
             storageHomeId,
-            storageHomeIds.filter((id) => id !== storageHomeId)
+            storageHomeIds.filter((id: string) => id !== storageHomeId)
           );
           setForm({
             name: item.name ?? "",
