@@ -162,6 +162,55 @@
   gap: 10px;
 }
 
+.multiSelect {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(10, 16, 30, 0.85);
+  padding: 0;
+}
+
+.multiSelectSummary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.multiSelectSummary::-webkit-details-marker {
+  display: none;
+}
+
+.multiSelectSummary::after {
+  content: "v";
+  font-size: 12px;
+  color: #93c5fd;
+}
+
+.multiSelect[open] .multiSelectSummary::after {
+  content: "^";
+}
+
+.multiSelectList {
+  padding: 0 12px 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.multiSelectHint {
+  margin: 0;
+  font-size: 12px;
+  color: #93c5fd;
+  grid-column: 1 / -1;
+}
+
 .sectionCard {
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -195,6 +244,32 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
+}
+
+.modeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 18, 36, 0.9);
+  width: fit-content;
+}
+
+.modeButton {
+  border: none;
+  background: transparent;
+  color: #93c5fd;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modeButtonActive {
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #0b1020;
 }
 
 .ingredientCardGrid {

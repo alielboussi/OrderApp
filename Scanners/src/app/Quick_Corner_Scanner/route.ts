@@ -2547,7 +2547,10 @@ function createHtml(config: {
 
         const loadStockAndDefaults = async () => {
           const [stockResult, defaultItemsResult, storageHomesResult] = await Promise.all([
-            supabase.from(STOCK_VIEW_NAME).select('warehouse_id,product_id:item_id').in('warehouse_id', warehouseIds),
+            supabase
+              .from(STOCK_VIEW_NAME)
+              .select('warehouse_id,product_id:item_id,net_units')
+              .in('warehouse_id', warehouseIds),
             supabase
               .from('catalog_items')
               .select('id')
@@ -2567,17 +2570,21 @@ function createHtml(config: {
 
           latestStorageHomes = Array.isArray(storageHomesResult.data) ? storageHomesResult.data : [];
 
+          const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           const productIds = new Set();
           (stockResult.data ?? []).forEach((row) => {
-            if (row?.product_id) productIds.add(row.product_id);
+            if (!row?.product_id) return;
+            if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
+            if (!lockedIds.includes(row.product_id)) {
+              const netUnits = Number(row?.net_units ?? 0);
+              if (!Number.isFinite(netUnits) || netUnits <= 0) return;
+            }
+            productIds.add(row.product_id);
           });
+          lockedIds.forEach((id) => productIds.add(id));
 
           const productsWithWarehouseVariations = new Set();
           const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
-          (defaultItemsResult.data ?? []).forEach((row) => {
-            if (row?.id) productIds.add(row.id);
-          });
-
           let defaultVariants = [];
           if (defaultItemIds.length) {
             const { data: variantData, error: variantError } = await supabase
@@ -2593,7 +2600,6 @@ function createHtml(config: {
             const variantActive = variant?.active !== false;
             if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
               productsWithWarehouseVariations.add(variant.item_id);
-              productIds.add(variant.item_id);
             }
           });
 
@@ -2662,11 +2668,8 @@ function createHtml(config: {
           const { productIds, productsWithWarehouseVariations } = await loadStockAndDefaults();
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           if (lockedIds.length) {
-            const lockedSet = new Set(lockedIds);
-            const lockedVariations = new Set(
-              lockedIds.filter((id) => productsWithWarehouseVariations.has(id))
-            );
-            return await loadProducts(lockedSet, lockedVariations);
+            const combinedIds = new Set([...productIds, ...lockedIds]);
+            return await loadProducts(combinedIds, productsWithWarehouseVariations);
           }
           return await loadProducts(productIds, productsWithWarehouseVariations);
         } catch (error) {
@@ -2949,11 +2952,12 @@ function createHtml(config: {
           unit: item.supplierPackUom ?? item.packUom ?? item.uom ?? 'unit',
           supplierPackUom: item.supplierPackUom ?? null,
           packUom: item.packUom ?? null,
+          transferUom: item.transferUom ?? null,
           unitCost: item.unitCost ?? null
         }));
       }
 
-      function buildItemsBlockFromLines(lineItems) {
+      function buildItemsBlockFromLines(lineItems, context = 'transfer') {
         return lineItems
           .map((item, index) => {
             const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
@@ -2963,7 +2967,8 @@ function createHtml(config: {
               : (item.productName ?? 'Item ' + (index + 1));
             const variationLabel = useVariationOnly ? '' : (rawVariation ? ' (' + rawVariation + ')' : '');
             const qtyLabel = item.qty ?? 0;
-            const unitLabel = formatUnitLabel(item.supplierPackUom ?? item.packUom ?? item.unit ?? 'unit', qtyLabel);
+            const unitSource = item.transferUom ?? item.packUom ?? item.unit ?? 'unit';
+            const unitLabel = formatUnitLabel(unitSource, qtyLabel);
             const costLabel = formatAmount(item.unitCost);
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel : base;
@@ -3890,6 +3895,7 @@ function createHtml(config: {
         if (!qtyModal || !qtyInput) return;
         const packUom = resolvePackUom(product, variation);
         const consumptionUom = resolveConsumptionUom(product, variation, packUom);
+        const transferUom = (variation?.transfer_unit ?? product.transfer_unit ?? packUom ?? consumptionUom ?? 'each').toString();
         const packageSize = resolvePackageSize(product, variation);
         const entry = {
           productId: product.id,
@@ -3899,6 +3905,7 @@ function createHtml(config: {
           uom: consumptionUom,
           supplierPackUom: packUom,
           packUom,
+          transferUom,
           packageSize,
           unitCost: null
         };
@@ -3937,6 +3944,7 @@ function createHtml(config: {
       function buildEntry(product, variation, context = state.mode) {
         const packUom = resolvePackUom(product, variation);
         const consumptionUom = resolveConsumptionUom(product, variation, packUom);
+        const transferUom = (variation?.transfer_unit ?? product.transfer_unit ?? packUom ?? consumptionUom ?? 'each').toString();
         const packageSize = resolvePackageSize(product, variation);
         return {
           productId: product.id,
@@ -3946,6 +3954,7 @@ function createHtml(config: {
           uom: consumptionUom,
           supplierPackUom: packUom,
           packUom,
+          transferUom,
           packageSize,
           unitCost: null
         };
@@ -4809,7 +4818,7 @@ function createHtml(config: {
             ' ' +
             now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
-          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const itemsBlock = buildItemsBlockFromLines(lineItems, 'transfer');
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
           const reference = /^\d+$/.test(rawReference) ? rawReference.padStart(10, '0') : rawReference;
           const summary = {
@@ -4902,7 +4911,7 @@ function createHtml(config: {
             ' ' +
             now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
-          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const itemsBlock = buildItemsBlockFromLines(lineItems, 'damage');
           const summary = {
             reference: 'Damage',
             referenceRaw: 'Damage',
@@ -5015,7 +5024,7 @@ function createHtml(config: {
             const lineTotal = computeLineTotal(item);
             return sum + (lineTotal ?? 0);
           }, 0);
-          const itemsBlock = buildItemsBlockFromLines(lineItems);
+          const itemsBlock = buildItemsBlockFromLines(lineItems, 'purchase');
           const timestampSource = data?.received_at ?? data?.recorded_at ?? new Date().toISOString();
           const timestamp = new Date(timestampSource);
           const windowLabel =

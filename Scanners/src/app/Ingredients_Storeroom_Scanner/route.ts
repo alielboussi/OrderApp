@@ -7,10 +7,9 @@ const ANON_KEY = process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'] ?? '';
 const LOCKED_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const HOMES_PARENT_ID = 'c021ea3b-7109-4690-be6c-0c7ae8278a5d';
 const DESTINATION_CHOICES = [
-  { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' },
   { id: '587fcdb9-c998-42d6-b88e-bbcd1a66b088', label: 'Secondary Destination' }
 ] as const;
-const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
+const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? '587fcdb9-c998-42d6-b88e-bbcd1a66b088';
 const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', 'a7addcec-bcf5-4eab-94f0-6fb704ad6ca4'] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'

@@ -21,6 +21,8 @@ type VariantPayload = {
   units_per_purchase_pack: number;
   purchase_unit_mass?: number | null;
   purchase_unit_mass_uom?: QtyUnit | null;
+  inner_pack_unit_mass?: number | null;
+  inner_pack_unit_mass_uom?: QtyUnit | null;
   transfer_unit: string;
   transfer_quantity: number;
   qty_decimal_places?: number | null;
@@ -100,6 +102,17 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
+function normalizeStorageHomeIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(cleanUuid).filter((id): id is string => Boolean(id));
+}
+
+function buildStorageHomeIds(primaryId: string | null, extraIds: string[]): string[] {
+  if (!extraIds.length && primaryId) return [primaryId];
+  if (!primaryId) return extraIds;
+  return extraIds.includes(primaryId) ? extraIds : [primaryId, ...extraIds];
+}
+
 type CatalogVariantRow = VariantPayload & {
   id: string;
   item_id: string;
@@ -119,6 +132,8 @@ const VARIANT_OPTIONAL_FIELDS = [
   "stocktake_uom",
   "purchase_unit_mass",
   "purchase_unit_mass_uom",
+  "inner_pack_unit_mass",
+  "inner_pack_unit_mass_uom",
   "qty_decimal_places",
   "selling_price",
   "locked_from_warehouse_id",
@@ -145,6 +160,8 @@ function normalizeVariantRow(row: Partial<CatalogVariantRow>) {
     units_per_purchase_pack: row.units_per_purchase_pack ?? 1,
     purchase_unit_mass: row.purchase_unit_mass ?? null,
     purchase_unit_mass_uom: row.purchase_unit_mass_uom ?? null,
+    inner_pack_unit_mass: row.inner_pack_unit_mass ?? null,
+    inner_pack_unit_mass_uom: row.inner_pack_unit_mass_uom ?? null,
     transfer_unit: row.transfer_unit ?? row.purchase_pack_unit ?? "each",
     transfer_quantity: row.transfer_quantity ?? 1,
     qty_decimal_places: row.qty_decimal_places ?? null,
@@ -182,32 +199,69 @@ async function refreshHasVariations(supabase: ReturnType<typeof getServiceClient
   await supabase.from("catalog_items").update({ has_variations: hasVariations }).eq("id", itemId);
 }
 
-async function upsertVariantStorageHome(
+async function syncVariantStorageHomes(
   supabase: ReturnType<typeof getServiceClient>,
   itemId: string,
   variantKey: string,
-  warehouseId: string | null
+  warehouseIds: string[]
 ) {
   const normalizedVariantKey = normalizeVariantKey(variantKey);
-  if (!warehouseId) {
-    await supabase
+  const uniqueIds = Array.from(new Set(warehouseIds.filter(Boolean)));
+  if (!uniqueIds.length) {
+    const { error } = await supabase
       .from("item_storage_homes")
       .delete()
       .eq("item_id", itemId)
       .eq("normalized_variant_key", normalizedVariantKey);
+    if (error) {
+      throw new Error(error.message || "Failed to clear storage homes");
+    }
     return;
   }
 
-  await supabase
+  const { data: existingRows, error: existingError } = await supabase
     .from("item_storage_homes")
-    .upsert(
-      {
-        item_id: itemId,
-        variant_key: variantKey,
-        storage_warehouse_id: warehouseId,
-      },
-      { onConflict: "item_id,normalized_variant_key" }
-    );
+    .select("storage_warehouse_id")
+    .eq("item_id", itemId)
+    .eq("normalized_variant_key", normalizedVariantKey);
+  if (existingError) {
+    throw new Error(existingError.message || "Failed to load storage homes");
+  }
+
+  const existingIds = new Set(
+    (Array.isArray(existingRows) ? existingRows : [])
+      .map((row) => row?.storage_warehouse_id)
+      .filter((id): id is string => Boolean(id))
+  );
+  const toDelete = Array.from(existingIds).filter((id) => !uniqueIds.includes(id));
+  if (toDelete.length) {
+    const { error } = await supabase
+      .from("item_storage_homes")
+      .delete()
+      .eq("item_id", itemId)
+      .eq("normalized_variant_key", normalizedVariantKey)
+      .in("storage_warehouse_id", toDelete);
+    if (error) {
+      throw new Error(error.message || "Failed to remove storage homes");
+    }
+  }
+
+  const toInsert = uniqueIds.filter((id) => !existingIds.has(id));
+  if (toInsert.length) {
+    const { error } = await supabase
+      .from("item_storage_homes")
+      .upsert(
+        toInsert.map((warehouseId) => ({
+          item_id: itemId,
+          variant_key: variantKey,
+          storage_warehouse_id: warehouseId,
+        })),
+        { onConflict: "item_id,normalized_variant_key,storage_warehouse_id" }
+      );
+    if (error) {
+      throw new Error(error.message || "Failed to save storage homes");
+    }
+  }
 }
 
 function toVariantResponse(variantId: string, payload: VariantPayload) {
@@ -226,6 +280,8 @@ function toVariantResponse(variantId: string, payload: VariantPayload) {
     units_per_purchase_pack: payload.units_per_purchase_pack ?? 1,
     purchase_unit_mass: payload.purchase_unit_mass ?? null,
     purchase_unit_mass_uom: payload.purchase_unit_mass_uom ?? null,
+    inner_pack_unit_mass: payload.inner_pack_unit_mass ?? null,
+    inner_pack_unit_mass_uom: payload.inner_pack_unit_mass_uom ?? null,
     transfer_unit: payload.transfer_unit ?? payload.purchase_pack_unit ?? "each",
     transfer_quantity: payload.transfer_quantity ?? 1,
     qty_decimal_places: payload.qty_decimal_places ?? null,
@@ -355,7 +411,7 @@ export async function GET(request: Request) {
         };
       });
 
-    const storageHomeByKey: Record<string, string | null> = {};
+    const storageHomeIdsByKey: Record<string, string[]> = {};
     if (itemIds.length) {
       let storageRows: {
         item_id?: string;
@@ -390,17 +446,24 @@ export async function GET(request: Request) {
       storageRows.forEach((row) => {
         const rawKey = row?.normalized_variant_key ?? row?.variant_key ?? null;
         const normalizedKey = normalizeVariantKey(rawKey ?? undefined);
-        if (row?.item_id && normalizedKey) {
-          storageHomeByKey[`${row.item_id}::${normalizedKey}`] = row.storage_warehouse_id ?? null;
+        if (!row?.item_id || !normalizedKey || !row.storage_warehouse_id) return;
+        const key = `${row.item_id}::${normalizedKey}`;
+        const list = storageHomeIdsByKey[key] ?? [];
+        if (!list.includes(row.storage_warehouse_id)) {
+          list.push(row.storage_warehouse_id);
         }
+        storageHomeIdsByKey[key] = list;
       });
     }
 
     const variantsWithStorage = variants.map((variant) => {
       const normalizedKey = normalizeVariant(variant.id);
       const storageKey = `${variant.item_id}::${normalizedKey}`;
-      const storageHomeId = storageHomeByKey[storageKey] ?? variant.default_warehouse_id ?? null;
-      return { ...variant, storage_home_id: storageHomeId };
+      const storageHomeIds = storageHomeIdsByKey[storageKey] ?? [];
+      const defaultWarehouseId = variant.default_warehouse_id ?? null;
+      const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, storageHomeIds);
+      const storageHomeId = resolvedStorageHomeIds[0] ?? null;
+      return { ...variant, storage_home_id: storageHomeId, storage_home_ids: resolvedStorageHomeIds };
     });
 
     if (id) {
@@ -457,6 +520,12 @@ export async function POST(request: Request) {
       if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
       purchaseUnitMass = mass.value;
     }
+    let innerPackUnitMass: number | null = null;
+    if (body.inner_pack_unit_mass !== undefined && body.inner_pack_unit_mass !== null && `${body.inner_pack_unit_mass}`.trim() !== "") {
+      const mass = toNumber(body.inner_pack_unit_mass, 0, 0);
+      if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+      innerPackUnitMass = mass.value;
+    }
     let qtyDecimalPlaces: number | null = null;
     if (body.qty_decimal_places !== undefined && body.qty_decimal_places !== null && `${body.qty_decimal_places}`.trim() !== "") {
       const places = toNumber(body.qty_decimal_places, 0, -1);
@@ -473,6 +542,11 @@ export async function POST(request: Request) {
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
+    const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
+    const requestedStorageHomeIds = normalizeStorageHomeIds(body.storage_home_ids);
+    const defaultWarehouseId = requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null;
+    const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
+
     const payload: VariantPayload = {
       item_id: itemId,
       name,
@@ -485,6 +559,8 @@ export async function POST(request: Request) {
       units_per_purchase_pack: unitsPerPack.value,
       purchase_unit_mass: purchaseUnitMass,
       purchase_unit_mass_uom: purchaseUnitMass ? pickQtyUnit(body.purchase_unit_mass_uom, "kg") : null,
+      inner_pack_unit_mass: innerPackUnitMass,
+      inner_pack_unit_mass_uom: innerPackUnitMass ? pickQtyUnit(body.inner_pack_unit_mass_uom, "kg") : null,
       transfer_unit: transferUnit,
       transfer_quantity: transferQuantity.value,
       qty_decimal_places: qtyDecimalPlaces,
@@ -493,7 +569,7 @@ export async function POST(request: Request) {
       locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: cleanUuid(body.default_warehouse_id),
+      default_warehouse_id: defaultWarehouseId,
       active: cleanBoolean(body.active, true),
     };
 
@@ -515,12 +591,18 @@ export async function POST(request: Request) {
     if (!responseVariant) return NextResponse.json({ error: "Failed to save variant" }, { status: 500 });
 
     try {
-      await upsertVariantStorageHome(supabase, itemId, responseVariant.id, responseVariant.default_warehouse_id ?? null);
+      await syncVariantStorageHomes(supabase, itemId, responseVariant.id, resolvedStorageHomeIds);
     } catch (storageError) {
       console.error("[catalog/variants] storage home upsert failed", storageError);
     }
 
-    return NextResponse.json({ variant: { ...responseVariant, storage_home_id: responseVariant.default_warehouse_id ?? null } });
+    return NextResponse.json({
+      variant: {
+        ...responseVariant,
+        storage_home_id: responseVariant.default_warehouse_id ?? null,
+        storage_home_ids: resolvedStorageHomeIds,
+      },
+    });
   } catch (error) {
     console.error("[catalog/variants] POST failed", error);
     return NextResponse.json({ error: "Unable to create variant" }, { status: 500 });
@@ -560,6 +642,15 @@ export async function PUT(request: Request) {
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
     const update: Partial<VariantPayload> = {};
+    const storageHomeIdsInput = body.storage_home_ids !== undefined ? normalizeStorageHomeIds(body.storage_home_ids) : null;
+    const storageHomeIdInput =
+      body.storage_home_id !== undefined
+        ? cleanUuid(body.storage_home_id)
+        : body.default_warehouse_id !== undefined
+          ? cleanUuid(body.default_warehouse_id)
+          : null;
+    const hasStorageHomeInput =
+      body.storage_home_id !== undefined || body.default_warehouse_id !== undefined || body.storage_home_ids !== undefined;
 
     if (body.name !== undefined) {
       const name = cleanText(body.name);
@@ -599,6 +690,19 @@ export async function PUT(request: Request) {
     if (body.purchase_unit_mass_uom !== undefined) {
       const massUom = cleanText(body.purchase_unit_mass_uom);
       update.purchase_unit_mass_uom = massUom ? pickQtyUnit(massUom, "g") : null;
+    }
+    if (body.inner_pack_unit_mass !== undefined) {
+      if (body.inner_pack_unit_mass === null || `${body.inner_pack_unit_mass}`.trim() === "") {
+        update.inner_pack_unit_mass = null;
+      } else {
+        const mass = toNumber(body.inner_pack_unit_mass, 0, 0);
+        if (!mass.ok) return NextResponse.json({ error: mass.error }, { status: 400 });
+        update.inner_pack_unit_mass = mass.value;
+      }
+    }
+    if (body.inner_pack_unit_mass_uom !== undefined) {
+      const massUom = cleanText(body.inner_pack_unit_mass_uom);
+      update.inner_pack_unit_mass_uom = massUom ? pickQtyUnit(massUom, "g") : null;
     }
     if (body.transfer_unit !== undefined) {
       update.transfer_unit = cleanText(body.transfer_unit) ?? "each";
@@ -641,8 +745,8 @@ export async function PUT(request: Request) {
       update.outlet_order_visible = cleanBoolean(body.outlet_order_visible, true);
     }
     if (body.image_url !== undefined) update.image_url = cleanText(body.image_url) ?? null;
-    if (body.default_warehouse_id !== undefined) {
-      update.default_warehouse_id = cleanUuid(body.default_warehouse_id);
+    if (hasStorageHomeInput) {
+      update.default_warehouse_id = storageHomeIdInput ?? storageHomeIdsInput?.[0] ?? null;
     }
     if (body.active !== undefined) update.active = cleanBoolean(body.active, true);
 
@@ -688,16 +792,26 @@ export async function PUT(request: Request) {
     const responseVariant = toVariantResponse(id, mergedVariant as VariantPayload);
     if (!responseVariant) return NextResponse.json({ error: "Failed to update variant" }, { status: 500 });
 
-    if (update.default_warehouse_id !== undefined) {
+    let resolvedStorageHomeIds: string[] | null = null;
+    if (hasStorageHomeInput) {
       try {
-        const nextStorageHomeId = update.default_warehouse_id ?? null;
-        await upsertVariantStorageHome(supabase, effectiveItemId, responseVariant.id, nextStorageHomeId);
+        resolvedStorageHomeIds = buildStorageHomeIds(
+          update.default_warehouse_id ?? null,
+          storageHomeIdsInput ?? (storageHomeIdInput ? [storageHomeIdInput] : [])
+        );
+        await syncVariantStorageHomes(supabase, effectiveItemId, responseVariant.id, resolvedStorageHomeIds);
       } catch (storageError) {
         console.error("[catalog/variants] storage home upsert failed", storageError);
       }
     }
 
-    return NextResponse.json({ variant: { ...responseVariant, storage_home_id: responseVariant.default_warehouse_id ?? null } });
+    return NextResponse.json({
+      variant: {
+        ...responseVariant,
+        storage_home_id: responseVariant.default_warehouse_id ?? null,
+        storage_home_ids: resolvedStorageHomeIds ?? buildStorageHomeIds(responseVariant.default_warehouse_id ?? null, []),
+      },
+    });
   } catch (error) {
     const details = toErrorDetails(error);
     console.error("[catalog/variants] PUT failed", details);

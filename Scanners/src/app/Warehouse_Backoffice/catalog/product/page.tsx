@@ -39,6 +39,8 @@ type FormState = {
   units_per_purchase_pack: string;
   purchase_unit_mass: string;
   purchase_unit_mass_uom: string;
+  inner_pack_unit_mass: string;
+  inner_pack_unit_mass_uom: string;
   transfer_unit: string;
   transfer_quantity: string;
   consumption_qty_per_base: string;
@@ -47,6 +49,7 @@ type FormState = {
   storage_unit: string;
   storage_weight: string;
   storage_home_id: string;
+  storage_home_ids: string[];
   cost: string;
   selling_price: string;
   has_variations: boolean;
@@ -66,6 +69,8 @@ const defaultForm: FormState = {
   units_per_purchase_pack: "1",
   purchase_unit_mass: "",
   purchase_unit_mass_uom: "kg",
+  inner_pack_unit_mass: "",
+  inner_pack_unit_mass_uom: "kg",
   transfer_unit: "pc",
   transfer_quantity: "1",
   consumption_qty_per_base: "1",
@@ -74,6 +79,7 @@ const defaultForm: FormState = {
   storage_unit: "",
   storage_weight: "",
   storage_home_id: "",
+  storage_home_ids: [],
   cost: "0",
   selling_price: "0",
   has_variations: false,
@@ -106,6 +112,11 @@ const normalizeUomValue = (value?: string | null) => {
   const trimmed = value?.trim();
   if (!trimmed) return "";
   return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
+};
+
+const mergeStorageHomeIds = (primaryId: string, ids: string[]) => {
+  if (!primaryId) return ids;
+  return ids.includes(primaryId) ? ids : [primaryId, ...ids];
 };
 
 function ProductCreatePage() {
@@ -145,6 +156,14 @@ function ProductCreatePage() {
         const json = await res.json();
         if (json?.item) {
           const item = json.item;
+          const storageHomeId = item.storage_home_id ?? item.default_warehouse_id ?? "";
+          const storageHomeIds = Array.isArray(item.storage_home_ids)
+            ? item.storage_home_ids.filter((id: unknown): id is string => typeof id === "string")
+            : [];
+          const mergedStorageHomeIds = mergeStorageHomeIds(
+            storageHomeId,
+            storageHomeIds.filter((id) => id !== storageHomeId)
+          );
           setForm({
             name: item.name ?? "",
             sku: item.sku ?? "",
@@ -156,6 +175,8 @@ function ProductCreatePage() {
             units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
             purchase_unit_mass: item.purchase_unit_mass != null ? item.purchase_unit_mass.toString() : "",
             purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? "kg",
+            inner_pack_unit_mass: item.inner_pack_unit_mass != null ? item.inner_pack_unit_mass.toString() : "",
+            inner_pack_unit_mass_uom: item.inner_pack_unit_mass_uom ?? "kg",
             transfer_unit: normalizeUomValue(item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom) || "pc",
             transfer_quantity: (item.transfer_quantity ?? 1).toString(),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
@@ -163,7 +184,8 @@ function ProductCreatePage() {
             stocktake_uom: normalizeUomValue(item.stocktake_uom) || "",
             storage_unit: item.storage_unit ?? "",
             storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
-            storage_home_id: item.storage_home_id ?? item.default_warehouse_id ?? "",
+            storage_home_id: storageHomeId,
+            storage_home_ids: mergedStorageHomeIds,
             cost: (item.cost ?? 0).toString(),
             selling_price: (item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
@@ -209,8 +231,69 @@ function ProductCreatePage() {
           supplier_sku: next ? "" : prev.supplier_sku,
         };
       }
+      if (key === "storage_home_id") {
+        const nextId = typeof value === "string" ? value : "";
+        const nextIds = nextId
+          ? mergeStorageHomeIds(nextId, prev.storage_home_ids.filter((id) => id !== nextId))
+          : [];
+        return { ...prev, storage_home_id: nextId, storage_home_ids: nextIds };
+      }
       return { ...prev, [key]: value };
     });
+  };
+
+  const toggleStorageHome = (warehouseId: string) => {
+    if (!warehouseId) return;
+    setForm((prev) => {
+      if (warehouseId === prev.storage_home_id && prev.storage_home_id) {
+        return prev;
+      }
+      const exists = prev.storage_home_ids.includes(warehouseId);
+      const nextIds = exists
+        ? prev.storage_home_ids.filter((id) => id !== warehouseId)
+        : [...prev.storage_home_ids, warehouseId];
+      const nextPrimary = prev.storage_home_id || (!exists ? warehouseId : "");
+      const mergedIds = mergeStorageHomeIds(nextPrimary, nextIds.filter((id) => id !== nextPrimary));
+      return { ...prev, storage_home_id: nextPrimary, storage_home_ids: mergedIds };
+    });
+  };
+
+  const renderStorageHomeMultiSelect = () => {
+    const selectedCount = form.storage_home_ids.length;
+    const summaryLabel = selectedCount
+      ? `Additional storage homes (${selectedCount} selected)`
+      : "Additional storage homes";
+    return (
+      <details className={styles.multiSelect}>
+        <summary className={styles.multiSelectSummary}>{summaryLabel}</summary>
+        <div className={styles.multiSelectList}>
+          <p className={styles.multiSelectHint}>
+            Check any other warehouses where this item can live. The primary stays selected.
+          </p>
+          {warehouses.length ? (
+            warehouses.map((warehouse) => {
+              const checked = form.storage_home_ids.includes(warehouse.id);
+              const isPrimary = warehouse.id === form.storage_home_id;
+              const label = warehouse.name ?? warehouse.id;
+              return (
+                <label key={warehouse.id} className={styles.checkbox}>
+                  <span>{isPrimary ? `${label} (Primary)` : label}</span>
+                  <input
+                    className={styles.checkboxInput}
+                    type="checkbox"
+                    checked={checked}
+                    disabled={isPrimary}
+                    onChange={() => toggleStorageHome(warehouse.id)}
+                  />
+                </label>
+              );
+            })
+          ) : (
+            <p className={styles.sectionHint}>No warehouses available yet.</p>
+          )}
+        </div>
+      </details>
+    );
   };
 
   if (status !== "ok") return null;
@@ -229,6 +312,10 @@ function ProductCreatePage() {
     setSaving(true);
     setResult(null);
     try {
+      const resolvedStorageHomeIds = mergeStorageHomeIds(
+        form.storage_home_id,
+        form.storage_home_ids.filter((id) => id !== form.storage_home_id)
+      );
       const payload = {
         name: form.name,
         sku: form.sku,
@@ -239,6 +326,8 @@ function ProductCreatePage() {
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
         purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0),
         purchase_unit_mass_uom: form.purchase_unit_mass ? form.purchase_unit_mass_uom : null,
+        inner_pack_unit_mass: form.inner_pack_unit_mass === "" ? null : toNumber(form.inner_pack_unit_mass, 0),
+        inner_pack_unit_mass_uom: form.inner_pack_unit_mass ? form.inner_pack_unit_mass_uom : null,
         transfer_unit: form.transfer_unit || form.consumption_unit,
         transfer_quantity: toNumber(form.transfer_quantity, 1),
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
@@ -247,6 +336,7 @@ function ProductCreatePage() {
         storage_unit: form.storage_unit || null,
         storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
         storage_home_id: form.storage_home_id || null,
+        storage_home_ids: resolvedStorageHomeIds,
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
         has_variations: form.has_variations,
@@ -344,27 +434,18 @@ function ProductCreatePage() {
             {!disableVariantControlled && (
               <>
                 <Select
-                  label="Unit (stock + consumption)"
+                  label="Consumption Unit"
                   hint="Single unit used for stock, transfers, and consumption"
                   value={form.consumption_unit}
                   onChange={(v) => handleChange("consumption_unit", v)}
                   options={qtyUnitOptions as unknown as { value: string; label: string }[]}
                 />
                 <Select
-                  label="Stocktake unit (warehouse counts)"
+                  label="Stocktake Unit"
                   hint="Optional override for counting stock (e.g., kg instead of grams)"
                   value={form.stocktake_uom}
                   onChange={(v) => handleChange("stocktake_uom", v)}
                   options={[{ value: "", label: "Use consumption unit" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
-                />
-                <Field
-                  type="number"
-                  label="Storage qty"
-                  hint="Optional: quantity per storage unit (weight, volume, or count; e.g., kg per rod/bag)"
-                  value={form.storage_weight}
-                  onChange={(v) => handleChange("storage_weight", v)}
-                  step="0.01"
-                  min="0"
                 />
                 {isFinished && (
                   <>
@@ -377,8 +458,8 @@ function ProductCreatePage() {
                     />
                     <Field
                       type="number"
-                      label="Units inside one supplier pack"
-                      hint="How many base units are inside one supplier pack"
+                      label="Inner Supplier Pack Unit Qty"
+                      hint="How many inner units are inside one supplier pack"
                       value={form.units_per_purchase_pack}
                       onChange={(v) => handleChange("units_per_purchase_pack", v)}
                       step="1"
@@ -394,6 +475,7 @@ function ProductCreatePage() {
                         ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id })),
                       ]}
                     />
+                    {renderStorageHomeMultiSelect()}
                   </>
                 )}
                 {isIngredientOrRaw && !form.has_variations && (
@@ -418,7 +500,7 @@ function ProductCreatePage() {
                       </div>
                       <Field
                         type="number"
-                        label="Units inside one supplier pack"
+                        label="Inner Supplier Pack Unit Qty"
                         hint="Used for ingredient/raw transfers and damages."
                         value={form.units_per_purchase_pack}
                         onChange={(v) => handleChange("units_per_purchase_pack", v)}
@@ -428,13 +510,13 @@ function ProductCreatePage() {
                       </div>
                       <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
                       <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Weight/Volume Per Pack</h3>
+                        <h3 className={styles.sectionTitle}>Weight/Volume Per Supplier Pack</h3>
                         <p className={styles.sectionHint}>Set the weight or volume for one supplier pack.</p>
                       </div>
                       <Field
                         type="number"
-                        label="Pack weight/volume"
-                        hint="Used to convert packs to base units (e.g., 250 g)."
+                        label="Weight/Volume Per Supplier Pack"
+                        hint="Used to convert supplier packs to base units (e.g., 250 g)."
                         value={form.purchase_unit_mass}
                         onChange={(v) => handleChange("purchase_unit_mass", v)}
                         step="0.01"
@@ -443,12 +525,12 @@ function ProductCreatePage() {
                       </div>
                       <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
                       <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Mass/Volume Unit</h3>
-                        <p className={styles.sectionHint}>Units for the pack weight/volume.</p>
+                        <h3 className={styles.sectionTitle}>Weight/Volume Per Supplier Pack</h3>
+                        <p className={styles.sectionHint}>Unit used for the supplier pack weight/volume.</p>
                       </div>
                       <Select
-                        label="Mass/volume unit"
-                        hint="Pick the unit used in the pack weight/volume."
+                        label="Weight/Volume Per Supplier Pack"
+                        hint="Pick the unit used in the supplier pack weight/volume."
                         value={form.purchase_unit_mass_uom}
                         onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
                         options={qtyUnitOptions as unknown as { value: string; label: string }[]}
@@ -456,6 +538,34 @@ function ProductCreatePage() {
                       {packMassConversion ? (
                         <p className={styles.sectionHint}>{packMassConversion}</p>
                       ) : null}
+                      </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Weight/Volume Per Inner Pack</h3>
+                        <p className={styles.sectionHint}>Set the weight or volume for one inner pack.</p>
+                      </div>
+                      <Field
+                        type="number"
+                        label="Weight/Volume Per Inner Pack"
+                        hint="Used to convert inner packs to base units."
+                        value={form.inner_pack_unit_mass}
+                        onChange={(v) => handleChange("inner_pack_unit_mass", v)}
+                        step="0.01"
+                        min="0"
+                      />
+                      </div>
+                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
+                      <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Mass/Volume Unit Per Inner Pack</h3>
+                        <p className={styles.sectionHint}>Unit used for the inner pack weight/volume.</p>
+                      </div>
+                      <Select
+                        label="Mass/Volume Unit Per Inner Pack"
+                        hint="Pick the unit used in the inner pack weight/volume."
+                        value={form.inner_pack_unit_mass_uom}
+                        onChange={(v) => handleChange("inner_pack_unit_mass_uom", v)}
+                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                      />
                       </div>
                       <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
                       <div className={styles.sectionHeader}>
@@ -498,19 +608,7 @@ function ProductCreatePage() {
                         options={[{ value: "", label: "Select storage home" }, ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id }))]}
                       />
                     </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                        <div className={styles.sectionHeader}>
-                          <h3 className={styles.sectionTitle}>Storage Unit</h3>
-                          <p className={styles.sectionHint}>How this item is held in stock.</p>
-                        </div>
-                        <Select
-                          label="Storage unit"
-                          hint="How this item is held in stock (e.g., rods, bags, cases)"
-                          value={form.storage_unit}
-                          onChange={(v) => handleChange("storage_unit", v)}
-                          options={[{ value: "", label: "Not set" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
-                        />
-                      </div>
+                    {renderStorageHomeMultiSelect()}
                   </div>
                 )}
                 <Field
@@ -532,15 +630,6 @@ function ProductCreatePage() {
                   step="1"
                   min="0"
                 />
-                {!(isIngredientOrRaw && !form.has_variations) && (
-                  <Select
-                    label="Storage unit"
-                    hint="How this item is held in stock (e.g., rods, bags, cases)"
-                    value={form.storage_unit}
-                    onChange={(v) => handleChange("storage_unit", v)}
-                    options={[{ value: "", label: "Not set" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
-                  />
-                )}
                 {!isIngredient && (
                   <Field
                     type="number"

@@ -35,20 +35,12 @@ export default function CatalogMenu() {
 
         <section className={styles.actionsGrid}>
           <button
-            onClick={() => go("/Warehouse_Backoffice/catalog/manage")}
-            className={`${styles.actionCard} ${styles.productCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleProduct}`}>Add New Item</p>
-            <p className={styles.cardBody}>Add products and variants on one page, then preview the menu.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-          <button
             onClick={() => go("/Warehouse_Backoffice/catalog/menu")}
             className={`${styles.actionCard} ${styles.menuCard}`}
           >
-            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Current Menu</p>
-            <p className={styles.cardBody}>Open the full menu list with the original card layout.</p>
-            <span className={styles.cardCta}>Open menu</span>
+            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Products</p>
+            <p className={styles.cardBody}>Open the full product list with the original card layout.</p>
+            <span className={styles.cardCta}>Open products</span>
           </button>
           <button
             onClick={() => go("/Warehouse_Backoffice/recipes")}

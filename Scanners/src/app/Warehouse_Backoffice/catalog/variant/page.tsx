@@ -71,6 +71,11 @@ const normalizeUomValue = (value?: string | null) => {
   return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
 };
 
+const mergeStorageHomeIds = (primaryId: string, ids: string[]) => {
+  if (!primaryId) return ids;
+  return ids.includes(primaryId) ? ids : [primaryId, ...ids];
+};
+
 
 type FormState = {
   item_id: string;
@@ -92,6 +97,7 @@ type FormState = {
   outlet_order_visible: boolean;
   image_url: string;
   storage_home_id: string;
+  storage_home_ids: string[];
   active: boolean;
 };
 
@@ -115,6 +121,7 @@ const defaultForm: FormState = {
   outlet_order_visible: true,
   image_url: "",
   storage_home_id: "",
+  storage_home_ids: [],
   active: true,
 };
 
@@ -161,6 +168,14 @@ function VariantCreatePage() {
         const json = await res.json();
         const variant = json?.variant;
         if (variant) {
+          const storageHomeId = variant.storage_home_id ?? variant.default_warehouse_id ?? "";
+          const storageHomeIds = Array.isArray(variant.storage_home_ids)
+            ? variant.storage_home_ids.filter((id: unknown): id is string => typeof id === "string")
+            : [];
+          const mergedStorageHomeIds = mergeStorageHomeIds(
+            storageHomeId,
+            storageHomeIds.filter((id) => id !== storageHomeId)
+          );
           setForm({
             item_id: variant.item_id ?? incomingItemId ?? "",
             name: variant.name ?? "",
@@ -172,6 +187,8 @@ function VariantCreatePage() {
             units_per_purchase_pack: (variant.units_per_purchase_pack ?? 1).toString(),
             purchase_unit_mass: variant.purchase_unit_mass != null ? variant.purchase_unit_mass.toString() : "",
             purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? "kg",
+            inner_pack_unit_mass: variant.inner_pack_unit_mass != null ? variant.inner_pack_unit_mass.toString() : "",
+            inner_pack_unit_mass_uom: variant.inner_pack_unit_mass_uom ?? "kg",
             transfer_unit: normalizeUomValue(variant.transfer_unit) || "pc",
             transfer_quantity: (variant.transfer_quantity ?? 1).toString(),
             qty_decimal_places: (variant.qty_decimal_places ?? 0).toString(),
@@ -180,7 +197,8 @@ function VariantCreatePage() {
             selling_price: (variant.selling_price ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,
             image_url: variant.image_url ?? "",
-              storage_home_id: variant.storage_home_id ?? variant.default_warehouse_id ?? "",
+            storage_home_id: storageHomeId,
+            storage_home_ids: mergedStorageHomeIds,
             active: variant.active ?? true,
           });
         }
@@ -206,7 +224,70 @@ function VariantCreatePage() {
 
   if (status !== "ok") return null;
 
-  const handleChange = (key: keyof FormState, value: string | boolean) => setForm((prev) => ({ ...prev, [key]: value }));
+  const handleChange = (key: keyof FormState, value: string | boolean) => {
+    setForm((prev) => {
+      if (key === "storage_home_id") {
+        const nextId = typeof value === "string" ? value : "";
+        const nextIds = nextId
+          ? mergeStorageHomeIds(nextId, prev.storage_home_ids.filter((id) => id !== nextId))
+          : [];
+        return { ...prev, storage_home_id: nextId, storage_home_ids: nextIds };
+      }
+      return { ...prev, [key]: value };
+    });
+  };
+
+  const toggleStorageHome = (warehouseId: string) => {
+    if (!warehouseId) return;
+    setForm((prev) => {
+      if (warehouseId === prev.storage_home_id && prev.storage_home_id) {
+        return prev;
+      }
+      const exists = prev.storage_home_ids.includes(warehouseId);
+      const nextIds = exists
+        ? prev.storage_home_ids.filter((id) => id !== warehouseId)
+        : [...prev.storage_home_ids, warehouseId];
+      const nextPrimary = prev.storage_home_id || (!exists ? warehouseId : "");
+      const mergedIds = mergeStorageHomeIds(nextPrimary, nextIds.filter((id) => id !== nextPrimary));
+      return { ...prev, storage_home_id: nextPrimary, storage_home_ids: mergedIds };
+    });
+  };
+
+  const renderStorageHomeMultiSelect = () => (
+    <details className={styles.multiSelect}>
+      <summary className={styles.multiSelectSummary}>
+        {form.storage_home_ids.length
+          ? `Additional storage homes (${form.storage_home_ids.length} selected)`
+          : "Additional storage homes"}
+      </summary>
+      <div className={styles.multiSelectList}>
+        <p className={styles.multiSelectHint}>
+          Check any other warehouses where this variant can live. The primary stays selected.
+        </p>
+        {warehouses.length ? (
+          warehouses.map((warehouse) => {
+            const checked = form.storage_home_ids.includes(warehouse.id);
+            const isPrimary = warehouse.id === form.storage_home_id;
+            const label = warehouse.name ?? warehouse.id;
+            return (
+              <label key={warehouse.id} className={styles.checkbox}>
+                <span>{isPrimary ? `${label} (Primary)` : label}</span>
+                <input
+                  className={styles.checkboxInput}
+                  type="checkbox"
+                  checked={checked}
+                  disabled={isPrimary}
+                  onChange={() => toggleStorageHome(warehouse.id)}
+                />
+              </label>
+            );
+          })
+        ) : (
+          <p className={styles.sectionHint}>No warehouses available yet.</p>
+        )}
+      </div>
+    </details>
+  );
 
 
   const toNumber = (value: string, fallback: number, min = 0) => {
@@ -225,6 +306,10 @@ function VariantCreatePage() {
     setSaving(true);
     setResult(null);
     try {
+      const resolvedStorageHomeIds = mergeStorageHomeIds(
+        form.storage_home_id,
+        form.storage_home_ids.filter((id) => id !== form.storage_home_id)
+      );
       const payload = {
         ...form,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1, 0),
@@ -233,7 +318,11 @@ function VariantCreatePage() {
         qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0, -1)))),
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
-          default_warehouse_id: form.storage_home_id || null,
+        inner_pack_unit_mass: form.inner_pack_unit_mass === "" ? null : toNumber(form.inner_pack_unit_mass, 0, 0),
+        inner_pack_unit_mass_uom: form.inner_pack_unit_mass ? form.inner_pack_unit_mass_uom : null,
+        storage_home_id: form.storage_home_id || null,
+        storage_home_ids: resolvedStorageHomeIds,
+        default_warehouse_id: form.storage_home_id || null,
         ...(editingId ? { id: editingId } : {}),
       };
 
@@ -328,7 +417,7 @@ function VariantCreatePage() {
               options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Select
-              label="Stocktake unit (warehouse counts)"
+              label="Stocktake Unit"
               hint="Optional override for counting stock (e.g., kg instead of grams)"
               value={form.stocktake_uom}
               onChange={(v) => handleChange("stocktake_uom", v)}
@@ -352,8 +441,8 @@ function VariantCreatePage() {
             />
             <Field
               type="number"
-              label="Units inside one supplier pack"
-              hint="Example: box of 6 = 6 (pack qty, not sent qty)"
+              label="Inner Supplier Pack Unit Qty"
+              hint="Example: box of 6 = 6 (inner pack qty)"
               value={form.units_per_purchase_pack}
               onChange={(v) => handleChange("units_per_purchase_pack", v)}
               step="0.01"
@@ -361,18 +450,34 @@ function VariantCreatePage() {
             />
             <Field
               type="number"
-              label="Weight/volume per purchase unit"
-              hint="Optional. Example: 0.5 (kg) per pack"
+              label="Weight/Volume Per Supplier Pack"
+              hint="Optional. Example: 0.5 (kg) per supplier pack"
               value={form.purchase_unit_mass}
               onChange={(v) => handleChange("purchase_unit_mass", v)}
               step="0.01"
               min="0"
             />
             <Select
-              label="Mass/volume unit"
-              hint="Used only if weight/volume is set"
+              label="Weight/Volume Per Supplier Pack"
+              hint="Unit used for the supplier pack weight/volume"
               value={form.purchase_unit_mass_uom}
               onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
+              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
+            />
+            <Field
+              type="number"
+              label="Weight/Volume Per Inner Pack"
+              hint="Optional. Example: 0.5 (kg) per inner pack"
+              value={form.inner_pack_unit_mass}
+              onChange={(v) => handleChange("inner_pack_unit_mass", v)}
+              step="0.01"
+              min="0"
+            />
+            <Select
+              label="Mass/Volume Unit Per Inner Pack"
+              hint="Unit used for the inner pack weight/volume"
+              value={form.inner_pack_unit_mass_uom}
+              onChange={(v) => handleChange("inner_pack_unit_mass_uom", v)}
               options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Select
@@ -414,6 +519,8 @@ function VariantCreatePage() {
               options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
             />
           </div>
+
+          {renderStorageHomeMultiSelect()}
 
           <div className={styles.sectionCard}>
             <div className={styles.sectionHeader}>

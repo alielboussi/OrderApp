@@ -257,6 +257,9 @@ export default function CatalogMenuPage() {
             <button className={styles.secondaryButton} onClick={() => router.push("/Warehouse_Backoffice")}>
               Back to Dashboard
             </button>
+            <button className={styles.secondaryButton} onClick={() => router.push("/Warehouse_Backoffice/catalog/manage")}>
+              Add product
+            </button>
             <button className={styles.primaryButton} onClick={load} disabled={loading}>
               {loading ? "Refreshing..." : "Refresh"}
             </button>

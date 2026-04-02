@@ -4829,6 +4829,32 @@ function createHtml(config: {
         }
       }
 
+      async function fetchOpenStockPeriod(warehouseId) {
+        if (!warehouseId) return null;
+        try {
+          const response = await fetch(
+            '/api/warehouse-periods?warehouseId=' + encodeURIComponent(warehouseId) + '&limit=5',
+            { credentials: 'same-origin', cache: 'no-store' }
+          );
+          if (!response.ok) return null;
+          const payload = await response.json().catch(() => ({}));
+          const periods = Array.isArray(payload?.periods) ? payload.periods : [];
+          return periods.find((period) => String(period?.status || '').toLowerCase() === 'open') ?? null;
+        } catch (error) {
+          console.warn('Open period check failed', error);
+          return null;
+        }
+      }
+
+      async function ensureOpenStockPeriod(warehouseId, label) {
+        const period = await fetchOpenStockPeriod(warehouseId);
+        if (!period) {
+          showResult('No open stock period found for ' + (label || 'the source warehouse') + '.', true);
+          return false;
+        }
+        return true;
+      }
+
       async function refreshMetadata() {
         try {
           const warehouses = await fetchWarehousesMetadata();
@@ -5004,6 +5030,9 @@ function createHtml(config: {
           showResult('Destination unavailable. Refresh and try again.', true);
           return;
         }
+        if (!(await ensureOpenStockPeriod(sourceId, getSelectedSource()?.label || 'the source warehouse'))) {
+          return;
+        }
         const cart = getCart('transfer');
         if (!cart.length) {
           showResult('Scan at least one product before submitting.', true);
@@ -5089,6 +5118,9 @@ function createHtml(config: {
         const warehouseId = getSelectedSource()?.id;
         if (!warehouseId) {
           showResult('Source warehouse unavailable for damages.', true);
+          return;
+        }
+        if (!(await ensureOpenStockPeriod(warehouseId, getSelectedSource()?.label || 'the source warehouse'))) {
           return;
         }
         const cart = getCart('damage');
