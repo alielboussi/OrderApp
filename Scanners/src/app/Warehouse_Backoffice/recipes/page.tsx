@@ -134,6 +134,7 @@ export default function RecipesPage() {
   const [uoms, setUoms] = useState<UomOption[]>(DEFAULT_UOMS);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [recipeSourceWarehouses, setRecipeSourceWarehouses] = useState<Record<string, string[]>>({});
+  const [recipeMode, setRecipeMode] = useState<"finished" | "ingredient">("finished");
 
   useEffect(() => {
     let active = true;
@@ -562,9 +563,27 @@ export default function RecipesPage() {
         </div>
       </header>
 
+      <div className={styles.modeToggle}>
+        <button
+          type="button"
+          className={`${styles.modeButton} ${recipeMode === "finished" ? styles.modeButtonActive : ""}`}
+          onClick={() => setRecipeMode("finished")}
+        >
+          Finished recipe
+        </button>
+        <button
+          type="button"
+          className={`${styles.modeButton} ${recipeMode === "ingredient" ? styles.modeButtonActive : ""}`}
+          onClick={() => setRecipeMode("ingredient")}
+        >
+          Ingredient prep recipe
+        </button>
+      </div>
+
       {error && <div className={styles.toastError}>{error}</div>}
       {success && <div className={styles.toastSuccess}>{success}</div>}
 
+      {recipeMode === "finished" && (
       <section className={styles.card}>
         <div className={styles.cardHeader}>
           <div>
@@ -694,7 +713,9 @@ export default function RecipesPage() {
           })}
         </div>
       </section>
+      )}
 
+      {recipeMode === "ingredient" && (
       <section className={styles.card}>
         <div className={styles.cardHeader}>
           <div>
@@ -824,6 +845,7 @@ export default function RecipesPage() {
           })}
         </div>
       </section>
+      )}
     </div>
   );
 }

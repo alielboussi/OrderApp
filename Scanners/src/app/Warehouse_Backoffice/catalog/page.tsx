@@ -43,14 +43,6 @@ export default function CatalogMenu() {
             <span className={styles.cardCta}>Open products</span>
           </button>
           <button
-            onClick={() => go("/Warehouse_Backoffice/recipes")}
-            className={`${styles.actionCard} ${styles.recipeCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleRecipe}`}>Recipe Setup</p>
-            <p className={styles.cardBody}>Link finished goods to ingredients, and ingredients to raw materials.</p>
-            <span className={styles.cardCta}>Open recipes</span>
-          </button>
-          <button
             onClick={() => go("/Warehouse_Backoffice/catalog/vehicles")}
             className={`${styles.actionCard} ${styles.vehicleCard}`}
           >
