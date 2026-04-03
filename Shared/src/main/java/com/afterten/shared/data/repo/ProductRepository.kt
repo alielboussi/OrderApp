@@ -45,7 +45,7 @@ class ProductRepository(
         val raw = provider.getWithJwt(
             "/rest/v1/catalog_items?active=eq.true&outlet_order_visible=eq.true&select=" +
                 "id,sku,name,image_url,item_kind,has_recipe,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
-                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,has_variations,outlet_order_visible,active,default_warehouse_id",
+                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,inner_pack_unit_mass,inner_pack_unit_mass_uom,cost,has_variations,outlet_order_visible,active,default_warehouse_id",
             jwt
         )
         // If Supabase returns an error object, surface a friendly message instead of a JSON parse crash
@@ -66,6 +66,8 @@ class ProductRepository(
                 transferQuantity = it.transferQuantity,
                 purchaseUnitMass = it.purchaseUnitMass,
                 purchaseUnitMassUom = it.purchaseUnitMassUom,
+                innerPackUnitMass = it.innerPackUnitMass,
+                innerPackUnitMassUom = it.innerPackUnitMassUom,
                 cost = it.cost,
                 hasVariations = it.hasVariations,
                 outletOrderVisible = it.outletOrderVisible,
@@ -90,7 +92,7 @@ class ProductRepository(
         val raw = provider.getWithJwt(
             "/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&outlet_order_visible=eq.true&select=" +
                 "id,item_id,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
-                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
+                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,inner_pack_unit_mass,inner_pack_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -109,6 +111,8 @@ class ProductRepository(
                 transferQuantity = it.transferQuantity,
                 purchaseUnitMass = it.purchaseUnitMass,
                 purchaseUnitMassUom = it.purchaseUnitMassUom,
+                innerPackUnitMass = it.innerPackUnitMass,
+                innerPackUnitMassUom = it.innerPackUnitMassUom,
                 cost = it.cost,
                 active = it.active,
                 outletOrderVisible = it.outletOrderVisible,
@@ -123,7 +127,7 @@ class ProductRepository(
         val raw = provider.getWithJwt(
             "/rest/v1/catalog_variants?active=eq.true&outlet_order_visible=eq.true&select=" +
                 "id,item_id,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
-                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
+                "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,inner_pack_unit_mass,inner_pack_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
             jwt
         )
         throwIfError(raw)
@@ -142,6 +146,8 @@ class ProductRepository(
                 transferQuantity = it.transferQuantity,
                 purchaseUnitMass = it.purchaseUnitMass,
                 purchaseUnitMassUom = it.purchaseUnitMassUom,
+                innerPackUnitMass = it.innerPackUnitMass,
+                innerPackUnitMassUom = it.innerPackUnitMassUom,
                 cost = it.cost,
                 active = it.active,
                 outletOrderVisible = it.outletOrderVisible,

@@ -219,7 +219,7 @@ fun ProductListScreen(
             )
 
             Text(
-                text = "Orders are captured in purchase pack units (cases). The conversion line shows how many consumption units are deducted per pack.",
+                text = "Orders are captured in inner-pack mass/volume units. The conversion line shows the inner-pack amount per purchase pack.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -336,6 +336,8 @@ private fun ProductCard(
     onOpenVariations: () -> Unit,
     onOpenIngredients: () -> Unit
 ) {
+    val orderUom = resolveOrderUom(item.innerPackUnitMassUom, item.consumptionUom, item.purchasePackUnit)
+    val unitsPerPack = resolveUnitsPerPack(item.innerPackUnitMass, item.unitsPerPurchasePack)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -410,9 +412,9 @@ private fun ProductCard(
                             fontWeight = FontWeight.Medium,
                             color = Color.White.copy(alpha = 0.95f)
                         )
-                        formatPackageUnits(item.unitsPerPurchasePack)?.let { units ->
+                        formatPackageUnits(unitsPerPack)?.let { units ->
                             Text(
-                                text = "1 ${item.purchasePackUnit.uppercase()} = $units ${item.consumptionUom.uppercase()}",
+                                text = "1 ${item.purchasePackUnit.uppercase()} = $units ${orderUom.uppercase()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.85f)
                             )
@@ -426,15 +428,15 @@ private fun ProductCard(
                             qty = qty,
                             onDec = {
                                 logger.event("QtyDecrement", mapOf("productId" to item.id))
-                                root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                                root.dec(item.id, null, item.name, item.purchasePackUnit, orderUom, item.cost, unitsPerPack)
                             },
                             onInc = {
                                 logger.event("QtyIncrement", mapOf("productId" to item.id))
-                                root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                                root.inc(item.id, null, item.name, item.purchasePackUnit, orderUom, item.cost, unitsPerPack)
                             },
                             onChange = { n ->
                                 logger.event("QtyChanged", mapOf("productId" to item.id, "newQty" to n))
-                                root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
+                                root.setQty(item.id, null, item.name, item.purchasePackUnit, orderUom, item.cost, n, unitsPerPack)
                             }
                         )
                     }
@@ -611,6 +613,8 @@ private fun IngredientRow(
 ) {
     val cart = root.cart.collectAsState().value
     val qty = cart["${item.id}:"]?.qty ?: 0
+    val orderUom = resolveOrderUom(item.innerPackUnitMassUom, item.consumptionUom, item.purchasePackUnit)
+    val unitsPerPack = resolveUnitsPerPack(item.innerPackUnitMass, item.unitsPerPurchasePack)
     Row(
         Modifier
             .fillMaxWidth()
@@ -646,19 +650,19 @@ private fun IngredientRow(
             )
         }
         VariationQtyControls(
-            uom = item.purchasePackUnit,
+            uom = orderUom,
             qty = qty,
             onDec = {
                 logger.event("IngredientQtyDecrement", mapOf("productId" to item.id))
-                root.dec(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                root.dec(item.id, null, item.name, item.purchasePackUnit, orderUom, item.cost, unitsPerPack)
             },
             onInc = {
                 logger.event("IngredientQtyIncrement", mapOf("productId" to item.id))
-                root.inc(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, item.unitsPerPurchasePack)
+                root.inc(item.id, null, item.name, item.purchasePackUnit, orderUom, item.cost, unitsPerPack)
             },
             onChange = { n ->
                 logger.event("IngredientQtyChanged", mapOf("productId" to item.id, "newQty" to n))
-                root.setQty(item.id, null, item.name, item.purchasePackUnit, item.consumptionUom, item.cost, n, item.unitsPerPurchasePack)
+                root.setQty(item.id, null, item.name, item.purchasePackUnit, orderUom, item.cost, n, unitsPerPack)
             }
         )
     }
@@ -745,6 +749,8 @@ private fun VariationRow(
 ) {
     val cart = root.cart.collectAsState().value
     val qty = cart["${v.productId}:${v.id}"]?.qty ?: 0
+    val orderUom = resolveOrderUom(v.innerPackUnitMassUom, v.consumptionUom, v.purchasePackUnit)
+    val unitsPerPack = resolveUnitsPerPack(v.innerPackUnitMass, v.unitsPerPurchasePack)
     Row(
         Modifier
             .fillMaxWidth()
@@ -786,9 +792,9 @@ private fun VariationRow(
                 fontWeight = FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.95f)
             )
-            formatPackageUnits(v.unitsPerPurchasePack)?.let { units ->
+            formatPackageUnits(unitsPerPack)?.let { units ->
                 Text(
-                    text = "1 ${v.purchasePackUnit.uppercase()} = $units ${v.consumptionUom.uppercase()}",
+                    text = "1 ${v.purchasePackUnit.uppercase()} = $units ${orderUom.uppercase()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.85f)
                 )
@@ -799,22 +805,22 @@ private fun VariationRow(
 
         // Right: UOM centered above the qty text field, with red outlined -/+ buttons
         VariationQtyControls(
-            uom = v.purchasePackUnit,
+            uom = orderUom,
             qty = qty,
             onDec = {
                 logger.event("VariationQtyDecrement", mapOf("productId" to v.productId, "variationId" to v.id))
-                root.dec(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, v.unitsPerPurchasePack)
+                root.dec(v.productId, v.id, v.name, v.purchasePackUnit, orderUom, v.cost, unitsPerPack)
             },
             onInc = {
                 logger.event("VariationQtyIncrement", mapOf("productId" to v.productId, "variationId" to v.id))
-                root.inc(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, v.unitsPerPurchasePack)
+                root.inc(v.productId, v.id, v.name, v.purchasePackUnit, orderUom, v.cost, unitsPerPack)
             },
             onChange = { n ->
                 logger.event(
                     "VariationQtyChanged",
                     mapOf("productId" to v.productId, "variationId" to v.id, "newQty" to n)
                 )
-                root.setQty(v.productId, v.id, v.name, v.purchasePackUnit, v.consumptionUom, v.cost, n, v.unitsPerPurchasePack)
+                root.setQty(v.productId, v.id, v.name, v.purchasePackUnit, orderUom, v.cost, n, unitsPerPack)
             }
         )
     }
@@ -931,4 +937,16 @@ private fun formatUomLabel(uom: String?, qty: Int): String {
     if (unit.contains("(s)") || unit.contains("(S)")) return unit.uppercase()
     if (unit.endsWith("s", ignoreCase = true)) return unit.uppercase()
     return "${unit.uppercase()}(S)"
+}
+
+private fun resolveOrderUom(innerPackUom: String?, consumptionUom: String?, packUom: String?): String {
+    val inner = innerPackUom?.trim().orEmpty()
+    if (inner.isNotEmpty()) return inner
+    val consumption = consumptionUom?.trim().orEmpty()
+    if (consumption.isNotEmpty()) return consumption
+    return packUom?.trim().orEmpty().ifEmpty { "each" }
+}
+
+private fun resolveUnitsPerPack(innerPackUnits: Double?, fallback: Double): Double {
+    return innerPackUnits?.takeIf { it > 0 } ?: fallback
 }

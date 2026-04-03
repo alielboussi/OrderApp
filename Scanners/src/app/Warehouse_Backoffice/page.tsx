@@ -1,12 +1,28 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "./useWarehouseAuth";
+import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import styles from "./dashboard.module.css";
+
+type NegativeAlertRow = {
+  id: string;
+  created_at: string;
+  details: {
+    order_number?: string;
+    item_name?: string;
+    warehouse_name?: string;
+    qty?: number;
+    available?: number;
+  } | null;
+};
 
 export default function WarehouseBackofficeDashboard() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
+  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
+  const [negativeAlerts, setNegativeAlerts] = useState<NegativeAlertRow[]>([]);
 
   const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
@@ -16,9 +32,43 @@ export default function WarehouseBackofficeDashboard() {
   const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
   const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
 
+  useEffect(() => {
+    if (status !== "ok") return;
+    let active = true;
+
+    const loadAlerts = async () => {
+      try {
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+          .from("warehouse_backoffice_logs")
+          .select("id,created_at,details")
+          .eq("action", "order_negative_balance")
+          .gte("created_at", since)
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        if (error) throw error;
+        if (active) setNegativeAlerts((data as NegativeAlertRow[]) ?? []);
+      } catch {
+        if (active) setNegativeAlerts([]);
+      }
+    };
+
+    loadAlerts();
+    return () => {
+      active = false;
+    };
+  }, [status, supabase]);
+
   if (status !== "ok") {
     return null;
   }
+
+  const latestAlert = negativeAlerts[0];
+  const latestDetails = latestAlert?.details ?? null;
+  const latestHint = latestDetails?.order_number
+    ? `Latest: order ${latestDetails.order_number}${latestDetails.item_name ? `, ${latestDetails.item_name}` : ""}${latestDetails.warehouse_name ? ` (${latestDetails.warehouse_name})` : ""}.`
+    : "Review the log for details.";
 
   return (
     <div className={styles.page}>
@@ -34,6 +84,22 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
           </div>
         </header>
+
+        {negativeAlerts.length > 0 && (
+          <section className={styles.alertBanner}>
+            <div>
+              <p className={styles.alertTitle}>Negative stock used on approvals</p>
+              <p className={styles.alertBody}>
+                {`${negativeAlerts.length} recent approval${negativeAlerts.length > 1 ? "s" : ""} used a storage-home child with no stock. ${latestHint}`}
+              </p>
+            </div>
+            <div className={styles.alertActions}>
+              <button className={styles.alertButton} onClick={() => router.push("/Warehouse_Backoffice/logs")}>
+                View logs
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className={styles.actionsGrid}>
           <button onClick={goToCatalog} className={`${styles.actionCard} ${styles.catalogCard}`}>

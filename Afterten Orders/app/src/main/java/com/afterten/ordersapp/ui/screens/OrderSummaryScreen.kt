@@ -365,7 +365,7 @@ fun OrderSummaryScreen(
                                                 PdfLine(
                                                     name = it.name,
                                                     qty = it.qty.toDouble(),
-                                                    uom = it.purchasePackUnit,
+                                                    uom = it.consumptionUom,
                                                     unitPrice = it.unitPrice
                                                 )
                                             }
@@ -408,7 +408,7 @@ fun OrderSummaryScreen(
                                             variationId = it.variationId,
                                             variantKey = it.variationId,
                                             name = it.name,
-                                            receivingUom = it.purchasePackUnit,
+                                            receivingUom = it.consumptionUom,
                                             consumptionUom = it.consumptionUom,
                                             cost = it.unitPrice,
                                             qty = qtyUnits,

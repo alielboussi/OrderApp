@@ -132,7 +132,7 @@ fun CartReviewScreen(
         ) {
             item(key = "package_contains_note") {
                     Text(
-                        text = "Quantities below are in purchase pack units. Each pack deducts the listed consumption UOM count.",
+                        text = "Quantities below are in inner-pack units. Each purchase pack deducts the listed inner-pack amount.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
@@ -182,7 +182,7 @@ fun CartReviewScreen(
                                     }
 
                                     ReviewQtyControls(
-                                        uom = item.purchasePackUnit,
+                                        uom = item.consumptionUom,
                                         qty = item.qty,
                                         onDec = {
                                             logger.event("QtyDecrement", mapOf("productId" to item.productId, "variationId" to (item.variationId ?: "")))
