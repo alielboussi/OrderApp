@@ -972,11 +972,27 @@ function createHtml(config: {
       font-size: 1.1rem;
       letter-spacing: 0.05em;
     }
+    .qty-meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 4px 0 8px 0;
+    }
     #qty-uom {
       font-size: 1.5rem;
       letter-spacing: 0.15em;
       color: #ff6b81;
-      margin: 4px 0 12px 0;
+      margin: 0;
+      text-align: left;
+    }
+    .qty-live-stock {
+      margin: 0;
+      text-align: right;
+      font-size: 0.85rem;
+      color: #ff97a6;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
     #qty-input {
       background: rgba(0, 0, 0, 0.65);
@@ -1706,7 +1722,10 @@ function createHtml(config: {
   <div id="qty-modal">
     <form id="qty-form">
       <h3 id="qty-title">Enter quantity</h3>
-      <p id="qty-uom">UNIT</p>
+      <div class="qty-meta-row">
+        <p id="qty-uom">UNIT</p>
+        <p id="qty-live-stock" class="qty-live-stock"></p>
+      </div>
       <p id="qty-hint" class="qty-hint"></p>
       <input type="text" id="qty-input" inputmode="decimal" min="0" step="0.01" placeholder="0" required />
       <div class="numpad" id="qty-numpad" aria-label="Quantity keypad">
@@ -2195,6 +2214,7 @@ function createHtml(config: {
       const qtyForm = document.getElementById('qty-form');
       const qtyInput = document.getElementById('qty-input');
       const qtyUom = document.getElementById('qty-uom');
+      const qtyLiveStock = document.getElementById('qty-live-stock');
       const qtyTitle = document.getElementById('qty-title');
       const qtyCancel = document.getElementById('qty-cancel');
       const qtyNumpad = document.getElementById('qty-numpad');
@@ -2575,36 +2595,35 @@ function createHtml(config: {
         }
 
         const loadStockAndDefaults = async () => {
-          const [stockResult, defaultItemsResult, storageHomesResult] = await Promise.all([
+          // Show only products that are both:
+          // 1) physically present in the Quick Corner source warehouse (net_units > 0), and
+          // 2) explicitly shared to the locked outlet warehouse.
+          const [stockResult, sharedHomesResult] = await Promise.all([
             supabase
               .from(STOCK_VIEW_NAME)
               .select('warehouse_id,product_id:item_id,net_units')
               .in('warehouse_id', warehouseIds),
-            supabase
-              .from('catalog_items')
-              .select('id')
-              .eq('default_warehouse_id', lockedSourceId)
-              .eq('active', true),
-            lockedSourceId
+            lockedDestId
               ? supabase
                   .from('item_storage_homes')
-                  .select('item_id, normalized_variant_key, storage_warehouse_id')
-                  .eq('storage_warehouse_id', lockedSourceId)
+                  .select('item_id, storage_warehouse_id')
+                  .eq('storage_warehouse_id', lockedDestId)
               : Promise.resolve({ data: [], error: null })
           ]);
 
           if (stockResult.error) throw stockResult.error;
-          if (defaultItemsResult.error) throw defaultItemsResult.error;
-          if (storageHomesResult.error) throw storageHomesResult.error;
-
-          latestStorageHomes = Array.isArray(storageHomesResult.data) ? storageHomesResult.data : [];
+          if (sharedHomesResult.error) throw sharedHomesResult.error;
 
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
+          const sharedItemIds = new Set((sharedHomesResult.data ?? []).map((row) => row?.item_id).filter(Boolean));
           const productIds = new Set();
           const stockQtyByProduct = new Map();
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
+            if (!lockedIds.includes(row.product_id) && !sharedItemIds.has(row.product_id)) {
+              return;
+            }
             if (!lockedIds.includes(row.product_id)) {
               const netUnits = Number(row?.net_units ?? 0);
               if (!Number.isFinite(netUnits) || netUnits <= 0) return;
@@ -2620,33 +2639,6 @@ function createHtml(config: {
           lockedIds.forEach((id) => productIds.add(id));
 
           const productsWithWarehouseVariations = new Set();
-          const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
-          let defaultVariants = [];
-          if (defaultItemIds.length) {
-            const { data: variantData, error: variantError } = await supabase
-              .from('catalog_variants')
-              .select('id,item_id,default_warehouse_id,locked_from_warehouse_id,active')
-              .in('item_id', defaultItemIds);
-            if (variantError) throw variantError;
-            defaultVariants = Array.isArray(variantData) ? variantData : [];
-          }
-
-          defaultVariants.forEach((variant) => {
-            const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-            const variantActive = variant?.active !== false;
-            if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
-              productsWithWarehouseVariations.add(variant.item_id);
-            }
-          });
-
-          latestStorageHomes.forEach((home) => {
-            if (!home?.item_id) return;
-            productIds.add(home.item_id);
-            if (home?.normalized_variant_key && home.normalized_variant_key !== 'base') {
-              productsWithWarehouseVariations.add(home.item_id);
-            }
-          });
-
           return { productIds, productsWithWarehouseVariations, stockQtyByProduct };
         };
 
@@ -3040,6 +3032,16 @@ function createHtml(config: {
         }
         qtyHint.textContent = 'Each pack = ' + entry.packageSize + ' ' + (entry.uom ?? 'UNIT');
         qtyHint.style.display = 'block';
+      }
+
+      function updateQtyLiveStock(entry) {
+        if (!qtyLiveStock) return;
+        if (!entry) {
+          qtyLiveStock.textContent = '';
+          return;
+        }
+        const stockUom = entry.liveStockUom ?? entry.uom ?? 'unit';
+        qtyLiveStock.textContent = 'Available: ' + formatLiveStockLabel(entry.liveStockQty, stockUom);
       }
 
       function getCart(context = state.mode) {
@@ -3952,6 +3954,8 @@ function createHtml(config: {
         const consumptionUom = resolveConsumptionUom(product, variation, packUom);
         const transferUom = (variation?.transfer_unit ?? product.transfer_unit ?? packUom ?? consumptionUom ?? 'each').toString();
         const packageSize = resolvePackageSize(product, variation);
+        const liveStockQty = Number(variation?.live_stock_qty ?? product?.live_stock_qty ?? 0);
+        const liveStockUom = (variation?.live_stock_uom ?? product?.live_stock_uom ?? consumptionUom ?? 'unit').toString();
         const entry = {
           productId: product.id,
           productName: product.name ?? 'Product',
@@ -3962,6 +3966,8 @@ function createHtml(config: {
           packUom,
           transferUom,
           packageSize,
+          liveStockQty,
+          liveStockUom,
           unitCost: null
         };
         const isDamage = context === 'damage';
@@ -3982,6 +3988,7 @@ function createHtml(config: {
         qtyUom.textContent = entry.packUom ?? entry.uom ?? 'UNIT';
 
         updateQtyHint(entry);
+        updateQtyLiveStock(entry);
         qtyInput.value = '';
         qtyModal.style.display = 'flex';
         setTimeout(() => qtyInput.focus(), 10);
@@ -4001,6 +4008,8 @@ function createHtml(config: {
         const consumptionUom = resolveConsumptionUom(product, variation, packUom);
         const transferUom = (variation?.transfer_unit ?? product.transfer_unit ?? packUom ?? consumptionUom ?? 'each').toString();
         const packageSize = resolvePackageSize(product, variation);
+        const liveStockQty = Number(variation?.live_stock_qty ?? product?.live_stock_qty ?? 0);
+        const liveStockUom = (variation?.live_stock_uom ?? product?.live_stock_uom ?? consumptionUom ?? 'unit').toString();
         return {
           productId: product.id,
           productName: product.name ?? 'Product',
@@ -4011,6 +4020,8 @@ function createHtml(config: {
           packUom,
           transferUom,
           packageSize,
+          liveStockQty,
+          liveStockUom,
           unitCost: null
         };
       }
@@ -4209,32 +4220,10 @@ function createHtml(config: {
             card.type = 'button';
             card.className = 'product-card';
 
-            const liveStock = document.createElement('div');
-            liveStock.className = 'product-card-live-stock';
-            liveStock.textContent = formatLiveStockLabel(
-              product.live_stock_qty,
-              product.live_stock_uom || product.consumption_uom || product.uom || 'unit'
-            );
-
-            const imageWrap = document.createElement('div');
-            imageWrap.className = 'product-card-image';
-            const imageUrl = product.image_url || '';
-            if (imageUrl) {
-              const img = document.createElement('img');
-              img.src = imageUrl;
-              img.alt = (product.name ?? 'Product') + ' image';
-              img.loading = 'lazy';
-              imageWrap.appendChild(img);
-            } else {
-              imageWrap.textContent = (product.name ?? 'P').charAt(0).toUpperCase();
-            }
-
             const title = document.createElement('div');
             title.className = 'product-card-title';
             title.textContent = product.name ?? 'Product';
 
-            card.appendChild(liveStock);
-            card.appendChild(imageWrap);
             card.appendChild(title);
             card.addEventListener('click', () => handleProductCardSelect(product, context));
             container.appendChild(card);
@@ -4264,6 +4253,7 @@ function createHtml(config: {
           qtySubmitButton.textContent = 'Add Item';
         }
         updateQtyHint(null);
+        updateQtyLiveStock(null);
         focusActiveScanner();
       }
 
@@ -4281,6 +4271,7 @@ function createHtml(config: {
         qtyUom.textContent = target.supplierPackUom ?? target.packUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
         updateQtyHint(target);
+        updateQtyLiveStock(target);
         qtyModal.style.display = 'flex';
         if (qtySubmitButton) {
           qtySubmitButton.textContent = 'Update Item';
@@ -4365,7 +4356,7 @@ function createHtml(config: {
             const qtyCell = document.createElement('td');
             qtyCell.textContent = (item.qty ?? 0).toString();
             const uomCell = document.createElement('td');
-            uomCell.textContent = item.uom ?? 'UNIT';
+            uomCell.textContent = item.supplierPackUom ?? item.packUom ?? item.uom ?? 'UNIT';
             if (context === 'purchase') {
               const costCell = document.createElement('td');
               costCell.textContent = formatAmount(item.unitCost) ?? '-';
@@ -5684,6 +5675,18 @@ function createHtml(config: {
       syncSession({ user: { email: 'kiosk@afterten.local' } }).catch((error) => {
         console.warn('Initial kiosk sync failed', error);
       });
+
+      // Auto-refresh product list every 10 seconds to reflect latest transferred stock.
+      setInterval(async () => {
+        try {
+          const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
+          state.products = await fetchProductsForWarehouse(targetWarehouseIds);
+          await safePreloadVariations(state.products.map((p) => p.id));
+          renderProductCards();
+        } catch (err) {
+          console.warn('Auto-refresh failed', err);
+        }
+      }, 10000);
 
       supabase.auth.getSession().then(({ data }) => {
         console.log('initial getSession', data);

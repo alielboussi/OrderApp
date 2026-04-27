@@ -2094,6 +2094,7 @@ function createHtml(config: {
         session: null,
         warehouses: initialWarehouses,
         products: [],
+        purchaseProducts: [],
         variations: new Map(),
         variationIndex: new Map(),
         mode: 'transfer',
@@ -3022,13 +3023,69 @@ function createHtml(config: {
       }
 
       function getProductsForContext(context) {
+        if (context === 'purchase') {
+          const purchaseProducts = Array.isArray(state.purchaseProducts) && state.purchaseProducts.length
+            ? state.purchaseProducts
+            : Array.isArray(state.products) ? state.products : [];
+          return purchaseProducts.filter((item) => item && item.id);
+        }
         const products = Array.isArray(state.products)
           ? state.products.filter((item) => item && item.id)
           : [];
-        if (context === 'purchase') {
-          return products;
-        }
         return products.filter((product) => getLiveStockQtyForContext(product, context) > 0);
+      }
+
+      async function fetchPurchaseProducts(warehouseIds) {
+        if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) return [];
+        if (state.networkOffline) return [];
+        try {
+          // Find all product IDs assigned to any warehouse in the tree via catalog or storage homes
+          const [defaultItemsResult, storageHomesResult] = await Promise.all([
+            supabase
+              .from('catalog_items')
+              .select('id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url')
+              .in('default_warehouse_id', warehouseIds)
+              .eq('active', true)
+              .order('name'),
+            supabase
+              .from('item_storage_homes')
+              .select('item_id')
+              .in('storage_warehouse_id', warehouseIds)
+          ]);
+          if (defaultItemsResult.error) throw defaultItemsResult.error;
+          if (storageHomesResult.error) throw storageHomesResult.error;
+
+          const extraIds = (storageHomesResult.data ?? [])
+            .map((r) => r?.item_id)
+            .filter(Boolean)
+            .filter((id) => !(defaultItemsResult.data ?? []).some((p) => p.id === id));
+
+          let extraProducts = [];
+          if (extraIds.length) {
+            const { data, error } = await supabase
+              .from('catalog_items')
+              .select('id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url')
+              .in('id', extraIds)
+              .eq('active', true)
+              .order('name');
+            if (error) throw error;
+            extraProducts = data ?? [];
+          }
+
+          const combined = [...(defaultItemsResult.data ?? []), ...extraProducts];
+          combined.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+          return combined.map((product) => ({
+            ...product,
+            live_stock_qty: 0,
+            live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
+            live_stock_by_warehouse: {},
+            live_stock_by_variant_warehouse: {}
+          }));
+        } catch (error) {
+          markOfflineIfNetworkError(error);
+          console.warn('fetchPurchaseProducts failed', error);
+          return [];
+        }
       }
 
       function formatUnitLabel(uom, qty) {
@@ -5131,8 +5188,15 @@ function createHtml(config: {
         }
 
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
-        state.products = await fetchProductsForWarehouse(targetWarehouseIds);
-        await safePreloadVariations(state.products.map((p) => p.id));
+        [state.products, state.purchaseProducts] = await Promise.all([
+          fetchProductsForWarehouse(targetWarehouseIds),
+          fetchPurchaseProducts(targetWarehouseIds)
+        ]);
+        const allProductIds = Array.from(new Set([
+          ...state.products.map((p) => p.id),
+          ...state.purchaseProducts.map((p) => p.id)
+        ]));
+        await safePreloadVariations(allProductIds);
         renderProductCards();
         try {
           await fetchSuppliers();
