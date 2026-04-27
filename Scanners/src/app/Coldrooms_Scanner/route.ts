@@ -3102,12 +3102,12 @@ function createHtml(config: {
           return (variation?.uom || product.uom || 'unit').toUpperCase();
         }
         const unit =
+          variation?.uom ||
+          product.uom ||
           variation?.consumption_uom ||
           product.consumption_uom ||
           variation?.transfer_unit ||
           product.transfer_unit ||
-          variation?.uom ||
-          product.uom ||
           'unit';
         return String(unit).toUpperCase();
       }
@@ -3134,6 +3134,9 @@ function createHtml(config: {
 
       function resolveQtyMultiplier(product, variation, context) {
         if (context === 'purchase') {
+          return resolvePackageSize(product, variation);
+        }
+        if (context === 'transfer') {
           return resolvePackageSize(product, variation);
         }
         return resolveTransferQuantity(product, variation);
