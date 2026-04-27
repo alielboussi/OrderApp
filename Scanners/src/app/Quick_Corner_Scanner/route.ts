@@ -280,6 +280,35 @@ function createHtml(config: {
     .product-card:active {
       transform: translateY(0);
     }
+    .product-card-live-stock {
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #ff97a6;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .product-card-image {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.75);
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .product-card-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
     .product-card-title {
       font-weight: 700;
       letter-spacing: 0.03em;
@@ -2572,12 +2601,19 @@ function createHtml(config: {
 
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           const productIds = new Set();
+          const stockQtyByProduct = new Map();
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
             if (!lockedIds.includes(row.product_id)) {
               const netUnits = Number(row?.net_units ?? 0);
               if (!Number.isFinite(netUnits) || netUnits <= 0) return;
+              stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + netUnits);
+            } else {
+              const lockedQty = Number(row?.net_units ?? 0);
+              if (Number.isFinite(lockedQty)) {
+                stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + lockedQty);
+              }
             }
             productIds.add(row.product_id);
           });
@@ -2611,10 +2647,10 @@ function createHtml(config: {
             }
           });
 
-          return { productIds, productsWithWarehouseVariations };
+          return { productIds, productsWithWarehouseVariations, stockQtyByProduct };
         };
 
-        const loadProducts = async (productIds, productsWithWarehouseVariations) => {
+        const loadProducts = async (productIds, productsWithWarehouseVariations, stockQtyByProduct) => {
           if (!productIds.size) return [];
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
@@ -2658,20 +2694,29 @@ function createHtml(config: {
             );
 
             if (productsWithWarehouseVariations.has(product.id) || hasWarehouseVariant || hasStorageHomeVariant) {
-              return { ...product, has_variations: true };
+              return {
+                ...product,
+                has_variations: true,
+                live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
+                live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString()
+              };
             }
-            return product;
+            return {
+              ...product,
+              live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
+              live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString()
+            };
           });
         };
 
         try {
-          const { productIds, productsWithWarehouseVariations } = await loadStockAndDefaults();
+          const { productIds, productsWithWarehouseVariations, stockQtyByProduct } = await loadStockAndDefaults();
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           if (lockedIds.length) {
             const combinedIds = new Set([...productIds, ...lockedIds]);
-            return await loadProducts(combinedIds, productsWithWarehouseVariations);
+            return await loadProducts(combinedIds, productsWithWarehouseVariations, stockQtyByProduct);
           }
-          return await loadProducts(productIds, productsWithWarehouseVariations);
+          return await loadProducts(productIds, productsWithWarehouseVariations, stockQtyByProduct);
         } catch (error) {
           markOfflineIfNetworkError(error);
           console.warn('Product fetch failed, attempting minimal fallback', error);
@@ -2836,6 +2881,16 @@ function createHtml(config: {
         const formattedQty = Number.isFinite(numeric) ? numeric : 0;
         const unit = formatUnitLabel(uom, formattedQty).toUpperCase();
         return formattedQty + ' ' + unit;
+      }
+
+      function formatLiveStockLabel(qty, uom) {
+        const numeric = Number(qty ?? 0);
+        const safeQty = Number.isFinite(numeric) ? numeric : 0;
+        const displayQty = Number.isInteger(safeQty)
+          ? String(safeQty)
+          : safeQty.toFixed(2).replace(/\.?0+$/, '');
+        const unit = formatUnitLabel(uom, safeQty);
+        return displayQty + ' (' + unit + ')';
       }
 
       function formatUnitLabel(uom, qty) {
@@ -4154,10 +4209,32 @@ function createHtml(config: {
             card.type = 'button';
             card.className = 'product-card';
 
+            const liveStock = document.createElement('div');
+            liveStock.className = 'product-card-live-stock';
+            liveStock.textContent = formatLiveStockLabel(
+              product.live_stock_qty,
+              product.live_stock_uom || product.consumption_uom || product.uom || 'unit'
+            );
+
+            const imageWrap = document.createElement('div');
+            imageWrap.className = 'product-card-image';
+            const imageUrl = product.image_url || '';
+            if (imageUrl) {
+              const img = document.createElement('img');
+              img.src = imageUrl;
+              img.alt = (product.name ?? 'Product') + ' image';
+              img.loading = 'lazy';
+              imageWrap.appendChild(img);
+            } else {
+              imageWrap.textContent = (product.name ?? 'P').charAt(0).toUpperCase();
+            }
+
             const title = document.createElement('div');
             title.className = 'product-card-title';
             title.textContent = product.name ?? 'Product';
 
+            card.appendChild(liveStock);
+            card.appendChild(imageWrap);
             card.appendChild(title);
             card.addEventListener('click', () => handleProductCardSelect(product, context));
             container.appendChild(card);

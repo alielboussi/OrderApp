@@ -40,6 +40,7 @@ type SimpleVariation = {
   image_url: string | null;
   consumption_uom: string | null;
   stocktake_uom: string | null;
+  purchase_pack_unit?: string | null;
   qty_decimal_places: number | null;
   cost: number | null;
   active?: boolean | null;
@@ -266,6 +267,9 @@ function formatUomLabel(raw?: string | null): string {
     case "bucket":
     case "bucket(s)":
       return "Bucket(s)";
+    case "tray":
+    case "tray(s)":
+      return "Tray(s)";
     default:
       if (!key) return "Each";
       return key.replace(/\b\w/g, (char) => char.toUpperCase());
@@ -292,6 +296,7 @@ function defaultDecimalsForUom(raw?: string | null): number {
     case "box":
     case "bag":
     case "bucket":
+    case "tray":
       return 0;
     default:
       return 2;
@@ -445,7 +450,11 @@ export default function StocktakesPage() {
     const map = new Map<string, string>();
     variations.forEach((variation) => {
       const key = normalizeVariantKey(variation.id);
-      const uom = variation.consumption_uom?.trim() || variation.stocktake_uom?.trim() || "each";
+      const uom =
+        variation.purchase_pack_unit?.trim() ||
+        variation.stocktake_uom?.trim() ||
+        variation.consumption_uom?.trim() ||
+        "each";
       map.set(key, uom);
     });
     return map;
@@ -455,7 +464,11 @@ export default function StocktakesPage() {
     const map = new Map<string, string>();
     variations.forEach((variation) => {
       const key = normalizeVariantKey(variation.id);
-      const uom = variation.stocktake_uom?.trim() || variation.consumption_uom?.trim() || "each";
+      const uom =
+        variation.purchase_pack_unit?.trim() ||
+        variation.stocktake_uom?.trim() ||
+        variation.consumption_uom?.trim() ||
+        "each";
       map.set(key, uom);
     });
     return map;
@@ -845,8 +858,10 @@ export default function StocktakesPage() {
           "id,name,consumption_uom,stocktake_uom,purchase_pack_unit,qty_decimal_places,selling_price,cost";
         const productFallback = "id,name,consumption_uom,stocktake_uom,purchase_pack_unit,selling_price,cost";
 
-        const variantSelect = "id,item_id,name,image_url,consumption_uom,stocktake_uom,qty_decimal_places,cost,active";
-        const variantFallback = "id,item_id,name,image_url,consumption_uom,stocktake_uom,cost,active";
+        const variantSelect =
+          "id,item_id,name,image_url,consumption_uom,stocktake_uom,purchase_pack_unit,qty_decimal_places,cost,active";
+        const variantFallback =
+          "id,item_id,name,image_url,consumption_uom,stocktake_uom,purchase_pack_unit,cost,active";
 
         const productResp = await supabase
           .from("catalog_items")
@@ -899,9 +914,9 @@ export default function StocktakesPage() {
         const decimalsMap: Record<string, number> = {};
 
         productsList.forEach((product) => {
-          const uom = product.consumption_uom?.trim() || product.purchase_pack_unit?.trim() || "each";
+          const uom = product.purchase_pack_unit?.trim() || product.consumption_uom?.trim() || "each";
           uomMap[product.id] = uom;
-          const stocktakeUom = product.stocktake_uom?.trim() || uom;
+          const stocktakeUom = product.purchase_pack_unit?.trim() || product.stocktake_uom?.trim() || uom;
           stocktakeMap[product.id] = stocktakeUom;
           if (product.qty_decimal_places != null) {
             decimalsMap[makeKey(product.id, "base")] = product.qty_decimal_places;
