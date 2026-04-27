@@ -493,6 +493,24 @@
           "ordinal_position": 33
         },
         {
+          "data_type": "numeric",
+          "table_name": "catalog_items",
+          "column_name": "inner_pack_unit_mass",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 34
+        },
+        {
+          "data_type": "text",
+          "table_name": "catalog_items",
+          "column_name": "inner_pack_unit_mass_uom",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 35
+        },
+        {
           "data_type": "text",
           "table_name": "catalog_variants",
           "column_name": "id",
@@ -707,6 +725,24 @@
           "table_schema": "public",
           "column_default": "now()",
           "ordinal_position": 24
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "catalog_variants",
+          "column_name": "inner_pack_unit_mass",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 25
+        },
+        {
+          "data_type": "text",
+          "table_name": "catalog_variants",
+          "column_name": "inner_pack_unit_mass_uom",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 26
         },
         {
           "data_type": "text",
@@ -6603,7 +6639,7 @@
         },
         {
           "arguments": "p_order_id uuid",
-          "definition": "CREATE OR REPLACE FUNCTION public.record_order_fulfillment(p_order_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_order public.orders%rowtype;\r\n  v_sales_wh uuid;\r\n  v_recv_wh uuid;\r\n  v_sources uuid[];\r\n  v_source uuid;\r\n  v_items jsonb;\r\nbegin\r\n  select * into v_order from public.orders where id = p_order_id;\r\n  if not found then\r\n    raise exception 'order % not found', p_order_id;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id, default_receiving_warehouse_id\r\n    into v_sales_wh, v_recv_wh\r\n  from public.outlet_default_warehouses(v_order.outlet_id);\r\n\r\n  if v_recv_wh is null then\r\n    raise exception 'receiving warehouse not set for outlet %', v_order.outlet_id;\r\n  end if;\r\n\r\n  with item_routes as (\r\n    select\r\n      oi.product_id,\r\n      oi.qty,\r\n      coalesce(oi.warehouse_id, r.warehouse_id, v_sales_wh) as source_warehouse_id,\r\n      public.normalize_variant_key(coalesce(oi.variation_key, 'base')) as variant_key\r\n    from public.order_items oi\r\n    left join lateral (\r\n      select r2.warehouse_id\r\n      from public.outlet_order_routes r2\r\n      where r2.outlet_id = v_order.outlet_id\r\n        and r2.item_id = oi.product_id\r\n        and r2.normalized_variant_key in (\r\n          public.normalize_variant_key(coalesce(oi.variation_key, 'base')),\r\n          'base'\r\n        )\r\n      order by (r2.normalized_variant_key = public.normalize_variant_key(coalesce(oi.variation_key, 'base'))) desc\r\n      limit 1\r\n    ) r on true\r\n    where oi.order_id = p_order_id\r\n  )\r\n  select array_agg(distinct source_warehouse_id)\r\n    into v_sources\r\n  from item_routes;\r\n\r\n  if v_sources is null or array_length(v_sources, 1) = 0 then\r\n    return; -- nothing to move\r\n  end if;\r\n\r\n  foreach v_source in array v_sources loop\r\n    if v_source is null then\r\n      raise exception 'source warehouse not set for order %', p_order_id;\r\n    end if;\r\n\r\n    with item_routes as (\r\n      select\r\n        oi.product_id,\r\n        oi.qty,\r\n        coalesce(oi.warehouse_id, r.warehouse_id, v_sales_wh) as source_warehouse_id,\r\n        public.normalize_variant_key(coalesce(oi.variation_key, 'base')) as variant_key\r\n      from public.order_items oi\r\n      left join lateral (\r\n        select r2.warehouse_id\r\n        from public.outlet_order_routes r2\r\n        where r2.outlet_id = v_order.outlet_id\r\n          and r2.item_id = oi.product_id\r\n          and r2.normalized_variant_key in (\r\n            public.normalize_variant_key(coalesce(oi.variation_key, 'base')),\r\n            'base'\r\n          )\r\n        order by (r2.normalized_variant_key = public.normalize_variant_key(coalesce(oi.variation_key, 'base'))) desc\r\n        limit 1\r\n      ) r on true\r\n      where oi.order_id = p_order_id\r\n    )\r\n    select jsonb_agg(jsonb_build_object(\r\n             'product_id', ir.product_id,\r\n             'variant_key', ir.variant_key,\r\n             'qty', ir.qty\r\n           ))\r\n    into v_items\r\n    from item_routes ir\r\n    where ir.source_warehouse_id = v_source\r\n      and ir.qty is not null\r\n      and ir.qty <> 0;\r\n\r\n    if v_items is null or jsonb_array_length(v_items) = 0 then\r\n      continue;\r\n    end if;\r\n\r\n    perform public.transfer_units_between_warehouses(\r\n      v_source,\r\n      v_recv_wh,\r\n      v_items,\r\n      'Auto-transfer on approval for order ' || coalesce(v_order.order_number, p_order_id::text)\r\n    );\r\n  end loop;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.record_order_fulfillment(p_order_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_order public.orders%rowtype;\r\n  v_sales_wh uuid;\r\n  v_recv_wh uuid;\r\n  v_sources uuid[];\r\n  v_source uuid;\r\n  v_items jsonb;\r\nbegin\r\n  select * into v_order from public.orders where id = p_order_id;\r\n  if not found then\r\n    raise exception 'order % not found', p_order_id;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id, default_receiving_warehouse_id\r\n    into v_sales_wh, v_recv_wh\r\n  from public.outlet_default_warehouses(v_order.outlet_id);\r\n\r\n  if v_recv_wh is null then\r\n    raise exception 'receiving warehouse not set for outlet %', v_order.outlet_id;\r\n  end if;\r\n\r\n  create temporary table tmp_item_routes on commit drop as\r\n  with base_items as (\r\n    select\r\n      oi.id as order_item_id,\r\n      oi.product_id,\r\n      public.normalize_variant_key(coalesce(oi.variation_key, 'base')) as variant_key,\r\n      oi.qty,\r\n      oi.warehouse_id\r\n    from public.order_items oi\r\n    where oi.order_id = p_order_id\r\n  ),\r\n  route_parent as (\r\n    select\r\n      bi.order_item_id,\r\n      coalesce(bi.warehouse_id, r.warehouse_id, v_sales_wh) as parent_warehouse_id\r\n    from base_items bi\r\n    left join lateral (\r\n      select r2.warehouse_id\r\n      from public.outlet_order_routes r2\r\n      where r2.outlet_id = v_order.outlet_id\r\n        and r2.item_id = bi.product_id\r\n        and r2.normalized_variant_key in (bi.variant_key, 'base')\r\n      order by (r2.normalized_variant_key = bi.variant_key) desc\r\n      limit 1\r\n    ) r on true\r\n  ),\r\n  storage_parents as (\r\n    select\r\n      bi.order_item_id,\r\n      bi.product_id,\r\n      bi.variant_key,\r\n      bi.qty,\r\n      ish.storage_warehouse_id as parent_warehouse_id\r\n    from base_items bi\r\n    join public.item_storage_homes ish\r\n      on ish.item_id = bi.product_id\r\n     and ish.normalized_variant_key in (bi.variant_key, 'base')\r\n  ),\r\n  parents as (\r\n    select * from storage_parents\r\n    union all\r\n    select\r\n      bi.order_item_id,\r\n      bi.product_id,\r\n      bi.variant_key,\r\n      bi.qty,\r\n      rp.parent_warehouse_id\r\n    from base_items bi\r\n    join route_parent rp on rp.order_item_id = bi.order_item_id\r\n    where not exists (\r\n      select 1 from storage_parents sp where sp.order_item_id = bi.order_item_id\r\n    )\r\n  ),\r\n  candidate_children as (\r\n    select\r\n      p.order_item_id,\r\n      p.product_id,\r\n      p.variant_key,\r\n      p.qty,\r\n      p.parent_warehouse_id,\r\n      coalesce(wc.id, p.parent_warehouse_id) as source_warehouse_id,\r\n      coalesce(wsi.net_units, 0) as net_units\r\n    from parents p\r\n    left join public.warehouses wc\r\n      on wc.parent_warehouse_id = p.parent_warehouse_id\r\n     and coalesce(wc.active, true)\r\n    left join public.warehouse_stock_items wsi\r\n      on wsi.warehouse_id = coalesce(wc.id, p.parent_warehouse_id)\r\n     and wsi.item_id = p.product_id\r\n     and wsi.variant_key = p.variant_key\r\n  ),\r\n  ranked as (\r\n    select\r\n      *,\r\n      row_number() over (\r\n        partition by order_item_id\r\n        order by (net_units > 0) desc,\r\n                 case when net_units > 0 then net_units end asc nulls last,\r\n                 net_units asc\r\n      ) as rn,\r\n      bool_or(net_units > 0) over (partition by order_item_id) as has_positive\r\n    from candidate_children\r\n  )\r\n  select\r\n    order_item_id,\r\n    product_id,\r\n    variant_key,\r\n    qty,\r\n    parent_warehouse_id,\r\n    source_warehouse_id,\r\n    net_units,\r\n    has_positive\r\n  from ranked\r\n  where rn = 1;\r\n\r\n  if exists (select 1 from tmp_item_routes where source_warehouse_id is null) then\r\n    raise exception 'source warehouse not set for order %', p_order_id;\r\n  end if;\r\n\r\n  select array_agg(distinct source_warehouse_id) into v_sources\r\n  from tmp_item_routes\r\n  where source_warehouse_id is not null;\r\n\r\n  if v_sources is null or array_length(v_sources, 1) = 0 then\r\n    return; -- nothing to move\r\n  end if;\r\n\r\n  insert into public.warehouse_backoffice_logs(\r\n    user_id,\r\n    user_email,\r\n    action,\r\n    page,\r\n    method,\r\n    status,\r\n    details\r\n  )\r\n  select\r\n    auth.uid(),\r\n    current_setting('request.jwt.claim.email', true),\r\n    'order_negative_balance',\r\n    '/Warehouse_Backoffice',\r\n    'rpc',\r\n    200,\r\n    jsonb_build_object(\r\n      'order_id', p_order_id,\r\n      'order_number', v_order.order_number,\r\n      'outlet_id', v_order.outlet_id,\r\n      'product_id', product_id,\r\n      'variant_key', variant_key,\r\n      'warehouse_id', source_warehouse_id,\r\n      'parent_warehouse_id', parent_warehouse_id,\r\n      'qty', qty,\r\n      'available', net_units,\r\n      'warehouse_name', (select w.name from public.warehouses w where w.id = source_warehouse_id),\r\n      'item_name', (select ci.name from public.catalog_items ci where ci.id = product_id)\r\n    )\r\n  from tmp_item_routes\r\n  where has_positive = false;\r\n\r\n  foreach v_source in array v_sources loop\r\n    with item_routes as (\r\n      select\r\n        product_id,\r\n        variant_key,\r\n        qty\r\n      from tmp_item_routes\r\n      where source_warehouse_id = v_source\r\n        and qty is not null\r\n        and qty <> 0\r\n    )\r\n    select jsonb_agg(\r\n      jsonb_build_object('product_id', ir.product_id, 'variant_key', ir.variant_key, 'qty', ir.qty)\r\n    )\r\n    into v_items\r\n    from item_routes ir;\r\n\r\n    if v_items is null or jsonb_array_length(v_items) = 0 then\r\n      continue;\r\n    end if;\r\n\r\n    perform public.transfer_units_between_warehouses(\r\n      v_source,\r\n      v_recv_wh,\r\n      v_items,\r\n      'Auto-transfer on approval for order ' || coalesce(v_order.order_number, p_order_id::text)\r\n    );\r\n  end loop;\r\nend;\r\n$function$\n",
           "function_name": "record_order_fulfillment",
           "function_schema": "public"
         },
@@ -7236,7 +7272,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -7246,16 +7282,6 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "catalog_variants",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "catalog_variants_item_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "catalog_variants",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -7267,6 +7293,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
           "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_variants",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "catalog_variants_item_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "catalog_variants",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7336,7 +7372,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7346,7 +7382,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -7416,7 +7452,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -7426,7 +7462,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -7456,7 +7492,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -7466,12 +7502,22 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "item_storage_homes",
-          "column_name": "storage_warehouse_id",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "normalized_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "normalized_variant_key",
           "table_schema": "public",
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -7497,6 +7543,36 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "storage_warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "storage_warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "storage_warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "storage_warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8066,7 +8142,7 @@
           "constraint_name": "outlet_item_routes_norm_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8076,7 +8152,7 @@
           "constraint_name": "outlet_item_routes_norm_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8126,7 +8202,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8146,17 +8222,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8167,6 +8233,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8196,7 +8272,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8206,7 +8282,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8376,6 +8452,16 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
+          "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_products",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_products_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_products",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -8391,12 +8477,12 @@
         },
         {
           "table_name": "outlet_products",
-          "column_name": "outlet_id",
+          "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8421,16 +8507,6 @@
         },
         {
           "table_name": "outlet_products",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_products_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_products",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_products",
           "column_name": "variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_products_pkey",
@@ -8446,7 +8522,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8456,7 +8532,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8696,6 +8772,16 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -8711,16 +8797,6 @@
         },
         {
           "table_name": "outlet_stock_balances",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
           "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "outlet_stock_balances_pkey",
@@ -8756,6 +8832,16 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -8767,16 +8853,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9076,7 +9152,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_sales_warehouse_id",
+          "foreign_column_name": "deduct_on_pos_sale",
           "foreign_table_schema": "public"
         },
         {
@@ -9086,7 +9162,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "deduct_on_pos_sale",
+          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10136,7 +10212,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "to_uom",
+          "foreign_column_name": "from_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -10146,7 +10222,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "from_uom",
+          "foreign_column_name": "to_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -10236,16 +10312,6 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "user_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -10256,17 +10322,17 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "user_roles",
-          "column_name": "role_id",
+          "column_name": "user_id",
           "table_schema": "public",
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
+          "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10286,6 +10352,16 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
+          "foreign_column_name": "user_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "role_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
@@ -10296,7 +10372,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10316,7 +10392,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
         {

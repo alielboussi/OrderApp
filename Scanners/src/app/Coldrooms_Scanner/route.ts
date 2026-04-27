@@ -2113,6 +2113,7 @@ function createHtml(config: {
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
+      const COLDROOM_PRODUCT_IDS = ${serializeForScript(COLDROOM_PRODUCT_IDS)};
 
       const state = {
         session: null,
@@ -4883,10 +4884,7 @@ function createHtml(config: {
 
       async function fetchOperators() {
         if (state.networkOffline) {
-          console.warn('Skipping operator fetch: network offline');
-          state.operators = [];
-          renderOperatorOptions();
-          return;
+          console.warn('Operator fetch continuing despite offline flag');
         }
 
         const normalizeOperators = (input) =>
@@ -4930,6 +4928,9 @@ function createHtml(config: {
             rawList = await loadViaOperatorApi();
           }
           state.operators = normalizeOperators(rawList);
+          if (state.operators.length) {
+            state.networkOffline = false;
+          }
           renderOperatorOptions();
         } catch (error) {
           markOfflineIfNetworkError(error);
