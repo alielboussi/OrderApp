@@ -9,7 +9,16 @@ const DESTINATION_CHOICES = [
   { id: 'c77376f7-1ede-4518-8180-b3efeecda128', label: 'Select Outlet' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
-const LOCKED_PRODUCT_IDS = ['20de5f8f-cc97-4ae6-aa51-e158225f3703', 'bcacc496-ffd7-430b-8c17-709d0497a1ff'] as const;
+const LOCKED_PRODUCT_IDS = [
+  '20de5f8f-cc97-4ae6-aa51-e158225f3703',
+  'bcacc496-ffd7-430b-8c17-709d0497a1ff',
+  '0f4119cf-460f-45d6-a009-38b06d1cc2b8',
+  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9'
+] as const;
+const STOCK_GATED_PRODUCT_IDS = [
+  'd54abc42-200b-40a7-96e8-3e5980677f32',
+  '3a248921-64ee-495d-a90a-061412b93813'
+] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -2054,6 +2063,7 @@ function createHtml(config: {
       const lockedSourceId = ${JSON.stringify(LOCKED_SOURCE_ID)};
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
+      const STOCK_GATED_PRODUCT_IDS = ${serializeForScript(STOCK_GATED_PRODUCT_IDS)};
 
       const state = {
         session: null,
@@ -2615,16 +2625,19 @@ function createHtml(config: {
           if (sharedHomesResult.error) throw sharedHomesResult.error;
 
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
+          const stockGatedIds = Array.isArray(STOCK_GATED_PRODUCT_IDS) ? STOCK_GATED_PRODUCT_IDS.filter(Boolean) : [];
           const sharedItemIds = new Set((sharedHomesResult.data ?? []).map((row) => row?.item_id).filter(Boolean));
           const productIds = new Set();
           const stockQtyByProduct = new Map();
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
-            if (!lockedIds.includes(row.product_id) && !sharedItemIds.has(row.product_id)) {
+            const isLocked = lockedIds.includes(row.product_id);
+            const isStockGated = stockGatedIds.includes(row.product_id);
+            if (!isLocked && !isStockGated && !sharedItemIds.has(row.product_id)) {
               return;
             }
-            if (!lockedIds.includes(row.product_id)) {
+            if (!isLocked) {
               const netUnits = Number(row?.net_units ?? 0);
               if (!Number.isFinite(netUnits) || netUnits <= 0) return;
               stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + netUnits);
@@ -4882,9 +4895,9 @@ function createHtml(config: {
           if (error) throw error;
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const itemsBlock = buildItemsBlockFromLines(lineItems, 'transfer');
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
@@ -4975,9 +4988,9 @@ function createHtml(config: {
 
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const itemsBlock = buildItemsBlockFromLines(lineItems, 'damage');
           const summary = {
@@ -5096,9 +5109,9 @@ function createHtml(config: {
           const timestampSource = data?.received_at ?? data?.recorded_at ?? new Date().toISOString();
           const timestamp = new Date(timestampSource);
           const windowLabel =
-            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
             ' ' +
-            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
 
           const summary = {
             reference: receiptRef,

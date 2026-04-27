@@ -292,6 +292,7 @@ function createHtml(config: {
       border: 1px solid rgba(255, 27, 45, 0.28);
       border-radius: 16px;
       padding: 12px 14px;
+      position: relative;
       text-align: left;
       color: #fff;
       cursor: pointer;
@@ -306,11 +307,17 @@ function createHtml(config: {
       transform: translateY(0);
     }
     .product-card-live-stock {
-      font-size: 0.8rem;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 151, 166, 0.16);
+      border: 1px solid rgba(255, 151, 166, 0.35);
+      font-size: 0.7rem;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: #ff97a6;
-      margin-bottom: 8px;
+      color: #ffb1bc;
       font-weight: 700;
     }
     .product-card-image {
@@ -340,23 +347,10 @@ function createHtml(config: {
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    .product-card-id {
-      font-size: 0.72rem;
-      letter-spacing: 0.04em;
-      color: #a6a6a6;
-      word-break: break-all;
-      margin-bottom: 4px;
-    }
     .product-cell-main {
       display: flex;
       flex-direction: column;
       gap: 3px;
-    }
-    .product-cell-id {
-      font-size: 0.72rem;
-      color: #a6a6a6;
-      letter-spacing: 0.03em;
-      word-break: break-all;
     }
     .product-card-meta {
       display: flex;
@@ -1024,7 +1018,23 @@ function createHtml(config: {
       display: flex;
       flex-direction: column;
       gap: 12px;
+      position: relative;
       text-align: center;
+    }
+    .qty-live-stock-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 151, 166, 0.16);
+      border: 1px solid rgba(255, 151, 166, 0.35);
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #ffb1bc;
+      font-weight: 700;
+      display: none;
     }
     #qty-title {
       margin: 0;
@@ -1783,6 +1793,7 @@ function createHtml(config: {
 
   <div id="qty-modal">
     <form id="qty-form">
+      <div id="qty-live-stock" class="qty-live-stock-badge"></div>
       <h3 id="qty-title">Enter quantity</h3>
       <p id="qty-uom">UNIT</p>
       <p id="qty-hint" class="qty-hint"></p>
@@ -2278,6 +2289,7 @@ function createHtml(config: {
       const qtyInput = document.getElementById('qty-input');
       const qtyUom = document.getElementById('qty-uom');
       const qtyTitle = document.getElementById('qty-title');
+      const qtyLiveStock = document.getElementById('qty-live-stock');
       const qtyCancel = document.getElementById('qty-cancel');
       const qtyNumpad = document.getElementById('qty-numpad');
       const qtyHint = document.getElementById('qty-hint');
@@ -2659,28 +2671,29 @@ function createHtml(config: {
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             if (!allowedProductIds.has(row.product_id)) return;
-            productIds.add(row.product_id);
             const qty = Number(row?.net_units ?? 0);
-            if (Number.isFinite(qty)) {
-              stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + qty);
-              const warehouseId = row?.warehouse_id ?? null;
-              const variantKey = normalizeVariantKeyLocal(row?.variant_key);
-              if (warehouseId) {
-                const stockKey = String(row.product_id) + '::' + String(warehouseId);
-                stockQtyByProductWarehouse.set(stockKey, (stockQtyByProductWarehouse.get(stockKey) ?? 0) + qty);
-                const variantStockKey = String(row.product_id) + '::' + String(variantKey) + '::' + String(warehouseId);
-                stockQtyByProductVariantWarehouse.set(
-                  variantStockKey,
-                  (stockQtyByProductVariantWarehouse.get(variantStockKey) ?? 0) + qty
-                );
-              }
+            if (!Number.isFinite(qty) || qty <= 0) return;
+            productIds.add(row.product_id);
+            stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + qty);
+            const warehouseId = row?.warehouse_id ?? null;
+            const variantKey = normalizeVariantKeyLocal(row?.variant_key);
+            if (warehouseId) {
+              const stockKey = String(row.product_id) + '::' + String(warehouseId);
+              stockQtyByProductWarehouse.set(stockKey, (stockQtyByProductWarehouse.get(stockKey) ?? 0) + qty);
+              const variantStockKey = String(row.product_id) + '::' + String(variantKey) + '::' + String(warehouseId);
+              stockQtyByProductVariantWarehouse.set(
+                variantStockKey,
+                (stockQtyByProductVariantWarehouse.get(variantStockKey) ?? 0) + qty
+              );
             }
           });
 
           const productsWithWarehouseVariations = new Set();
           const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
           (defaultItemsResult.data ?? []).forEach((row) => {
-            if (row?.id && allowedProductIds.has(row.id)) productIds.add(row.id);
+            if (!row?.id || !allowedProductIds.has(row.id)) return;
+            if (!productIds.has(row.id)) return;
+            productIds.add(row.id);
           });
 
           let defaultVariants = [];
@@ -2698,15 +2711,15 @@ function createHtml(config: {
             const variantActive = variant?.active !== false;
             if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
               if (!allowedProductIds.has(variant.item_id)) return;
+              if (!productIds.has(variant.item_id)) return;
               productsWithWarehouseVariations.add(variant.item_id);
-              productIds.add(variant.item_id);
             }
           });
 
           latestStorageHomes.forEach((home) => {
             if (!home?.item_id) return;
             if (!allowedProductIds.has(home.item_id)) return;
-            productIds.add(home.item_id);
+            if (!productIds.has(home.item_id)) return;
             if (home?.normalized_variant_key && home.normalized_variant_key !== 'base') {
               productsWithWarehouseVariations.add(home.item_id);
             }
@@ -4380,6 +4393,21 @@ function createHtml(config: {
           : product.name ?? 'Product';
         qtyUom.textContent = entry.baseUom;
 
+        if (qtyLiveStock) {
+          const variations = state.variations.get(product.id) ?? [];
+          const hasVariants = variations.length > 0 || product.has_variations === true;
+          if (!variation && !hasVariants) {
+            const liveStockQty = getLiveStockQtyForContext(product, context);
+            const liveStockUom =
+              product.live_stock_uom || product.consumption_uom || product.uom || 'unit';
+            qtyLiveStock.textContent = formatLiveStockLabel(liveStockQty, liveStockUom);
+            qtyLiveStock.style.display = 'inline-flex';
+          } else {
+            qtyLiveStock.textContent = '';
+            qtyLiveStock.style.display = 'none';
+          }
+        }
+
         updateQtyHint(entry);
         qtyInput.value = '';
         qtyModal.style.display = 'flex';
@@ -4622,12 +4650,7 @@ function createHtml(config: {
             title.className = 'product-card-title';
             title.textContent = product.name ?? 'Product';
 
-            const productId = document.createElement('div');
-            productId.className = 'product-card-id';
-            productId.textContent = 'ID: ' + (product.id ?? '-');
-
             card.appendChild(title);
-            card.appendChild(productId);
             card.addEventListener('click', () => handleProductCardSelect(product, context));
             container.appendChild(card);
           });
@@ -4652,6 +4675,10 @@ function createHtml(config: {
         state.pendingEntry = null;
         state.pendingEditIndex = null;
         state.pendingContext = state.mode;
+        if (qtyLiveStock) {
+          qtyLiveStock.textContent = '';
+          qtyLiveStock.style.display = 'none';
+        }
         if (qtySubmitButton) {
           qtySubmitButton.textContent = 'Add Item';
         }
@@ -4672,6 +4699,22 @@ function createHtml(config: {
           : target.productName ?? 'Product';
         qtyUom.textContent = target.baseUom ?? target.uom ?? 'UNIT';
         qtyInput.value = (target.scannedQty ?? target.qty ?? 0).toString();
+        if (qtyLiveStock) {
+          const products = getProductsForContext(context);
+          const product = products.find((item) => item?.id === target.productId) ?? null;
+          const variations = product ? state.variations.get(product.id) ?? [] : [];
+          const hasVariants = product ? variations.length > 0 || product.has_variations === true : false;
+          if (product && !target.variationId && !hasVariants) {
+            const liveStockQty = getLiveStockQtyForContext(product, context);
+            const liveStockUom =
+              product.live_stock_uom || product.consumption_uom || product.uom || 'unit';
+            qtyLiveStock.textContent = formatLiveStockLabel(liveStockQty, liveStockUom);
+            qtyLiveStock.style.display = 'inline-flex';
+          } else {
+            qtyLiveStock.textContent = '';
+            qtyLiveStock.style.display = 'none';
+          }
+        }
         updateQtyHint(target);
         qtyModal.style.display = 'flex';
         if (qtySubmitButton) {
@@ -4737,11 +4780,7 @@ function createHtml(config: {
             productMain.className = 'product-cell-main';
             const productName = document.createElement('div');
             productName.textContent = item.productName ?? 'Product';
-            const productId = document.createElement('div');
-            productId.className = 'product-cell-id';
-            productId.textContent = 'ID: ' + (item.productId ?? '-');
             productMain.appendChild(productName);
-            productMain.appendChild(productId);
             productCell.appendChild(productMain);
             const variationCell = document.createElement('td');
             variationCell.textContent = item.variationName ? item.variationName : '-';
@@ -5359,9 +5398,9 @@ function createHtml(config: {
           if (error) throw error;
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const remainingStockMap = await fetchRemainingStock(
             sourceId,
@@ -5464,9 +5503,9 @@ function createHtml(config: {
 
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const remainingStockMap = await fetchRemainingStock(
             warehouseId,
@@ -5600,9 +5639,9 @@ function createHtml(config: {
           const timestampSource = data?.received_at ?? data?.recorded_at ?? new Date().toISOString();
           const timestamp = new Date(timestampSource);
           const windowLabel =
-            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
             ' ' +
-            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
 
           const summary = {
             reference: receiptRef,

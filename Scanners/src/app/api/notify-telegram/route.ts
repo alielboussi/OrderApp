@@ -296,13 +296,18 @@ function buildMessage(
   damageByKey: Map<string, number> | null,
   consumptionUomByKey: Map<string, string> | null
 ) {
+  const now = new Date();
+  const serverDateTime =
+    now.toLocaleDateString('en-US', { timeZone: 'Africa/Lagos' }) +
+    ' ' +
+    now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' });
   const typeLabel = context === 'purchase' ? 'Purchase' : context === 'damage' ? 'Damage' : 'Transfer';
   const operator = normalizeLabel(summary.processedBy) ?? normalizeLabel(summary.operator) ?? 'Unknown operator';
   const reference = normalizeLabel(summary.reference) ?? normalizeLabel(summary.referenceRaw);
   const supplierName = normalizeLabel(summary.sourceLabel);
   const destination = String(summary.destLabel ?? summary.destinationLabel ?? 'Unknown destination');
   const sourceLabel = normalizeLabel(summary.sourceLabel) ?? 'Unknown source';
-  const dateTime = String(summary.dateTime ?? summary.window ?? '');
+  const dateTime = serverDateTime;
   const itemsBlock = formatItemsBlock(summary, context, remainingByKey, damageByKey, consumptionUomByKey);
   const scannerLabel = getScannerLabel(scanner);
 
