@@ -24,11 +24,15 @@ const DESTINATION_CHOICES = [
 ] as const;
 const DEFAULT_SOURCE_ID = SOURCE_CHOICES[0]?.id ?? '';
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'd4ad6512-6d0b-448f-b407-e74b0eb80edb';
+const COLDROOM_PRODUCT_IDS = [
+  '88bcd552-5560-403a-bd79-f43e374a0755',
+  '4b340326-5f47-492f-924b-4771e434ea60',
+  'c446a48f-7193-44c8-a828-d6888543de6f',
+  'db361d3b-6e00-435b-b242-d94306b3ba35'
+] as const;
 const LOCKED_PRODUCT_IDS = [
   'c446a48f-7193-44c8-a828-d6888543de6f'
 ] as const;
-const PURCHASE_STOCK_OVERRIDE_PRODUCT_ID = '4b340326-5f47-492f-924b-4771e434ea60';
-const PURCHASE_STOCK_OVERRIDE_QTY = 110;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -2612,6 +2616,7 @@ function createHtml(config: {
         if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
           return [];
         }
+        const allowedProductIds = new Set(COLDROOM_PRODUCT_IDS);
 
         if (state.networkOffline) {
           console.warn('Skipping product fetch: network offline');
@@ -2623,16 +2628,19 @@ function createHtml(config: {
             supabase
               .from(STOCK_VIEW_NAME)
               .select('warehouse_id,product_id:item_id,variant_key,net_units')
-              .in('warehouse_id', warehouseIds),
+              .in('warehouse_id', warehouseIds)
+              .in('item_id', Array.from(allowedProductIds)),
             supabase
               .from('catalog_items')
               .select('id')
+              .in('id', Array.from(allowedProductIds))
               .eq('default_warehouse_id', lockedSourceId)
               .eq('active', true),
             lockedSourceId
               ? supabase
                   .from('item_storage_homes')
                   .select('item_id, normalized_variant_key, storage_warehouse_id')
+                  .in('item_id', Array.from(allowedProductIds))
                   .eq('storage_warehouse_id', lockedSourceId)
               : Promise.resolve({ data: [], error: null })
           ]);
@@ -2649,6 +2657,7 @@ function createHtml(config: {
           const stockQtyByProductVariantWarehouse = new Map();
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
+            if (!allowedProductIds.has(row.product_id)) return;
             productIds.add(row.product_id);
             const qty = Number(row?.net_units ?? 0);
             if (Number.isFinite(qty)) {
@@ -2670,7 +2679,7 @@ function createHtml(config: {
           const productsWithWarehouseVariations = new Set();
           const defaultItemIds = (defaultItemsResult.data ?? []).map((row) => row?.id).filter(Boolean);
           (defaultItemsResult.data ?? []).forEach((row) => {
-            if (row?.id) productIds.add(row.id);
+            if (row?.id && allowedProductIds.has(row.id)) productIds.add(row.id);
           });
 
           let defaultVariants = [];
@@ -2687,6 +2696,7 @@ function createHtml(config: {
             const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
             const variantActive = variant?.active !== false;
             if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
+              if (!allowedProductIds.has(variant.item_id)) return;
               productsWithWarehouseVariations.add(variant.item_id);
               productIds.add(variant.item_id);
             }
@@ -2694,6 +2704,7 @@ function createHtml(config: {
 
           latestStorageHomes.forEach((home) => {
             if (!home?.item_id) return;
+            if (!allowedProductIds.has(home.item_id)) return;
             productIds.add(home.item_id);
             if (home?.normalized_variant_key && home.normalized_variant_key !== 'base') {
               productsWithWarehouseVariations.add(home.item_id);
@@ -3004,18 +3015,12 @@ function createHtml(config: {
       }
 
       function getWarehouseIdsForContext(context) {
-        if (context === 'purchase') {
-          return collectDescendantIds(state.warehouses, lockedSourceId);
-        }
         const selectedSourceId = state.sourceSelection || lockedSourceId;
         return selectedSourceId ? [selectedSourceId] : [];
       }
 
       function getLiveStockQtyForContext(product, context) {
         if (!product) return 0;
-        if (context === 'purchase' && String(product.id) === PURCHASE_STOCK_OVERRIDE_PRODUCT_ID) {
-          return PURCHASE_STOCK_OVERRIDE_QTY;
-        }
         const byWarehouse = product.live_stock_by_warehouse;
         if (!byWarehouse || typeof byWarehouse !== 'object') {
           return Number(product.live_stock_qty ?? 0) || 0;
@@ -3033,13 +3038,6 @@ function createHtml(config: {
       function getVariantLiveStockQtyForContext(product, variantKey, context) {
         if (!product) return 0;
         const normalizedVariantKey = normalizeVariantKeyLocal(variantKey);
-        if (
-          context === 'purchase' &&
-          String(product.id) === PURCHASE_STOCK_OVERRIDE_PRODUCT_ID &&
-          normalizedVariantKey === 'base'
-        ) {
-          return PURCHASE_STOCK_OVERRIDE_QTY;
-        }
         const byVariantWarehouse = product.live_stock_by_variant_warehouse;
         if (!byVariantWarehouse || typeof byVariantWarehouse !== 'object') {
           return normalizedVariantKey === 'base' ? getLiveStockQtyForContext(product, context) : 0;
@@ -3054,69 +3052,18 @@ function createHtml(config: {
       }
 
       function getProductsForContext(context) {
-        if (context === 'purchase') {
-          const purchaseProducts = Array.isArray(state.purchaseProducts) && state.purchaseProducts.length
-            ? state.purchaseProducts
-            : Array.isArray(state.products) ? state.products : [];
-          return purchaseProducts.filter((item) => item && item.id);
-        }
-        const products = Array.isArray(state.products)
+        const products = context === 'purchase'
+          ? (Array.isArray(state.purchaseProducts) && state.purchaseProducts.length
+              ? state.purchaseProducts
+              : Array.isArray(state.products) ? state.products : [])
+          : (Array.isArray(state.products)
           ? state.products.filter((item) => item && item.id)
-          : [];
+          : []);
         return products.filter((product) => getLiveStockQtyForContext(product, context) > 0);
       }
 
       async function fetchPurchaseProducts(warehouseIds) {
-        if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) return [];
-        if (state.networkOffline) return [];
-        try {
-          // Find all product IDs assigned to any warehouse in the tree via catalog or storage homes
-          const [defaultItemsResult, storageHomesResult] = await Promise.all([
-            supabase
-              .from('catalog_items')
-              .select('id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url')
-              .in('default_warehouse_id', warehouseIds)
-              .eq('active', true)
-              .order('name'),
-            supabase
-              .from('item_storage_homes')
-              .select('item_id')
-              .in('storage_warehouse_id', warehouseIds)
-          ]);
-          if (defaultItemsResult.error) throw defaultItemsResult.error;
-          if (storageHomesResult.error) throw storageHomesResult.error;
-
-          const extraIds = (storageHomesResult.data ?? [])
-            .map((r) => r?.item_id)
-            .filter(Boolean)
-            .filter((id) => !(defaultItemsResult.data ?? []).some((p) => p.id === id));
-
-          let extraProducts = [];
-          if (extraIds.length) {
-            const { data, error } = await supabase
-              .from('catalog_items')
-              .select('id,name,item_kind,has_variations,uom:purchase_pack_unit,consumption_uom,sku,supplier_sku,package_contains:units_per_purchase_pack,transfer_unit,transfer_quantity,image_url')
-              .in('id', extraIds)
-              .eq('active', true)
-              .order('name');
-            if (error) throw error;
-            extraProducts = data ?? [];
-          }
-
-          const combined = [...(defaultItemsResult.data ?? []), ...extraProducts];
-          combined.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
-          return combined.map((product) => ({
-            ...product,
-            live_stock_qty: 0,
-            live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
-            live_stock_by_warehouse: {},
-            live_stock_by_variant_warehouse: {}
-          }));
-        } catch (error) {
-          markOfflineIfNetworkError(error);
-          console.warn('fetchPurchaseProducts failed', error);
-          return [];
-        }
+        return fetchProductsForWarehouse(warehouseIds);
       }
 
       function formatUnitLabel(uom, qty) {
@@ -3319,9 +3266,6 @@ function createHtml(config: {
             const key = (row.item_id ?? '') + '|' + (row.variant_key ?? 'base');
             map.set(key, row.net_units ?? 0);
           });
-          if (context === 'purchase') {
-            map.set(PURCHASE_STOCK_OVERRIDE_PRODUCT_ID + '|base', PURCHASE_STOCK_OVERRIDE_QTY);
-          }
           return map;
         } catch {
           return new Map();
