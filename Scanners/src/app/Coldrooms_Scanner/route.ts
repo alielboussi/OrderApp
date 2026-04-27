@@ -2803,13 +2803,14 @@ function createHtml(config: {
             stockQtyByProductVariantWarehouse
           } = await loadStockAndDefaults();
           if (LOCKED_PRODUCT_IDS.length) {
-            const lockedIds = new Set(LOCKED_PRODUCT_IDS);
-            const lockedVariations = new Set();
+            const mergedIds = new Set(productIds);
+            const lockedVariations = new Set(productsWithWarehouseVariations);
             LOCKED_PRODUCT_IDS.forEach((id) => {
+              mergedIds.add(id);
               if (productsWithWarehouseVariations.has(id)) lockedVariations.add(id);
             });
             return await loadProducts(
-              lockedIds,
+              mergedIds,
               lockedVariations,
               stockQtyByProduct,
               stockQtyByProductWarehouse,
@@ -3296,7 +3297,7 @@ function createHtml(config: {
             const qtyLabel = item.qty ?? 0;
             const unitLabel = formatUnitLabel(item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
-            const remUom = (item.baseUom ?? item.unit ?? 'unit').toUpperCase();
+            const remUom = (item.packUom ?? item.unit ?? item.baseUom ?? 'unit').toUpperCase();
             const remLabel = item.remainingQty != null ? ' [rem: ' + item.remainingQty + ' ' + remUom + ']' : '';
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel + remLabel : base + remLabel;
