@@ -606,7 +606,7 @@ export default function OutletWarehouseBalancesPage() {
         const uomMap: Record<string, string> = {};
         const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
         (itemData || []).forEach((row) => {
-          const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? row.purchase_pack_unit ?? "each";
+          const fallbackUom = row.purchase_pack_unit ?? row.consumption_unit ?? row.consumption_uom ?? "each";
           if (row.id) uomMap[row.id] = fallbackUom;
           if (row.id) {
             packMap[row.id] = {

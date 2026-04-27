@@ -33,6 +33,7 @@ export default function PosItemMapPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [search, setSearch] = useState("");
+  const [showEntries, setShowEntries] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -350,68 +351,80 @@ export default function PosItemMapPage() {
                   {readOnly ? "Read-only" : duplicating ? "Duplicating..." : "Duplicate selected"}
                 </button>
               </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel}>Entries table</label>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => setShowEntries((prev) => !prev)}
+                >
+                  {showEntries ? "Hide entries" : `Show entries (${filtered.length})`}
+                </button>
+              </div>
               {error && <div className={styles.error}>{error}</div>}
             </section>
 
-            <section className={styles.tableCard}>
-              <div className={styles.tableHead}>
-                <span>
-                  <input
-                    type="checkbox"
-                    aria-label="Select all filtered mappings"
-                    checked={allFilteredSelected}
-                    onChange={toggleSelectAllFiltered}
-                  />
-                </span>
-                <span>POS Item ID</span>
-                <span>POS Item Name</span>
-                <span>POS Flavour ID</span>
-                <span>POS Flavour Name</span>
-                <span>Catalog Item</span>
-                <span>Variant</span>
-                <span>Warehouse</span>
-                <span>Outlet</span>
-                <span>Actions</span>
-              </div>
-              {filtered.length === 0 ? (
-                <div className={styles.empty}>No mappings found.</div>
-              ) : (
-                filteredRows.map(({ key, mapping: m }) => (
-                  <div key={key} className={styles.tableRow}>
-                    <span>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select mapping ${m.pos_item_id}`}
-                        checked={selectedSet.has(getMappingKey(m))}
-                        onChange={() => toggleSelection(getMappingKey(m))}
-                      />
-                    </span>
-                    <span>{m.pos_item_id}</span>
-                    <span className={m.pos_item_name ? undefined : styles.muted}>{m.pos_item_name ?? "—"}</span>
-                    <span className={m.pos_flavour_id ? undefined : styles.muted}>{m.pos_flavour_id ?? "—"}</span>
-                    <span className={m.pos_flavour_name ? undefined : styles.muted}>{m.pos_flavour_name ?? "—"}</span>
-                    <span>{m.catalog_item_name || m.catalog_item_id}</span>
-                    <span className={styles.badge}>
-                      {m.catalog_variant_label || variantLabelById[m.catalog_variant_key || "base"] || m.catalog_variant_key || m.normalized_variant_key || "base"}
-                    </span>
-                    <span className={m.warehouse_id ? undefined : styles.muted}>{warehouseNameById[m.warehouse_id ?? ""] ?? m.warehouse_id ?? "—"}</span>
-                    <span>{outletNameById[m.outlet_id] ?? m.outlet_id}</span>
-                    <span>
-                      <button
-                        type="button"
-                        className={styles.rowButton}
-                        onClick={() => void deleteMapping(m)}
-                        disabled={readOnly || deletingKey === getMappingKey(m)}
-                      >
-                        {deletingKey === getMappingKey(m)
-                          ? "Deleting..."
-                          : "Delete"}
-                      </button>
-                    </span>
-                  </div>
-                ))
-              )}
-            </section>
+            {showEntries ? (
+              <section className={styles.tableCard}>
+                <div className={styles.tableHead}>
+                  <span>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all filtered mappings"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAllFiltered}
+                    />
+                  </span>
+                  <span>POS Item ID</span>
+                  <span>POS Item Name</span>
+                  <span>POS Flavour ID</span>
+                  <span>POS Flavour Name</span>
+                  <span>Catalog Item</span>
+                  <span>Variant</span>
+                  <span>Warehouse</span>
+                  <span>Outlet</span>
+                  <span>Actions</span>
+                </div>
+                {filtered.length === 0 ? (
+                  <div className={styles.empty}>No mappings found.</div>
+                ) : (
+                  filteredRows.map(({ key, mapping: m }) => (
+                    <div key={key} className={styles.tableRow}>
+                      <span>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select mapping ${m.pos_item_id}`}
+                          checked={selectedSet.has(getMappingKey(m))}
+                          onChange={() => toggleSelection(getMappingKey(m))}
+                        />
+                      </span>
+                      <span>{m.pos_item_id}</span>
+                      <span className={m.pos_item_name ? undefined : styles.muted}>{m.pos_item_name ?? "—"}</span>
+                      <span className={m.pos_flavour_id ? undefined : styles.muted}>{m.pos_flavour_id ?? "—"}</span>
+                      <span className={m.pos_flavour_name ? undefined : styles.muted}>{m.pos_flavour_name ?? "—"}</span>
+                      <span>{m.catalog_item_name || m.catalog_item_id}</span>
+                      <span className={styles.badge}>
+                        {m.catalog_variant_label || variantLabelById[m.catalog_variant_key || "base"] || m.catalog_variant_key || m.normalized_variant_key || "base"}
+                      </span>
+                      <span className={m.warehouse_id ? undefined : styles.muted}>{warehouseNameById[m.warehouse_id ?? ""] ?? m.warehouse_id ?? "—"}</span>
+                      <span>{outletNameById[m.outlet_id] ?? m.outlet_id}</span>
+                      <span>
+                        <button
+                          type="button"
+                          className={styles.rowButton}
+                          onClick={() => void deleteMapping(m)}
+                          disabled={readOnly || deletingKey === getMappingKey(m)}
+                        >
+                          {deletingKey === getMappingKey(m)
+                            ? "Deleting..."
+                            : "Delete"}
+                        </button>
+                      </span>
+                    </div>
+                  ))
+                )}
+              </section>
+            ) : null}
 
             <section className={`${styles.tableCard} ${styles.formCard}`}>
               <div className={styles.tableHead}>

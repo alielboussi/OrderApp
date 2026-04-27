@@ -16,6 +16,11 @@ const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_st
   ? STOCK_VIEW_ENV
   : 'warehouse_stock_items';
 const MULTIPLY_QTY_BY_PACKAGE = true;
+const QUICK_TRANSFER_PRODUCT_IDS = [
+  'd54abc42-200b-40a7-96e8-3e5980677f32',
+  '3a248921-64ee-495d-a90a-061412b93813',
+  'b88ec860-bd68-4e00-8776-7678e0490e8e'
+] as const;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;
 const OPERATOR_SESSION_TTL_MS = globalWithOperatorSession.OPERATOR_SESSION_TTL_MS ?? 20 * 60 * 1000; // 20 minutes
@@ -87,6 +92,9 @@ function createHtml(config: {
   const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
   const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
   const operatorContextLabelsJson = serializeForScript(OPERATOR_CONTEXT_LABELS);
+  const quickTransferProductButtons = QUICK_TRANSFER_PRODUCT_IDS
+    .map((id) => `<button type="button" class="quick-product-button" data-product-id="${escapeHtml(id)}">${escapeHtml(id)}</button>`)
+    .join('');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -256,6 +264,46 @@ function createHtml(config: {
     }
     .search-field {
       margin-top: 8px;
+    }
+    .quick-product-grid-wrap {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .quick-product-grid-title {
+      margin: 0;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #a5b4fc;
+      font-weight: 700;
+    }
+    .quick-product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+    }
+    .quick-product-button {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      color: #e2e8f0;
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 600;
+      font-size: 0.82rem;
+      padding: 10px 12px;
+      line-height: 1.2;
+      word-break: break-all;
+    }
+    .quick-product-button:hover:not(:disabled),
+    .quick-product-button:focus-visible {
+      border-color: rgba(255, 27, 45, 0.9);
+      box-shadow: 0 0 0 2px rgba(255, 27, 45, 0.22);
+      transform: translateY(-1px);
+      outline: none;
     }
     #auth-section,
     #app-section {
@@ -1572,6 +1620,10 @@ function createHtml(config: {
               <input id="item-search" type="text" placeholder="Search products or barcodes" autocomplete="off" />
             </label>
           </div>
+          <div class="quick-product-grid-wrap">
+            <p class="quick-product-grid-title">Quick Product IDs</p>
+            <div id="transfer-quick-product-grid" class="quick-product-grid">${quickTransferProductButtons}</div>
+          </div>
           <section id="cart-section">
             <div class="cart-head">
               <div>
@@ -2098,6 +2150,7 @@ function createHtml(config: {
       const referenceNumpad = referenceNumpadDigits;
       const scannerWedge = document.getElementById('scanner-wedge');
       const itemSearchInput = document.getElementById('item-search');
+      const transferQuickProductGrid = document.getElementById('transfer-quick-product-grid');
       const damageItemSearchInput = document.getElementById('damage-item-search');
       const cartBody = document.getElementById('cart-body');
       const cartEmpty = document.getElementById('cart-empty');
@@ -3190,6 +3243,28 @@ function createHtml(config: {
         }
         renderHomesCards();
         syncDestinationPillLabel();
+      }
+
+      function updateQuickProductGridLabels() {
+        if (!transferQuickProductGrid) return;
+        const productNameById = new Map(
+          (Array.isArray(state.products) ? state.products : [])
+            .filter((product) => product?.id)
+            .map((product) => [String(product.id), String(product.name ?? '').trim()])
+        );
+        transferQuickProductGrid.querySelectorAll('button[data-product-id]').forEach((node) => {
+          if (!(node instanceof HTMLButtonElement)) return;
+          const productId = (node.dataset.productId || '').trim();
+          if (!productId) return;
+          const productName = productNameById.get(productId);
+          if (productName) {
+            node.textContent = productName;
+            node.title = productName + ' (' + productId + ')';
+          } else {
+            node.textContent = productId;
+            node.title = productId;
+          }
+        });
       }
 
       function openSelectModal(modal) {
@@ -4786,6 +4861,7 @@ function createHtml(config: {
 
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         state.products = await fetchProductsForWarehouse(targetWarehouseIds);
+        updateQuickProductGridLabels();
         await safePreloadVariations(state.products.map((p) => p.id));
         try {
           await fetchSuppliers();
@@ -5370,6 +5446,24 @@ function createHtml(config: {
       });
       itemSearchInput?.addEventListener('input', () => {
         scheduleSearchAutoCommit(itemSearchInput, 'transfer');
+      });
+
+      transferQuickProductGrid?.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const button = target.closest('button[data-product-id]');
+        if (!(button instanceof HTMLButtonElement)) return;
+        const productId = (button.dataset.productId || '').trim();
+        if (!productId) return;
+        if (!ensureOperatorGate()) return;
+        setMode('transfer');
+        if (itemSearchInput) {
+          itemSearchInput.value = productId;
+        }
+        searchProductsWithScan(productId);
+        window.setTimeout(() => {
+          itemSearchInput?.select();
+        }, 10);
       });
 
       damageItemSearchInput?.addEventListener('focus', () => {

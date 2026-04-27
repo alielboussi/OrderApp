@@ -851,6 +851,22 @@ function createHtml(config: {
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
       align-items: center;
       text-align: center;
+      position: relative;
+    }
+    .variant-live-stock {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.72);
+      border: 1px solid rgba(255, 27, 45, 0.45);
+      color: #ffd4da;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      padding: 3px 8px;
+      line-height: 1.2;
+      white-space: nowrap;
+      pointer-events: none;
     }
     .variant-row.is-active {
       border-color: rgba(255, 27, 45, 0.85);
@@ -2585,7 +2601,7 @@ function createHtml(config: {
           const [stockResult, defaultItemsResult, storageHomesResult] = await Promise.all([
             supabase
               .from(STOCK_VIEW_NAME)
-              .select('warehouse_id,product_id:item_id,net_units')
+              .select('warehouse_id,product_id:item_id,variant_key,net_units')
               .in('warehouse_id', warehouseIds),
             supabase
               .from('catalog_items')
@@ -2608,12 +2624,25 @@ function createHtml(config: {
 
           const productIds = new Set();
           const stockQtyByProduct = new Map();
+          const stockQtyByProductWarehouse = new Map();
+          const stockQtyByProductVariantWarehouse = new Map();
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             productIds.add(row.product_id);
             const qty = Number(row?.net_units ?? 0);
             if (Number.isFinite(qty)) {
               stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + qty);
+              const warehouseId = row?.warehouse_id ?? null;
+              const variantKey = normalizeVariantKeyLocal(row?.variant_key);
+              if (warehouseId) {
+                const stockKey = String(row.product_id) + '::' + String(warehouseId);
+                stockQtyByProductWarehouse.set(stockKey, (stockQtyByProductWarehouse.get(stockKey) ?? 0) + qty);
+                const variantStockKey = String(row.product_id) + '::' + String(variantKey) + '::' + String(warehouseId);
+                stockQtyByProductVariantWarehouse.set(
+                  variantStockKey,
+                  (stockQtyByProductVariantWarehouse.get(variantStockKey) ?? 0) + qty
+                );
+              }
             }
           });
 
@@ -2650,10 +2679,22 @@ function createHtml(config: {
             }
           });
 
-          return { productIds, productsWithWarehouseVariations, stockQtyByProduct };
+          return {
+            productIds,
+            productsWithWarehouseVariations,
+            stockQtyByProduct,
+            stockQtyByProductWarehouse,
+            stockQtyByProductVariantWarehouse
+          };
         };
 
-        const loadProducts = async (productIds, productsWithWarehouseVariations, stockQtyByProduct) => {
+        const loadProducts = async (
+          productIds,
+          productsWithWarehouseVariations,
+          stockQtyByProduct,
+          stockQtyByProductWarehouse,
+          stockQtyByProductVariantWarehouse
+        ) => {
           if (!productIds.size) return [];
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
@@ -2681,6 +2722,22 @@ function createHtml(config: {
 
           return (products ?? []).map((product) => {
             if (!product?.id) return product;
+            const stockByWarehouse = {};
+            const stockByVariantWarehouse = {};
+            warehouseIds.forEach((warehouseId) => {
+              const stockKey = String(product.id) + '::' + String(warehouseId);
+              const qty = Number(stockQtyByProductWarehouse?.get(stockKey) ?? 0);
+              if (Number.isFinite(qty) && qty !== 0) {
+                stockByWarehouse[String(warehouseId)] = qty;
+              }
+            });
+            stockQtyByProductVariantWarehouse?.forEach((qty, key) => {
+              if (!key || !String(key).startsWith(String(product.id) + '::')) return;
+              const numericQty = Number(qty ?? 0);
+              if (!Number.isFinite(numericQty) || numericQty === 0) return;
+              const suffix = String(key).slice(String(product.id).length + 2);
+              stockByVariantWarehouse[suffix] = numericQty;
+            });
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
@@ -2701,28 +2758,50 @@ function createHtml(config: {
                 ...product,
                 has_variations: true,
                 live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
-                live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString()
+                live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
+                live_stock_by_warehouse: stockByWarehouse,
+                live_stock_by_variant_warehouse: stockByVariantWarehouse
               };
             }
             return {
               ...product,
               live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
-              live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString()
+              live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
+              live_stock_by_warehouse: stockByWarehouse,
+              live_stock_by_variant_warehouse: stockByVariantWarehouse
             };
           });
         };
 
         try {
-          const { productIds, productsWithWarehouseVariations, stockQtyByProduct } = await loadStockAndDefaults();
+          const {
+            productIds,
+            productsWithWarehouseVariations,
+            stockQtyByProduct,
+            stockQtyByProductWarehouse,
+            stockQtyByProductVariantWarehouse
+          } = await loadStockAndDefaults();
           if (LOCKED_PRODUCT_IDS.length) {
             const lockedIds = new Set(LOCKED_PRODUCT_IDS);
             const lockedVariations = new Set();
             LOCKED_PRODUCT_IDS.forEach((id) => {
               if (productsWithWarehouseVariations.has(id)) lockedVariations.add(id);
             });
-            return await loadProducts(lockedIds, lockedVariations, stockQtyByProduct);
+            return await loadProducts(
+              lockedIds,
+              lockedVariations,
+              stockQtyByProduct,
+              stockQtyByProductWarehouse,
+              stockQtyByProductVariantWarehouse
+            );
           }
-          return await loadProducts(productIds, productsWithWarehouseVariations, stockQtyByProduct);
+          return await loadProducts(
+            productIds,
+            productsWithWarehouseVariations,
+            stockQtyByProduct,
+            stockQtyByProductWarehouse,
+            stockQtyByProductVariantWarehouse
+          );
         } catch (error) {
           markOfflineIfNetworkError(error);
           console.warn('Product fetch failed, attempting minimal fallback', error);
@@ -2900,6 +2979,56 @@ function createHtml(config: {
           : safeQty.toFixed(2).replace(/\.?0+$/, '');
         const unit = formatUnitLabel(uom, safeQty);
         return displayQty + ' (' + unit + ')';
+      }
+
+      function getWarehouseIdsForContext(context) {
+        if (context === 'purchase') {
+          return collectDescendantIds(state.warehouses, lockedSourceId);
+        }
+        const selectedSourceId = state.sourceSelection || lockedSourceId;
+        return selectedSourceId ? [selectedSourceId] : [];
+      }
+
+      function getLiveStockQtyForContext(product, context) {
+        if (!product) return 0;
+        const byWarehouse = product.live_stock_by_warehouse;
+        if (!byWarehouse || typeof byWarehouse !== 'object') {
+          return Number(product.live_stock_qty ?? 0) || 0;
+        }
+        const warehouseIds = getWarehouseIdsForContext(context);
+        if (!warehouseIds.length) {
+          return Number(product.live_stock_qty ?? 0) || 0;
+        }
+        return warehouseIds.reduce((sum, warehouseId) => {
+          const qty = Number(byWarehouse[String(warehouseId)] ?? 0);
+          return Number.isFinite(qty) ? sum + qty : sum;
+        }, 0);
+      }
+
+      function getVariantLiveStockQtyForContext(product, variantKey, context) {
+        if (!product) return 0;
+        const normalizedVariantKey = normalizeVariantKeyLocal(variantKey);
+        const byVariantWarehouse = product.live_stock_by_variant_warehouse;
+        if (!byVariantWarehouse || typeof byVariantWarehouse !== 'object') {
+          return normalizedVariantKey === 'base' ? getLiveStockQtyForContext(product, context) : 0;
+        }
+        const warehouseIds = getWarehouseIdsForContext(context);
+        if (!warehouseIds.length) return 0;
+        return warehouseIds.reduce((sum, warehouseId) => {
+          const stockKey = String(normalizedVariantKey) + '::' + String(warehouseId);
+          const qty = Number(byVariantWarehouse[stockKey] ?? 0);
+          return Number.isFinite(qty) ? sum + qty : sum;
+        }, 0);
+      }
+
+      function getProductsForContext(context) {
+        const products = Array.isArray(state.products)
+          ? state.products.filter((item) => item && item.id)
+          : [];
+        if (context === 'purchase') {
+          return products;
+        }
+        return products.filter((product) => getLiveStockQtyForContext(product, context) > 0);
       }
 
       function formatUnitLabel(uom, qty) {
@@ -3658,6 +3787,7 @@ function createHtml(config: {
           syncSourcePillLabel();
           updateSourceWarehouseLabels(null);
           enforceOperatorLocks();
+          renderProductCards();
           return;
         }
         const option = getSourceOptionById(trimmed);
@@ -3677,6 +3807,7 @@ function createHtml(config: {
         syncSourcePillLabel();
         updateSourceWarehouseLabels(state.warehouses.find((w) => w.id === trimmed) ?? null);
         enforceOperatorLocks();
+        renderProductCards();
       }
 
       function handleDestinationSelection(warehouseId) {
@@ -4245,6 +4376,18 @@ function createHtml(config: {
           const wrapper = document.createElement('div');
           wrapper.className = 'variant-row';
 
+          const liveStockBadge = document.createElement('div');
+          liveStockBadge.className = 'variant-live-stock';
+          const variantLiveQty = getVariantLiveStockQtyForContext(product, row.variation?.id ?? 'base', context);
+          const variantLiveUom =
+            row.variation?.consumption_uom ||
+            row.variation?.uom ||
+            product.live_stock_uom ||
+            product.consumption_uom ||
+            product.uom ||
+            'unit';
+          liveStockBadge.textContent = formatLiveStockLabel(variantLiveQty, variantLiveUom);
+
           const header = document.createElement('div');
           header.className = 'variant-row-header';
           const imageWrap = document.createElement('div');
@@ -4359,6 +4502,7 @@ function createHtml(config: {
           qtyPanel.appendChild(controls);
           qtyPanel.appendChild(addBtn);
 
+          wrapper.appendChild(liveStockBadge);
           wrapper.appendChild(header);
           wrapper.appendChild(qtyPanel);
           variantModalBody.appendChild(wrapper);
@@ -4383,10 +4527,8 @@ function createHtml(config: {
       }
 
       function renderProductCards() {
-        const products = Array.isArray(state.products)
-          ? state.products.filter((item) => item && item.id)
-          : [];
         const renderTo = (container, context) => {
+          const products = getProductsForContext(context);
           if (!container) return;
           container.innerHTML = '';
           if (!products.length) {
@@ -4399,32 +4541,10 @@ function createHtml(config: {
             card.type = 'button';
             card.className = 'product-card';
 
-            const liveStock = document.createElement('div');
-            liveStock.className = 'product-card-live-stock';
-            liveStock.textContent = formatLiveStockLabel(
-              product.live_stock_qty,
-              product.live_stock_uom || product.consumption_uom || product.uom || 'unit'
-            );
-
-            const imageWrap = document.createElement('div');
-            imageWrap.className = 'product-card-image';
-            const imageUrl = product.image_url || '';
-            if (imageUrl) {
-              const img = document.createElement('img');
-              img.src = imageUrl;
-              img.alt = (product.name ?? 'Product') + ' image';
-              img.loading = 'lazy';
-              imageWrap.appendChild(img);
-            } else {
-              imageWrap.textContent = (product.name ?? 'P').charAt(0).toUpperCase();
-            }
-
             const title = document.createElement('div');
             title.className = 'product-card-title';
             title.textContent = product.name ?? 'Product';
 
-            card.appendChild(liveStock);
-            card.appendChild(imageWrap);
             card.appendChild(title);
             card.addEventListener('click', () => handleProductCardSelect(product, context));
             container.appendChild(card);
@@ -5443,11 +5563,12 @@ function createHtml(config: {
         searchProductsWithScan(raw);
       }
 
-      function searchProductsWithScan(raw) {
+      function searchProductsWithScan(raw, context = state.mode) {
         const value = raw.trim();
         if (!value) return;
         const normalized = value.toLowerCase();
         const compact = normalizeKey(value);
+        const products = getProductsForContext(context);
 
         const findLooseVariation = () => {
           return Array.from(state.variationIndex.values()).find((variation) => {
@@ -5470,13 +5591,13 @@ function createHtml(config: {
         let preferredVariation = null;
 
         if (matchedVariation?.product_id) {
-          product = state.products.find((item) => item?.id === matchedVariation.product_id) ?? null;
+          product = products.find((item) => item?.id === matchedVariation.product_id) ?? null;
           preferredVariation = matchedVariation;
         }
 
         if (!product) {
           product =
-            state.products.find((item) => {
+            products.find((item) => {
               if (!item) return false;
               const keys = [item.id, item.sku, item.supplier_sku].filter(Boolean);
               return keys.some((key) => {
@@ -5487,7 +5608,7 @@ function createHtml(config: {
         }
 
         if (!product) {
-          const nameMatches = state.products.filter((item) => {
+          const nameMatches = products.filter((item) => {
             const name = (item?.name ?? '').toString().toLowerCase();
             return name && name.includes(normalized);
           });
@@ -5589,7 +5710,7 @@ function createHtml(config: {
         if (value.length < 8) return;
         if (!/^[0-9]+$/.test(value)) return;
         searchAutoCommitTimer = window.setTimeout(() => {
-          searchProductsWithScan(value);
+          searchProductsWithScan(value, context);
           window.setTimeout(() => {
             input.select();
           }, 10);
@@ -5605,7 +5726,7 @@ function createHtml(config: {
         event.preventDefault();
         const value = (itemSearchInput.value ?? '').trim();
         if (!value) return;
-        searchProductsWithScan(value);
+        searchProductsWithScan(value, 'transfer');
         window.setTimeout(() => {
           itemSearchInput.select();
         }, 10);
@@ -5623,7 +5744,7 @@ function createHtml(config: {
         event.preventDefault();
         const value = (damageItemSearchInput.value ?? '').trim();
         if (!value) return;
-        searchProductsWithScan(value);
+        searchProductsWithScan(value, 'damage');
         window.setTimeout(() => {
           damageItemSearchInput.select();
         }, 10);
@@ -5641,7 +5762,7 @@ function createHtml(config: {
         event.preventDefault();
         const value = (purchaseItemSearchInput.value ?? '').trim();
         if (!value) return;
-        searchProductsWithScan(value);
+        searchProductsWithScan(value, 'purchase');
         window.setTimeout(() => {
           purchaseItemSearchInput.select();
         }, 10);

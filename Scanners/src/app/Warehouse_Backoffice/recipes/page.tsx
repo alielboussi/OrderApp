@@ -31,29 +31,19 @@ type PendingLine = {
 };
 
 const qtyUnits = [
-  "pc",
+  "each",
   "g",
   "kg",
   "mg",
   "ml",
   "l",
-  "case",
-  "crate",
-  "bottle",
-  "Tin Can",
-  "Jar",
-  "Bucket",
-  "Bag",
-  "plastic",
-  "Packet",
-  "Box",
 ] as const;
 
 const RECIPE_UOM_ALIASES: Record<string, string> = {
-  each: "pc",
-  pcs: "pc",
-  piece: "pc",
-  pieces: "pc",
+  pc: "each",
+  pcs: "each",
+  piece: "each",
+  pieces: "each",
 };
 
 const normalizeRecipeUom = (value: string) => {
@@ -71,8 +61,8 @@ const formatUnitLabel = (unit: string) => {
   if (!trimmed) return "";
   const lower = trimmed.toLowerCase();
   const mapped =
-    lower === "pc" || lower === "pcs"
-      ? "Pc(s)"
+    lower === "each" || lower === "pc" || lower === "pcs"
+      ? "Piece(s)"
       : lower === "g"
         ? "Gram(s)"
         : lower === "kg"
@@ -83,15 +73,7 @@ const formatUnitLabel = (unit: string) => {
               ? "Millilitre(s)"
               : lower === "l"
                 ? "Litre(s)"
-                : lower === "bucket"
-                  ? "Bucket(s)"
-                  : lower === "bag"
-                    ? "Bag(s)"
-                    : lower === "packet"
-                      ? "Packet(s)"
-                      : lower === "box"
-                        ? "Box(es)"
-                        : null;
+                : null;
   if (mapped) return mapped;
   const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
   return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
