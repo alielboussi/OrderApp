@@ -40,7 +40,9 @@ const qtyUnits = [
   "mg",
   "ml",
   "l",
-  "case",
+  "cup",
+  "straw",
+  "toilet paper",
   "crate",
   "bottle",
   "Tin Can",
@@ -76,6 +78,12 @@ const formatUnitLabel = (unit: string) => {
               ? "Millilitre(s)"
               : lower === "l"
                 ? "Litre(s)"
+                : lower === "cup"
+                  ? "Cup(s)"
+        : lower === "straw"
+          ? "Straw(s)"
+        : lower === "toilet paper"
+          ? "Toilet Paper(s)"
                 : lower === "bucket"
                   ? "Bucket(s)"
                   : lower === "bag"

@@ -3258,7 +3258,7 @@ function createHtml(config: {
             const qtyLabel = item.qty ?? 0;
             const unitLabel = formatUnitLabel(item.packUom ?? item.unit ?? 'unit', qtyLabel);
             const costLabel = formatAmount(item.unitCost);
-            const remUom = (item.packUom ?? item.unit ?? item.baseUom ?? 'unit').toUpperCase();
+            const remUom = (item.packUom ?? 'unit').toUpperCase();
             const remLabel = item.remainingQty != null ? ' [rem: ' + item.remainingQty + ' ' + remUom + ']' : '';
             const base = '• ' + name + variationLabel + ' – ' + qtyLabel + ' ' + unitLabel;
             return costLabel ? base + ' @ ' + costLabel + remLabel : base + remLabel;

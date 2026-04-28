@@ -25,6 +25,10 @@ const TRANSFER_REQUIRED_PRODUCT_IDS = [
   'b88ec860-bd68-4e00-8776-7678e0490e8e',
   'd54abc42-200b-40a7-96e8-3e5980677f32'
 ] as const;
+const ALLOW_OVERSTOCK_PRODUCT_IDS = [
+  '20de5f8f-cc97-4ae6-aa51-e158225f3703',
+  'bcacc496-ffd7-430b-8c17-709d0497a1ff'
+] as const;
 const INGREDIENTS_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
@@ -3096,7 +3100,8 @@ function createHtml(config: {
       }
 
       function exceedsTransferStockLimit(context, entry, addedQty, excludeIndex = null) {
-        if (context !== 'transfer') return false;
+        if (!['transfer', 'damage'].includes(context)) return false;
+        if (ALLOW_OVERSTOCK_PRODUCT_IDS.includes(entry?.productId)) return false;
         const available = Number(entry?.liveStockQty ?? 0);
         if (!Number.isFinite(available)) return false;
         const existingQty = getCartQtyForEntry(context, entry, excludeIndex);
