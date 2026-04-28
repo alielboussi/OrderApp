@@ -12,7 +12,11 @@ const DESTINATION_CHOICES = [
   { id: '732d83ba-48f6-481a-bedf-291b5f158552', label: 'Destination' }
 ] as const;
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3efeecda128';
-const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', 'a7addcec-bcf5-4eab-94f0-6fb704ad6ca4'] as const;
+const EXTRA_HOMES_IDS = [
+  '029bf13f-0fff-47f3-bc1b-32e1f1c6e00c',
+  'a7addcec-bcf5-4eab-94f0-6fb704ad6ca4',
+  '1e5fac46-d190-4090-b36d-bbae2ceade11'
+] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV

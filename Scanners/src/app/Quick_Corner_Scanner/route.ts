@@ -12,6 +12,8 @@ const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'c77376f7-1ede-4518-8180-b3
 const LOCKED_PRODUCT_IDS = [
   '20de5f8f-cc97-4ae6-aa51-e158225f3703',
   'bcacc496-ffd7-430b-8c17-709d0497a1ff',
+  '76d8dcb3-0c9e-4011-842a-4c6792956655',
+  'ES&4weEQyk4w4d7P',
   '0f4119cf-460f-45d6-a009-38b06d1cc2b8',
   'be370f52-2ae3-4ab2-92e5-fd3b863d70a9'
 ] as const;
@@ -27,7 +29,8 @@ const TRANSFER_REQUIRED_PRODUCT_IDS = [
 ] as const;
 const ALLOW_OVERSTOCK_PRODUCT_IDS = [
   '20de5f8f-cc97-4ae6-aa51-e158225f3703',
-  'bcacc496-ffd7-430b-8c17-709d0497a1ff'
+  'bcacc496-ffd7-430b-8c17-709d0497a1ff',
+  '76d8dcb3-0c9e-4011-842a-4c6792956655'
 ] as const;
 const INGREDIENTS_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
@@ -2638,7 +2641,24 @@ function createHtml(config: {
           if (stockResult.error) throw stockResult.error;
           if (sharedHomesResult.error) throw sharedHomesResult.error;
 
-          const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
+          const isUuid = (value) =>
+            typeof value === 'string' &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+          const lockedRaw = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
+          const lockedIds = lockedRaw.filter((value) => isUuid(value));
+          const lockedSkus = lockedRaw.filter((value) => !isUuid(value));
+          let resolvedLockedIds = [...lockedIds];
+          if (lockedSkus.length) {
+            const [skuResult, supplierResult] = await Promise.all([
+              supabase.from('catalog_items').select('id').in('sku', lockedSkus),
+              supabase.from('catalog_items').select('id').in('supplier_sku', lockedSkus)
+            ]);
+            if (skuResult.error) throw skuResult.error;
+            if (supplierResult.error) throw supplierResult.error;
+            const skuIds = (skuResult.data ?? []).map((row) => row?.id).filter(Boolean);
+            const supplierIds = (supplierResult.data ?? []).map((row) => row?.id).filter(Boolean);
+            resolvedLockedIds = Array.from(new Set([...resolvedLockedIds, ...skuIds, ...supplierIds]));
+          }
           const stockGatedIds = Array.isArray(STOCK_GATED_PRODUCT_IDS) ? STOCK_GATED_PRODUCT_IDS.filter(Boolean) : [];
           const transferRequiredIds = Array.isArray(TRANSFER_REQUIRED_PRODUCT_IDS)
             ? TRANSFER_REQUIRED_PRODUCT_IDS.filter(Boolean)
@@ -2675,7 +2695,7 @@ function createHtml(config: {
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
-            const isLocked = lockedIds.includes(row.product_id);
+            const isLocked = resolvedLockedIds.includes(row.product_id);
             const isStockGated = stockGatedIds.includes(row.product_id);
             const requiresTransfer = transferRequiredIds.includes(row.product_id);
             if (!isLocked && !isStockGated && !sharedItemIds.has(row.product_id)) {
@@ -2703,11 +2723,12 @@ function createHtml(config: {
             }
             productIds.add(row.product_id);
           });
-          lockedIds.forEach((id) => productIds.add(id));
+          resolvedLockedIds.forEach((id) => productIds.add(id));
 
           const productsWithWarehouseVariations = new Set();
           return {
             productIds,
+            lockedIds: resolvedLockedIds,
             productsWithWarehouseVariations,
             stockQtyByProduct,
             variantStockByProduct,
@@ -2791,12 +2812,12 @@ function createHtml(config: {
         try {
           const {
             productIds,
+            lockedIds,
             productsWithWarehouseVariations,
             stockQtyByProduct,
             variantStockByProduct,
             transferVariantsByProduct
           } = await loadStockAndDefaults();
-          const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           if (lockedIds.length) {
             const combinedIds = new Set([...productIds, ...lockedIds]);
             return await loadProducts(
