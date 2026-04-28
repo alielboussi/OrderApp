@@ -19,6 +19,13 @@ const STOCK_GATED_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',
   '3a248921-64ee-495d-a90a-061412b93813'
 ] as const;
+const TRANSFER_REQUIRED_PRODUCT_IDS = [
+  '3a248921-64ee-495d-a90a-061412b93813',
+  '8ee07df8-cd30-4fb2-af7a-40bb7a7c200b',
+  'b88ec860-bd68-4e00-8776-7678e0490e8e',
+  'd54abc42-200b-40a7-96e8-3e5980677f32'
+] as const;
+const INGREDIENTS_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -2064,6 +2071,8 @@ function createHtml(config: {
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
       const STOCK_GATED_PRODUCT_IDS = ${serializeForScript(STOCK_GATED_PRODUCT_IDS)};
+      const TRANSFER_REQUIRED_PRODUCT_IDS = ${serializeForScript(TRANSFER_REQUIRED_PRODUCT_IDS)};
+      const ingredientsSourceId = ${JSON.stringify(INGREDIENTS_SOURCE_ID)};
 
       const state = {
         session: null,
@@ -2611,7 +2620,7 @@ function createHtml(config: {
           const [stockResult, sharedHomesResult] = await Promise.all([
             supabase
               .from(STOCK_VIEW_NAME)
-              .select('warehouse_id,product_id:item_id,net_units')
+              .select('warehouse_id,product_id:item_id,variant_key,net_units')
               .in('warehouse_id', warehouseIds),
             lockedDestId
               ? supabase
@@ -2626,36 +2635,88 @@ function createHtml(config: {
 
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           const stockGatedIds = Array.isArray(STOCK_GATED_PRODUCT_IDS) ? STOCK_GATED_PRODUCT_IDS.filter(Boolean) : [];
+          const transferRequiredIds = Array.isArray(TRANSFER_REQUIRED_PRODUCT_IDS)
+            ? TRANSFER_REQUIRED_PRODUCT_IDS.filter(Boolean)
+            : [];
+          const transferVariantsByProduct = new Map();
+          if (transferRequiredIds.length && ingredientsSourceId && lockedSourceId) {
+            const { data: transferRows, error: transferError } = await supabase
+              .from('warehouse_transfers')
+              .select('id')
+              .eq('source_warehouse_id', ingredientsSourceId)
+              .eq('destination_warehouse_id', lockedSourceId);
+            if (transferError) throw transferError;
+            const transferIds = (transferRows ?? []).map((row) => row?.id).filter(Boolean);
+            if (transferIds.length) {
+              const { data: transferItems, error: transferItemsError } = await supabase
+                .from('warehouse_transfer_items')
+                .select('item_id,variant_key,transfer_id')
+                .in('transfer_id', transferIds)
+                .in('item_id', transferRequiredIds);
+              if (transferItemsError) throw transferItemsError;
+              (transferItems ?? []).forEach((row) => {
+                if (!row?.item_id) return;
+                const key = normalizeVariantKeyLocal(row?.variant_key ?? 'base');
+                const existing = transferVariantsByProduct.get(row.item_id) ?? new Set();
+                existing.add(key);
+                transferVariantsByProduct.set(row.item_id, existing);
+              });
+            }
+          }
           const sharedItemIds = new Set((sharedHomesResult.data ?? []).map((row) => row?.item_id).filter(Boolean));
           const productIds = new Set();
           const stockQtyByProduct = new Map();
+          const variantStockByProduct = new Map();
           (stockResult.data ?? []).forEach((row) => {
             if (!row?.product_id) return;
             if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
             const isLocked = lockedIds.includes(row.product_id);
             const isStockGated = stockGatedIds.includes(row.product_id);
+            const requiresTransfer = transferRequiredIds.includes(row.product_id);
             if (!isLocked && !isStockGated && !sharedItemIds.has(row.product_id)) {
               return;
             }
+            if (requiresTransfer) {
+              const transferVariants = transferVariantsByProduct.get(row.product_id);
+              const variantKey = normalizeVariantKeyLocal(row?.variant_key ?? 'base');
+              if (!transferVariants || !transferVariants.has(variantKey)) return;
+            }
+            const netUnits = Number(row?.net_units ?? 0);
             if (!isLocked) {
-              const netUnits = Number(row?.net_units ?? 0);
               if (!Number.isFinite(netUnits) || netUnits <= 0) return;
               stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + netUnits);
             } else {
-              const lockedQty = Number(row?.net_units ?? 0);
-              if (Number.isFinite(lockedQty)) {
-                stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + lockedQty);
+              if (Number.isFinite(netUnits)) {
+                stockQtyByProduct.set(row.product_id, (stockQtyByProduct.get(row.product_id) ?? 0) + netUnits);
               }
+            }
+            if (Number.isFinite(netUnits)) {
+              const normalizedVariant = normalizeVariantKeyLocal(row?.variant_key);
+              const variantMap = variantStockByProduct.get(row.product_id) ?? {};
+              variantMap[normalizedVariant] = (variantMap[normalizedVariant] ?? 0) + netUnits;
+              variantStockByProduct.set(row.product_id, variantMap);
             }
             productIds.add(row.product_id);
           });
           lockedIds.forEach((id) => productIds.add(id));
 
           const productsWithWarehouseVariations = new Set();
-          return { productIds, productsWithWarehouseVariations, stockQtyByProduct };
+          return {
+            productIds,
+            productsWithWarehouseVariations,
+            stockQtyByProduct,
+            variantStockByProduct,
+            transferVariantsByProduct
+          };
         };
 
-        const loadProducts = async (productIds, productsWithWarehouseVariations, stockQtyByProduct) => {
+        const loadProducts = async (
+          productIds,
+          productsWithWarehouseVariations,
+          stockQtyByProduct,
+          variantStockByProduct,
+          transferVariantsByProduct
+        ) => {
           if (!productIds.size) return [];
           const { data: products, error: prodErr } = await supabase
             .from('catalog_items')
@@ -2703,25 +2764,51 @@ function createHtml(config: {
                 ...product,
                 has_variations: true,
                 live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
-                live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString()
+                live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
+                live_stock_by_variant: variantStockByProduct?.get(product.id) ?? null,
+                transfer_variants: transferVariantsByProduct?.get(product.id)
+                  ? Array.from(transferVariantsByProduct.get(product.id))
+                  : null
               };
             }
             return {
               ...product,
               live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
-              live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString()
+              live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
+              live_stock_by_variant: variantStockByProduct?.get(product.id) ?? null,
+              transfer_variants: transferVariantsByProduct?.get(product.id)
+                ? Array.from(transferVariantsByProduct.get(product.id))
+                : null
             };
           });
         };
 
         try {
-          const { productIds, productsWithWarehouseVariations, stockQtyByProduct } = await loadStockAndDefaults();
+          const {
+            productIds,
+            productsWithWarehouseVariations,
+            stockQtyByProduct,
+            variantStockByProduct,
+            transferVariantsByProduct
+          } = await loadStockAndDefaults();
           const lockedIds = Array.isArray(LOCKED_PRODUCT_IDS) ? LOCKED_PRODUCT_IDS.filter(Boolean) : [];
           if (lockedIds.length) {
             const combinedIds = new Set([...productIds, ...lockedIds]);
-            return await loadProducts(combinedIds, productsWithWarehouseVariations, stockQtyByProduct);
+            return await loadProducts(
+              combinedIds,
+              productsWithWarehouseVariations,
+              stockQtyByProduct,
+              variantStockByProduct,
+              transferVariantsByProduct
+            );
           }
-          return await loadProducts(productIds, productsWithWarehouseVariations, stockQtyByProduct);
+          return await loadProducts(
+            productIds,
+            productsWithWarehouseVariations,
+            stockQtyByProduct,
+            variantStockByProduct,
+            transferVariantsByProduct
+          );
         } catch (error) {
           markOfflineIfNetworkError(error);
           console.warn('Product fetch failed, attempting minimal fallback', error);
@@ -2975,6 +3062,19 @@ function createHtml(config: {
         return String(unit).toUpperCase();
       }
 
+      function resolveLiveStockQty(product, variation) {
+        if (variation) {
+          const byVariant = product?.live_stock_by_variant;
+          if (byVariant && typeof byVariant === 'object') {
+            const key = normalizeVariantKeyLocal(variation.id ?? variation.variant_key ?? 'base');
+            const qty = Number(byVariant[key] ?? 0);
+            return Number.isFinite(qty) ? qty : 0;
+          }
+        }
+        const qty = Number(product?.live_stock_qty ?? 0);
+        return Number.isFinite(qty) ? qty : 0;
+      }
+
       function computeEffectiveQty(rawQty, entry) {
         const qtyNumber = Number(rawQty);
         if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) {
@@ -2982,6 +3082,25 @@ function createHtml(config: {
         }
         const multiplier = MULTIPLY_QTY_BY_PACKAGE ? entry.packageSize ?? 1 : 1;
         return qtyNumber * multiplier;
+      }
+
+      function getCartQtyForEntry(context, entry, excludeIndex = null) {
+        const cart = getCart(context);
+        return cart.reduce((sum, item, index) => {
+          if (excludeIndex !== null && index === excludeIndex) return sum;
+          if (item.productId !== entry.productId) return sum;
+          if ((item.variationId ?? null) !== (entry.variationId ?? null)) return sum;
+          const qty = Number(item.qty ?? 0);
+          return Number.isFinite(qty) ? sum + qty : sum;
+        }, 0);
+      }
+
+      function exceedsTransferStockLimit(context, entry, addedQty, excludeIndex = null) {
+        if (context !== 'transfer') return false;
+        const available = Number(entry?.liveStockQty ?? 0);
+        if (!Number.isFinite(available)) return false;
+        const existingQty = getCartQtyForEntry(context, entry, excludeIndex);
+        return existingQty + addedQty > available;
       }
 
       function describeQty(entry, baseQty, effectiveQty) {
@@ -3967,7 +4086,7 @@ function createHtml(config: {
         const consumptionUom = resolveConsumptionUom(product, variation, packUom);
         const transferUom = (variation?.transfer_unit ?? product.transfer_unit ?? packUom ?? consumptionUom ?? 'each').toString();
         const packageSize = resolvePackageSize(product, variation);
-        const liveStockQty = Number(variation?.live_stock_qty ?? product?.live_stock_qty ?? 0);
+        const liveStockQty = resolveLiveStockQty(product, variation);
         const liveStockUom = (variation?.live_stock_uom ?? product?.live_stock_uom ?? consumptionUom ?? 'unit').toString();
         const entry = {
           productId: product.id,
@@ -4021,7 +4140,7 @@ function createHtml(config: {
         const consumptionUom = resolveConsumptionUom(product, variation, packUom);
         const transferUom = (variation?.transfer_unit ?? product.transfer_unit ?? packUom ?? consumptionUom ?? 'each').toString();
         const packageSize = resolvePackageSize(product, variation);
-        const liveStockQty = Number(variation?.live_stock_qty ?? product?.live_stock_qty ?? 0);
+        const liveStockQty = resolveLiveStockQty(product, variation);
         const liveStockUom = (variation?.live_stock_uom ?? product?.live_stock_uom ?? consumptionUom ?? 'unit').toString();
         return {
           productId: product.id,
@@ -4063,6 +4182,33 @@ function createHtml(config: {
             variation: preferredVariation,
             label: preferredVariation.name || 'Variant'
           }];
+        }
+
+        const variantStock = product?.live_stock_by_variant;
+        if (hasVariants && variantStock && typeof variantStock === 'object') {
+          const filtered = rows.filter((row) => {
+            if (!row.variation) return false;
+            const key = normalizeVariantKeyLocal(row.variation.id ?? row.variation.variant_key ?? 'base');
+            const qty = Number(variantStock[key] ?? 0);
+            return Number.isFinite(qty) && qty > 0;
+          });
+          if (filtered.length) {
+            rows = filtered;
+          }
+        }
+
+        const transferVariants = Array.isArray(product?.transfer_variants)
+          ? new Set(product.transfer_variants.map((key) => normalizeVariantKeyLocal(key)))
+          : null;
+        if (hasVariants && transferVariants) {
+          const filtered = rows.filter((row) => {
+            if (!row.variation) return false;
+            const key = normalizeVariantKeyLocal(row.variation.id ?? row.variation.variant_key ?? 'base');
+            return transferVariants.has(key);
+          });
+          if (filtered.length) {
+            rows = filtered;
+          }
         }
 
         rows.forEach((row) => {
@@ -4174,6 +4320,11 @@ function createHtml(config: {
             const effectiveQty = computeEffectiveQty(rawQty, entry);
             if (effectiveQty === null) {
               showResult('Enter a valid quantity', true);
+              return;
+            }
+            if (exceedsTransferStockLimit(context, entry, effectiveQty)) {
+              const availableLabel = formatLiveStockLabel(entry.liveStockQty, entry.liveStockUom ?? entry.uom ?? 'unit');
+              showResult('Not enough stock. Available: ' + availableLabel, true);
               return;
             }
             addCartItem({ ...entry, qty: effectiveQty, scannedQty: rawQty }, context);
@@ -4294,6 +4445,12 @@ function createHtml(config: {
 
       function addCartItem(entry, context) {
         const scannedQty = Number(entry.scannedQty ?? entry.qty ?? 0);
+        const addedQty = Number(entry.qty ?? 0);
+        if (Number.isFinite(addedQty) && exceedsTransferStockLimit(context, entry, addedQty)) {
+          const availableLabel = formatLiveStockLabel(entry.liveStockQty, entry.liveStockUom ?? entry.uom ?? 'unit');
+          showResult('Not enough stock. Available: ' + availableLabel, true);
+          return;
+        }
         const cart = getCart(context);
         const existing = cart.find(
           (item) => item.productId === entry.productId && item.variationId === entry.variationId
@@ -4318,6 +4475,12 @@ function createHtml(config: {
         const effective = computeEffectiveQty(rawValue, target);
         if (effective == null || effective <= 0) {
           showResult('Enter a valid quantity', true);
+          renderCart(context);
+          return;
+        }
+        if (exceedsTransferStockLimit(context, target, effective, index)) {
+          const availableLabel = formatLiveStockLabel(target.liveStockQty, target.liveStockUom ?? target.uom ?? 'unit');
+          showResult('Not enough stock. Available: ' + availableLabel, true);
           renderCart(context);
           return;
         }
@@ -5522,6 +5685,11 @@ function createHtml(config: {
         }
         const editIndex = state.pendingEditIndex;
         if (typeof editIndex === 'number' && editIndex >= 0) {
+          if (exceedsTransferStockLimit(context, pending, effectiveQty, editIndex)) {
+            const availableLabel = formatLiveStockLabel(pending.liveStockQty, pending.liveStockUom ?? pending.uom ?? 'unit');
+            showResult('Not enough stock. Available: ' + availableLabel, true);
+            return;
+          }
           const cart = getCart(context);
           const target = cart[editIndex];
           if (target) {
@@ -5538,6 +5706,11 @@ function createHtml(config: {
             );
           }
           closeQtyPrompt();
+          return;
+        }
+        if (exceedsTransferStockLimit(context, pending, effectiveQty)) {
+          const availableLabel = formatLiveStockLabel(pending.liveStockQty, pending.liveStockUom ?? pending.uom ?? 'unit');
+          showResult('Not enough stock. Available: ' + availableLabel, true);
           return;
         }
         addCartItem({ ...pending, qty: effectiveQty, scannedQty: rawQty, unitCost }, context);

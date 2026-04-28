@@ -1,42 +1,6 @@
 [
   {
     "schema_export": {
-      "enums": [
-        {
-          "enum_name": "item_kind",
-          "enum_schema": "public",
-          "enum_values": [
-            "finished",
-            "ingredient",
-            "raw"
-          ]
-        },
-        {
-          "enum_name": "qty_unit",
-          "enum_schema": "public",
-          "enum_values": [
-            "each",
-            "g",
-            "kg",
-            "mg",
-            "ml",
-            "l"
-          ]
-        },
-        {
-          "enum_name": "stock_reason",
-          "enum_schema": "public",
-          "enum_values": [
-            "order_fulfillment",
-            "outlet_sale",
-            "recipe_consumption",
-            "warehouse_transfer",
-            "damage",
-            "purchase_receipt",
-            "opening_stock"
-          ]
-        }
-      ],
       "views": [
         {
           "view_name": "outlet_stock_summary",

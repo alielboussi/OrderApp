@@ -2932,7 +2932,7 @@ function createHtml(config: {
 
       function resolveQtyMultiplier(product, variation, context) {
         if (context === 'purchase') {
-          return resolvePackageSize(product, variation);
+          return 1;
         }
         return resolveTransferQuantity(product, variation);
       }
@@ -2981,6 +2981,7 @@ function createHtml(config: {
           scannedQty: item.scannedQty ?? item.qty,
           unit: item.packUom ?? item.baseUom ?? item.uom ?? 'unit',
           packUom: item.packUom ?? null,
+          consumption_uom: item.uom ?? item.baseUom ?? null,
           unitCost: item.unitCost ?? null
         }));
       }
@@ -4411,9 +4412,10 @@ function createHtml(config: {
             });
             scannedCell.appendChild(scannedInput);
             const qtyCell = document.createElement('td');
-            qtyCell.textContent = (item.qty ?? 0).toString();
+            const effectiveQty = computeEffectiveQty(item.scannedQty ?? item.qty ?? 0, item);
+            qtyCell.textContent = ((effectiveQty ?? item.qty) ?? 0).toString();
             const uomCell = document.createElement('td');
-            uomCell.textContent = item.uom ?? 'UNIT';
+            uomCell.textContent = item.uom ?? item.baseUom ?? 'UNIT';
             if (context === 'purchase') {
               const costCell = document.createElement('td');
               costCell.textContent = formatAmount(item.unitCost) ?? '-';

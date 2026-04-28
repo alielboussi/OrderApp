@@ -24,6 +24,8 @@
 - Prefer Supabase RPCs/views over raw table joins when they exist (check schema file first).
 - Use `whoami_roles` for outlet scope in UI pages; only fall back to `whoami_outlet` if needed.
 - For warehouse stock UI, keep “rollup” logic at the query layer (e.g., `outlet_stock_summary` view) and only aggregate across selected outlets/warehouses in the UI.
+- Quick Corner item visibility depends on `item_storage_homes` for `storage_warehouse_id = 587fcdb9-c998-42d6-b88e-bbcd1a66b088`; when adding new products/variants to Quick Corner, insert matching `item_storage_homes` rows (use `warehouse_stock_items` + `normalize_variant_key` to seed variant keys for items with stock).
+- Quick Corner transfer-only items are listed in `TRANSFER_REQUIRED_PRODUCT_IDS` in [Scanners/src/app/Quick_Corner_Scanner/route.ts](Scanners/src/app/Quick_Corner_Scanner/route.ts) and only appear after transfers from `0c9ddd9e-d42c-475f-9232-5e9d649b0916` to `587fcdb9-c998-42d6-b88e-bbcd1a66b088`; add new item IDs there and seed `item_storage_homes` for each variant you expect to show.
 
 ## Integration points
 - Twilio WhatsApp notifications live in Scanners API routes. See [Scanners/README.md](Scanners/README.md).
