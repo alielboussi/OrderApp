@@ -2076,6 +2076,7 @@ function createHtml(config: {
       const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
       const STOCK_GATED_PRODUCT_IDS = ${serializeForScript(STOCK_GATED_PRODUCT_IDS)};
       const TRANSFER_REQUIRED_PRODUCT_IDS = ${serializeForScript(TRANSFER_REQUIRED_PRODUCT_IDS)};
+      const ALLOW_OVERSTOCK_PRODUCT_IDS = ${serializeForScript(ALLOW_OVERSTOCK_PRODUCT_IDS)};
       const ingredientsSourceId = ${JSON.stringify(INGREDIENTS_SOURCE_ID)};
 
       const state = {
