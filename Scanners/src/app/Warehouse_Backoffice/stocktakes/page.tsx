@@ -49,9 +49,12 @@ type SimpleVariation = {
 type SimpleProduct = {
   id: string;
   name: string | null;
+  image_url?: string | null;
+  item_kind?: string | null;
   consumption_uom: string | null;
   stocktake_uom: string | null;
   purchase_pack_unit: string | null;
+  default_warehouse_id?: string | null;
   qty_decimal_places: number | null;
   selling_price: number | null;
   cost: number | null;
@@ -664,19 +667,13 @@ export default function StocktakesPage() {
           ? selectedChildWarehouseIds
           : COLDROOM_CHILD_IDS
         : [warehouseId];
-
-    const listResponses = await Promise.all(
-      targetWarehouseIds.map((id) =>
-        supabase.rpc("list_warehouse_items", {
-          p_warehouse_id: id,
-          p_outlet_id: null,
-          p_search: null,
-        })
+    const fallbackWarehouseIds = Array.from(
+      new Set(
+        warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)
+          ? [...targetWarehouseIds, COLDROOM_PARENT_ID]
+          : targetWarehouseIds
       )
     );
-    listResponses.forEach((resp) => {
-      if (resp.error) throw resp.error;
-    });
 
     const directResponses = await Promise.all(
       targetWarehouseIds.map((id) =>
@@ -684,7 +681,7 @@ export default function StocktakesPage() {
           .from("warehouse_stock_items")
           .select("item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url,has_recipe")
           .eq("warehouse_id", id)
-          .eq("item_kind", "ingredient")
+          .in("item_kind", ["ingredient", "finished"])
           .order("item_name", { ascending: true })
       )
     );
@@ -692,21 +689,101 @@ export default function StocktakesPage() {
       if (resp.error) throw resp.error;
     });
 
-    const combined = [
-      ...listResponses.flatMap((resp) => (resp.data as WarehouseStockItem[]) ?? []),
-      ...directResponses.flatMap((resp) => (resp.data as WarehouseStockItem[]) ?? []),
-    ];
+    const combined = [...directResponses.flatMap((resp) => (resp.data as WarehouseStockItem[]) ?? [])];
 
-    if (warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)) {
-      const { data: storageItems, error: storageError } = await supabase
+    let fallbackDefaultItems: Array<{
+      id: string;
+      name: string | null;
+      cost: number | null;
+      item_kind: string | null;
+      image_url: string | null;
+    }> = [];
+
+    if (products.length) {
+      fallbackDefaultItems = products
+        .filter((item) => {
+          const kind = (item.item_kind ?? "").toLowerCase();
+          return (
+            Boolean(item.id) &&
+            fallbackWarehouseIds.includes(item.default_warehouse_id ?? "") &&
+            ["ingredient", "finished"].includes(kind)
+          );
+        })
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          cost: item.cost,
+          item_kind: item.item_kind ?? null,
+          image_url: item.image_url ?? null,
+        }));
+    } else {
+      const { data, error: fallbackDefaultError } = await supabase
         .from("catalog_items")
         .select("id,name,cost,item_kind,image_url")
         .eq("active", true)
-        .eq("item_kind", "ingredient")
-        .eq("default_warehouse_id", COLDROOM_PARENT_ID);
-      if (storageError) throw storageError;
+        .in("item_kind", ["ingredient", "finished"])
+        .in("default_warehouse_id", fallbackWarehouseIds);
+      if (fallbackDefaultError) throw fallbackDefaultError;
+      fallbackDefaultItems = data ?? [];
+    }
 
-      (storageItems ?? []).forEach((item) => {
+    const fallbackItemsById = new Map<string, {
+      id: string;
+      name: string | null;
+      cost: number | null;
+      item_kind: string | null;
+      image_url: string | null;
+    }>();
+    (fallbackDefaultItems ?? []).forEach((item) => {
+      if (!item?.id) return;
+      fallbackItemsById.set(item.id, item);
+    });
+
+    fallbackItemsById.forEach((item) => {
+      combined.push({
+        warehouse_id: warehouseId,
+        item_id: item.id,
+        item_name: item.name ?? "Item",
+        variant_key: "base",
+        net_units: 0,
+        unit_cost: typeof item.cost === "number" ? item.cost : 0,
+        item_kind: item.item_kind,
+        image_url: item.image_url ?? null,
+        has_recipe: false,
+      });
+    });
+
+    if (warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)) {
+      const storageItems = products.length
+        ? products
+            .filter(
+              (item) =>
+                item.id &&
+                item.default_warehouse_id === COLDROOM_PARENT_ID &&
+                (item.item_kind ?? "").toLowerCase() === "ingredient"
+            )
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              cost: item.cost,
+              item_kind: item.item_kind ?? "ingredient",
+              image_url: item.image_url ?? null,
+            }))
+        : null;
+
+      let coldroomStorageItems = storageItems;
+      if (!coldroomStorageItems) {
+        const { data, error: storageError } = await supabase
+          .from("catalog_items")
+          .select("id,name,cost,item_kind,image_url")
+          .eq("active", true)
+          .eq("item_kind", "ingredient")
+          .eq("default_warehouse_id", COLDROOM_PARENT_ID);
+        if (storageError) throw storageError;
+        coldroomStorageItems = data ?? [];
+      }
+
+      (coldroomStorageItems ?? []).forEach((item) => {
         if (!item?.id) return;
         combined.push({
           warehouse_id: warehouseId,
@@ -855,8 +932,9 @@ export default function StocktakesPage() {
         setError(null);
 
         const productSelect =
-          "id,name,consumption_uom,stocktake_uom,purchase_pack_unit,qty_decimal_places,selling_price,cost";
-        const productFallback = "id,name,consumption_uom,stocktake_uom,purchase_pack_unit,selling_price,cost";
+          "id,name,image_url,item_kind,default_warehouse_id,consumption_uom,stocktake_uom,purchase_pack_unit,qty_decimal_places,selling_price,cost";
+        const productFallback =
+          "id,name,image_url,item_kind,default_warehouse_id,consumption_uom,stocktake_uom,purchase_pack_unit,selling_price,cost";
 
         const variantSelect =
           "id,item_id,name,image_url,consumption_uom,stocktake_uom,purchase_pack_unit,qty_decimal_places,cost,active";
