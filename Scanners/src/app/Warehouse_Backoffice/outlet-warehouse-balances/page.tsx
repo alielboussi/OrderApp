@@ -94,6 +94,9 @@ function formatUomLabel(raw?: string | null): string {
     case "jar":
     case "jar(s)":
       return "Jar(s)";
+    case "block":
+    case "block(s)":
+      return "Block(s)";
     case "plastic":
     case "plastic(s)":
       return "Plastic(s)";

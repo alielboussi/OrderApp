@@ -22,6 +22,10 @@ const DESTINATION_CHOICES = [
   ...SOURCE_CHOICES,
   { id: '0c9ddd9e-d42c-475f-9232-5e9d649b0916', label: 'Ingredients Storeroom' }
 ] as const;
+const PURCHASE_WAREHOUSE_CHOICES = [...SOURCE_CHOICES] as const;
+const PURCHASE_PRODUCT_WAREHOUSE_IDS = Array.from(new Set([
+  ...SOURCE_CHOICES.map((choice) => choice.id)
+]));
 const DEFAULT_SOURCE_ID = SOURCE_CHOICES[0]?.id ?? '';
 const LOCKED_DEST_ID = DESTINATION_CHOICES[0]?.id ?? 'd4ad6512-6d0b-448f-b407-e74b0eb80edb';
 const COLDROOM_PRODUCT_IDS = [
@@ -110,6 +114,8 @@ function createHtml(config: {
   const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
   const sourceChoicesJson = serializeForScript(SOURCE_CHOICES);
   const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
+  const purchaseWarehouseChoicesJson = serializeForScript(PURCHASE_WAREHOUSE_CHOICES);
+  const purchaseProductWarehouseIdsJson = serializeForScript(PURCHASE_PRODUCT_WAREHOUSE_IDS);
   const operatorContextLabelsJson = serializeForScript(OPERATOR_CONTEXT_LABELS);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1791,6 +1797,16 @@ function createHtml(config: {
     </div>
   </div>
 
+  <div id="purchase-warehouse-modal" class="select-modal" aria-hidden="true">
+    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="purchase-warehouse-modal-title">
+      <div class="select-modal-header" id="purchase-warehouse-modal-title">Select purchase warehouse</div>
+      <div class="select-modal-grid" id="purchase-warehouse-modal-options"></div>
+      <div class="select-modal-actions">
+        <button type="button" class="select-modal-close" data-modal-close="purchase-warehouse-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="qty-modal">
     <form id="qty-form">
       <div id="qty-live-stock" class="qty-live-stock-badge"></div>
@@ -1862,7 +1878,7 @@ function createHtml(config: {
         </div>
       </div>
       <div class="purchase-route-info">
-        <p class="purchase-warehouse-hint">Intake warehouse: <span id="purchase-warehouse-label">${escapeHtml(sourceWarehouseName)}</span></p>
+        <p class="purchase-warehouse-hint">Purchase warehouse: <span id="purchase-warehouse-label">Select warehouse</span></p>
       </div>
     </header>
     <article class="panel purchase-panel">
@@ -1908,7 +1924,7 @@ function createHtml(config: {
             <div class="cart-head">
               <div>
                 <h3 style="margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:1rem;">Purchase Cart</h3>
-                <p class="purchase-warehouse-hint" style="margin-top:4px;">Stock posts to <span id="purchase-cart-warehouse">${escapeHtml(sourceWarehouseName)}</span></p>
+                <p class="purchase-warehouse-hint" style="margin-top:4px;">Stock posts to <span id="purchase-cart-warehouse">Select warehouse</span></p>
               </div>
               <div class="cart-summary">
                 <span id="purchase-cart-count">0 items</span>
@@ -2059,6 +2075,8 @@ function createHtml(config: {
     const OPERATOR_CONTEXT_LABELS = ${operatorContextLabelsJson};
     const SOURCE_CHOICES = ${sourceChoicesJson};
     const DESTINATION_CHOICES = ${destinationChoicesJson};
+    const PURCHASE_WAREHOUSE_CHOICES = ${purchaseWarehouseChoicesJson};
+    const PURCHASE_PRODUCT_WAREHOUSE_IDS = ${purchaseProductWarehouseIdsJson};
     const DEFAULT_SOURCE_ID = ${JSON.stringify(DEFAULT_SOURCE_ID)};
     const OPERATOR_SESSION_TTL_MS = ${OPERATOR_SESSION_TTL_MS};
     window.OPERATOR_SESSION_TTL_MS = OPERATOR_SESSION_TTL_MS;
@@ -2137,6 +2155,7 @@ function createHtml(config: {
         transferCart: [],
         damageCart: [],
         purchaseCart: [],
+        pendingPurchaseWarehouseAdd: null,
         pendingEntry: null,
         pendingEditIndex: null,
         pendingContext: 'transfer',
@@ -2150,10 +2169,12 @@ function createHtml(config: {
         operators: [],
         sourceOptions: Array.isArray(SOURCE_CHOICES) ? SOURCE_CHOICES : [],
         destinationOptions: Array.isArray(DESTINATION_CHOICES) ? DESTINATION_CHOICES : [],
+        purchaseWarehouseOptions: Array.isArray(PURCHASE_WAREHOUSE_CHOICES) ? PURCHASE_WAREHOUSE_CHOICES : [],
         sourceSelection: ${JSON.stringify(DEFAULT_SOURCE_ID)} || null,
         destinationSelection: null,
         purchaseForm: {
           supplierId: '',
+          warehouseId: '',
           referenceCode: ''
         },
         purchaseSubmitting: false,
@@ -2375,9 +2396,11 @@ function createHtml(config: {
       const sourceModal = document.getElementById('source-modal');
       const destinationModal = document.getElementById('destination-modal');
       const supplierModal = document.getElementById('supplier-modal');
+      const purchaseWarehouseModal = document.getElementById('purchase-warehouse-modal');
       const sourceModalOptions = document.getElementById('source-modal-options');
       const destinationModalOptions = document.getElementById('destination-modal-options');
       const supplierModalOptions = document.getElementById('supplier-modal-options');
+      const purchaseWarehouseModalOptions = document.getElementById('purchase-warehouse-modal-options');
       const operatorSelectModal = document.getElementById('operator-modal');
       const operatorSelectModalOptions = document.getElementById('operator-modal-options');
       let activeOperatorContext = 'transfer';
@@ -2471,6 +2494,7 @@ function createHtml(config: {
         if (sourceWarehouse) {
           updateSourceWarehouseLabels(sourceWarehouse);
         }
+        updatePurchaseWarehouseLabels();
       }
 
       setLockedWarehouseLabels(state.lockedSource, state.lockedDest, {
@@ -2625,10 +2649,16 @@ function createHtml(config: {
 
       let latestStorageHomes = [];
 
-      async function fetchProductsForWarehouse(warehouseIds) {
+      async function fetchProductsForWarehouse(warehouseIds, options = {}) {
         if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
           return [];
         }
+        const defaultWarehouseId = options.defaultWarehouseId === undefined
+          ? lockedSourceId
+          : options.defaultWarehouseId;
+        const storageWarehouseId = options.storageWarehouseId === undefined
+          ? lockedSourceId
+          : options.storageWarehouseId;
         const allowedProductIds = new Set(COLDROOM_PRODUCT_IDS);
 
         if (state.networkOffline) {
@@ -2647,14 +2677,14 @@ function createHtml(config: {
               .from('catalog_items')
               .select('id')
               .in('id', Array.from(allowedProductIds))
-              .eq('default_warehouse_id', lockedSourceId)
+              .eq('default_warehouse_id', defaultWarehouseId)
               .eq('active', true),
-            lockedSourceId
+            storageWarehouseId
               ? supabase
                   .from('item_storage_homes')
                   .select('item_id, normalized_variant_key, storage_warehouse_id')
                   .in('item_id', Array.from(allowedProductIds))
-                  .eq('storage_warehouse_id', lockedSourceId)
+                  .eq('storage_warehouse_id', storageWarehouseId)
               : Promise.resolve({ data: [], error: null })
           ]);
 
@@ -2709,7 +2739,7 @@ function createHtml(config: {
           defaultVariants.forEach((variant) => {
             const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
             const variantActive = variant?.active !== false;
-            if (variantDefault === lockedSourceId && variantActive && variant?.item_id) {
+            if (defaultWarehouseId && variantDefault === defaultWarehouseId && variantActive && variant?.item_id) {
               if (!allowedProductIds.has(variant.item_id)) return;
               if (!productIds.has(variant.item_id)) return;
               productsWithWarehouseVariations.add(variant.item_id);
@@ -2787,14 +2817,15 @@ function createHtml(config: {
             const variants = variantsByItem.get(product.id) ?? [];
             const hasWarehouseVariant = variants.some((variant) => {
               const variantDefault = variant?.default_warehouse_id ?? variant?.locked_from_warehouse_id ?? null;
-              if (variantDefault !== lockedSourceId) return false;
+              if (!defaultWarehouseId || variantDefault !== defaultWarehouseId) return false;
               return variant?.active !== false;
             });
 
             const hasStorageHomeVariant = latestStorageHomes.some(
               (home) =>
                 home.item_id === product.id &&
-                home.storage_warehouse_id === lockedSourceId &&
+                storageWarehouseId &&
+                home.storage_warehouse_id === storageWarehouseId &&
                 home.normalized_variant_key &&
                 home.normalized_variant_key !== 'base'
             );
@@ -3029,6 +3060,15 @@ function createHtml(config: {
       }
 
       function getWarehouseIdsForContext(context) {
+        if (context === 'purchase') {
+          const selectedPurchaseWarehouse = state.purchaseForm.warehouseId;
+          if (selectedPurchaseWarehouse) {
+            return [selectedPurchaseWarehouse];
+          }
+          return Array.isArray(PURCHASE_PRODUCT_WAREHOUSE_IDS)
+            ? PURCHASE_PRODUCT_WAREHOUSE_IDS.filter(Boolean)
+            : [];
+        }
         const selectedSourceId = state.sourceSelection || lockedSourceId;
         return selectedSourceId ? [selectedSourceId] : [];
       }
@@ -3077,7 +3117,15 @@ function createHtml(config: {
       }
 
       async function fetchPurchaseProducts(warehouseIds) {
-        return fetchProductsForWarehouse(warehouseIds);
+        const targetWarehouseIds = Array.isArray(PURCHASE_PRODUCT_WAREHOUSE_IDS)
+          ? PURCHASE_PRODUCT_WAREHOUSE_IDS.filter(Boolean)
+          : Array.isArray(warehouseIds)
+            ? warehouseIds
+            : [];
+        return fetchProductsForWarehouse(targetWarehouseIds, {
+          defaultWarehouseId: null,
+          storageWarehouseId: null
+        });
       }
 
       function formatUnitLabel(uom, qty) {
@@ -3335,12 +3383,14 @@ function createHtml(config: {
       function defaultPurchaseFormState() {
         return {
           supplierId: '',
+          warehouseId: '',
           referenceCode: ''
         };
       }
 
       function resetPurchaseForm() {
         state.purchaseForm = defaultPurchaseFormState();
+        state.pendingPurchaseWarehouseAdd = null;
         if (purchaseSupplier) {
           purchaseSupplier.value = '';
           purchaseSupplier.disabled = state.suppliers.length === 0;
@@ -3348,6 +3398,7 @@ function createHtml(config: {
         if (purchaseReference) {
           purchaseReference.value = '';
         }
+        updatePurchaseWarehouseLabels();
         syncReferenceValue('');
         updatePurchaseSummary();
       }
@@ -3670,7 +3721,7 @@ function createHtml(config: {
           transferSubmit.disabled = state.loading || !consoleUnlocked || !sourceSelected || !destinationSelected;
         }
         if (purchaseSubmit) {
-          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked || !sourceSelected;
+          purchaseSubmit.disabled = state.purchaseSubmitting || !consoleUnlocked;
         }
         if (damageSubmit) {
           damageSubmit.disabled = state.damageSubmitting || !consoleUnlocked || !sourceSelected;
@@ -3783,6 +3834,121 @@ function createHtml(config: {
         return null;
       }
 
+      function getPurchaseWarehouseOptionById(id) {
+        if (!id) return null;
+        const optionFromState = state.purchaseWarehouseOptions.find((option) => option.id === id);
+        if (optionFromState) return optionFromState;
+        const warehouseRecord = state.warehouses.find((w) => w.id === id);
+        if (warehouseRecord) {
+          return { id: warehouseRecord.id, label: warehouseRecord.name ?? 'Warehouse' };
+        }
+        return null;
+      }
+
+      function getSelectedPurchaseWarehouse() {
+        const id = state.purchaseForm.warehouseId;
+        if (!id) return null;
+        const option = getPurchaseWarehouseOptionById(id);
+        if (option) return option;
+        return { id, label: 'Warehouse' };
+      }
+
+      function updatePurchaseWarehouseLabels() {
+        const selection = getSelectedPurchaseWarehouse();
+        const label = selection?.label ?? 'Select warehouse';
+        if (purchaseWarehouseLabel) {
+          purchaseWarehouseLabel.textContent = label;
+        }
+        if (purchaseCartWarehouse) {
+          purchaseCartWarehouse.textContent = label;
+        }
+      }
+
+      function renderPurchaseWarehouseOptions() {
+        const savedValue = state.purchaseForm.warehouseId || '';
+        const validSaved = state.purchaseWarehouseOptions.some((option) => option.id === savedValue);
+        state.purchaseForm.warehouseId = validSaved ? savedValue : '';
+        renderPurchaseWarehouseCards();
+        updatePurchaseWarehouseLabels();
+      }
+
+      function renderPurchaseWarehouseCards() {
+        if (!purchaseWarehouseModalOptions) return;
+        purchaseWarehouseModalOptions.innerHTML = '';
+        if (!state.purchaseWarehouseOptions.length) {
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'select-card';
+          empty.textContent = 'No warehouses found';
+          empty.disabled = true;
+          purchaseWarehouseModalOptions.appendChild(empty);
+          return;
+        }
+        state.purchaseWarehouseOptions.forEach((option) => {
+          if (!option?.id) return;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'select-card';
+          card.textContent = option.label ?? 'Warehouse';
+          card.addEventListener('click', () => {
+            handlePurchaseWarehouseSelection(option.id);
+            closeSelectModal(purchaseWarehouseModal);
+          });
+          purchaseWarehouseModalOptions.appendChild(card);
+        });
+      }
+
+      function handlePurchaseWarehouseSelection(warehouseId) {
+        const trimmed = warehouseId || '';
+        if (!trimmed) {
+          state.purchaseForm.warehouseId = '';
+          updatePurchaseWarehouseLabels();
+          renderProductCards();
+          return;
+        }
+        const option = getPurchaseWarehouseOptionById(trimmed);
+        if (!option) {
+          showResult('Purchase warehouse unavailable. Refresh directory.', true);
+          renderPurchaseWarehouseOptions();
+          return;
+        }
+        state.purchaseForm.warehouseId = option.id;
+        updatePurchaseWarehouseLabels();
+        renderProductCards();
+        const pendingAdd = state.pendingPurchaseWarehouseAdd;
+        if (pendingAdd) {
+          state.pendingPurchaseWarehouseAdd = null;
+          addCartItem(
+            {
+              ...pendingAdd.entry,
+              qty: pendingAdd.effectiveQty,
+              scannedQty: pendingAdd.rawQty,
+              unitCost: pendingAdd.unitCost,
+              purchaseWarehouseId: option.id
+            },
+            'purchase'
+          );
+          showResult(
+            'Queued ' + (pendingAdd.entry.productName ?? 'Product') + ' - ' + describeQty(pendingAdd.entry, pendingAdd.rawQty, pendingAdd.effectiveQty),
+            false
+          );
+          focusActiveScanner();
+        }
+      }
+
+      function ensurePurchaseWarehouseSelected(shouldPrompt = true) {
+        const selection = getSelectedPurchaseWarehouse();
+        if (selection) {
+          return true;
+        }
+        if (shouldPrompt) {
+          showResult('Select a purchase warehouse before submitting.', true);
+          renderPurchaseWarehouseCards();
+          openSelectModal(purchaseWarehouseModal);
+        }
+        return false;
+      }
+
       function getSelectedSource() {
         const id = state.sourceSelection;
         if (!id) return null;
@@ -3849,12 +4015,6 @@ function createHtml(config: {
 
       function updateSourceWarehouseLabels(sourceWarehouse) {
         const sourceName = sourceWarehouse?.name ?? getSelectedSource()?.label ?? 'Warehouse';
-        if (purchaseWarehouseLabel) {
-          purchaseWarehouseLabel.textContent = sourceName;
-        }
-        if (purchaseCartWarehouse) {
-          purchaseCartWarehouse.textContent = sourceName;
-        }
         if (damageWarehouseLabel) {
           damageWarehouseLabel.textContent = sourceName;
         }
@@ -4318,7 +4478,6 @@ function createHtml(config: {
 
       function enterPurchaseMode() {
         if (!ensureOperatorGate()) return;
-        if (!ensureSourceSelected()) return;
         setMode('purchase');
         applyViewState('purchase');
         updatePurchaseSummary();
@@ -4331,6 +4490,7 @@ function createHtml(config: {
           purchaseSupplierPicker.textContent = getSelectedSupplierLabel();
           purchaseSupplierPicker.disabled = state.suppliers.length === 0;
         }
+        updatePurchaseWarehouseLabels();
         if (purchaseReference) {
           purchaseReference.value = state.purchaseForm.referenceCode ?? '';
         }
@@ -4523,93 +4683,103 @@ function createHtml(config: {
           header.appendChild(imageWrap);
           header.appendChild(meta);
 
-          const controls = document.createElement('div');
-          controls.className = 'variant-qty-controls';
-          const decBtn = document.createElement('button');
-          decBtn.type = 'button';
-          decBtn.className = 'variant-qty-button';
-          decBtn.textContent = '-';
-          const qtyInput = document.createElement('input');
-          qtyInput.type = 'number';
-          qtyInput.min = '0';
-          qtyInput.step = '0.01';
-          qtyInput.placeholder = '0';
-          const incBtn = document.createElement('button');
-          incBtn.type = 'button';
-          incBtn.className = 'variant-qty-button';
-          incBtn.textContent = '+';
-
-          const addBtn = document.createElement('button');
-          addBtn.type = 'button';
-          addBtn.className = 'variant-add-button';
-          addBtn.textContent = 'Add';
-          const activateRow = () => {
-            if (variantModalBody) {
-              Array.from(variantModalBody.querySelectorAll('.variant-row')).forEach((node) => {
-                node.classList.remove('is-active');
-              });
-            }
-            wrapper.classList.add('is-active');
-            activeVariantQtyInput = qtyInput;
-            activeVariantAddButton = addBtn;
-          };
-
-          const setQty = (value) => {
-            const numeric = Number(value);
-            qtyInput.value = Number.isFinite(numeric) ? numeric.toString() : '0';
-          };
-
-          if (preferredVariation && row.variation?.id === preferredVariation.id) {
-            setQty(1);
-          }
-
-          decBtn.addEventListener('click', () => {
-            activateRow();
-            const current = Number(qtyInput.value || 0);
-            setQty(Math.max(0, current - 1));
-          });
-          incBtn.addEventListener('click', () => {
-            activateRow();
-            const current = Number(qtyInput.value || 0);
-            setQty(current + 1);
-          });
-          header.addEventListener('click', () => {
-            activateRow();
-            qtyInput.focus();
-          });
-          qtyInput.addEventListener('focus', activateRow);
-          qtyInput.addEventListener('click', activateRow);
-
-          controls.appendChild(decBtn);
-          controls.appendChild(qtyInput);
-          controls.appendChild(incBtn);
-          addBtn.addEventListener('click', () => {
-            const rawQty = Number(qtyInput.value || 0);
-            const effectiveQty = computeEffectiveQty(rawQty, entry);
-            if (effectiveQty === null) {
-              showResult('Enter a valid quantity', true);
-              return;
-            }
-            addCartItem({ ...entry, qty: effectiveQty, scannedQty: rawQty }, context);
-            showResult(
-              'Queued ' + (entry.productName ?? 'Product') + ' - ' + describeQty(entry, rawQty, effectiveQty),
-              false
-            );
-            qtyInput.value = '';
-          });
-
-          if (!activeVariantQtyInput) {
-            activateRow();
-          }
-
-          const qtyPanel = document.createElement('div');
-          qtyPanel.className = 'variant-qty-panel';
-          qtyPanel.appendChild(controls);
-          qtyPanel.appendChild(addBtn);
-
           wrapper.appendChild(liveStockBadge);
           wrapper.appendChild(header);
-          wrapper.appendChild(qtyPanel);
+          if (context === 'purchase') {
+            const helper = document.createElement('div');
+            helper.className = 'variant-uom';
+            helper.textContent = 'Tap to enter quantity';
+            wrapper.appendChild(helper);
+            wrapper.addEventListener('click', () => {
+              closeVariantModal();
+              promptQuantity(product, row.variation, context);
+            });
+          } else {
+            const controls = document.createElement('div');
+            controls.className = 'variant-qty-controls';
+            const decBtn = document.createElement('button');
+            decBtn.type = 'button';
+            decBtn.className = 'variant-qty-button';
+            decBtn.textContent = '-';
+            const qtyInput = document.createElement('input');
+            qtyInput.type = 'number';
+            qtyInput.min = '0';
+            qtyInput.step = '0.01';
+            qtyInput.placeholder = '0';
+            const incBtn = document.createElement('button');
+            incBtn.type = 'button';
+            incBtn.className = 'variant-qty-button';
+            incBtn.textContent = '+';
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'variant-add-button';
+            addBtn.textContent = 'Add';
+            const activateRow = () => {
+              if (variantModalBody) {
+                Array.from(variantModalBody.querySelectorAll('.variant-row')).forEach((node) => {
+                  node.classList.remove('is-active');
+                });
+              }
+              wrapper.classList.add('is-active');
+              activeVariantQtyInput = qtyInput;
+              activeVariantAddButton = addBtn;
+            };
+
+            const setQty = (value) => {
+              const numeric = Number(value);
+              qtyInput.value = Number.isFinite(numeric) ? numeric.toString() : '0';
+            };
+
+            if (preferredVariation && row.variation?.id === preferredVariation.id) {
+              setQty(1);
+            }
+
+            decBtn.addEventListener('click', () => {
+              activateRow();
+              const current = Number(qtyInput.value || 0);
+              setQty(Math.max(0, current - 1));
+            });
+            incBtn.addEventListener('click', () => {
+              activateRow();
+              const current = Number(qtyInput.value || 0);
+              setQty(current + 1);
+            });
+            header.addEventListener('click', () => {
+              activateRow();
+              qtyInput.focus();
+            });
+            qtyInput.addEventListener('focus', activateRow);
+            qtyInput.addEventListener('click', activateRow);
+
+            controls.appendChild(decBtn);
+            controls.appendChild(qtyInput);
+            controls.appendChild(incBtn);
+            addBtn.addEventListener('click', () => {
+              const rawQty = Number(qtyInput.value || 0);
+              const effectiveQty = computeEffectiveQty(rawQty, entry);
+              if (effectiveQty === null) {
+                showResult('Enter a valid quantity', true);
+                return;
+              }
+              addCartItem({ ...entry, qty: effectiveQty, scannedQty: rawQty }, context);
+              showResult(
+                'Queued ' + (entry.productName ?? 'Product') + ' - ' + describeQty(entry, rawQty, effectiveQty),
+                false
+              );
+              qtyInput.value = '';
+            });
+
+            if (!activeVariantQtyInput) {
+              activateRow();
+            }
+
+            const qtyPanel = document.createElement('div');
+            qtyPanel.className = 'variant-qty-panel';
+            qtyPanel.appendChild(controls);
+            qtyPanel.appendChild(addBtn);
+            wrapper.appendChild(qtyPanel);
+          }
           variantModalBody.appendChild(wrapper);
         });
 
@@ -4724,12 +4894,38 @@ function createHtml(config: {
       }
 
       function addCartItem(entry, context) {
+        if (context === 'purchase') {
+          const selectedWarehouseId = getSelectedPurchaseWarehouse()?.id ?? state.purchaseForm.warehouseId ?? '';
+          if (!selectedWarehouseId) {
+            showResult('Select a purchase warehouse before adding items.', true);
+            renderPurchaseWarehouseCards();
+            openSelectModal(purchaseWarehouseModal);
+            return;
+          }
+          const existingWarehouseIds = Array.from(new Set(
+            getCart('purchase')
+              .map((item) => item?.purchaseWarehouseId)
+              .filter((id) => typeof id === 'string' && id.trim().length > 0)
+          ));
+          if (existingWarehouseIds.length > 1 || (existingWarehouseIds.length === 1 && existingWarehouseIds[0] !== selectedWarehouseId)) {
+            showResult('Only one purchase warehouse is allowed per submission. Clear cart to switch warehouse.', true);
+            return;
+          }
+          entry = { ...entry, purchaseWarehouseId: selectedWarehouseId };
+        }
         const scannedQty = Number(entry.scannedQty ?? entry.qty ?? 0);
         const cart = getCart(context);
         const existing = cart.find(
           (item) => item.productId === entry.productId && item.variationId === entry.variationId
         );
         if (existing) {
+          if (context === 'purchase') {
+            const selectedWarehouseId = entry.purchaseWarehouseId ?? state.purchaseForm.warehouseId ?? '';
+            if ((existing.purchaseWarehouseId ?? '') !== selectedWarehouseId) {
+              showResult('Only one purchase warehouse is allowed per submission. Clear cart to switch warehouse.', true);
+              return;
+            }
+          }
           existing.qty += entry.qty;
           const priorScanned = Number(existing.scannedQty ?? 0);
           existing.scannedQty = priorScanned + scannedQty;
@@ -4768,6 +4964,10 @@ function createHtml(config: {
         const elements = cartElements[context];
         if (!elements?.body || !elements?.empty || !elements?.count) return;
         const cart = getCart(context);
+        if (context === 'purchase' && !cart.length && state.purchaseForm.warehouseId) {
+          state.purchaseForm.warehouseId = '';
+          updatePurchaseWarehouseLabels();
+        }
         elements.body.innerHTML = '';
         if (!cart.length) {
           elements.empty.style.display = 'block';
@@ -5213,7 +5413,15 @@ function createHtml(config: {
               label: record?.name ?? choice.label ?? 'Destination warehouse'
             };
           });
+          const hydratedPurchaseWarehouses = (PURCHASE_WAREHOUSE_CHOICES || []).map((choice) => {
+            const record = state.warehouses.find((w) => w.id === choice.id) ?? null;
+            return {
+              id: choice.id,
+              label: record?.name ?? choice.label ?? 'Warehouse'
+            };
+          });
           state.destinationOptions = hydratedDestinations;
+          state.purchaseWarehouseOptions = hydratedPurchaseWarehouses;
           const hasSavedSelection = state.destinationSelection && hydratedDestinations.some((opt) => opt.id === state.destinationSelection);
           if (!hasSavedSelection) {
             state.destinationSelection = null;
@@ -5224,13 +5432,21 @@ function createHtml(config: {
           } else {
             state.lockedDest = state.warehouses.find((w) => w.id === state.destinationSelection) ?? null;
           }
+          const hasPurchaseWarehouse =
+            state.purchaseForm.warehouseId &&
+            hydratedPurchaseWarehouses.some((opt) => opt.id === state.purchaseForm.warehouseId);
+          if (!hasPurchaseWarehouse) {
+            state.purchaseForm.warehouseId = '';
+          }
           renderSourceOptions();
           renderDestinationOptions();
+          renderPurchaseWarehouseOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
             sourceMissingText: 'Select coldroom',
             destMissingText: 'Select destination'
           });
           updateSourceWarehouseLabels(sourceWarehouse);
+          updatePurchaseWarehouseLabels();
           syncSourcePillLabel();
           syncDestinationPillLabel();
           if (!parentWarehouse) {
@@ -5260,7 +5476,7 @@ function createHtml(config: {
         const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
         [state.products, state.purchaseProducts] = await Promise.all([
           fetchProductsForWarehouse(targetWarehouseIds),
-          fetchPurchaseProducts(targetWarehouseIds)
+          fetchPurchaseProducts(PURCHASE_PRODUCT_WAREHOUSE_IDS)
         ]);
         const allProductIds = Array.from(new Set([
           ...state.products.map((p) => p.id),
@@ -5560,20 +5776,31 @@ function createHtml(config: {
         if (!ensureOperatorGate()) {
           return;
         }
-        if (!ensureDestinationSelected('purchase')) {
+        if (!ensurePurchaseWarehouseSelected()) {
           return;
         }
-        if (!ensureSourceSelected()) {
-          return;
-        }
-        const warehouseId = getSelectedSource()?.id;
+        const purchaseWarehouse = getSelectedPurchaseWarehouse();
+        const warehouseId = purchaseWarehouse?.id;
         if (!warehouseId) {
-          showResult('Source warehouse unavailable for purchase intake.', true);
+          showResult('Purchase warehouse unavailable for intake.', true);
           return;
         }
         const cart = getCart('purchase');
         if (!cart.length) {
           showResult('Scan at least one product before logging a purchase.', true);
+          return;
+        }
+        const cartWarehouseIds = Array.from(new Set(
+          cart
+            .map((item) => item?.purchaseWarehouseId)
+            .filter((id) => typeof id === 'string' && id.trim().length > 0)
+        ));
+        if (cartWarehouseIds.length > 1) {
+          showResult('Purchase cart contains multiple warehouses. Clear cart and use one warehouse only.', true);
+          return;
+        }
+        if (cartWarehouseIds.length === 1 && cartWarehouseIds[0] !== warehouseId) {
+          showResult('Selected purchase warehouse does not match cart warehouse. Use one warehouse only.', true);
           return;
         }
 
@@ -5623,7 +5850,7 @@ function createHtml(config: {
           const supplierName = supplierId
             ? state.suppliers.find((supplier) => supplier?.id === supplierId)?.name ?? 'Supplier'
             : 'Unspecified supplier';
-          const warehouseName = state.lockedSource?.name ?? sourceLabel.textContent ?? 'Warehouse';
+          const warehouseName = purchaseWarehouse?.label ?? 'Warehouse';
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const remainingStockMap = await fetchRemainingStock(
             warehouseId,
@@ -6071,6 +6298,25 @@ function createHtml(config: {
           closeQtyPrompt();
           return;
         }
+        if (context === 'purchase' && !ensurePurchaseWarehouseSelected(false)) {
+          state.pendingPurchaseWarehouseAdd = {
+            entry: { ...pending },
+            rawQty,
+            effectiveQty,
+            unitCost
+          };
+          qtyModal.style.display = 'none';
+          if (qtyLiveStock) {
+            qtyLiveStock.textContent = '';
+            qtyLiveStock.style.display = 'none';
+          }
+          state.pendingEntry = null;
+          state.pendingEditIndex = null;
+          state.pendingContext = state.mode;
+          renderPurchaseWarehouseCards();
+          openSelectModal(purchaseWarehouseModal);
+          return;
+        }
         addCartItem({ ...pending, qty: effectiveQty, scannedQty: rawQty, unitCost }, context);
         showResult(
           'Queued ' + (pending.productName ?? 'Product') + ' - ' + describeQty(pending, rawQty, effectiveQty),
@@ -6101,12 +6347,14 @@ function createHtml(config: {
           target === purchaseSupplierPicker ||
           purchaseSupplierPicker?.contains(target) ||
           supplierModal?.contains(target);
+        const interactingWithPurchaseWarehouse = purchaseWarehouseModal?.contains(target);
 
         if (
           clickedReferenceInput ||
           clickedReferenceNumpad ||
           interactingWithDamageNotes ||
-          interactingWithSupplier
+          interactingWithSupplier ||
+          interactingWithPurchaseWarehouse
         ) {
           return;
         }
@@ -6185,6 +6433,13 @@ function createHtml(config: {
         }
       });
 
+      purchaseWarehouseModal?.addEventListener('click', (event) => {
+        if (event.target === purchaseWarehouseModal) {
+          state.pendingPurchaseWarehouseAdd = null;
+          closeSelectModal(purchaseWarehouseModal);
+        }
+      });
+
       document.querySelectorAll('[data-modal-close]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const targetId = btn.getAttribute('data-modal-close');
@@ -6194,6 +6449,10 @@ function createHtml(config: {
             closeSelectModal(operatorSelectModal);
           }
           if (targetId === 'supplier-modal') closeSelectModal(supplierModal);
+          if (targetId === 'purchase-warehouse-modal') {
+            state.pendingPurchaseWarehouseAdd = null;
+            closeSelectModal(purchaseWarehouseModal);
+          }
         });
       });
 

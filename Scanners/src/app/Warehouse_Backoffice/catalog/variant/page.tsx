@@ -20,6 +20,7 @@ const qtyUnits = [
   "bottle",
   "Tin Can",
   "Jar",
+  "Block",
   "Bucket",
   "Bag",
   "Tray",
@@ -58,6 +59,8 @@ const formatUnitLabel = (unit: string) => {
                   ? "Straw(s)"
                 : lower === "toilet paper"
                   ? "Toilet Paper(s)"
+              : lower === "block"
+                ? "Block(s)"
               : lower === "bucket"
                 ? "Bucket(s)"
                 : lower === "bag"

@@ -30,7 +30,8 @@ const TRANSFER_REQUIRED_PRODUCT_IDS = [
 const ALLOW_OVERSTOCK_PRODUCT_IDS = [
   '20de5f8f-cc97-4ae6-aa51-e158225f3703',
   'bcacc496-ffd7-430b-8c17-709d0497a1ff',
-  '76d8dcb3-0c9e-4011-842a-4c6792956655'
+  '76d8dcb3-0c9e-4011-842a-4c6792956655',
+  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9'
 ] as const;
 const INGREDIENTS_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
