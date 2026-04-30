@@ -1830,10 +1830,10 @@ export default function StocktakesPage() {
   };
 
   const recipeTargets = useMemo(() => {
-    return filteredBaseItems
+    return filteredDisplayItems
       .filter((row) => row.has_recipe && (row.item_kind ?? "").toLowerCase() !== "ingredient")
       .map((row) => row.item_id);
-  }, [filteredBaseItems]);
+  }, [filteredDisplayItems]);
 
   useEffect(() => {
     recipeTargets.forEach((itemId) => {
