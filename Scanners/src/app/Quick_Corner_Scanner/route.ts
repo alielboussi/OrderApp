@@ -18,7 +18,8 @@ const LOCKED_PRODUCT_IDS = [
   'be370f52-2ae3-4ab2-92e5-fd3b863d70a9',
   'd54abc42-200b-40a7-96e8-3e5980677f32',
   '3a248921-64ee-495d-a90a-061412b93813',
-  'b88ec860-bd68-4e00-8776-7678e0490e8e'
+  'b88ec860-bd68-4e00-8776-7678e0490e8e',
+  '61172398-0bf5-48d9-b493-b221d851f5e5'
 ] as const;
 const STOCK_GATED_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',
@@ -30,7 +31,8 @@ const ALLOW_OVERSTOCK_PRODUCT_IDS = [
   'bcacc496-ffd7-430b-8c17-709d0497a1ff',
   '76d8dcb3-0c9e-4011-842a-4c6792956655',
   'be370f52-2ae3-4ab2-92e5-fd3b863d70a9',
-  '0f4119cf-460f-45d6-a009-38b06d1cc2b8'
+  '0f4119cf-460f-45d6-a009-38b06d1cc2b8',
+  '61172398-0bf5-48d9-b493-b221d851f5e5'
 ] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
@@ -4164,7 +4166,7 @@ function createHtml(config: {
         }
 
         const variantStock = product?.live_stock_by_variant;
-        if (hasVariants && variantStock && typeof variantStock === 'object') {
+        if (context !== 'damage' && hasVariants && variantStock && typeof variantStock === 'object') {
           const filtered = rows.filter((row) => {
             if (!row.variation) return false;
             const key = normalizeVariantKeyLocal(row.variation.id ?? row.variation.variant_key ?? 'base');
