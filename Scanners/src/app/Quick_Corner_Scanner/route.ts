@@ -15,25 +15,23 @@ const LOCKED_PRODUCT_IDS = [
   '76d8dcb3-0c9e-4011-842a-4c6792956655',
   'ES&4weEQyk4w4d7P',
   '0f4119cf-460f-45d6-a009-38b06d1cc2b8',
-  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9'
+  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9',
+  'd54abc42-200b-40a7-96e8-3e5980677f32',
+  '3a248921-64ee-495d-a90a-061412b93813',
+  'b88ec860-bd68-4e00-8776-7678e0490e8e'
 ] as const;
 const STOCK_GATED_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',
-  '3a248921-64ee-495d-a90a-061412b93813'
-] as const;
-const TRANSFER_REQUIRED_PRODUCT_IDS = [
   '3a248921-64ee-495d-a90a-061412b93813',
-  '8ee07df8-cd30-4fb2-af7a-40bb7a7c200b',
-  'b88ec860-bd68-4e00-8776-7678e0490e8e',
-  'd54abc42-200b-40a7-96e8-3e5980677f32'
+  'b88ec860-bd68-4e00-8776-7678e0490e8e'
 ] as const;
 const ALLOW_OVERSTOCK_PRODUCT_IDS = [
   '20de5f8f-cc97-4ae6-aa51-e158225f3703',
   'bcacc496-ffd7-430b-8c17-709d0497a1ff',
   '76d8dcb3-0c9e-4011-842a-4c6792956655',
-  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9'
+  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9',
+  '0f4119cf-460f-45d6-a009-38b06d1cc2b8'
 ] as const;
-const INGREDIENTS_SOURCE_ID = '0c9ddd9e-d42c-475f-9232-5e9d649b0916';
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
@@ -2079,9 +2077,7 @@ function createHtml(config: {
       const lockedDestId = ${JSON.stringify(LOCKED_DEST_ID)};
       const LOCKED_PRODUCT_IDS = ${serializeForScript(LOCKED_PRODUCT_IDS)};
       const STOCK_GATED_PRODUCT_IDS = ${serializeForScript(STOCK_GATED_PRODUCT_IDS)};
-      const TRANSFER_REQUIRED_PRODUCT_IDS = ${serializeForScript(TRANSFER_REQUIRED_PRODUCT_IDS)};
       const ALLOW_OVERSTOCK_PRODUCT_IDS = ${serializeForScript(ALLOW_OVERSTOCK_PRODUCT_IDS)};
-      const ingredientsSourceId = ${JSON.stringify(INGREDIENTS_SOURCE_ID)};
 
       const state = {
         session: null,
@@ -2661,34 +2657,6 @@ function createHtml(config: {
             resolvedLockedIds = Array.from(new Set([...resolvedLockedIds, ...skuIds, ...supplierIds]));
           }
           const stockGatedIds = Array.isArray(STOCK_GATED_PRODUCT_IDS) ? STOCK_GATED_PRODUCT_IDS.filter(Boolean) : [];
-          const transferRequiredIds = Array.isArray(TRANSFER_REQUIRED_PRODUCT_IDS)
-            ? TRANSFER_REQUIRED_PRODUCT_IDS.filter(Boolean)
-            : [];
-          const transferVariantsByProduct = new Map();
-          if (transferRequiredIds.length && ingredientsSourceId && lockedSourceId) {
-            const { data: transferRows, error: transferError } = await supabase
-              .from('warehouse_transfers')
-              .select('id')
-              .eq('source_warehouse_id', ingredientsSourceId)
-              .eq('destination_warehouse_id', lockedSourceId);
-            if (transferError) throw transferError;
-            const transferIds = (transferRows ?? []).map((row) => row?.id).filter(Boolean);
-            if (transferIds.length) {
-              const { data: transferItems, error: transferItemsError } = await supabase
-                .from('warehouse_transfer_items')
-                .select('item_id,variant_key,transfer_id')
-                .in('transfer_id', transferIds)
-                .in('item_id', transferRequiredIds);
-              if (transferItemsError) throw transferItemsError;
-              (transferItems ?? []).forEach((row) => {
-                if (!row?.item_id) return;
-                const key = normalizeVariantKeyLocal(row?.variant_key ?? 'base');
-                const existing = transferVariantsByProduct.get(row.item_id) ?? new Set();
-                existing.add(key);
-                transferVariantsByProduct.set(row.item_id, existing);
-              });
-            }
-          }
           const sharedItemIds = new Set((sharedHomesResult.data ?? []).map((row) => row?.item_id).filter(Boolean));
           const productIds = new Set();
           const stockQtyByProduct = new Map();
@@ -2698,14 +2666,8 @@ function createHtml(config: {
             if (row?.warehouse_id && row.warehouse_id !== lockedSourceId) return;
             const isLocked = resolvedLockedIds.includes(row.product_id);
             const isStockGated = stockGatedIds.includes(row.product_id);
-            const requiresTransfer = transferRequiredIds.includes(row.product_id);
             if (!isLocked && !isStockGated && !sharedItemIds.has(row.product_id)) {
               return;
-            }
-            if (requiresTransfer) {
-              const transferVariants = transferVariantsByProduct.get(row.product_id);
-              const variantKey = normalizeVariantKeyLocal(row?.variant_key ?? 'base');
-              if (!transferVariants || !transferVariants.has(variantKey)) return;
             }
             const netUnits = Number(row?.net_units ?? 0);
             if (!isLocked) {
@@ -2732,8 +2694,7 @@ function createHtml(config: {
             lockedIds: resolvedLockedIds,
             productsWithWarehouseVariations,
             stockQtyByProduct,
-            variantStockByProduct,
-            transferVariantsByProduct
+            variantStockByProduct
           };
         };
 
@@ -2741,8 +2702,7 @@ function createHtml(config: {
           productIds,
           productsWithWarehouseVariations,
           stockQtyByProduct,
-          variantStockByProduct,
-          transferVariantsByProduct
+          variantStockByProduct
         ) => {
           if (!productIds.size) return [];
           const { data: products, error: prodErr } = await supabase
@@ -2792,20 +2752,14 @@ function createHtml(config: {
                 has_variations: true,
                 live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
                 live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
-                live_stock_by_variant: variantStockByProduct?.get(product.id) ?? null,
-                transfer_variants: transferVariantsByProduct?.get(product.id)
-                  ? Array.from(transferVariantsByProduct.get(product.id))
-                  : null
+                live_stock_by_variant: variantStockByProduct?.get(product.id) ?? null
               };
             }
             return {
               ...product,
               live_stock_qty: Number(stockQtyByProduct?.get(product.id) ?? 0),
               live_stock_uom: (product.consumption_uom ?? product.uom ?? 'unit').toString(),
-              live_stock_by_variant: variantStockByProduct?.get(product.id) ?? null,
-              transfer_variants: transferVariantsByProduct?.get(product.id)
-                ? Array.from(transferVariantsByProduct.get(product.id))
-                : null
+              live_stock_by_variant: variantStockByProduct?.get(product.id) ?? null
             };
           });
         };
@@ -2816,8 +2770,7 @@ function createHtml(config: {
             lockedIds,
             productsWithWarehouseVariations,
             stockQtyByProduct,
-            variantStockByProduct,
-            transferVariantsByProduct
+            variantStockByProduct
           } = await loadStockAndDefaults();
           if (lockedIds.length) {
             const combinedIds = new Set([...productIds, ...lockedIds]);
@@ -2825,16 +2778,14 @@ function createHtml(config: {
               combinedIds,
               productsWithWarehouseVariations,
               stockQtyByProduct,
-              variantStockByProduct,
-              transferVariantsByProduct
+              variantStockByProduct
             );
           }
           return await loadProducts(
             productIds,
             productsWithWarehouseVariations,
             stockQtyByProduct,
-            variantStockByProduct,
-            transferVariantsByProduct
+            variantStockByProduct
           );
         } catch (error) {
           markOfflineIfNetworkError(error);
@@ -4219,20 +4170,6 @@ function createHtml(config: {
             const key = normalizeVariantKeyLocal(row.variation.id ?? row.variation.variant_key ?? 'base');
             const qty = Number(variantStock[key] ?? 0);
             return Number.isFinite(qty) && qty > 0;
-          });
-          if (filtered.length) {
-            rows = filtered;
-          }
-        }
-
-        const transferVariants = Array.isArray(product?.transfer_variants)
-          ? new Set(product.transfer_variants.map((key) => normalizeVariantKeyLocal(key)))
-          : null;
-        if (hasVariants && transferVariants) {
-          const filtered = rows.filter((row) => {
-            if (!row.variation) return false;
-            const key = normalizeVariantKeyLocal(row.variation.id ?? row.variation.variant_key ?? 'base');
-            return transferVariants.has(key);
           });
           if (filtered.length) {
             rows = filtered;
@@ -5890,7 +5827,7 @@ function createHtml(config: {
         console.warn('Initial kiosk sync failed', error);
       });
 
-      // Auto-refresh product list every 10 seconds to reflect latest transferred stock.
+      // Auto-refresh product list every 300 seconds to reflect latest transferred stock.
       setInterval(async () => {
         try {
           const targetWarehouseIds = collectDescendantIds(state.warehouses, lockedSourceId);
@@ -5900,7 +5837,7 @@ function createHtml(config: {
         } catch (err) {
           console.warn('Auto-refresh failed', err);
         }
-      }, 10000);
+      }, 300000);
 
       supabase.auth.getSession().then(({ data }) => {
         console.log('initial getSession', data);
