@@ -19,7 +19,10 @@ const LOCKED_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',
   '3a248921-64ee-495d-a90a-061412b93813',
   'b88ec860-bd68-4e00-8776-7678e0490e8e',
-  '61172398-0bf5-48d9-b493-b221d851f5e5'
+  '61172398-0bf5-48d9-b493-b221d851f5e5',
+  '21e1d144-4a9c-46c8-937f-07be7dd355a9',
+  '3f8da88d-d631-4f7c-b338-f556d89b6c96',
+  'fad438a7-103e-4db5-9a86-5212ccd2bca0'
 ] as const;
 const STOCK_GATED_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',
@@ -29,10 +32,7 @@ const STOCK_GATED_PRODUCT_IDS = [
 const ALLOW_OVERSTOCK_PRODUCT_IDS = [
   '20de5f8f-cc97-4ae6-aa51-e158225f3703',
   'bcacc496-ffd7-430b-8c17-709d0497a1ff',
-  '76d8dcb3-0c9e-4011-842a-4c6792956655',
-  'be370f52-2ae3-4ab2-92e5-fd3b863d70a9',
   '0f4119cf-460f-45d6-a009-38b06d1cc2b8',
-  '61172398-0bf5-48d9-b493-b221d851f5e5'
 ] as const;
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
@@ -100,14 +100,32 @@ async function preloadLockedWarehouses(): Promise<WarehouseRecord[]> {
   }
 }
 
+async function fetchLatestProductionTimestamp(): Promise<string | null> {
+  try {
+    const supabase = getServiceClient();
+    const { data, error } = await supabase
+      .from('production_entries')
+      .select('created_at')
+      .eq('warehouse_id', LOCKED_SOURCE_ID)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return data?.[0]?.created_at ?? null;
+  } catch (error) {
+    console.warn('latest production timestamp fetch failed', error);
+    return null;
+  }
+}
+
 function createHtml(config: {
   sourcePillLabel: string;
   destPillLabel: string;
   sourceWarehouseName: string;
   initialWarehousesJson: string;
   initialView: 'transfer' | 'purchase' | 'damage';
+  producedTimestamp: string | null;
 }) {
-  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView } = config;
+  const { sourcePillLabel, destPillLabel, sourceWarehouseName, initialWarehousesJson, initialView, producedTimestamp } = config;
   const destinationChoicesJson = serializeForScript(DESTINATION_CHOICES);
   const operatorContextLabelsJson = serializeForScript(OPERATOR_CONTEXT_LABELS);
   return `<!DOCTYPE html>
@@ -391,6 +409,29 @@ function createHtml(config: {
     .console-actions {
       display: flex;
       justify-content: flex-end;
+    }
+    .production-banner {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(20, 20, 20, 0.95);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 82, 82, 0.4);
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .production-banner span {
+      color: rgba(255, 255, 255, 0.9);
+    }
+    .production-banner .production-value {
+      color: #ffe1e1;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: none;
     }
     .logout-button {
       min-width: 140px;
@@ -1643,6 +1684,10 @@ function createHtml(config: {
         <header class="console-headline">
           <h1>Warehouse Transfer Console</h1>
         </header>
+        <div class="production-banner" id="production-banner">
+          <span>Produced_Timestamp</span>
+          <span id="production-timestamp" class="production-value">${escapeHtml(producedTimestamp ?? '--')}</span>
+        </div>
         <div class="console-actions">
           <button type="button" class="button button-outline logout-button" data-logout="true">Log out</button>
         </div>
@@ -5880,12 +5925,14 @@ export async function GET(request: Request) {
   const initialWarehouses = await preloadLockedWarehouses();
   const sourceWarehouse = initialWarehouses.find((w) => w.id === LOCKED_SOURCE_ID);
   const destWarehouse = initialWarehouses.find((w) => w.id === LOCKED_DEST_ID);
+  const producedTimestamp = await fetchLatestProductionTimestamp();
   const html = createHtml({
     sourcePillLabel: describeLockedWarehouse(sourceWarehouse, 'Loading...'),
     destPillLabel: describeLockedWarehouse(destWarehouse, 'Loading...'),
     sourceWarehouseName: sourceWarehouse?.name ?? 'Loading...',
     initialWarehousesJson: serializeForScript(initialWarehouses),
     initialView,
+    producedTimestamp,
   });
 
   return new NextResponse(html, {

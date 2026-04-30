@@ -123,7 +123,8 @@ fun StocktakeDashboardScreen(
     onOpenCounts: (String) -> Unit,
     onOpenVariance: (String) -> Unit,
     onOpenPeriods: (String) -> Unit,
-    onOpenVehicleReports: () -> Unit
+    onOpenVehicleReports: () -> Unit,
+    onOpenProduction: () -> Unit
 ) {
     val session by root.session.collectAsState()
     val vm: StocktakeViewModel = viewModel(factory = StocktakeViewModel.Factory(root.supabaseProvider))
@@ -302,6 +303,28 @@ fun StocktakeDashboardScreen(
                             border = BorderStroke(1.dp, border)
                         ) { Text("View variance") }
                     }
+                }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = surface),
+            border = BorderStroke(1.dp, border)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Production", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = text)
+                Text(
+                    "Record finished output based on opening stock and recipes.",
+                    color = muted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Button(
+                    onClick = onOpenProduction,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = MaterialTheme.colorScheme.onPrimary)
+                ) {
+                    Text("Open production")
                 }
             }
         }

@@ -31,6 +31,7 @@ export default function WarehouseBackofficeDashboard() {
   const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup-hub");
   const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
   const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
+  const goToProductionAssignments = () => router.push("/Warehouse_Backoffice/production-assignments");
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -105,6 +106,12 @@ export default function WarehouseBackofficeDashboard() {
           <button onClick={goToCatalog} className={`${styles.actionCard} ${styles.catalogCard}`}>
             <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Product Setup & Purchase Entry</p>
             <p className={styles.cardBody}>Manage items, variants, and recipes that drive outlet routing and storage homes.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToProductionAssignments} className={`${styles.actionCard} ${styles.productionCard}`}>
+            <p className={`${styles.cardTitle} ${styles.productionTitle}`}>Production Assignments</p>
+            <p className={styles.cardBody}>Assign finished goods to their production warehouse for reporting.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

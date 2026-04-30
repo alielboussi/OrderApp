@@ -25,6 +25,7 @@ import com.afterten.stocktake.data.hasRole
 import com.afterten.stocktake.data.OutletSession
 import com.afterten.stocktake.ui.stocktake.StocktakeCountScreen
 import com.afterten.stocktake.ui.stocktake.StocktakeDashboardScreen
+import com.afterten.stocktake.ui.stocktake.ProductionScreen
 import com.afterten.stocktake.ui.stocktake.StocktakePeriodsScreen
 import com.afterten.stocktake.ui.stocktake.StocktakePeriodCountsScreen
 import com.afterten.stocktake.ui.stocktake.StocktakeVarianceScreen
@@ -61,6 +62,7 @@ sealed class Routes(val route: String) {
         fun route(periodId: String) = "stocktake_variance/$periodId"
     }
     data object VehicleReports : Routes("vehicle_reports")
+    data object Production : Routes("production")
 }
 
 @Composable
@@ -116,7 +118,8 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onOpenCounts = { periodId -> navController.navigate(Routes.StocktakeCount.route(periodId)) },
                 onOpenVariance = { periodId -> navController.navigate(Routes.StocktakeVariance.route(periodId)) },
                 onOpenPeriods = { warehouseId -> navController.navigate(Routes.StocktakePeriods.route(warehouseId)) },
-                onOpenVehicleReports = { navController.navigate(Routes.VehicleReports.route) }
+                onOpenVehicleReports = { navController.navigate(Routes.VehicleReports.route) },
+                onOpenProduction = { navController.navigate(Routes.Production.route) }
             )
         }
         composable(
@@ -166,6 +169,12 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.VehicleReports.route) {
             VehicleReportsScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.Production.route) {
+            ProductionScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() }
             )

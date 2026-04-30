@@ -510,28 +510,18 @@ export default function StocktakesPage() {
     }, new Map<string, WarehouseStockItem[]>());
   }, [items]);
 
-  const filteredBaseItems = useMemo(() => {
+  const filteredDisplayItems = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const matchesTerm = (itemId: string, rows: WarehouseStockItem[]) => {
-      if (!term) return true;
-      const nameMatch = rows[0]?.item_name?.toLowerCase().includes(term) ?? false;
-      if (nameMatch || itemId.toLowerCase().includes(term)) return true;
-      return rows.some((row) => {
-        const key = normalizeVariantKey(row.variant_key);
-        const label = variantLabelMap.get(key)?.toLowerCase() ?? "";
-        return label.includes(term);
-      });
-    };
-
-    return Array.from(displayItemsByItemId.entries())
-      .map(([itemId, rows]) => {
-        const baseRow = rows.find((row) => normalizeVariantKey(row.variant_key) === "base") ?? rows[0];
-        if (!baseRow) return null;
-        if (!matchesTerm(itemId, rows)) return null;
-        return baseRow;
-      })
-      .filter(Boolean) as WarehouseStockItem[];
-  }, [displayItemsByItemId, search, variantLabelMap]);
+    if (!term) return items;
+    return items.filter((row) => {
+      const itemName = row.item_name?.toLowerCase() ?? "";
+      const itemMatch = itemName.includes(term) || row.item_id.toLowerCase().includes(term);
+      if (itemMatch) return true;
+      const key = normalizeVariantKey(row.variant_key);
+      const label = variantLabelMap.get(key)?.toLowerCase() ?? "";
+      return label.includes(term);
+    });
+  }, [items, search, variantLabelMap]);
 
   const openingCountMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -755,6 +745,78 @@ export default function StocktakesPage() {
         has_recipe: false,
       });
     });
+
+    const { data: storageHomes, error: storageHomesError } = await supabase
+      .from("item_storage_homes")
+      .select("item_id,normalized_variant_key,storage_warehouse_id")
+      .in("storage_warehouse_id", targetWarehouseIds);
+    if (storageHomesError) throw storageHomesError;
+
+    const storageHomePairs = (storageHomes ?? [])
+      .map((row) => ({
+        itemId: row?.item_id,
+        variantKey: normalizeVariantKey(row?.normalized_variant_key)
+      }))
+      .filter((row) => Boolean(row.itemId)) as Array<{ itemId: string; variantKey: string }>;
+
+    const storageItemIds = Array.from(new Set(storageHomePairs.map((row) => row.itemId)));
+
+    if (storageItemIds.length) {
+      const storageItems = products.length
+        ? products
+            .filter((item) => storageItemIds.includes(item.id))
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              cost: item.cost,
+              item_kind: item.item_kind ?? null,
+              image_url: item.image_url ?? null,
+            }))
+        : [];
+
+      const storageItemsById = new Map<string, {
+        id: string;
+        name: string | null;
+        cost: number | null;
+        item_kind: string | null;
+        image_url: string | null;
+      }>();
+      storageItems.forEach((item) => {
+        if (!item?.id) return;
+        storageItemsById.set(item.id, item);
+      });
+
+      const missingStorageIds = storageItemIds.filter((id) => !storageItemsById.has(id));
+      if (missingStorageIds.length) {
+        const { data: storageFallback, error: storageFallbackError } = await supabase
+          .from("catalog_items")
+          .select("id,name,cost,item_kind,image_url")
+          .eq("active", true)
+          .in("item_kind", ["ingredient", "finished"])
+          .in("id", missingStorageIds);
+        if (storageFallbackError) throw storageFallbackError;
+        (storageFallback ?? []).forEach((item) => {
+          if (!item?.id) return;
+          storageItemsById.set(item.id, item);
+        });
+      }
+
+      storageHomePairs.forEach((pair) => {
+        const item = storageItemsById.get(pair.itemId);
+        if (!item) return;
+        combined.push({
+          warehouse_id: warehouseId,
+          item_id: item.id,
+          item_name: item.name ?? "Item",
+          variant_key: pair.variantKey,
+          net_units: 0,
+          unit_cost: typeof item.cost === "number" ? item.cost : 0,
+          item_kind: item.item_kind,
+          image_url: item.image_url ?? null,
+          has_recipe: false,
+        });
+      });
+    }
 
     if (warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)) {
       const storageItems = products.length
@@ -2481,7 +2543,7 @@ export default function StocktakesPage() {
                 <p className={styles.helperText}>Opening counts must be entered before closing counts.</p>
                 {inputError && <p className={styles.errorBanner}>{inputError}</p>}
                 {itemsLoading && <p className={styles.loadingTag}>Loading items...</p>}
-                {!itemsLoading && filteredBaseItems.length === 0 && (
+                {!itemsLoading && filteredDisplayItems.length === 0 && (
                   <p className={styles.emptyState}>No items found for this warehouse.</p>
                 )}
               </div>
@@ -2494,13 +2556,18 @@ export default function StocktakesPage() {
             )}
 
             <div className={styles.itemGrid}>
-              {filteredBaseItems.map((row) => {
+              {filteredDisplayItems.map((row) => {
                 const rows = allItemsByItemId.get(row.item_id) ?? [];
                 const variantCount = rows.filter((item) => normalizeVariantKey(item.variant_key) !== "base").length;
                 const kind = (row.item_kind ?? "").toLowerCase();
                 const hasRecipe = row.has_recipe && kind !== "ingredient";
                 const recipeKey = makeKey(row.item_id, "base");
                 const ingredientCount = recipeIngredients[recipeKey]?.length ?? null;
+                const variantKey = normalizeVariantKey(row.variant_key);
+                const variantLabel = variantLabelMap.get(variantKey) ?? "Base";
+                const titleLabel = variantKey === "base"
+                  ? (row.item_name || "Item")
+                  : `${row.item_name || "Item"} - ${variantLabel}`;
                 const badge = kind === "ingredient"
                   ? "Ingredient"
                   : hasRecipe
@@ -2524,7 +2591,7 @@ export default function StocktakesPage() {
                     ) : (
                       <div className={styles.itemPlaceholder}>{row.item_name?.slice(0, 1) ?? "#"}</div>
                     )}
-                    <p className={styles.itemTitle}>{row.item_name || "Item"}</p>
+                    <p className={styles.itemTitle}>{titleLabel}</p>
                     <p className={styles.itemBadge}>{badge}</p>
                   </button>
                 );

@@ -56,7 +56,7 @@ fun LoginScreen(
 ) {
     val repo = remember { OutletRepository(viewModel.supabaseProvider) }
     var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -76,7 +76,11 @@ fun LoginScreen(
             logger.warn("InvalidEmail", mapOf("isBlank" to email.isBlank()))
             return
         }
-        // Accept any length password per new requirement
+        if (pin.isBlank()) {
+            error = "Enter a PIN"
+            logger.warn("InvalidPin", mapOf("isBlank" to pin.isBlank()))
+            return
+        }
         loading = true
         val emailDomain = email.substringAfter('@', missingDelimiterValue = "unknown")
         logger.state(
@@ -88,7 +92,7 @@ fun LoginScreen(
         )
         CoroutineScope(Dispatchers.Main).launch {
             try {
-                val session = repo.login(email, password)
+                val session = repo.login(email, pin)
                 viewModel.setSession(session)
                 logger.event(
                     "LoginSuccess",
@@ -123,7 +127,7 @@ fun LoginScreen(
             .fillMaxWidth()
             .padding(bottom = 16.dp)
         )
-        Text(text = "Outlet Login", style = MaterialTheme.typography.headlineSmall)
+        Text(text = "Stocktake Login", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
         AppOutlinedTextField(
             value = email,
@@ -139,15 +143,15 @@ fun LoginScreen(
         )
         Spacer(Modifier.height(8.dp))
         AppOutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = "Password",
+            value = pin,
+            onValueChange = { pin = it },
+            label = "PIN",
             modifier = Modifier.fillMaxWidth(),
             borderColor = MaterialTheme.colorScheme.error,
             borderThickness = 2.dp,
             keyboardOptions = KeyboardOptions(
                 imeAction = ImeAction.Done,
-                keyboardType = KeyboardType.Password
+                keyboardType = KeyboardType.NumberPassword
             ),
             visualTransformation = PasswordVisualTransformation(),
             keyboardActions = KeyboardActions(onDone = {

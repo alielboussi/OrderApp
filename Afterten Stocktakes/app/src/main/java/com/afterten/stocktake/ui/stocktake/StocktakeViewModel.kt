@@ -112,7 +112,8 @@ class StocktakeViewModel(
             }
             Log.d(TAG, "stocktake fetchWarehouses outlets=${outletIds.size} ids=$outletIds")
             if (outletIds.isEmpty()) {
-                Log.e(TAG, "stocktake fetchWarehouses: no outlet ids from session or whoami.")
+                Log.w(TAG, "stocktake fetchWarehouses: no outlet ids; loading all warehouses.")
+                return@runCatching repo.listWarehouses(jwt)
             }
             val warehouseIds = repo.listWarehouseIdsForOutlets(jwt, outletIds, true)
             if (warehouseIds.isEmpty()) {

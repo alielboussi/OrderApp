@@ -25,8 +25,8 @@ class OutletRepository(private val provider: SupabaseProvider) {
         @SerialName("is_supervisor") val isSupervisor: Boolean = false
     )
 
-    suspend fun login(email: String, password: String): OutletSession {
-        val raw = provider.rpcLogin(email.trim(), password)
+    suspend fun login(email: String, pin: String): OutletSession {
+        val raw = provider.rpcStocktakeLogin(email.trim(), pin)
         val parsed = relaxedJson.decodeFromString<LoginResponse>(raw)
         return OutletSession(
             token = parsed.token,

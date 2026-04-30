@@ -19,7 +19,10 @@ const MULTIPLY_QTY_BY_PACKAGE = true;
 const QUICK_TRANSFER_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',
   '3a248921-64ee-495d-a90a-061412b93813',
-  'b88ec860-bd68-4e00-8776-7678e0490e8e'
+  'b88ec860-bd68-4e00-8776-7678e0490e8e',
+  '23c47055-cd8f-430b-83a4-08b97eef1c9d',
+  '3f8da88d-d631-4f7c-b338-f556d89b6c96',
+  '69520077-6a64-4962-a9a2-61286df81928'
 ] as const;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;

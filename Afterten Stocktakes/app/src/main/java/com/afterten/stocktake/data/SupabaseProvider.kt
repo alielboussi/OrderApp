@@ -326,6 +326,23 @@ class SupabaseProvider(context: Context) {
         )
     }
 
+    suspend fun rpcStocktakeLogin(email: String, pin: String): String {
+        require(supabaseUrl.isNotBlank() && supabaseAnonKey.isNotBlank()) {
+            "SUPABASE_URL/ANON_KEY not configured"
+        }
+        val resp = http.post("$supabaseUrl/rest/v1/rpc/stocktake_app_login") {
+            header("apikey", supabaseAnonKey)
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("p_email" to email.trim(), "p_pin" to pin))
+        }
+        val code = resp.status.value
+        val body = resp.bodyAsText()
+        if (code !in 200..299) {
+            throw IllegalStateException("stocktake_app_login failed: HTTP $code $body")
+        }
+        return body
+    }
+
     /** Refresh an access token via refresh_token */
     suspend fun refreshAccessToken(refreshToken: String): Pair<String, Long> {
         @Serializable
@@ -892,6 +909,59 @@ class SupabaseProvider(context: Context) {
     )
 
     @Serializable
+    data class ProductionAssignmentRow(
+        val id: String,
+        @SerialName("finished_item_id") val finishedItemId: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        val active: Boolean? = null
+    )
+
+    @Serializable
+    data class ProductionEntryRow(
+        val id: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("item_id") val itemId: String,
+        @SerialName("variant_key") val variantKey: String? = "base",
+        @SerialName("qty_units") val qtyUnits: Double,
+        @SerialName("period_id") val periodId: String? = null,
+        val note: String? = null,
+        @SerialName("created_at") val createdAt: String? = null
+    )
+
+    @Serializable
+    data class ProductionRecipeRow(
+        @SerialName("finished_item_id") val finishedItemId: String,
+        @SerialName("ingredient_item_id") val ingredientItemId: String,
+        @SerialName("qty_per_unit") val qtyPerUnit: Double,
+        @SerialName("qty_unit") val qtyUnit: String,
+        @SerialName("yield_qty_units") val yieldQtyUnits: Double? = null,
+        @SerialName("finished_variant_key") val finishedVariantKey: String? = null,
+        @SerialName("recipe_for_kind") val recipeForKind: String? = null,
+        val active: Boolean? = null,
+        @SerialName("source_warehouse_id") val sourceWarehouseId: String? = null
+    )
+
+    @Serializable
+    data class UomConversionRow(
+        @SerialName("from_uom") val fromUom: String,
+        @SerialName("to_uom") val toUom: String,
+        val multiplier: Double,
+        val active: Boolean? = null
+    )
+
+    @Serializable
+    data class ProductionCatalogItem(
+        val id: String,
+        val name: String? = null,
+        @SerialName("item_kind") val itemKind: String? = null,
+        @SerialName("consumption_unit") val consumptionUnit: String? = null,
+        @SerialName("consumption_uom") val consumptionUom: String? = null,
+        @SerialName("purchase_unit_mass") val purchaseUnitMass: Double? = null,
+        @SerialName("purchase_unit_mass_uom") val purchaseUnitMassUom: String? = null
+    )
+
+    @Serializable
     data class OutletProductRow(
         @SerialName("item_id") val itemId: String,
         @SerialName("variant_key") val variantKey: String? = "base",
@@ -1370,6 +1440,137 @@ class SupabaseProvider(context: Context) {
         val fallback = rows
             .mapNotNull { it.ingredientItemId?.trim()?.takeIf(String::isNotEmpty) }
         return (if (exact.isNotEmpty()) exact else fallback).distinct()
+    }
+
+    suspend fun listProductionAssignments(jwt: String, warehouseId: String): List<ProductionAssignmentRow> {
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/production_item_assignments")
+            append("?select=id,finished_item_id,warehouse_id,variant_key,active")
+            append("&warehouse_id=eq.")
+            append(warehouseId)
+            append("&active=eq.true")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("production_item_assignments failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(ProductionAssignmentRow.serializer()), txt)
+    }
+
+    suspend fun listProductionEntries(
+        jwt: String,
+        warehouseId: String,
+        periodId: String? = null
+    ): List<ProductionEntryRow> {
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/production_entries")
+            append("?select=id,warehouse_id,item_id,variant_key,qty_units,period_id,note,created_at")
+            append("&warehouse_id=eq.")
+            append(warehouseId)
+            periodId?.takeIf { it.isNotBlank() }?.let {
+                append("&period_id=eq.")
+                append(it)
+            }
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("production_entries failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(ProductionEntryRow.serializer()), txt)
+    }
+
+    suspend fun recordProductionEntry(
+        jwt: String,
+        itemId: String,
+        qtyUnits: Double,
+        warehouseId: String,
+        variantKey: String = "base",
+        note: String? = null
+    ): ProductionEntryRow {
+        val payload = mutableMapOf<String, Any>(
+            "p_item_id" to itemId,
+            "p_qty_units" to qtyUnits,
+            "p_variant_key" to variantKey,
+            "p_warehouse_id" to warehouseId
+        )
+        if (!note.isNullOrBlank()) payload["p_note"] = note
+        val (code, body) = postWithJwt(
+            pathAndQuery = "/rest/v1/rpc/record_production_entry",
+            jwt = jwt,
+            bodyObj = payload
+        )
+        if (code !in 200..299) throw IllegalStateException("record_production_entry failed: HTTP $code ${body ?: ""}")
+        val text = body ?: throw IllegalStateException("record_production_entry returned empty body")
+        return relaxedJson.decodeFromString(ProductionEntryRow.serializer(), text)
+    }
+
+    suspend fun listProductionRecipes(jwt: String, finishedItemIds: List<String>): List<ProductionRecipeRow> {
+        if (finishedItemIds.isEmpty()) return emptyList()
+        val filter = finishedItemIds.joinToString(",")
+        val encoded = java.net.URLEncoder.encode("($filter)", Charsets.UTF_8.name())
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/recipes")
+            append("?select=finished_item_id,ingredient_item_id,qty_per_unit,qty_unit,yield_qty_units,finished_variant_key,recipe_for_kind,active,source_warehouse_id")
+            append("&finished_item_id=in.")
+            append(encoded)
+            append("&active=eq.true")
+            append("&recipe_for_kind=eq.finished")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("recipes list failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(ProductionRecipeRow.serializer()), txt)
+    }
+
+    suspend fun listUomConversions(jwt: String): List<UomConversionRow> {
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/uom_conversions")
+            append("?select=from_uom,to_uom,multiplier,active")
+            append("&active=eq.true")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("uom_conversions failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(UomConversionRow.serializer()), txt)
+    }
+
+    suspend fun listProductionCatalogItems(jwt: String, ids: List<String>): List<ProductionCatalogItem> {
+        if (ids.isEmpty()) return emptyList()
+        val filter = ids.joinToString(",")
+        val encoded = java.net.URLEncoder.encode("($filter)", Charsets.UTF_8.name())
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/catalog_items")
+            append("?select=id,name,item_kind,consumption_unit,consumption_uom,purchase_unit_mass,purchase_unit_mass_uom")
+            append("&id=in.")
+            append(encoded)
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("catalog_items production failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(ProductionCatalogItem.serializer()), txt)
     }
 
     suspend fun fetchWarehousesByIds(jwt: String, ids: Collection<String>): List<Warehouse> {

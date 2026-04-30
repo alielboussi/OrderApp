@@ -32,20 +32,22 @@ class RootViewModel(application: Application) : AndroidViewModel(application) {
         if (session != null) {
             // Immediately propagate auth to realtime
             supabaseProvider.updateRealtimeAuth(session.token)
-            // Start background refresh loop
-            refreshJob = viewModelScope.launch {
-                while (true) {
-                    val waitMs = (session.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(5_000L)
-                    delay(waitMs)
-                    runCatching {
-                        val (newJwt, newExp) = supabaseProvider.refreshAccessToken(session.refreshToken)
-                        val updated = session.copy(token = newJwt, expiresAtMillis = newExp)
-                        _session.value = updated
-                        SessionStore.save(getApplication(), updated)
-                        supabaseProvider.updateRealtimeAuth(newJwt)
-                    }.onFailure {
-                        // If refresh fails, wait a bit and try again; if persistently failing, break
-                        delay(30_000L)
+            if (session.refreshToken.isNotBlank()) {
+                // Start background refresh loop
+                refreshJob = viewModelScope.launch {
+                    while (true) {
+                        val waitMs = (session.expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(5_000L)
+                        delay(waitMs)
+                        runCatching {
+                            val (newJwt, newExp) = supabaseProvider.refreshAccessToken(session.refreshToken)
+                            val updated = session.copy(token = newJwt, expiresAtMillis = newExp)
+                            _session.value = updated
+                            SessionStore.save(getApplication(), updated)
+                            supabaseProvider.updateRealtimeAuth(newJwt)
+                        }.onFailure {
+                            // If refresh fails, wait a bit and try again; if persistently failing, break
+                            delay(30_000L)
+                        }
                     }
                 }
             }

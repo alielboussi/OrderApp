@@ -105,19 +105,35 @@ export default function PosItemMapPage() {
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return mappings;
-    return mappings.filter((m) => {
-      return (
-        m.pos_item_id.toLowerCase().includes(term) ||
-        (m.pos_item_name ?? "").toLowerCase().includes(term) ||
-        (m.pos_flavour_id ?? "").toLowerCase().includes(term) ||
-        (m.pos_flavour_name ?? "").toLowerCase().includes(term) ||
-        m.catalog_item_id.toLowerCase().includes(term) ||
-        (m.catalog_variant_key ?? "").toLowerCase().includes(term) ||
-        (m.normalized_variant_key ?? "").toLowerCase().includes(term) ||
-        (m.warehouse_id ?? "").toLowerCase().includes(term) ||
-        m.outlet_id.toLowerCase().includes(term)
-      );
+    const filteredRows = term
+      ? mappings.filter((m) => {
+          return (
+            m.pos_item_id.toLowerCase().includes(term) ||
+            (m.pos_item_name ?? "").toLowerCase().includes(term) ||
+            (m.pos_flavour_id ?? "").toLowerCase().includes(term) ||
+            (m.pos_flavour_name ?? "").toLowerCase().includes(term) ||
+            m.catalog_item_id.toLowerCase().includes(term) ||
+            (m.catalog_variant_key ?? "").toLowerCase().includes(term) ||
+            (m.normalized_variant_key ?? "").toLowerCase().includes(term) ||
+            (m.warehouse_id ?? "").toLowerCase().includes(term) ||
+            m.outlet_id.toLowerCase().includes(term)
+          );
+        })
+      : mappings;
+
+    return [...filteredRows].sort((a, b) => {
+      const nameA = (a.pos_item_name || a.pos_item_id).toLowerCase();
+      const nameB = (b.pos_item_name || b.pos_item_id).toLowerCase();
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+      const flavourA = (a.pos_flavour_name || a.pos_flavour_id || "").toLowerCase();
+      const flavourB = (b.pos_flavour_name || b.pos_flavour_id || "").toLowerCase();
+      if (flavourA !== flavourB) return flavourA.localeCompare(flavourB);
+      const catalogA = (a.catalog_item_name || a.catalog_item_id).toLowerCase();
+      const catalogB = (b.catalog_item_name || b.catalog_item_id).toLowerCase();
+      if (catalogA !== catalogB) return catalogA.localeCompare(catalogB);
+      const variantA = (a.catalog_variant_label || a.catalog_variant_key || "base").toLowerCase();
+      const variantB = (b.catalog_variant_label || b.catalog_variant_key || "base").toLowerCase();
+      return variantA.localeCompare(variantB);
     });
   }, [mappings, search]);
 
