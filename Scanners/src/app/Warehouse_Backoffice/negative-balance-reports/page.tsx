@@ -271,13 +271,13 @@ export default function NegativeBalanceReportsPage() {
       const [outletRes, warehouseRes, itemRes] = await Promise.all([
         outletIds.size > 0
           ? supabase.from("outlets").select("id,name").in("id", Array.from(outletIds))
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
         warehouseIds.size > 0
           ? supabase.from("warehouses").select("id,name").in("id", Array.from(warehouseIds))
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
         itemIds.size > 0
           ? supabase.from("catalog_items").select("id,name").in("id", Array.from(itemIds))
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (outletRes.error) throw outletRes.error;
