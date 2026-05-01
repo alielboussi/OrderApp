@@ -472,7 +472,6 @@ export default function CatalogManagePage() {
       setVariantItemKind("finished");
       setVariantConsumptionUom("pc");
       setVariantUnitsPerPurchasePack("1");
-      setVariantTransferQuantity("1");
       setVariantSellingPrice("0");
       setVariantOutletOrderVisible(true);
       setVariantImageUrl("");
