@@ -416,13 +416,13 @@ export default function FlowTraceReportsPage() {
         supabase.from("catalog_items").select("id,name,item_kind").in("id", itemIds),
         outletIds.length > 0
           ? supabase.from("outlets").select("id,name").in("id", outletIds)
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
         warehouseIds.length > 0
           ? supabase.from("warehouses").select("id,name").in("id", warehouseIds)
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
         variantKeys.length > 0
           ? supabase.from("catalog_variants").select("id,name").in("id", variantKeys)
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (stepsRes.error) throw stepsRes.error;
