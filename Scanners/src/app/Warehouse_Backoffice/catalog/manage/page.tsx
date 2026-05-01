@@ -472,10 +472,6 @@ export default function CatalogManagePage() {
       setVariantItemKind("finished");
       setVariantConsumptionUom("pc");
       setVariantUnitsPerPurchasePack("1");
-      setVariantPurchaseUnitMass("");
-      setVariantPurchaseUnitMassUom("kg");
-      setVariantInnerPackUnitMass("");
-      setVariantInnerPackUnitMassUom("kg");
       setVariantTransferQuantity("1");
       setVariantSellingPrice("0");
       setVariantOutletOrderVisible(true);
