@@ -83,7 +83,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -688,6 +688,7 @@ fun TransferSummaryScreen(
             errorState.value = null
             infoState.value = null
             scope.launch {
+              var queued = false
               runCatching {
                 val pdfName = state.pdfFileName ?: buildTransferPdfFileName(
                   fromWarehouseState.value?.name ?: "From_Warehouse",
@@ -705,7 +706,7 @@ fun TransferSummaryScreen(
                 )
                 repo.uploadTransferPdf(token, pdfName, pdfBytes)
                 val signedUrl = repo.createTransferPdfSignedUrl(token, pdfName)
-                val queued = enqueuePdfDownload(context, signedUrl, pdfName)
+                queued = enqueuePdfDownload(context, signedUrl, pdfName)
                 state.pdfFileName = pdfName
                 state.pdfUploaded = true
               }.onSuccess {

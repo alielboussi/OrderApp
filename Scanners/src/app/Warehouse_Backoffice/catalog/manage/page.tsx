@@ -117,6 +117,7 @@ export default function CatalogManagePage() {
   const [variantSku, setVariantSku] = useState("");
   const [variantItemKind, setVariantItemKind] = useState("finished");
   const [variantConsumptionUom, setVariantConsumptionUom] = useState("pc");
+  const [variantPurchasePackUnit, setVariantPurchasePackUnit] = useState("pc");
   const [variantUnitsPerPurchasePack, setVariantUnitsPerPurchasePack] = useState("1");
   const [variantCost, setVariantCost] = useState("0");
   const [variantSellingPrice, setVariantSellingPrice] = useState("0");
