@@ -24,14 +24,19 @@ export default function WarehouseBackofficeDashboard() {
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [negativeAlerts, setNegativeAlerts] = useState<NegativeAlertRow[]>([]);
 
-  const goToCatalog = () => router.push("/Warehouse_Backoffice/catalog");
+  const goToProducts = () => router.push("/Warehouse_Backoffice/catalog/menu");
+  const goToBulkVariantUpdate = () => router.push("/Warehouse_Backoffice/variant-bulk-update");
+  const goToSuppliers = () => router.push("/Warehouse_Backoffice/suppliers");
+  const goToPurchaseEntry = () => router.push("/Warehouse_Backoffice/purchase-entry");
+  const goToRecipes = () => router.push("/Warehouse_Backoffice/recipes");
+  const goToOutletAutomation = () => router.push("/Warehouse_Backoffice/outlet-setup");
+  const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
   const goToOutletBalances = () => router.push("/Warehouse_Backoffice/outlet-warehouse-balances");
   const goToStocktakes = () => router.push("/Warehouse_Backoffice/stocktakes");
-  const goToReports = () => router.push("/Warehouse_Backoffice/reports-hub");
-  const goToOutletSetup = () => router.push("/Warehouse_Backoffice/outlet-setup-hub");
-  const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
-  const goToPosMatch = () => router.push("/Warehouse_Backoffice/catalog/pos-item-map");
   const goToProductionAssignments = () => router.push("/Warehouse_Backoffice/production-assignments");
+  const goToDifferences = () => router.push("/Warehouse_Backoffice/Differences");
+  const goToProductionDifferences = () => router.push("/Warehouse_Backoffice/production-differences");
+  const goToReports = () => router.push("/Warehouse_Backoffice/reports-hub");
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -43,7 +48,7 @@ export default function WarehouseBackofficeDashboard() {
         const { data, error } = await supabase
           .from("warehouse_backoffice_logs")
           .select("id,created_at,details")
-          .eq("action", "order_negative_balance")
+          .in("action", ["order_negative_balance", "recipe_negative_balance"])
           .gte("created_at", since)
           .order("created_at", { ascending: false })
           .limit(5);
@@ -80,7 +85,7 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Warehouse Backoffice</h1>
             <p className={styles.subtitle}>
-              Configure outlet defaults, per-item routing, and POS match against the new warehouse schema. Operate inventory without legacy outlet-warehouse tables.
+              One place to automate outlet warehouse defaults, deductions, and POS match against the single source of truth.
             </p>
             <p className={styles.shortcutNote}>Logs shortcut: Ctrl + Alt + Space, then X.</p>
           </div>
@@ -89,9 +94,9 @@ export default function WarehouseBackofficeDashboard() {
         {negativeAlerts.length > 0 && (
           <section className={styles.alertBanner}>
             <div>
-              <p className={styles.alertTitle}>Negative stock used on approvals</p>
+              <p className={styles.alertTitle}>Negative stock used in deductions</p>
               <p className={styles.alertBody}>
-                {`${negativeAlerts.length} recent approval${negativeAlerts.length > 1 ? "s" : ""} used a storage-home child with no stock. ${latestHint}`}
+                {`${negativeAlerts.length} recent deduction${negativeAlerts.length > 1 ? "s" : ""} used negative stock. ${latestHint}`}
               </p>
             </div>
             <div className={styles.alertActions}>
@@ -103,54 +108,83 @@ export default function WarehouseBackofficeDashboard() {
         )}
 
         <section className={styles.actionsGrid}>
-          <button onClick={goToCatalog} className={`${styles.actionCard} ${styles.catalogCard}`}>
-            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Product Setup & Purchase Entry</p>
-            <p className={styles.cardBody}>Manage items, variants, and recipes that drive outlet routing and storage homes.</p>
+          <button onClick={goToProducts} className={`${styles.actionCard} ${styles.catalogCard}`}>
+            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Products</p>
+            <p className={styles.cardBody}>Open the full product list with the original card layout.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToProductionAssignments} className={`${styles.actionCard} ${styles.productionCard}`}>
-            <p className={`${styles.cardTitle} ${styles.productionTitle}`}>Production Assignments</p>
-            <p className={styles.cardBody}>Assign finished goods to their production warehouse for reporting.</p>
+          <button onClick={goToBulkVariantUpdate} className={`${styles.actionCard} ${styles.bulkCard}`}>
+            <p className={`${styles.cardTitle} ${styles.bulkTitle}`}>Bulk Variant Update</p>
+            <p className={styles.cardBody}>Apply a single value to multiple variants in one step.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToOutletSetup} className={`${styles.actionCard} ${styles.routingCard}`}>
-            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Outlet Setup</p>
-            <p className={styles.cardBody}>Configure outlet routes and warehouse mapping in one place.</p>
+          <button onClick={goToSuppliers} className={`${styles.actionCard} ${styles.suppliersCard}`}>
+            <p className={`${styles.cardTitle} ${styles.suppliersTitle}`}>Suppliers</p>
+            <p className={styles.cardBody}>Create supplier contacts for purchase intake and scanner logs.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToPosMatch} className={`${styles.actionCard} ${styles.mappingCard}`}>
-            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>MIntpos-App Match</p>
-            <p className={styles.cardBody}>Map POS items/flavours to catalog item + variant + warehouse for deductions.</p>
+          <button onClick={goToPurchaseEntry} className={`${styles.actionCard} ${styles.purchaseEntryCard}`}>
+            <p className={`${styles.cardTitle} ${styles.purchaseEntryTitle}`}>Purchase Entry</p>
+            <p className={styles.cardBody}>Record scanner purchase receipts from backoffice.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToRecipes} className={`${styles.actionCard} ${styles.catalogCard}`}>
+            <p className={`${styles.cardTitle} ${styles.catalogTitle}`}>Recipes</p>
+            <p className={styles.cardBody}>Define finished and ingredient recipes with warehouse sources.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToOutletAutomation} className={`${styles.actionCard} ${styles.routingCard}`}>
+            <p className={`${styles.cardTitle} ${styles.routingTitle}`}>Outlet Automation</p>
+            <p className={styles.cardBody}>Set outlet defaults, deductions, storage homes, and POS match.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
           <button onClick={goToOutletOrders} className={`${styles.actionCard} ${styles.outletOrdersCard}`}>
             <p className={`${styles.cardTitle} ${styles.outletOrdersTitle}`}>Outlet Orders</p>
-            <p className={styles.cardBody}>Verify order creation, approvals, and totals.</p>
+            <p className={styles.cardBody}>Review outlet orders, signatures, and offload PDFs.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
           <button onClick={goToOutletBalances} className={`${styles.actionCard} ${styles.balanceCard}`}>
-            <p className={`${styles.cardTitle} ${styles.balanceTitle}`}>Outlet Warehouse Balances</p>
-            <p className={styles.cardBody}>Track live ingredient and raw stock remaining for outlet warehouses.</p>
+            <p className={`${styles.cardTitle} ${styles.balanceTitle}`}>Outlet Balances</p>
+            <p className={styles.cardBody}>Live balances and usage across outlet warehouses.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
           <button onClick={goToStocktakes} className={`${styles.actionCard} ${styles.stocktakeCard}`}>
-            <p className={`${styles.cardTitle} ${styles.stocktakeTitle}`}>Warehouse Stocktakes</p>
-            <p className={styles.cardBody}>Run opening and closing counts, close periods, and export variance PDFs.</p>
+            <p className={`${styles.cardTitle} ${styles.stocktakeTitle}`}>Stocktakes</p>
+            <p className={styles.cardBody}>Open and close stock periods with variance exports.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToProductionAssignments} className={`${styles.actionCard} ${styles.productionCard}`}>
+            <p className={`${styles.cardTitle} ${styles.productionTitle}`}>Production Assignments</p>
+            <p className={styles.cardBody}>Assign finished goods to production warehouses.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToDifferences} className={`${styles.actionCard} ${styles.productionCard}`}>
+            <p className={`${styles.cardTitle} ${styles.productionTitle}`}>Opening Differences</p>
+            <p className={styles.cardBody}>Compare opening ingredient counts with recipe-based servings.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToProductionDifferences} className={`${styles.actionCard} ${styles.productionCard}`}>
+            <p className={`${styles.cardTitle} ${styles.productionTitle}`}>Production Differences</p>
+            <p className={styles.cardBody}>Compare producible servings with recorded production entries.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
           <button onClick={goToReports} className={`${styles.actionCard} ${styles.reportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Reports</p>
-            <p className={styles.cardBody}>Outlet sales, orders, scanner activity, and stock reports.</p>
+            <p className={styles.cardBody}>Sales, orders, scanner activity, and stock reporting.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
-
         </section>
       </main>
     </div>

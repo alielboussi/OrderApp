@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./outlet-orders.module.css";
@@ -306,6 +306,7 @@ function buildOutletOrderPdfHtml(options: {
 
 export default function OutletOrdersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
@@ -315,6 +316,8 @@ export default function OutletOrdersPage() {
     const now = new Date();
     return now.toISOString().slice(0, 10);
   });
+  const [orderQuery, setOrderQuery] = useState<string>("");
+  const [initialQueryApplied, setInitialQueryApplied] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [totals, setTotals] = useState<Record<string, OrderTotals>>({});
   const [loading, setLoading] = useState(false);
@@ -323,6 +326,22 @@ export default function OutletOrdersPage() {
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
+
+  useEffect(() => {
+    if (initialQueryApplied) return;
+    const outletId = searchParams.get("outletId");
+    const date = searchParams.get("date");
+    const orderNumber = searchParams.get("orderNumber");
+    const orderId = searchParams.get("orderId");
+
+    if (outletId) setSelectedOutletId(outletId);
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
+
+    const combined = orderNumber || orderId;
+    if (combined) setOrderQuery(combined);
+
+    setInitialQueryApplied(true);
+  }, [initialQueryApplied, searchParams]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -559,6 +578,15 @@ export default function OutletOrdersPage() {
     }
   };
 
+  const filteredOrders = useMemo(() => {
+    const query = orderQuery.trim().toLowerCase();
+    if (!query) return orders;
+    return orders.filter((order) => {
+      const orderNumber = (order.order_number ?? order.id).toLowerCase();
+      return orderNumber.includes(query) || order.id.toLowerCase().includes(query);
+    });
+  }, [orders, orderQuery]);
+
   if (status !== "ok") return null;
 
   return (
@@ -601,6 +629,15 @@ export default function OutletOrdersPage() {
               ))}
             </select>
           </label>
+          <label className={styles.filterLabel}>
+            Order # contains
+            <input
+              className={styles.input}
+              value={orderQuery}
+              onChange={(event) => setOrderQuery(event.target.value)}
+              placeholder="Search order number"
+            />
+          </label>
           {loading && <span className={styles.loadingTag}>Loading…</span>}
         </section>
 
@@ -610,7 +647,7 @@ export default function OutletOrdersPage() {
           <div className={styles.tableHeader}>
             <div>
               <p className={styles.tableTitle}>Orders</p>
-              <p className={styles.tableSubtitle}>Showing {orders.length} orders</p>
+              <p className={styles.tableSubtitle}>Showing {filteredOrders.length} orders</p>
             </div>
           </div>
           <div className={styles.table}>
@@ -624,12 +661,15 @@ export default function OutletOrdersPage() {
               <span className={styles.alignRight}>Total Amount</span>
               <span className={styles.alignCenter}>PDF</span>
             </div>
-            {orders.map((order) => {
+            {filteredOrders.map((order) => {
               const total = totals[order.id] ?? { qty: 0, amount: 0 };
               const statusText = order.status ?? "-";
               const canDownload = statusText.toLowerCase() === "offloaded";
+              const query = orderQuery.trim().toLowerCase();
+              const orderNumber = (order.order_number ?? order.id).toLowerCase();
+              const isMatch = query.length > 0 && (orderNumber.includes(query) || order.id.toLowerCase().includes(query));
               return (
-                <div key={order.id} className={styles.tableRow}>
+                <div key={order.id} className={`${styles.tableRow} ${isMatch ? styles.highlightRow : ""}`}>
                   <span>{order.order_number ?? order.id.slice(0, 8)}</span>
                   <span>{getOutletName(order) ?? order.outlet_id ?? "-"}</span>
                   <span>{order.employee_signed_name ?? order.created_by ?? "-"}</span>
@@ -650,7 +690,7 @@ export default function OutletOrdersPage() {
                 </div>
               );
             })}
-            {!loading && orders.length === 0 && (
+            {!loading && filteredOrders.length === 0 && (
               <div className={styles.emptyState}>No orders found for the current filters.</div>
             )}
           </div>

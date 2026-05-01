@@ -22,7 +22,7 @@ export default function OutletSetupHub() {
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Outlet Setup</h1>
             <p className={styles.subtitle}>
-              Configure outlet routes, order routing, and warehouse assignments in one place.
+              Configure outlet defaults, deductions, and POS match in one place.
             </p>
           </div>
           <div className={styles.headerButtons}>
@@ -37,29 +37,11 @@ export default function OutletSetupHub() {
 
         <section className={styles.actionsGrid}>
           <button
-            onClick={() => go("/Warehouse_Backoffice/outlet-routing")}
+            onClick={() => go("/Warehouse_Backoffice/outlet-setup")}
             className={`${styles.actionCard} ${styles.routingCard}`}
           >
-            <p className={`${styles.cardTitle} ${styles.cardTitleRouting}`}>Sales Item Routing</p>
-            <p className={styles.cardBody}>Choose which warehouse each outlet deducts from per product for sales.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button
-            onClick={() => go("/Warehouse_Backoffice/order-routing")}
-            className={`${styles.actionCard} ${styles.orderRoutingCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleOrderRouting}`}>Order Item Routing</p>
-            <p className={styles.cardBody}>Choose which warehouse each outlet deducts from per product for orders.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button
-            onClick={() => go("/Warehouse_Backoffice/outlet-warehouse-assignments")}
-            className={`${styles.actionCard} ${styles.assignmentsCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleAssignments}`}>Outlet to Warehouse Setup</p>
-            <p className={styles.cardBody}>Assign outlets to warehouses for stock periods and POS validation.</p>
+            <p className={`${styles.cardTitle} ${styles.cardTitleRouting}`}>Outlet Automation</p>
+            <p className={styles.cardBody}>Set defaults, deductions, storage homes, and POS match.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>

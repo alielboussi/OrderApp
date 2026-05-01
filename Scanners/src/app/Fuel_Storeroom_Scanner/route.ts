@@ -1560,13 +1560,6 @@ function createHtml(config: {
                     <option value="">Select...</option>
                   </select>
                 </label>
-                <label class="destination-pill-select">
-                  <span class="destination-pill-hint">Vehicles</span>
-                  <button type="button" id="vehicles-picker" class="destination-pill-button">Select vehicle</button>
-                  <select id="console-vehicles-select" class="destination-hidden-select">
-                    <option value="">Select...</option>
-                  </select>
-                </label>
               </div>
             </div>
           </div>
@@ -1635,16 +1628,6 @@ function createHtml(config: {
       <div class="select-modal-grid" id="homes-modal-options"></div>
       <div class="select-modal-actions">
         <button type="button" class="select-modal-close" data-modal-close="homes-modal">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="vehicles-modal" class="select-modal" aria-hidden="true">
-    <div class="select-modal-card" role="dialog" aria-modal="true" aria-labelledby="vehicles-modal-title">
-      <div class="select-modal-header" id="vehicles-modal-title">Select vehicle</div>
-      <div class="select-modal-grid" id="vehicles-modal-options"></div>
-      <div class="select-modal-actions">
-        <button type="button" class="select-modal-close" data-modal-close="vehicles-modal">Close</button>
       </div>
     </div>
   </div>
@@ -2021,8 +2004,6 @@ function createHtml(config: {
         destinationSelection: null,
         homesOptions: [],
         homesSelection: null,
-        vehiclesOptions: [],
-        vehiclesSelection: null,
         purchaseForm: {
           supplierId: '',
           referenceCode: ''
@@ -2237,17 +2218,13 @@ function createHtml(config: {
       };
       const destinationSelect = document.getElementById('console-destination-select');
       const homesSelect = document.getElementById('console-homes-select');
-      const vehiclesSelect = document.getElementById('console-vehicles-select');
       const destinationPicker = document.getElementById('destination-picker');
       const homesPicker = document.getElementById('homes-picker');
-      const vehiclesPicker = document.getElementById('vehicles-picker');
       const destinationModal = document.getElementById('destination-modal');
       const homesModal = document.getElementById('homes-modal');
-      const vehiclesModal = document.getElementById('vehicles-modal');
       const supplierModal = document.getElementById('supplier-modal');
       const destinationModalOptions = document.getElementById('destination-modal-options');
       const homesModalOptions = document.getElementById('homes-modal-options');
-      const vehiclesModalOptions = document.getElementById('vehicles-modal-options');
       const supplierModalOptions = document.getElementById('supplier-modal-options');
       const operatorSelectModal = document.getElementById('operator-modal');
       const operatorSelectModalOptions = document.getElementById('operator-modal-options');
@@ -3216,32 +3193,6 @@ function createHtml(config: {
         syncDestinationPillLabel();
       }
 
-      function renderVehiclesOptions() {
-        if (!vehiclesSelect) return;
-        const existingValue = vehiclesSelect.value;
-        vehiclesSelect.innerHTML = '';
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = state.vehiclesOptions.length ? 'Select vehicle' : 'No vehicles';
-        vehiclesSelect.appendChild(placeholder);
-        state.vehiclesOptions.forEach((option) => {
-          if (!option?.id) return;
-          const opt = document.createElement('option');
-          opt.value = option.id;
-          opt.textContent = option.label ?? 'Vehicle';
-          vehiclesSelect.appendChild(opt);
-        });
-        const savedValue = state.vehiclesSelection ?? existingValue;
-        vehiclesSelect.value = savedValue || '';
-        vehiclesSelect.disabled = !state.vehiclesOptions.length;
-        if (vehiclesPicker) {
-          vehiclesPicker.textContent = getSelectedVehicleDestination()?.label ?? 'Select vehicle';
-          vehiclesPicker.disabled = !state.vehiclesOptions.length;
-        }
-        renderVehiclesCards();
-        syncDestinationPillLabel();
-      }
-
       function openSelectModal(modal) {
         if (!modal) return;
         modal.classList.add('active');
@@ -3321,35 +3272,6 @@ function createHtml(config: {
             closeSelectModal(homesModal);
           });
           homesModalOptions.appendChild(card);
-        });
-      }
-
-      function renderVehiclesCards() {
-        if (!vehiclesModalOptions) return;
-        vehiclesModalOptions.innerHTML = '';
-        if (!state.vehiclesOptions.length) {
-          const empty = document.createElement('button');
-          empty.type = 'button';
-          empty.className = 'select-card';
-          empty.textContent = 'No vehicles found';
-          empty.disabled = true;
-          vehiclesModalOptions.appendChild(empty);
-          return;
-        }
-        state.vehiclesOptions.forEach((option) => {
-          if (!option?.id) return;
-          const card = document.createElement('button');
-          card.type = 'button';
-          card.className = 'select-card';
-          card.textContent = option.label ?? 'Vehicle';
-          card.addEventListener('click', () => {
-            if (vehiclesSelect) {
-              vehiclesSelect.value = option.id;
-            }
-            handleVehicleSelection(option.id);
-            closeSelectModal(vehiclesModal);
-          });
-          vehiclesModalOptions.appendChild(card);
         });
       }
 
@@ -3517,13 +3439,6 @@ function createHtml(config: {
         return null;
       }
 
-      function getVehicleOptionById(id) {
-        if (!id) return null;
-        const optionFromState = state.vehiclesOptions.find((option) => option.id === id);
-        if (optionFromState) return optionFromState;
-        return null;
-      }
-
       function getSelectedPrimaryDestination() {
         const id = state.destinationSelection;
         if (!id) return null;
@@ -3540,30 +3455,14 @@ function createHtml(config: {
         return { id, label: 'Home' };
       }
 
-      function getSelectedVehicleDestination() {
-        const id = state.vehiclesSelection;
-        if (!id) return null;
-        const option = getVehicleOptionById(id);
-        if (option?.warehouseId) {
-          return { id: option.warehouseId, label: option.label ?? 'Vehicle' };
-        }
-        return null;
-      }
-
       function getSelectedDestination() {
-        return getSelectedVehicleDestination() ?? getSelectedHomeDestination() ?? getSelectedPrimaryDestination();
+        return getSelectedHomeDestination() ?? getSelectedPrimaryDestination();
       }
 
       function showDestinationPrompt(context) {
-        if (context === 'transfer') {
-          if (vehiclesSelect && state.vehiclesOptions.length) {
-            openSelectModal(vehiclesModal);
-            return;
-          }
-          if (homesSelect && state.homesOptions.length) {
-            openSelectModal(homesModal);
-            return;
-          }
+        if (context === 'transfer' && homesSelect && state.homesOptions.length) {
+          openSelectModal(homesModal);
+          return;
         }
         openSelectModal(destinationModal);
       }
@@ -3594,7 +3493,7 @@ function createHtml(config: {
         const trimmed = warehouseId || '';
         if (!trimmed) {
           state.destinationSelection = null;
-          if (!state.homesSelection && !state.vehiclesSelection) {
+          if (!state.homesSelection) {
             state.lockedDest = null;
           }
           if (destinationSelect && destinationSelect.value !== '') {
@@ -3615,7 +3514,6 @@ function createHtml(config: {
         }
         state.destinationSelection = trimmed;
         state.homesSelection = null;
-        state.vehiclesSelection = null;
         state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
         if (destinationSelect && destinationSelect.value !== trimmed) {
           destinationSelect.value = trimmed;
@@ -3623,17 +3521,11 @@ function createHtml(config: {
         if (homesSelect && homesSelect.value !== '') {
           homesSelect.value = '';
         }
-        if (vehiclesSelect && vehiclesSelect.value !== '') {
-          vehiclesSelect.value = '';
-        }
         if (destinationPicker) {
           destinationPicker.textContent = option.label ?? 'Select outlet';
         }
         if (homesPicker) {
           homesPicker.textContent = 'Select home';
-        }
-        if (vehiclesPicker) {
-          vehiclesPicker.textContent = 'Select vehicle';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -3643,7 +3535,7 @@ function createHtml(config: {
         const trimmed = warehouseId || '';
         if (!trimmed) {
           state.homesSelection = null;
-          if (!state.destinationSelection && !state.vehiclesSelection) {
+          if (!state.destinationSelection) {
             state.lockedDest = null;
           }
           if (homesSelect && homesSelect.value !== '') {
@@ -3664,7 +3556,6 @@ function createHtml(config: {
         }
         state.homesSelection = trimmed;
         state.destinationSelection = null;
-        state.vehiclesSelection = null;
         state.lockedDest = state.warehouses.find((w) => w.id === trimmed) ?? null;
         if (homesSelect && homesSelect.value !== trimmed) {
           homesSelect.value = trimmed;
@@ -3672,66 +3563,11 @@ function createHtml(config: {
         if (destinationSelect && destinationSelect.value !== '') {
           destinationSelect.value = '';
         }
-        if (vehiclesSelect && vehiclesSelect.value !== '') {
-          vehiclesSelect.value = '';
-        }
         if (homesPicker) {
           homesPicker.textContent = option.label ?? 'Select home';
         }
         if (destinationPicker) {
           destinationPicker.textContent = 'Select outlet';
-        }
-        if (vehiclesPicker) {
-          vehiclesPicker.textContent = 'Select vehicle';
-        }
-        syncDestinationPillLabel();
-        enforceOperatorLocks();
-      }
-
-      function handleVehicleSelection(vehicleId) {
-        const trimmed = vehicleId || '';
-        if (!trimmed) {
-          state.vehiclesSelection = null;
-          if (!state.destinationSelection && !state.homesSelection) {
-            state.lockedDest = null;
-          }
-          if (vehiclesSelect && vehiclesSelect.value !== '') {
-            vehiclesSelect.value = '';
-          }
-          if (vehiclesPicker) {
-            vehiclesPicker.textContent = 'Select vehicle';
-          }
-          syncDestinationPillLabel();
-          enforceOperatorLocks();
-          return;
-        }
-        const option = getVehicleOptionById(trimmed);
-        if (!option || !option.warehouseId) {
-          showResult('Vehicle unavailable. Refresh directory.', true);
-          renderVehiclesOptions();
-          return;
-        }
-        state.vehiclesSelection = trimmed;
-        state.destinationSelection = null;
-        state.homesSelection = null;
-        state.lockedDest = state.warehouses.find((w) => w.id === option.warehouseId) ?? null;
-        if (vehiclesSelect && vehiclesSelect.value !== trimmed) {
-          vehiclesSelect.value = trimmed;
-        }
-        if (destinationSelect && destinationSelect.value !== '') {
-          destinationSelect.value = '';
-        }
-        if (homesSelect && homesSelect.value !== '') {
-          homesSelect.value = '';
-        }
-        if (vehiclesPicker) {
-          vehiclesPicker.textContent = option.label ?? 'Select vehicle';
-        }
-        if (destinationPicker) {
-          destinationPicker.textContent = 'Select outlet';
-        }
-        if (homesPicker) {
-          homesPicker.textContent = 'Select home';
         }
         syncDestinationPillLabel();
         enforceOperatorLocks();
@@ -4619,65 +4455,6 @@ function createHtml(config: {
         }
       }
 
-      function formatVehicleLabel(vehicle) {
-        const name = (vehicle?.name ?? 'Vehicle').toString();
-        const plate = typeof vehicle?.number_plate === 'string' ? vehicle.number_plate.trim() : '';
-        return plate ? name + ' (' + plate + ')' : name;
-      }
-
-      async function fetchVehiclesMetadata() {
-        const loadViaApi = async () => {
-          const response = await fetch('/api/vehicles?include_inactive=1', {
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json' },
-            cache: 'no-store'
-          });
-          if (!response.ok) {
-            const detail = await response.text().catch(() => '');
-            const message = detail || 'vehicles api failed with status ' + response.status;
-            throw new Error(message);
-          }
-          const payload = await response.json().catch(() => ({}));
-          const list = Array.isArray(payload?.vehicles) ? payload.vehicles : [];
-          return list.map((record) => ({
-            id: record?.id,
-            name: record?.name,
-            number_plate: record?.number_plate ?? record?.numberPlate ?? null,
-            photo_urls: Array.isArray(record?.photo_urls)
-              ? record.photo_urls
-              : Array.isArray(record?.photoUrls)
-                ? record.photoUrls
-                : [],
-            warehouse_id: record?.warehouse_id ?? record?.warehouseId ?? null,
-            active: record?.active
-          }));
-        };
-
-        const loadViaTable = async () => {
-          const { data, error } = await supabase
-            .from('vehicles')
-            .select('id,name,number_plate,photo_urls,warehouse_id,active')
-            .order('name');
-          if (error) throw error;
-          return (Array.isArray(data) ? data : []).map((row) => ({
-            ...row,
-            active: row?.active ?? true
-          }));
-        };
-
-        try {
-          return await loadViaApi();
-        } catch (apiError) {
-          markOfflineIfNetworkError(apiError);
-          try {
-            return await loadViaTable();
-          } catch (tableError) {
-            markOfflineIfNetworkError(tableError);
-            return [];
-          }
-        }
-      }
-
       async function fetchOperators() {
         if (state.networkOffline) {
           console.warn('Skipping operator fetch: network offline');
@@ -4964,36 +4741,6 @@ function createHtml(config: {
             .map((row) => ({ id: row.id, label: row.name ?? 'Home' }))
             .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''));
 
-          const vehicleRows = await fetchVehiclesMetadata();
-          state.vehiclesOptions = (Array.isArray(vehicleRows) ? vehicleRows : [])
-            .filter((row) => row && row.active !== false)
-            .map((row) => ({
-              id: row.id,
-              label: formatVehicleLabel(row),
-              warehouseId: row.warehouse_id ?? null
-            }))
-            .filter((row) => row.id && row.warehouseId);
-
-          const hasSavedVehicleSelection =
-            state.vehiclesSelection && state.vehiclesOptions.some((opt) => opt.id === state.vehiclesSelection);
-          if (!hasSavedVehicleSelection) {
-            state.vehiclesSelection = null;
-            if (vehiclesSelect) {
-              vehiclesSelect.value = '';
-            }
-          }
-
-          if (state.vehiclesSelection) {
-            state.destinationSelection = null;
-            state.homesSelection = null;
-            if (destinationSelect) {
-              destinationSelect.value = '';
-            }
-            if (homesSelect) {
-              homesSelect.value = '';
-            }
-          }
-
           if (state.homesSelection && state.destinationSelection) {
             state.destinationSelection = null;
             if (destinationSelect) {
@@ -5011,13 +4758,8 @@ function createHtml(config: {
           if (state.homesSelection) {
             state.lockedDest = state.warehouses.find((w) => w.id === state.homesSelection) ?? null;
           }
-          const selectedVehicle = getSelectedVehicleDestination();
-          if (selectedVehicle?.id) {
-            state.lockedDest = state.warehouses.find((w) => w.id === selectedVehicle.id) ?? null;
-          }
           renderDestinationOptions();
           renderHomesOptions();
-          renderVehiclesOptions();
           setLockedWarehouseLabels(sourceWarehouse, state.lockedDest, {
             destMissingText: 'Select outlet'
           });
@@ -5878,11 +5620,6 @@ function createHtml(config: {
         handleHomesSelection(value);
       });
 
-      vehiclesSelect?.addEventListener('change', (event) => {
-        const value = event.target instanceof HTMLSelectElement ? event.target.value : '';
-        handleVehicleSelection(value);
-      });
-
       destinationPicker?.addEventListener('click', () => {
         renderDestinationCards();
         openSelectModal(destinationModal);
@@ -5891,11 +5628,6 @@ function createHtml(config: {
       homesPicker?.addEventListener('click', () => {
         renderHomesCards();
         openSelectModal(homesModal);
-      });
-
-      vehiclesPicker?.addEventListener('click', () => {
-        renderVehiclesCards();
-        openSelectModal(vehiclesModal);
       });
 
       purchaseSupplierPicker?.addEventListener('click', () => {
@@ -5924,12 +5656,6 @@ function createHtml(config: {
         }
       });
 
-      vehiclesModal?.addEventListener('click', (event) => {
-        if (event.target === vehiclesModal) {
-          closeSelectModal(vehiclesModal);
-        }
-      });
-
       operatorSelectModal?.addEventListener('click', (event) => {
         if (event.target === operatorSelectModal && canCloseOperatorSelectModal()) {
           closeSelectModal(operatorSelectModal);
@@ -5947,7 +5673,6 @@ function createHtml(config: {
           const targetId = btn.getAttribute('data-modal-close');
           if (targetId === 'destination-modal') closeSelectModal(destinationModal);
           if (targetId === 'homes-modal') closeSelectModal(homesModal);
-          if (targetId === 'vehicles-modal') closeSelectModal(vehiclesModal);
           if (targetId === 'operator-modal' && canCloseOperatorSelectModal()) {
             closeSelectModal(operatorSelectModal);
           }

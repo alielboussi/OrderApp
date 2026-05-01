@@ -2658,8 +2658,14 @@ function createHtml(config: {
           ? lockedSourceId
           : options.defaultWarehouseId;
         const storageWarehouseId = options.storageWarehouseId === undefined
-          ? lockedSourceId
+          ? null
           : options.storageWarehouseId;
+        const storageWarehouseIds = Array.isArray(options.storageWarehouseIds)
+          ? options.storageWarehouseIds.filter(Boolean)
+          : storageWarehouseId
+            ? [storageWarehouseId]
+            : warehouseIds;
+        const storageWarehouseIdSet = new Set(storageWarehouseIds);
         const allowedProductIds = new Set(COLDROOM_PRODUCT_IDS);
 
         if (state.networkOffline) {
@@ -2680,12 +2686,12 @@ function createHtml(config: {
               .in('id', Array.from(allowedProductIds))
               .eq('default_warehouse_id', defaultWarehouseId)
               .eq('active', true),
-            storageWarehouseId
+            storageWarehouseIds.length
               ? supabase
                   .from('item_storage_homes')
                   .select('item_id, normalized_variant_key, storage_warehouse_id')
                   .in('item_id', Array.from(allowedProductIds))
-                  .eq('storage_warehouse_id', storageWarehouseId)
+                .in('storage_warehouse_id', storageWarehouseIds)
               : Promise.resolve({ data: [], error: null })
           ]);
 
@@ -2725,6 +2731,13 @@ function createHtml(config: {
             if (!row?.id || !allowedProductIds.has(row.id)) return;
             if (!productIds.has(row.id)) return;
             productIds.add(row.id);
+          });
+
+          latestStorageHomes.forEach((home) => {
+            if (!home?.item_id) return;
+            if (!allowedProductIds.has(home.item_id)) return;
+            if (storageWarehouseIdSet.size && !storageWarehouseIdSet.has(home.storage_warehouse_id)) return;
+            productIds.add(home.item_id);
           });
 
           let defaultVariants = [];
@@ -3074,6 +3087,18 @@ function createHtml(config: {
         return selectedSourceId ? [selectedSourceId] : [];
       }
 
+      function hasStorageHomeForContext(productId, context) {
+        if (!productId || context === 'purchase') return false;
+        const warehouseIds = getWarehouseIdsForContext(context);
+        if (!warehouseIds.length || !Array.isArray(latestStorageHomes)) return false;
+        return latestStorageHomes.some(
+          (home) =>
+            home?.item_id === productId &&
+            home?.storage_warehouse_id &&
+            warehouseIds.includes(home.storage_warehouse_id)
+        );
+      }
+
       function getLiveStockQtyForContext(product, context) {
         if (!product) return 0;
         const byWarehouse = product.live_stock_by_warehouse;
@@ -3114,7 +3139,10 @@ function createHtml(config: {
           : (Array.isArray(state.products)
           ? state.products.filter((item) => item && item.id)
           : []);
-        return products.filter((product) => getLiveStockQtyForContext(product, context) > 0);
+        return products.filter((product) => {
+          if (getLiveStockQtyForContext(product, context) > 0) return true;
+          return hasStorageHomeForContext(product?.id, context);
+        });
       }
 
       async function fetchPurchaseProducts(warehouseIds) {

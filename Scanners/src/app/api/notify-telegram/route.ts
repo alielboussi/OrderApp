@@ -202,8 +202,25 @@ function buildItemKey(itemId: string, variantKey: string): string {
   return `${itemId}::${normalizeVariantKey(variantKey)}`;
 }
 
+function resolveUnitForContext(
+  item: SummaryItem,
+  context: 'transfer' | 'purchase' | 'damage',
+  consumptionUomByKey: Map<string, string> | null
+): string {
+  const itemId = resolveItemId(item);
+  const variantKey = resolveVariantKey(item);
+  const key = itemId ? buildItemKey(itemId, variantKey) : null;
+  if (context === 'purchase') {
+    return resolveItemUnit(item);
+  }
+  const consumptionUnit =
+    (key && consumptionUomByKey ? consumptionUomByKey.get(key) : null) || resolveConsumptionUnit(item);
+  return consumptionUnit || resolveItemUnit(item);
+}
+
 function formatRemainingLine(
   item: SummaryItem,
+  context: 'transfer' | 'purchase' | 'damage',
   remainingByKey: Map<string, number | null> | null,
   consumptionUomByKey: Map<string, string> | null
 ): string {
@@ -211,11 +228,12 @@ function formatRemainingLine(
   const variantKey = resolveVariantKey(item);
   const key = itemId ? buildItemKey(itemId, variantKey) : null;
   const remainingQty = key && remainingByKey ? remainingByKey.get(key) ?? null : null;
-  const preferredUnit = (key && consumptionUomByKey ? consumptionUomByKey.get(key) : null) || resolveConsumptionUnit(item);
-  const unitLabel = remainingQty === null ? '' : formatUnitLabel(preferredUnit || resolveItemUnit(item), remainingQty);
+  const preferredUnit = resolveUnitForContext(item, context, consumptionUomByKey);
+  const unitLabel = remainingQty === null ? '' : formatUnitLabel(preferredUnit, remainingQty);
   const qtyText = remainingQty === null ? 'Null' : formatQtyValue(remainingQty);
   const combined = unitLabel ? `${qtyText} ${unitLabel}` : qtyText;
-  return `<b>- Remaining Qty - ${escapeHtml(combined)}</b>`;
+  const label = context === 'purchase' ? 'Current Qty' : 'Remaining Qty';
+  return `<b>- ${label} - ${escapeHtml(combined)}</b>`;
 }
 
 function formatDamageLine(item: SummaryItem, damageByKey: Map<string, number> | null): string {
@@ -248,8 +266,9 @@ function formatItemsBlock(
       const rawVariation = typeof item.variationName === 'string' ? item.variationName.trim() : '';
       const variation = rawVariation && rawVariation.toLowerCase() !== 'base' ? rawVariation : baseName;
       const qty = item.scannedQty ?? item.qty ?? 0;
-      const unit = formatUnitLabel(resolveItemUnit(item), qty);
-      const remainingLine = formatRemainingLine(item, remainingByKey, consumptionUomByKey);
+      const unitSource = resolveUnitForContext(item, context, consumptionUomByKey);
+      const unit = formatUnitLabel(unitSource, qty);
+      const remainingLine = formatRemainingLine(item, context, remainingByKey, consumptionUomByKey);
       const damageLine = context === 'damage' ? formatDamageLine(item, damageByKey) : null;
       const bucket = grouped.get(baseName) ?? [];
       bucket.push({ variation, qty, unit, remainingLine, damageLine });
@@ -307,7 +326,8 @@ function buildMessage(
   const supplierName = normalizeLabel(summary.sourceLabel);
   const destination = String(summary.destLabel ?? summary.destinationLabel ?? 'Unknown destination');
   const sourceLabel = normalizeLabel(summary.sourceLabel) ?? 'Unknown source';
-  const dateTime = serverDateTime;
+  const summaryDateTime = normalizeLabel(summary.dateTime);
+  const dateTime = summaryDateTime ?? serverDateTime;
   const itemsBlock = formatItemsBlock(summary, context, remainingByKey, damageByKey, consumptionUomByKey);
   const scannerLabel = getScannerLabel(scanner);
 

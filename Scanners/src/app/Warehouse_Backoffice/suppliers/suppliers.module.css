@@ -201,7 +201,7 @@
 
 .listHeaderRow {
   display: grid;
-  grid-template-columns: 1.2fr 0.9fr auto;
+  grid-template-columns: 1.2fr auto;
   gap: 12px;
   padding: 0 4px;
   color: var(--wb-muted);
@@ -216,29 +216,9 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.03);
   display: grid;
-  grid-template-columns: 1.2fr 0.9fr auto;
+  grid-template-columns: 1.2fr auto;
   align-items: center;
   gap: 12px;
-}
-
-.scannerCell {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-}
-
-.scannerButton {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--wb-text);
-  padding: 8px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .scannerMenu {

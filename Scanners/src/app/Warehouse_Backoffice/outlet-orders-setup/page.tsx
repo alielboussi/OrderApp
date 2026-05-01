@@ -124,10 +124,10 @@ export default function OutletOrdersSetupPage() {
             <li className={styles.sequenceStep}>
               <span className={styles.sequenceIndex}>4</span>
               <div className={styles.sequenceContent}>
-                <div className={styles.sequenceLabel}>Link outlet to warehouse</div>
-                <div className={styles.sequenceHint}>Set the outlet sales/receiving warehouse mapping.</div>
-                <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/outlet-warehouse-assignments")}>
-                  Open Outlet to Warehouse
+                <div className={styles.sequenceLabel}>Outlet automation defaults</div>
+                <div className={styles.sequenceHint}>Set the outlet sales/receiving warehouse mapping and deductions.</div>
+                <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/outlet-setup")}>
+                  Open Outlet Automation
                 </button>
               </div>
             </li>

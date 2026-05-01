@@ -175,6 +175,12 @@
   align-items: center;
 }
 
+.highlightRow {
+  border-color: rgba(94, 234, 212, 0.65);
+  background: rgba(14, 116, 144, 0.22);
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.2), 0 12px 24px rgba(8, 47, 73, 0.35);
+}
+
 .tableHead {
   background: rgba(14, 21, 38, 0.95);
   text-transform: uppercase;

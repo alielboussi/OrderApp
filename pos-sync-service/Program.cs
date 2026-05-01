@@ -14,11 +14,19 @@ if (!string.IsNullOrWhiteSpace(contentRoot))
 {
     settings.ContentRootPath = contentRoot;
 }
+else
+{
+    contentRoot = AppContext.BaseDirectory;
+    settings.ContentRootPath = contentRoot;
+}
 
 var builder = Host.CreateApplicationBuilder(settings);
 var runAsService = args.Any(static a => string.Equals(a, "--run-as-service", StringComparison.OrdinalIgnoreCase));
-var runTrayUi = args.Any(static a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase));
-var runStatusUi = args.Any(static a => string.Equals(a, "--status-ui", StringComparison.OrdinalIgnoreCase)) || (!runAsService && !runTrayUi);
+var runListener = args.Any(static a => string.Equals(a, "--listener", StringComparison.OrdinalIgnoreCase));
+var runUi = args.Any(static a => string.Equals(a, "--ui", StringComparison.OrdinalIgnoreCase));
+
+var appSettingsPath = AppSettingsFile.Ensure(settings.ContentRootPath ?? AppContext.BaseDirectory);
+builder.Configuration.AddIniFile(appSettingsPath, optional: false, reloadOnChange: true);
 
 builder.Services.AddOptions<PosDbOptions>()
     .Bind(builder.Configuration.GetSection("PosDb"))
@@ -43,17 +51,19 @@ builder.Services.AddOptions<SyncOptions>()
 builder.Services.AddSingleton<PosRepository>();
 builder.Services.AddSingleton<SupabaseClient>();
 builder.Services.AddSingleton<SyncRunner>();
-builder.Services.AddSingleton<StatusUi>();
-builder.Services.AddSingleton<TrayUi>();
+builder.Services.AddSingleton<ScpgtCoordinator>();
 builder.Services.AddHttpClient("Supabase", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(180);
 });
-builder.Services.AddHostedService<PosSyncWorker>();
+if (runAsService)
+{
+    builder.Services.AddHostedService<PosSyncWorker>();
+}
 
 builder.Services.AddWindowsService(options =>
 {
-    options.ServiceName = "TimeSettingsLock";
+    options.ServiceName = "SCPGT";
 });
 
 builder.Services.Configure<LoggerFilterOptions>(options =>
@@ -69,18 +79,26 @@ builder.Services.AddLogging(logging =>
 
 using var host = builder.Build();
 
-if (runTrayUi)
+if (runListener || (!runAsService && !runUi))
 {
     ConsoleWindowHelper.Hide();
-    using var scope = host.Services.CreateScope();
-    var tray = scope.ServiceProvider.GetRequiredService<TrayUi>();
-    tray.Run();
+    using var cts = new CancellationTokenSource();
+    var listener = new ScpgtListener(settings.ContentRootPath ?? AppContext.BaseDirectory);
+    listener.Run(cts.Token);
 }
-else if (runStatusUi)
+else if (runUi)
 {
-    using var scope = host.Services.CreateScope();
-    var ui = scope.ServiceProvider.GetRequiredService<StatusUi>();
-    await ui.RunAsync(CancellationToken.None);
+    ConsoleWindowHelper.Hide();
+    var uiThread = new Thread(() =>
+    {
+        ScpgtUi.Run(host);
+    })
+    {
+        IsBackground = false
+    };
+    uiThread.SetApartmentState(ApartmentState.STA);
+    uiThread.Start();
+    uiThread.Join();
 }
 else
 {

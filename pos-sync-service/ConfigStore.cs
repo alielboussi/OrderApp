@@ -38,7 +38,7 @@ public static class ConfigStore
         var path = ResolveConfigPath(contentRoot, ensureDirectory: true);
         if (path == null)
         {
-            throw new InvalidOperationException("Unable to resolve appsettings.json path.");
+            throw new InvalidOperationException("Unable to resolve sync-window.json path.");
         }
 
         JsonObject root;
@@ -74,7 +74,7 @@ public static class ConfigStore
         var path = ResolveConfigPath(contentRoot, ensureDirectory: true);
         if (path == null)
         {
-            throw new InvalidOperationException("Unable to resolve appsettings.json path.");
+            throw new InvalidOperationException("Unable to resolve sync-window.json path.");
         }
 
         JsonObject root;
@@ -136,6 +136,6 @@ public static class ConfigStore
             Directory.CreateDirectory(contentRoot);
         }
 
-        return Path.Combine(contentRoot, "appsettings.json");
+        return Path.Combine(contentRoot, "sync-window.json");
     }
 }

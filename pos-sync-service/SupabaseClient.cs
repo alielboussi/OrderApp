@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PosSyncService.Models;
@@ -154,6 +155,80 @@ public sealed class SupabaseClient
         }
     }
 
+    public async Task<string[]> GetOutletWarehouseIdsAsync(Guid outletId, CancellationToken cancellationToken)
+    {
+        if (outletId == Guid.Empty)
+        {
+            return Array.Empty<string>();
+        }
+
+        var path = $"/rest/v1/outlet_warehouses?select=warehouse_id&outlet_id=eq.{outletId}";
+        var data = await GetAsync<OutletWarehouseRow[]>(path, cancellationToken);
+        return data
+            ?.Select(row => row.WarehouseId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray()
+            ?? Array.Empty<string>();
+    }
+
+    public async Task<WarehouseRow?> GetWarehouseAsync(string warehouseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(warehouseId))
+        {
+            return null;
+        }
+
+        var path = $"/rest/v1/warehouses?select=id,name&limit=1&id=eq.{warehouseId}";
+        var data = await GetAsync<WarehouseRow[]>(path, cancellationToken);
+        return data?.FirstOrDefault();
+    }
+
+    public async Task<WarehousePeriodRow?> GetOpenStockPeriodAsync(string warehouseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(warehouseId))
+        {
+            return null;
+        }
+
+        var path = $"/rest/v1/warehouse_stock_periods?select=id,warehouse_id,status,opened_at,closed_at&warehouse_id=eq.{warehouseId}&status=eq.open&order=opened_at.desc&limit=1";
+        var data = await GetAsync<WarehousePeriodRow[]>(path, cancellationToken);
+        return data?.FirstOrDefault();
+    }
+
+    public async Task<bool> HasStockCountsAsync(string periodId, string kind, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(periodId))
+        {
+            return false;
+        }
+
+        var normalizedKind = string.IsNullOrWhiteSpace(kind) ? "opening" : kind;
+        var path = $"/rest/v1/warehouse_stock_counts?select=id&period_id=eq.{periodId}&kind=eq.{normalizedKind}&limit=1";
+        var data = await GetAsync<CountRow[]>(path, cancellationToken);
+        return data != null && data.Length > 0;
+    }
+
+    public async Task<SupabaseResult> StartStockPeriodAsync(string warehouseId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(warehouseId))
+        {
+            return new SupabaseResult(false, "Warehouse id is required");
+        }
+
+        return await PostRpcAsync("/rest/v1/rpc/start_stock_period", new { p_warehouse_id = warehouseId }, cancellationToken);
+    }
+
+    public async Task<SupabaseResult> CloseStockPeriodAsync(string periodId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(periodId))
+        {
+            return new SupabaseResult(false, "Period id is required");
+        }
+
+        return await PostRpcAsync("/rest/v1/rpc/close_stock_period", new { p_period_id = periodId }, cancellationToken);
+    }
+
     public async Task<DateTime?> GetPosSyncCutoffUtcAsync(CancellationToken cancellationToken)
     {
         return await GetCounterUtcAsync("pos_sync_cutoff", "cutoff", cancellationToken);
@@ -260,6 +335,73 @@ public sealed class SupabaseClient
 
         throw new InvalidOperationException("Supabase request retry loop exited unexpectedly.");
     }
+
+    private async Task<T?> GetAsync<T>(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = CreateClient();
+            var response = await client.GetAsync(path, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return default;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    private async Task<SupabaseResult> PostRpcAsync(string path, object payload, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = CreateClient();
+            var response = await client.PostAsync(
+                path,
+                JsonContent.Create(payload, options: JsonOptions),
+                cancellationToken
+            );
+
+            if (response.IsSuccessStatusCode)
+            {
+                return new SupabaseResult(true);
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            return new SupabaseResult(false, body);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Supabase RPC call failed: {Path}", path);
+            return new SupabaseResult(false, ex.Message);
+        }
+    }
+
+    private sealed record OutletWarehouseRow(
+        [property: JsonPropertyName("warehouse_id")] string WarehouseId
+    );
+
+    public sealed record WarehouseRow(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("name")] string? Name
+    );
+
+    public sealed record WarehousePeriodRow(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("warehouse_id")] string WarehouseId,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("opened_at")] DateTimeOffset OpenedAt,
+        [property: JsonPropertyName("closed_at")] DateTimeOffset? ClosedAt
+    );
+
+    private sealed record CountRow(
+        [property: JsonPropertyName("id")] string Id
+    );
 
     private static bool IsTransientStatus(System.Net.HttpStatusCode statusCode)
     {

@@ -43,15 +43,6 @@ export default function CatalogMenu() {
             <span className={styles.cardCta}>Open products</span>
           </button>
           <button
-            onClick={() => go("/Warehouse_Backoffice/catalog/vehicles")}
-            className={`${styles.actionCard} ${styles.vehicleCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleVehicle}`}>Vehicles</p>
-            <p className={styles.cardBody}>Manage vehicles, plates, and assignments for fuel transfers.</p>
-            <span className={styles.cardCta}>Open vehicles</span>
-          </button>
-
-          <button
             onClick={() => go("/Warehouse_Backoffice/variant-bulk-update")}
             className={`${styles.actionCard} ${styles.bulkCard}`}
           >

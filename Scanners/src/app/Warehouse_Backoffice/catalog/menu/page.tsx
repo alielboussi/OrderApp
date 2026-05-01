@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "./menu.module.css";
@@ -31,27 +30,15 @@ type Variant = {
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
 
-type VariantPopover = {
-  itemId: string;
-  itemName: string;
-  itemImageUrl?: string | null;
-  variants: Variant[];
-  top: number;
-  left: number;
-  width: number;
-};
-
 export default function CatalogMenuPage() {
   const router = useRouter();
   const { status, readOnly, deleteDisabled } = useWarehouseAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [variantPopover, setVariantPopover] = useState<VariantPopover | null>(null);
-  const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
-  const variantPopoverRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,138 +90,70 @@ export default function CatalogMenuPage() {
     [load, deleteDisabled]
   );
 
-  const handleDeleteVariant = useCallback(
-    async (variantId: string, itemId: string) => {
-      if (!variantId || !itemId) return;
-      if (deleteDisabled) {
-        setError("Delete access is disabled for this user.");
-        return;
-      }
-      const confirmation = window.prompt("Type YES to confirm deleting this variant.");
-      if (!confirmation || confirmation.trim().toLowerCase() !== "yes") {
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(
-          `/api/catalog/variants?id=${encodeURIComponent(variantId)}&item_id=${encodeURIComponent(itemId)}`,
-          { method: "DELETE" }
-        );
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Failed to delete variant");
-        }
-        await load();
-      } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : "Failed to delete variant");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [load, deleteDisabled]
-  );
-
   useEffect(() => {
     load();
   }, [load]);
   const isReady = status === "ok";
 
-  const grouped: ItemWithVariants[] = useMemo(() => {
+  const itemKindOptions = useMemo(() => {
+    const kinds = new Set<string>();
+    for (const item of items) {
+      const kind = (item.item_kind ?? "product").trim();
+      if (kind) kinds.add(kind);
+    }
+    return Array.from(kinds).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [items]);
+
+  const groupedData = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return items
-      .map((item) => {
-        const itemVariants = variants.filter((variant) => variant.item_id === item.id);
-        const productMatches =
-          !term || item.name?.toLowerCase().includes(term) || (item.sku ?? "").toLowerCase().includes(term);
-        const matchingVariants = term
-          ? itemVariants.filter((variant) => {
-              const name = variant.name?.toLowerCase?.() ?? "";
-              const sku = (variant.sku ?? "").toLowerCase();
-              return name.includes(term) || sku.includes(term);
-            })
-          : itemVariants;
-
-        const hasMatch = productMatches || matchingVariants.length > 0;
-        if (!hasMatch) return null;
-        return { item, variants: matchingVariants.length ? matchingVariants : itemVariants };
-      })
-      .filter((entry): entry is ItemWithVariants => Boolean(entry));
-  }, [items, variants, search]);
-
-  const closeVariantPopover = useCallback(() => {
-    setVariantPopover(null);
-  }, []);
-
-  const openVariantPopover = useCallback(
-    (event: MouseEvent<HTMLButtonElement>, item: Item, itemVariants: Variant[]) => {
-      if (!itemVariants.length) return;
-      if (variantPopover?.itemId === item.id) {
-        setVariantPopover(null);
-        return;
-      }
-      const target = event.currentTarget as HTMLElement;
-      const card = target.closest("[data-card]") as HTMLElement | null;
-      if (!card) return;
-      const rect = card.getBoundingClientRect();
-      const gap = 12;
-      const width = 360;
-      let left = rect.right + gap;
-      if (left + width > window.innerWidth - gap) {
-        left = rect.left - width - gap;
-      }
-      if (left < gap) {
-        left = Math.max(gap, window.innerWidth - width - gap);
-      }
-      const maxHeight = Math.min(420, window.innerHeight - gap * 2);
-      let top = rect.top;
-      if (top + maxHeight > window.innerHeight - gap) {
-        top = Math.max(gap, window.innerHeight - gap - maxHeight);
-      }
-      setVariantPopover({
-        itemId: item.id,
-        itemName: item.name ?? "Variants",
-        itemImageUrl: item.image_url ?? null,
-        variants: itemVariants,
-        top,
-        left,
-        width
+    const buildGrouped = (sourceItems: Item[]) => {
+      const sortedItems = [...sourceItems].sort((a, b) => {
+        const left = (a.name ?? "").toLowerCase();
+        const right = (b.name ?? "").toLowerCase();
+        return left.localeCompare(right, undefined, { sensitivity: "base" });
       });
-    },
-    [variantPopover]
-  );
+      return sortedItems
+        .map((item) => {
+          const itemVariants = variants.filter((variant) => variant.item_id === item.id);
+          const productMatches =
+            !term || item.name?.toLowerCase().includes(term) || (item.sku ?? "").toLowerCase().includes(term);
+          const matchingVariants = term
+            ? itemVariants.filter((variant) => {
+                const name = variant.name?.toLowerCase?.() ?? "";
+                const sku = (variant.sku ?? "").toLowerCase();
+                return name.includes(term) || sku.includes(term);
+              })
+            : itemVariants;
 
-  const openPreview = (url: string, label: string) => {
-    if (!url) return;
-    setPreview({ url, label });
-  };
-
-  useEffect(() => {
-    if (!variantPopover) return;
-    const handleClose = (event?: Event) => {
-      if (event && variantPopoverRef.current) {
-        const target = event.target as Node | null;
-        if (target && variantPopoverRef.current.contains(target)) {
-          return;
-        }
-      }
-      setVariantPopover(null);
+          const hasMatch = productMatches || matchingVariants.length > 0;
+          if (!hasMatch) return null;
+          return { item, variants: matchingVariants.length ? matchingVariants : itemVariants };
+        })
+        .filter((entry): entry is ItemWithVariants => Boolean(entry));
     };
-    window.addEventListener("resize", handleClose);
-    window.addEventListener("scroll", handleClose, true);
-    return () => {
-      window.removeEventListener("resize", handleClose);
-      window.removeEventListener("scroll", handleClose, true);
-    };
-  }, [variantPopover]);
 
-  useEffect(() => {
-    if (!variantPopover || !variantPopoverRef.current) return;
-    variantPopoverRef.current.style.top = `${variantPopover.top}px`;
-    variantPopoverRef.current.style.left = `${variantPopover.left}px`;
-    variantPopoverRef.current.style.width = `${variantPopover.width}px`;
-  }, [variantPopover]);
+    if (typeFilter === "all") {
+      const kindOrder = [
+        { key: "finished", label: "Finished Products" },
+        { key: "ingredient", label: "Ingredients" },
+        { key: "raw", label: "Raws" }
+      ];
+      const sections = kindOrder.map((kind) => {
+        const sectionItems = items.filter((item) => {
+          const normalized = (item.item_kind ?? "product").trim().toLowerCase();
+          return normalized === kind.key;
+        });
+        return { ...kind, entries: buildGrouped(sectionItems) };
+      });
+      return { mode: "sections" as const, sections };
+    }
+
+    const filteredItems = items.filter((item) => {
+      const kind = (item.item_kind ?? "product").trim().toLowerCase();
+      return kind === typeFilter;
+    });
+    return { mode: "flat" as const, entries: buildGrouped(filteredItems) };
+  }, [items, variants, search, typeFilter]);
 
   const variantCount = useMemo(() => variants.length, [variants]);
 
@@ -277,170 +196,224 @@ export default function CatalogMenuPage() {
           <>
             <section className={styles.controls}>
               <div className={styles.inputGroup}>
-                <label className={styles.inputLabel}>Search</label>
+                <label className={styles.inputLabel} htmlFor="catalog-search">
+                  Search
+                </label>
                 <input
+                  id="catalog-search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search by product or variant name / SKU"
                   className={styles.searchInput}
                 />
               </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.inputLabel} htmlFor="product-type-filter">
+                  Product type
+                </label>
+                <select
+                  id="product-type-filter"
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className={styles.selectInput}
+                >
+                  <option value="all">All types</option>
+                  {itemKindOptions.map((kind) => (
+                    <option key={kind} value={kind.toLowerCase()}>
+                      {kind}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {error && <div className={styles.error}>{error}</div>}
             </section>
 
-            <section className={styles.grid}>
-              {grouped.length === 0 && !loading ? (
+            <section className={styles.sections}>
+              {groupedData.mode === "flat" && groupedData.entries.length === 0 && !loading ? (
                 <div className={styles.emptyCard}>No products found.</div>
-              ) : (
-                grouped.map(({ item, variants: itemVariants }) => {
-                  const baseRecipeCount = item.base_recipe_count ?? 0;
-                  const hasRecipe = baseRecipeCount > 0;
-                  const hasVariants = itemVariants.length > 0;
-                  const isPopoverOpen = variantPopover?.itemId === item.id;
-                  return (
-                    <article key={item.id} className={styles.card} data-card>
-                      <div className={styles.cardHeader}>
-                        <div className={styles.cardMain}>
-                          {item.image_url ? (
-                            <button
-                              type="button"
-                              className={`${styles.itemImageWrap} ${styles.imageButton}`}
-                              onClick={() => openPreview(item.image_url ?? "", item.name)}
-                            >
-                              <img className={styles.itemImage} src={item.image_url} alt={item.name} loading="lazy" />
-                            </button>
-                          ) : null}
-                          <div className={styles.cardTitleBlock}>
-                          <div className={styles.rowTop}>
-                            <p className={styles.itemKind}>{item.item_kind || "product"}</p>
-                            <a className={styles.linkButton} href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}>
-                              Edit product
-                            </a>
-                            <button className={styles.linkButton} onClick={() => handleDeleteItem(item.id)} disabled={readOnly}>
-                              Delete
-                            </button>
-                          </div>
-                          <h2 className={styles.itemName}>{item.name}</h2>
-                          {item.sku && <p className={styles.sku}>SKU: {item.sku}</p>}
-                          </div>
-                        </div>
-                        <div className={styles.badges}>
-                          <span className={`${styles.badge} ${item.active === false ? styles.badgeMuted : styles.badgeLive}`}>
-                            {item.active === false ? "Inactive" : "Active"}
-                          </span>
-                          {hasVariants && (
-                            <span className={styles.badge}>
-                              {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
-                            </span>
-                          )}
-                          {hasRecipe && (
-                            <span className={`${styles.badge} ${styles.badgeRecipe}`}>
-                              {`Recipes: ${baseRecipeCount}`}
-                            </span>
-                          )}
-                          {hasVariants && (
-                            <button className={styles.chipButton} onClick={(event) => openVariantPopover(event, item, itemVariants)}>
-                              {isPopoverOpen ? "Hide variants" : "Show variants"}
-                            </button>
-                          )}
-                        </div>
+              ) : groupedData.mode === "sections" ? (
+                groupedData.sections.every((section) => section.entries.length === 0) && !loading ? (
+                  <div className={styles.emptyCard}>No products found.</div>
+                ) : (
+                  groupedData.sections.map((section) => (
+                    <div key={section.key} className={styles.sectionBlock}>
+                      <p className={styles.sectionHeader}>{section.label}</p>
+                      <div className={styles.sectionGrid}>
+                        {section.entries.map(({ item, variants: itemVariants }) => {
+                          const baseRecipeCount = item.base_recipe_count ?? 0;
+                          const hasRecipe = baseRecipeCount > 0;
+                          const hasVariants = itemVariants.length > 0;
+                          return (
+                            <article key={item.id} className={styles.card} data-card>
+                              <div className={styles.cardHeader}>
+                                <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>
+                                  SKU: {item.sku ?? "-"}
+                                </p>
+                                <div className={styles.cardTopRow}>
+                                  <span
+                                    className={`${styles.statusIcon} ${item.active === false ? styles.statusInactive : styles.statusActive}`}
+                                  >
+                                    <span className={styles.statusMark} />
+                                  </span>
+                                  <div className={styles.cardCornerActions}>
+                                    <button
+                                      className={`${styles.cornerButton} ${styles.triangleButton}`}
+                                      onClick={() =>
+                                        router.push(`/Warehouse_Backoffice/catalog/variants?item_id=${encodeURIComponent(item.id)}`)
+                                      }
+                                      type="button"
+                                      aria-label="View variants"
+                                      disabled={!hasVariants}
+                                    >
+                                      <span className={styles.triangleIcon} />
+                                    </button>
+                                    <button
+                                      className={`${styles.cornerButton} ${styles.squareButton}`}
+                                      onClick={() =>
+                                        router.push(
+                                          `/Warehouse_Backoffice/catalog/recipe-components?item_id=${encodeURIComponent(item.id)}`
+                                        )
+                                      }
+                                      type="button"
+                                      aria-label="View recipe components"
+                                      disabled={!hasRecipe}
+                                    >
+                                      <span className={styles.squareIcon} />
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className={styles.cardMain}>
+                                  <div className={styles.cardTitleBlock}>
+                                  <div className={styles.rowTop}>
+                                    <p className={styles.itemKind}>{item.item_kind || "product"}</p>
+                                    <a
+                                      className={styles.iconButton}
+                                      href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}
+                                      aria-label="Edit product"
+                                      title="Edit product"
+                                    >
+                                      <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+                                        <path
+                                          d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
+                                          fill="currentColor"
+                                        />
+                                      </svg>
+                                    </a>
+                                  </div>
+                                  <h2 className={styles.itemName}>{item.name}</h2>
+                                  </div>
+                                </div>
+                                <button
+                                  className={`${styles.iconButton} ${styles.deleteButton}`}
+                                  onClick={() => handleDeleteItem(item.id)}
+                                  disabled={readOnly}
+                                  aria-label="Delete product"
+                                  title="Delete product"
+                                >
+                                  <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+                                    <path
+                                      d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM6 7h12l-1 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
-                    </article>
-                  );
-                })
+                    </div>
+                  ))
+                )
+              ) : (
+                <div className={styles.sectionBlock}>
+                  <div className={styles.sectionGrid}>
+                    {groupedData.entries.map(({ item, variants: itemVariants }) => {
+                      const baseRecipeCount = item.base_recipe_count ?? 0;
+                      const hasRecipe = baseRecipeCount > 0;
+                      const hasVariants = itemVariants.length > 0;
+                      return (
+                        <article key={item.id} className={styles.card} data-card>
+                          <div className={styles.cardHeader}>
+                            <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>
+                              SKU: {item.sku ?? "-"}
+                            </p>
+                            <div className={styles.cardTopRow}>
+                              <span
+                                className={`${styles.statusIcon} ${item.active === false ? styles.statusInactive : styles.statusActive}`}
+                              >
+                                <span className={styles.statusMark} />
+                              </span>
+                              <div className={styles.cardCornerActions}>
+                                <button
+                                  className={`${styles.cornerButton} ${styles.triangleButton}`}
+                                  onClick={() =>
+                                    router.push(`/Warehouse_Backoffice/catalog/variants?item_id=${encodeURIComponent(item.id)}`)
+                                  }
+                                  type="button"
+                                  aria-label="View variants"
+                                  disabled={!hasVariants}
+                                >
+                                  <span className={styles.triangleIcon} />
+                                </button>
+                                <button
+                                  className={`${styles.cornerButton} ${styles.squareButton}`}
+                                  onClick={() =>
+                                    router.push(
+                                      `/Warehouse_Backoffice/catalog/recipe-components?item_id=${encodeURIComponent(item.id)}`
+                                    )
+                                  }
+                                  type="button"
+                                  aria-label="View recipe components"
+                                  disabled={!hasRecipe}
+                                >
+                                  <span className={styles.squareIcon} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className={styles.cardMain}>
+                              <div className={styles.cardTitleBlock}>
+                              <div className={styles.rowTop}>
+                                <p className={styles.itemKind}>{item.item_kind || "product"}</p>
+                                <a
+                                  className={styles.iconButton}
+                                  href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}
+                                  aria-label="Edit product"
+                                  title="Edit product"
+                                >
+                                  <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+                                    <path
+                                      d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                </a>
+                              </div>
+                              <h2 className={styles.itemName}>{item.name}</h2>
+                              </div>
+                            </div>
+                            <button
+                              className={`${styles.iconButton} ${styles.deleteButton}`}
+                              onClick={() => handleDeleteItem(item.id)}
+                              disabled={readOnly}
+                              aria-label="Delete product"
+                              title="Delete product"
+                            >
+                              <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+                                <path
+                                  d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM6 7h12l-1 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7Z"
+                                  fill="currentColor"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </section>
-            {variantPopover && (
-              <div className={styles.variantOverlay} onClick={closeVariantPopover} role="presentation">
-                <div
-                  className={styles.variantPopover}
-                  ref={variantPopoverRef}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <div className={styles.variantPopoverHeader}>
-                    <div>
-                      <p className={styles.variantPopoverTitle}>{variantPopover.itemName}</p>
-                      <p className={styles.variantPopoverMeta}>
-                        {variantPopover.variants.length} variant{variantPopover.variants.length === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    <button className={styles.variantPopoverClose} onClick={closeVariantPopover} type="button">
-                      Close
-                    </button>
-                  </div>
-                  <div className={styles.variantPopoverList}>
-                    {variantPopover.variants.map((variant) => (
-                      <div key={variant.id} className={styles.variantRow}>
-                        <div className={styles.variantInfo}>
-                          {(variant.image_url || variantPopover.itemImageUrl) ? (
-                            <button
-                              type="button"
-                              className={`${styles.variantImageWrap} ${styles.imageButton}`}
-                              onClick={() =>
-                                openPreview(
-                                  variant.image_url || variantPopover.itemImageUrl || "",
-                                  variant.name || variantPopover.itemName
-                                )
-                              }
-                            >
-                              <img
-                                className={styles.variantImage}
-                                src={variant.image_url || variantPopover.itemImageUrl || ""}
-                                alt={variant.name || variantPopover.itemName}
-                                loading="lazy"
-                              />
-                            </button>
-                          ) : null}
-                          <div>
-                            <p className={styles.variantName}>{variant.name}</p>
-                            {variant.sku && <p className={styles.variantSku}>SKU: {variant.sku}</p>}
-                            {variant.supplier_sku && (
-                              <p className={styles.variantSupplierSku}>Supplier SKU: {variant.supplier_sku}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className={styles.variantActions}>
-                          <span
-                            className={`${styles.badge} ${variant.active === false ? styles.badgeMuted : styles.badgeLive}`}
-                          >
-                            {variant.active === false ? "Inactive" : "Active"}
-                          </span>
-                          {variant.has_recipe && (
-                            <span className={`${styles.badge} ${styles.badgeRecipe}`}>Recipe</span>
-                          )}
-                          <a
-                            className={styles.linkButton}
-                            href={`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${variantPopover.itemId}`}
-                          >
-                            Edit
-                          </a>
-                          <button
-                            className={styles.linkButton}
-                            onClick={() => handleDeleteVariant(variant.id, variantPopover.itemId)}
-                            disabled={readOnly}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-            {preview && (
-              <div className={styles.imageModal} onClick={() => setPreview(null)} role="presentation">
-                <div className={styles.imageModalCard} onClick={(event) => event.stopPropagation()}>
-                  <div className={styles.imageModalHeader}>
-                    <p className={styles.imageModalTitle}>{preview.label}</p>
-                    <button className={styles.imageModalClose} onClick={() => setPreview(null)}>
-                      Close
-                    </button>
-                  </div>
-                  <img className={styles.imageModalImg} src={preview.url} alt={preview.label} />
-                </div>
-              </div>
-            )}
           </>
         )}
       </main>

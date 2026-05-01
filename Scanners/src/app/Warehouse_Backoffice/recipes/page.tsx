@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./recipes.module.css";
@@ -28,6 +28,7 @@ type PendingLine = {
   ingredientId: string;
   qty: string;
   uom: string;
+  sourceWarehouseId: string;
 };
 
 const qtyUnits = [
@@ -81,7 +82,7 @@ const formatUnitLabel = (unit: string) => {
 
 const DEFAULT_UOMS: UomOption[] = qtyUnits.map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
 
-const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "g" };
+const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "g", sourceWarehouseId: "" };
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -96,6 +97,7 @@ function toErrorMessage(error: unknown): string {
 
 export default function RecipesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status, readOnly } = useWarehouseAuth();
   const [loading, setLoading] = useState(true);
@@ -115,8 +117,8 @@ export default function RecipesPage() {
   const [hasIngredientRecipe, setHasIngredientRecipe] = useState(false);
   const [uoms, setUoms] = useState<UomOption[]>(DEFAULT_UOMS);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
-  const [recipeSourceWarehouses, setRecipeSourceWarehouses] = useState<Record<string, string[]>>({});
   const [recipeMode, setRecipeMode] = useState<"finished" | "ingredient">("finished");
+  const [initialQueryApplied, setInitialQueryApplied] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -194,6 +196,29 @@ export default function RecipesPage() {
   }, [supabase]);
 
   useEffect(() => {
+    if (initialQueryApplied) return;
+    const mode = searchParams.get("mode");
+    const finishedId = searchParams.get("finishedId");
+    const ingredientId = searchParams.get("ingredientId");
+
+    if (mode === "finished" || mode === "ingredient") {
+      setRecipeMode(mode);
+    }
+
+    if (finishedId) {
+      setSelectedFinished(finishedId);
+      if (mode !== "ingredient") setRecipeMode("finished");
+    }
+
+    if (ingredientId) {
+      setSelectedIngredientTarget(ingredientId);
+      if (mode !== "finished") setRecipeMode("ingredient");
+    }
+
+    setInitialQueryApplied(true);
+  }, [initialQueryApplied, searchParams]);
+
+  useEffect(() => {
     let active = true;
     if (!selectedFinished) {
       setFinishedLines([EMPTY_LINE]);
@@ -209,7 +234,7 @@ export default function RecipesPage() {
         setSuccess(null);
         const { data, error } = await supabase
           .from("recipes")
-          .select("ingredient_item_id, qty_per_unit, qty_unit")
+          .select("ingredient_item_id, qty_per_unit, qty_unit, source_warehouse_id")
           .eq("finished_item_id", selectedFinished)
           .eq("recipe_for_kind", "finished")
           .eq("active", true)
@@ -223,6 +248,7 @@ export default function RecipesPage() {
               ingredientId: row.ingredient_item_id || "",
               qty: row.qty_per_unit?.toString() || "",
               uom: normalizeRecipeUom(row.qty_unit || "g"),
+              sourceWarehouseId: row.source_warehouse_id || "",
             }))
           );
         } else {
@@ -259,7 +285,7 @@ export default function RecipesPage() {
         setSuccess(null);
         const { data, error } = await supabase
           .from("recipes")
-          .select("ingredient_item_id, qty_per_unit, qty_unit")
+          .select("ingredient_item_id, qty_per_unit, qty_unit, source_warehouse_id")
           .eq("finished_item_id", selectedIngredientTarget)
           .eq("recipe_for_kind", "ingredient")
           .eq("active", true)
@@ -273,6 +299,7 @@ export default function RecipesPage() {
               ingredientId: row.ingredient_item_id || "",
               qty: row.qty_per_unit?.toString() || "",
               uom: normalizeRecipeUom(row.qty_unit || "g"),
+              sourceWarehouseId: row.source_warehouse_id || "",
             }))
           );
         } else {
@@ -324,61 +351,6 @@ export default function RecipesPage() {
     return map;
   }, [warehouses]);
 
-  const ensureDefaultRecipeSources = (itemId: string) => {
-    if (!itemId || recipeSourceWarehouses[itemId]) return;
-    const item = catalogById.get(itemId);
-    const storageHomeId = item?.default_warehouse_id ?? "";
-    const childOptions = storageHomeId ? childrenByParentId.get(storageHomeId) ?? [] : [];
-    if (!childOptions.length) return;
-    setRecipeSourceWarehouses((prev) => ({
-      ...prev,
-      [itemId]: childOptions.map((child) => child.id),
-    }));
-  };
-
-  const toggleRecipeSourceWarehouse = (itemId: string, warehouseId: string) => {
-    setRecipeSourceWarehouses((prev) => {
-      const current = prev[itemId] ?? [];
-      const next = current.includes(warehouseId)
-        ? current.filter((id) => id !== warehouseId)
-        : [...current, warehouseId];
-      return { ...prev, [itemId]: next };
-    });
-  };
-
-  const loadRecipeSourceWarehouses = async (itemIds: string[]) => {
-    const uniqueIds = Array.from(new Set(itemIds.filter(Boolean)));
-    if (!uniqueIds.length) return;
-    try {
-      const res = await fetch(`/api/recipe-source-warehouses?item_ids=${uniqueIds.join(",")}`);
-      if (!res.ok) return;
-      const json = await res.json();
-      const selections = (json.selections ?? {}) as Record<string, string[]>;
-      setRecipeSourceWarehouses((prev) => ({ ...prev, ...selections }));
-    } catch {
-      // Ignore fetch errors; fall back to defaults.
-    }
-  };
-
-  const saveRecipeSourceWarehouses = async (itemIds: string[]) => {
-    const uniqueIds = Array.from(new Set(itemIds.filter(Boolean)));
-    if (!uniqueIds.length) return;
-    const selections = uniqueIds.map((itemId) => {
-      const item = catalogById.get(itemId);
-      const storageHomeId = item?.default_warehouse_id ?? "";
-      const childOptions = storageHomeId ? childrenByParentId.get(storageHomeId) ?? [] : [];
-      const selected = recipeSourceWarehouses[itemId] ?? [];
-      const warehouseIds = childOptions.length ? selected : [];
-      return { item_id: itemId, warehouse_ids: warehouseIds };
-    });
-
-    await fetch("/api/recipe-source-warehouses", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selections }),
-    });
-  };
-
   const addLine = (setter: Dispatch<SetStateAction<PendingLine[]>>) => {
     setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "g" }]);
   };
@@ -397,22 +369,10 @@ export default function RecipesPage() {
     setter: Dispatch<SetStateAction<PendingLine[]>>
   ) => {
     setter((prev) => prev.map((line, i) => (i === idx ? { ...line, [field]: value } : line)));
-    if (field === "ingredientId" && value) {
-      ensureDefaultRecipeSources(value);
-    }
   };
 
   const validFinishedLines = finishedLines.filter((l) => l.ingredientId && l.qty);
   const validIngredientLines = ingredientLines.filter((l) => l.ingredientId && l.qty);
-
-  useEffect(() => {
-    const ids = [
-      ...finishedLines.map((line) => line.ingredientId).filter(Boolean),
-      ...ingredientLines.map((line) => line.ingredientId).filter(Boolean),
-    ];
-    loadRecipeSourceWarehouses(ids);
-    ids.forEach((id) => ensureDefaultRecipeSources(id));
-  }, [finishedLines, ingredientLines, warehouses]);
 
   const submitFinishedRecipe = async () => {
     if (readOnly) {
@@ -451,6 +411,7 @@ export default function RecipesPage() {
           ingredient_item_id: line.ingredientId,
           qty_per_unit: Number(line.qty),
           qty_unit: normalizedUom,
+          source_warehouse_id: line.sourceWarehouseId || null,
           recipe_for_kind: "finished",
           active: true,
         };
@@ -458,7 +419,6 @@ export default function RecipesPage() {
 
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
-      await saveRecipeSourceWarehouses(validFinishedLines.map((line) => line.ingredientId));
       setHasFinishedRecipe(true);
       setSuccess(hasFinishedRecipe ? "Finished product recipe updated." : "Finished product recipe saved.");
     } catch (error) {
@@ -505,6 +465,7 @@ export default function RecipesPage() {
           ingredient_item_id: line.ingredientId,
           qty_per_unit: Number(line.qty),
           qty_unit: normalizedUom,
+          source_warehouse_id: line.sourceWarehouseId || null,
           recipe_for_kind: "ingredient",
           active: true,
         };
@@ -512,7 +473,6 @@ export default function RecipesPage() {
 
       const { error: insertError } = await supabase.from("recipes").insert(payload);
       if (insertError) throw insertError;
-      await saveRecipeSourceWarehouses(validIngredientLines.map((line) => line.ingredientId));
       setHasIngredientRecipe(true);
       setSuccess(hasIngredientRecipe ? "Ingredient prep recipe updated." : "Ingredient prep recipe saved.");
     } catch (error) {
@@ -609,7 +569,8 @@ export default function RecipesPage() {
             const item = catalogById.get(line.ingredientId);
             const storageHomeId = item?.default_warehouse_id ?? "";
             const childOptions = storageHomeId ? childrenByParentId.get(storageHomeId) ?? [] : [];
-            const selectedChildren = recipeSourceWarehouses[line.ingredientId] ?? childOptions.map((child) => child.id);
+            const warehouseOptions = childOptions.length ? childOptions : warehouses;
+            const sourceValue = line.sourceWarehouseId || "";
             const storageLabel = storageHomeId
               ? warehouseById.get(storageHomeId)?.name || warehouseById.get(storageHomeId)?.code || storageHomeId
               : "Not set";
@@ -659,22 +620,23 @@ export default function RecipesPage() {
                 </select>
               </div>
               <div className={styles.lineField}>
-                <label className={styles.label}>Recipe source warehouse(s)</label>
+                <label className={styles.label}>Deduct from warehouse</label>
                 {!line.ingredientId ? (
                   <span className={styles.warehouseHint}>Select an ingredient first.</span>
-                ) : childOptions.length ? (
-                  <div className={styles.warehouseGrid}>
-                    {childOptions.map((warehouse) => (
-                      <label key={warehouse.id} className={styles.warehouseChip}>
-                        <input
-                          type="checkbox"
-                          checked={selectedChildren.includes(warehouse.id)}
-                          onChange={() => toggleRecipeSourceWarehouse(line.ingredientId, warehouse.id)}
-                        />
-                        <span>{warehouse.name ?? warehouse.code ?? warehouse.id}</span>
-                      </label>
+                ) : warehouseOptions.length ? (
+                  <select
+                    className={styles.select}
+                    value={sourceValue}
+                    onChange={(e) => updateLine(idx, "sourceWarehouseId", e.target.value, setFinishedLines)}
+                    aria-label="Recipe source warehouse"
+                  >
+                    <option value="">Auto (use default sources)</option>
+                    {warehouseOptions.map((warehouse) => (
+                      <option key={warehouse.id} value={warehouse.id}>
+                        {warehouse.name ?? warehouse.code ?? warehouse.id}
+                      </option>
                     ))}
-                  </div>
+                  </select>
                 ) : (
                   <span className={styles.warehouseHint}>Storage home: {storageLabel}</span>
                 )}
@@ -741,7 +703,8 @@ export default function RecipesPage() {
             const item = catalogById.get(line.ingredientId);
             const storageHomeId = item?.default_warehouse_id ?? "";
             const childOptions = storageHomeId ? childrenByParentId.get(storageHomeId) ?? [] : [];
-            const selectedChildren = recipeSourceWarehouses[line.ingredientId] ?? childOptions.map((child) => child.id);
+            const warehouseOptions = childOptions.length ? childOptions : warehouses;
+            const sourceValue = line.sourceWarehouseId || "";
             const storageLabel = storageHomeId
               ? warehouseById.get(storageHomeId)?.name || warehouseById.get(storageHomeId)?.code || storageHomeId
               : "Not set";
@@ -791,22 +754,23 @@ export default function RecipesPage() {
                 </select>
               </div>
               <div className={styles.lineField}>
-                <label className={styles.label}>Recipe source warehouse(s)</label>
+                <label className={styles.label}>Deduct from warehouse</label>
                 {!line.ingredientId ? (
                   <span className={styles.warehouseHint}>Select a raw item first.</span>
-                ) : childOptions.length ? (
-                  <div className={styles.warehouseGrid}>
-                    {childOptions.map((warehouse) => (
-                      <label key={warehouse.id} className={styles.warehouseChip}>
-                        <input
-                          type="checkbox"
-                          checked={selectedChildren.includes(warehouse.id)}
-                          onChange={() => toggleRecipeSourceWarehouse(line.ingredientId, warehouse.id)}
-                        />
-                        <span>{warehouse.name ?? warehouse.code ?? warehouse.id}</span>
-                      </label>
+                ) : warehouseOptions.length ? (
+                  <select
+                    className={styles.select}
+                    value={sourceValue}
+                    onChange={(e) => updateLine(idx, "sourceWarehouseId", e.target.value, setIngredientLines)}
+                    aria-label="Recipe source warehouse"
+                  >
+                    <option value="">Auto (use default sources)</option>
+                    {warehouseOptions.map((warehouse) => (
+                      <option key={warehouse.id} value={warehouse.id}>
+                        {warehouse.name ?? warehouse.code ?? warehouse.id}
+                      </option>
                     ))}
-                  </div>
+                  </select>
                 ) : (
                   <span className={styles.warehouseHint}>Storage home: {storageLabel}</span>
                 )}

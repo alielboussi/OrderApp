@@ -96,18 +96,12 @@ type FormState = {
   item_id: string;
   name: string;
   sku: string;
-  supplier_sku: string;
   item_kind: string;
   consumption_uom: string;
   purchase_pack_unit: string;
   units_per_purchase_pack: string;
-  purchase_unit_mass: string;
-  purchase_unit_mass_uom: string;
-  inner_pack_unit_mass: string;
-  inner_pack_unit_mass_uom: string;
   transfer_unit: string;
   transfer_quantity: string;
-  qty_decimal_places: string;
   stocktake_uom: string;
   cost: string;
   selling_price: string;
@@ -122,19 +116,13 @@ const defaultForm: FormState = {
   item_id: "",
   name: "",
   sku: "",
-  supplier_sku: "",
   item_kind: "finished",
   consumption_uom: "pc",
   purchase_pack_unit: "pc",
   units_per_purchase_pack: "1",
-  purchase_unit_mass: "",
-  purchase_unit_mass_uom: "kg",
-  inner_pack_unit_mass: "",
-  inner_pack_unit_mass_uom: "kg",
   transfer_unit: "pc",
   transfer_quantity: "1",
-  qty_decimal_places: "0",
-  stocktake_uom: "",
+  stocktake_uom: "pc",
   cost: "0",
   selling_price: "0",
   outlet_order_visible: true,
@@ -154,6 +142,7 @@ function VariantCreatePage() {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingVariant] = useState(false);
+  const [storageSearch, setStorageSearch] = useState("");
 
   const editingId = searchParams?.get("id")?.trim() || "";
   const incomingItemId = searchParams?.get("item_id")?.trim() || "";
@@ -199,19 +188,13 @@ function VariantCreatePage() {
             item_id: variant.item_id ?? incomingItemId ?? "",
             name: variant.name ?? "",
             sku: variant.sku ?? "",
-            supplier_sku: variant.supplier_sku ?? "",
             item_kind: variant.item_kind ?? "finished",
             consumption_uom: normalizeUomValue(variant.consumption_uom) || "pc",
-            purchase_pack_unit: normalizeUomValue(variant.purchase_pack_unit) || "pc",
+            purchase_pack_unit: variant.purchase_pack_unit ?? normalizeUomValue(variant.consumption_uom) ?? "pc",
             units_per_purchase_pack: (variant.units_per_purchase_pack ?? 1).toString(),
-            purchase_unit_mass: variant.purchase_unit_mass != null ? variant.purchase_unit_mass.toString() : "",
-            purchase_unit_mass_uom: variant.purchase_unit_mass_uom ?? "kg",
-            inner_pack_unit_mass: variant.inner_pack_unit_mass != null ? variant.inner_pack_unit_mass.toString() : "",
-            inner_pack_unit_mass_uom: variant.inner_pack_unit_mass_uom ?? "kg",
-            transfer_unit: normalizeUomValue(variant.transfer_unit) || "pc",
+            transfer_unit: normalizeUomValue(variant.transfer_unit) || normalizeUomValue(variant.consumption_uom) || "pc",
             transfer_quantity: (variant.transfer_quantity ?? 1).toString(),
-            qty_decimal_places: (variant.qty_decimal_places ?? 0).toString(),
-            stocktake_uom: normalizeUomValue(variant.stocktake_uom) || "",
+            stocktake_uom: normalizeUomValue(variant.consumption_uom) || "pc",
             cost: (variant.cost ?? 0).toString(),
             selling_price: (variant.selling_price ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,
@@ -252,6 +235,13 @@ function VariantCreatePage() {
           : [];
         return { ...prev, storage_home_id: nextId, storage_home_ids: nextIds };
       }
+      if (key === "consumption_uom" && typeof value === "string") {
+        return {
+          ...prev,
+          consumption_uom: value,
+          stocktake_uom: value,
+        };
+      }
       return { ...prev, [key]: value };
     });
   };
@@ -259,54 +249,67 @@ function VariantCreatePage() {
   const toggleStorageHome = (warehouseId: string) => {
     if (!warehouseId) return;
     setForm((prev) => {
-      if (warehouseId === prev.storage_home_id && prev.storage_home_id) {
-        return prev;
-      }
       const exists = prev.storage_home_ids.includes(warehouseId);
       const nextIds = exists
         ? prev.storage_home_ids.filter((id) => id !== warehouseId)
         : [...prev.storage_home_ids, warehouseId];
-      const nextPrimary = prev.storage_home_id || (!exists ? warehouseId : "");
+      let nextPrimary = prev.storage_home_id;
+      if (exists && warehouseId === prev.storage_home_id) {
+        nextPrimary = nextIds[0] ?? "";
+      } else if (!exists && !prev.storage_home_id) {
+        nextPrimary = warehouseId;
+      }
       const mergedIds = mergeStorageHomeIds(nextPrimary, nextIds.filter((id) => id !== nextPrimary));
       return { ...prev, storage_home_id: nextPrimary, storage_home_ids: mergedIds };
     });
   };
 
-  const renderStorageHomeMultiSelect = () => (
-    <details className={styles.multiSelect}>
-      <summary className={styles.multiSelectSummary}>
-        {form.storage_home_ids.length
-          ? `Additional storage homes (${form.storage_home_ids.length} selected)`
-          : "Additional storage homes"}
-      </summary>
-      <div className={styles.multiSelectList}>
-        <p className={styles.multiSelectHint}>
-          Check any other warehouses where this variant can live. The primary stays selected.
-        </p>
-        {warehouses.length ? (
-          warehouses.map((warehouse) => {
-            const checked = form.storage_home_ids.includes(warehouse.id);
-            const isPrimary = warehouse.id === form.storage_home_id;
-            const label = warehouse.name ?? warehouse.id;
-            return (
-              <label key={warehouse.id} className={styles.checkbox}>
-                <span>{isPrimary ? `${label} (Primary)` : label}</span>
-                <input
-                  className={styles.checkboxInput}
-                  type="checkbox"
-                  checked={checked}
-                  disabled={isPrimary}
-                  onChange={() => toggleStorageHome(warehouse.id)}
-                />
-              </label>
-            );
-          })
+  const renderStorageHomesSelect = () => {
+    const selectedValues = mergeStorageHomeIds(
+      form.storage_home_id,
+      form.storage_home_ids.filter((id) => id !== form.storage_home_id)
+    );
+    const query = storageSearch.trim().toLowerCase();
+    const filtered = warehouseOptions.filter((warehouse) =>
+      warehouse.name.toLowerCase().includes(query)
+    );
+    return (
+      <div className={styles.field}>
+        <span className={styles.label}>Storage home(s)</span>
+        <small className={styles.hint}>Select one or more warehouses. Primary is the first selected.</small>
+        <input
+          className={styles.input}
+          placeholder="Search warehouses"
+          value={storageSearch}
+          onChange={(event) => setStorageSearch(event.target.value)}
+        />
+        {query ? (
+          <div className={styles.multiSelectList}>
+            {filtered.length ? (
+              filtered.map((warehouse) => {
+                const checked = selectedValues.includes(warehouse.id);
+                return (
+                  <label key={warehouse.id} className={styles.checkbox}>
+                    <span>{warehouse.name}</span>
+                    <input
+                      className={styles.checkboxInput}
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleStorageHome(warehouse.id)}
+                    />
+                  </label>
+                );
+              })
+            ) : (
+              <p className={styles.sectionHint}>No matching warehouses.</p>
+            )}
+          </div>
         ) : (
-          <p className={styles.sectionHint}>No warehouses available yet.</p>
+          <p className={styles.sectionHint}>Type to search and select warehouses.</p>
         )}
       </div>
-    </details>
-  );
+    );
+  };
 
 
   const toNumber = (value: string, fallback: number, min = 0) => {
@@ -332,16 +335,17 @@ function VariantCreatePage() {
       const payload = {
         ...form,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1, 0),
-        purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0, 0),
         transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
-        qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0, -1)))),
+        qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
-        inner_pack_unit_mass: form.inner_pack_unit_mass === "" ? null : toNumber(form.inner_pack_unit_mass, 0, 0),
-        inner_pack_unit_mass_uom: form.inner_pack_unit_mass ? form.inner_pack_unit_mass_uom : null,
         storage_home_id: form.storage_home_id || null,
         storage_home_ids: resolvedStorageHomeIds,
         default_warehouse_id: form.storage_home_id || null,
+        supplier_sku: null,
+        purchase_pack_unit: form.purchase_pack_unit || form.consumption_uom,
+        transfer_unit: form.transfer_unit || form.consumption_uom,
+        stocktake_uom: form.consumption_uom,
         ...(editingId ? { id: editingId } : {}),
       };
 
@@ -403,143 +407,72 @@ function VariantCreatePage() {
               required
             />
             <Field
+              label="Sku"
+              hint="Single SKU for internal, supplier, and POS mapping"
+              value={form.sku}
+              onChange={(v) => handleChange("sku", v)}
+            />
+            <Field
               label="Variant name"
               hint="Example: 500g bag, 1L bottle, Large size"
               value={form.name}
               onChange={(v) => handleChange("name", v)}
               required
             />
-            <Field
-              label="Internal SKU"
-              hint="Optional code used for scans/search"
-              value={form.sku}
-              onChange={(v) => handleChange("sku", v)}
-            />
-            <Field
-              label="Supplier SKU"
-              hint="Supplier-facing code used for purchase intake scans"
-              value={form.supplier_sku}
-              onChange={(v) => handleChange("supplier_sku", v)}
-            />
             <Select
-              label="Stock kind"
+              label="Type"
               hint="Finished = sellable; Ingredient = used inside recipes; Raw = unprocessed input"
               value={form.item_kind}
               onChange={(v) => handleChange("item_kind", v)}
               options={itemKinds}
             />
             <Select
-              label="Consumption unit"
-              hint="Unit used when deducting/consuming"
+              label="How its consumed"
+              hint="Outlet sales and transfers use this unit"
               value={form.consumption_uom}
               onChange={(v) => handleChange("consumption_uom", v)}
               options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Select
-              label="Stocktake Unit"
-              hint="Optional override for counting stock (e.g., kg instead of grams)"
-              value={form.stocktake_uom}
-              onChange={(v) => handleChange("stocktake_uom", v)}
-              options={[{ value: "", label: "Use consumption unit" }, ...qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))]}
-            />
-            <Field
-              type="number"
-              label="Quantity decimal places"
-              hint="0 = whole numbers, 1 or 2 = allow decimals (e.g., kg)"
-              value={form.qty_decimal_places}
-              onChange={(v) => handleChange("qty_decimal_places", v)}
-              step="1"
-              min="0"
-            />
-            <Select
-              label="Supplier pack unit"
-              hint="Unit written on supplier pack for this variant"
+              label="How its Purchased"
+              hint="How purchases are entered (case, box, sack)"
               value={form.purchase_pack_unit}
               onChange={(v) => handleChange("purchase_pack_unit", v)}
               options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Field
               type="number"
-              label="Inner Supplier Pack Unit Qty"
-              hint="Example: box of 6 = 6 (inner pack qty)"
+              label="Units Inside Purchase Product"
+              hint="Used to convert purchases into consumption units (e.g., 1 case = 12 bottles)"
               value={form.units_per_purchase_pack}
               onChange={(v) => handleChange("units_per_purchase_pack", v)}
-              step="0.01"
-              min="0.01"
-            />
-            <Field
-              type="number"
-              label="Weight/Volume Per Supplier Pack"
-              hint="Optional. Example: 0.5 (kg) per supplier pack"
-              value={form.purchase_unit_mass}
-              onChange={(v) => handleChange("purchase_unit_mass", v)}
-              step="0.01"
-              min="0"
+              step="1"
+              min="1"
             />
             <Select
-              label="Weight/Volume Per Supplier Pack"
-              hint="Unit used for the supplier pack weight/volume"
-              value={form.purchase_unit_mass_uom}
-              onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
-            />
-            <Field
-              type="number"
-              label="Weight/Volume Per Inner Pack"
-              hint="Optional. Example: 0.5 (kg) per inner pack"
-              value={form.inner_pack_unit_mass}
-              onChange={(v) => handleChange("inner_pack_unit_mass", v)}
-              step="0.01"
-              min="0"
-            />
-            <Select
-              label="Mass/Volume Unit Per Inner Pack"
-              hint="Unit used for the inner pack weight/volume"
-              value={form.inner_pack_unit_mass_uom}
-              onChange={(v) => handleChange("inner_pack_unit_mass_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
-            />
-            <Select
-              label="Transfer unit"
-              hint="Unit used when moving this variant between warehouses"
+              label="How Its Transfered"
+              hint="Transfers use this unit"
               value={form.transfer_unit}
               onChange={(v) => handleChange("transfer_unit", v)}
               options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
             />
             <Field
               type="number"
-              label="Quantity per transfer line"
-              hint="Default quantity moved for this variant"
+              label="Units Inside A Product Transfer"
+              hint="Multiplies transfer quantity (e.g., 1 case = 12 bottles)"
               value={form.transfer_quantity}
               onChange={(v) => handleChange("transfer_quantity", v)}
-              step="0.01"
-              min="0.01"
+              step="1"
+              min="1"
             />
-            <Field
-              type="number"
-              label="Cost per base unit"
-              hint="Default unit cost for this variant"
-              value={form.cost}
-              onChange={(v) => handleChange("cost", v)}
-              step="0.01"
-              min="0"
-            />
+            {renderStorageHomesSelect()}
             <Field
               label="Image URL (optional)"
               hint="Link to variant image"
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
             />
-            <Select
-              label="Storage home"
-              hint="Warehouse where this variant lives and receives stock"
-              value={form.storage_home_id}
-              onChange={(v) => handleChange("storage_home_id", v)}
-              options={warehouseOptions.map((w) => ({ value: w.id, label: w.name }))}
-            />
           </div>
-
-          {renderStorageHomeMultiSelect()}
 
           <div className={styles.sectionCard}>
             <div className={styles.sectionHeader}>
@@ -547,6 +480,15 @@ function VariantCreatePage() {
               <p className={styles.sectionHint}>Enter the default selling price for this variant.</p>
             </div>
             <div className={styles.sectionGrid}>
+              <Field
+                type="number"
+                label="Cost per base unit"
+                hint="Default unit cost for this variant"
+                value={form.cost}
+                onChange={(v) => handleChange("cost", v)}
+                step="0.01"
+                min="0"
+              />
               <Field
                 type="number"
                 label="Selling price"

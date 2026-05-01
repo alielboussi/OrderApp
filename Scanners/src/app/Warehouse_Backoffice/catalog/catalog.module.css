@@ -128,10 +128,6 @@
   box-shadow: 0 18px 44px #f59e0b33;
 }
 
-.vehicleCard {
-  border-color: #2dd4bfaa;
-  box-shadow: 0 18px 44px #2dd4bf33;
-}
 
 .bulkCard {
   border-color: #7dd3fcaa;
@@ -187,9 +183,6 @@
   color: #fbbf24;
 }
 
-.cardTitleVehicle {
-  color: #2dd4bf;
-}
 
 .cardTitleBulk {
   color: #7dd3fc;

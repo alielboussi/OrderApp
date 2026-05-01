@@ -37,19 +37,13 @@ const itemKinds = [
 type FormState = {
   name: string;
   sku: string;
-  supplier_sku: string;
   item_kind: "finished" | "ingredient" | "raw";
   consumption_unit: string;
   purchase_pack_unit: string;
   units_per_purchase_pack: string;
-  purchase_unit_mass: string;
-  purchase_unit_mass_uom: string;
-  inner_pack_unit_mass: string;
-  inner_pack_unit_mass_uom: string;
   transfer_unit: string;
   transfer_quantity: string;
   consumption_qty_per_base: string;
-  qty_decimal_places: string;
   stocktake_uom: string;
   storage_unit: string;
   storage_weight: string;
@@ -67,20 +61,14 @@ type FormState = {
 const defaultForm: FormState = {
   name: "",
   sku: "",
-  supplier_sku: "",
   item_kind: "finished",
   consumption_unit: "pc",
   purchase_pack_unit: "pc",
   units_per_purchase_pack: "1",
-  purchase_unit_mass: "",
-  purchase_unit_mass_uom: "kg",
-  inner_pack_unit_mass: "",
-  inner_pack_unit_mass_uom: "kg",
   transfer_unit: "pc",
   transfer_quantity: "1",
   consumption_qty_per_base: "1",
-  qty_decimal_places: "0",
-  stocktake_uom: "",
+  stocktake_uom: "pc",
   storage_unit: "",
   storage_weight: "",
   storage_home_id: "",
@@ -94,24 +82,6 @@ const defaultForm: FormState = {
   active: true,
 };
 
-function formatConversion(value: number, uom: string) {
-  if (!Number.isFinite(value) || value <= 0) return "";
-  const normalized = uom.trim().toLowerCase();
-  if (["g", "kg", "mg"].includes(normalized)) {
-    const grams = normalized === "kg" ? value * 1000 : normalized === "mg" ? value / 1000 : value;
-    const kg = grams / 1000;
-    const lb = grams / 453.59237;
-    const oz = grams / 28.349523125;
-    return `Approx: ${kg.toFixed(3)} kg | ${lb.toFixed(3)} lb | ${oz.toFixed(2)} oz`;
-  }
-  if (["ml", "l"].includes(normalized)) {
-    const liters = normalized === "l" ? value : value / 1000;
-    const gallons = liters / 3.785411784;
-    const flOz = liters * 33.8140227;
-    return `Approx: ${liters.toFixed(3)} l | ${gallons.toFixed(3)} gal | ${flOz.toFixed(1)} fl oz`;
-  }
-  return "";
-}
 
 const normalizeUomValue = (value?: string | null) => {
   const trimmed = value?.trim();
@@ -133,23 +103,16 @@ function ProductCreatePage() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingItem] = useState(false);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string | null }[]>([]);
+  const [storageSearch, setStorageSearch] = useState("");
 
   const editingId = searchParams?.get("id")?.trim() || "";
 
   const disableVariantControlled = form.has_variations;
-  const isFinished = form.item_kind === "finished";
-  const isIngredient = form.item_kind === "ingredient";
-  const isIngredientOrRaw = form.item_kind === "ingredient" || form.item_kind === "raw";
   const vatExcludedPrice = useMemo(() => {
     const parsed = Number(form.selling_price);
     if (!Number.isFinite(parsed) || parsed <= 0) return "";
     return (parsed / 1.16).toFixed(2);
   }, [form.selling_price]);
-  const packMassConversion = useMemo(() => {
-    const raw = Number(form.purchase_unit_mass);
-    if (!Number.isFinite(raw) || raw <= 0) return "";
-    return formatConversion(raw, form.purchase_unit_mass_uom);
-  }, [form.purchase_unit_mass, form.purchase_unit_mass_uom]);
 
   useEffect(() => {
     async function loadItem(id: string) {
@@ -172,21 +135,14 @@ function ProductCreatePage() {
           setForm({
             name: item.name ?? "",
             sku: item.sku ?? "",
-            supplier_sku: item.supplier_sku ?? "",
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
             consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
-            purchase_pack_unit:
-              normalizeUomValue(item.purchase_pack_unit ?? item.storage_unit ?? item.consumption_unit ?? item.consumption_uom) || "pc",
+            purchase_pack_unit: item.purchase_pack_unit ?? normalizeUomValue(item.consumption_unit ?? item.consumption_uom) ?? "pc",
             units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
-            purchase_unit_mass: item.purchase_unit_mass != null ? item.purchase_unit_mass.toString() : "",
-            purchase_unit_mass_uom: item.purchase_unit_mass_uom ?? "kg",
-            inner_pack_unit_mass: item.inner_pack_unit_mass != null ? item.inner_pack_unit_mass.toString() : "",
-            inner_pack_unit_mass_uom: item.inner_pack_unit_mass_uom ?? "kg",
-            transfer_unit: normalizeUomValue(item.transfer_unit ?? item.consumption_unit ?? item.consumption_uom) || "pc",
+            transfer_unit: normalizeUomValue(item.transfer_unit) || normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
             transfer_quantity: (item.transfer_quantity ?? 1).toString(),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
-            qty_decimal_places: (item.qty_decimal_places ?? 0).toString(),
-            stocktake_uom: normalizeUomValue(item.stocktake_uom) || "",
+            stocktake_uom: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
             storage_unit: item.storage_unit ?? "",
             storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
             storage_home_id: storageHomeId,
@@ -233,7 +189,6 @@ function ProductCreatePage() {
         return {
           ...prev,
           has_variations: next,
-          supplier_sku: next ? "" : prev.supplier_sku,
         };
       }
       if (key === "storage_home_id") {
@@ -243,6 +198,13 @@ function ProductCreatePage() {
           : [];
         return { ...prev, storage_home_id: nextId, storage_home_ids: nextIds };
       }
+      if (key === "consumption_unit" && typeof value === "string") {
+        return {
+          ...prev,
+          consumption_unit: value,
+          stocktake_uom: value,
+        };
+      }
       return { ...prev, [key]: value };
     });
   };
@@ -250,54 +212,67 @@ function ProductCreatePage() {
   const toggleStorageHome = (warehouseId: string) => {
     if (!warehouseId) return;
     setForm((prev) => {
-      if (warehouseId === prev.storage_home_id && prev.storage_home_id) {
-        return prev;
-      }
       const exists = prev.storage_home_ids.includes(warehouseId);
       const nextIds = exists
         ? prev.storage_home_ids.filter((id) => id !== warehouseId)
         : [...prev.storage_home_ids, warehouseId];
-      const nextPrimary = prev.storage_home_id || (!exists ? warehouseId : "");
+      let nextPrimary = prev.storage_home_id;
+      if (exists && warehouseId === prev.storage_home_id) {
+        nextPrimary = nextIds[0] ?? "";
+      } else if (!exists && !prev.storage_home_id) {
+        nextPrimary = warehouseId;
+      }
       const mergedIds = mergeStorageHomeIds(nextPrimary, nextIds.filter((id) => id !== nextPrimary));
       return { ...prev, storage_home_id: nextPrimary, storage_home_ids: mergedIds };
     });
   };
 
-  const renderStorageHomeMultiSelect = () => {
-    const selectedCount = form.storage_home_ids.length;
-    const summaryLabel = selectedCount
-      ? `Additional storage homes (${selectedCount} selected)`
-      : "Additional storage homes";
+  const renderStorageHomesSelect = () => {
+    const selectedValues = mergeStorageHomeIds(
+      form.storage_home_id,
+      form.storage_home_ids.filter((id) => id !== form.storage_home_id)
+    );
+    const query = storageSearch.trim().toLowerCase();
+    const filtered = warehouses.filter((warehouse) => {
+      const label = (warehouse.name ?? warehouse.id).toLowerCase();
+      return label.includes(query);
+    });
     return (
-      <details className={styles.multiSelect}>
-        <summary className={styles.multiSelectSummary}>{summaryLabel}</summary>
-        <div className={styles.multiSelectList}>
-          <p className={styles.multiSelectHint}>
-            Check any other warehouses where this item can live. The primary stays selected.
-          </p>
-          {warehouses.length ? (
-            warehouses.map((warehouse) => {
-              const checked = form.storage_home_ids.includes(warehouse.id);
-              const isPrimary = warehouse.id === form.storage_home_id;
-              const label = warehouse.name ?? warehouse.id;
-              return (
-                <label key={warehouse.id} className={styles.checkbox}>
-                  <span>{isPrimary ? `${label} (Primary)` : label}</span>
-                  <input
-                    className={styles.checkboxInput}
-                    type="checkbox"
-                    checked={checked}
-                    disabled={isPrimary}
-                    onChange={() => toggleStorageHome(warehouse.id)}
-                  />
-                </label>
-              );
-            })
-          ) : (
-            <p className={styles.sectionHint}>No warehouses available yet.</p>
-          )}
-        </div>
-      </details>
+      <div className={styles.field}>
+        <span className={styles.label}>Storage home(s)</span>
+        <small className={styles.hint}>Select one or more warehouses. Primary is the first selected.</small>
+        <input
+          className={styles.input}
+          placeholder="Search warehouses"
+          value={storageSearch}
+          onChange={(event) => setStorageSearch(event.target.value)}
+        />
+        {query ? (
+          <div className={styles.multiSelectList}>
+            {filtered.length ? (
+              filtered.map((warehouse) => {
+                const checked = selectedValues.includes(warehouse.id);
+                const label = warehouse.name ?? warehouse.id;
+                return (
+                  <label key={warehouse.id} className={styles.checkbox}>
+                    <span>{label}</span>
+                    <input
+                      className={styles.checkboxInput}
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleStorageHome(warehouse.id)}
+                    />
+                  </label>
+                );
+              })
+            ) : (
+              <p className={styles.sectionHint}>No matching warehouses.</p>
+            )}
+          </div>
+        ) : (
+          <p className={styles.sectionHint}>Type to search and select warehouses.</p>
+        )}
+      </div>
     );
   };
 
@@ -324,20 +299,16 @@ function ProductCreatePage() {
       const payload = {
         name: form.name,
         sku: form.sku,
-        supplier_sku: form.has_variations ? null : form.supplier_sku || null,
+        supplier_sku: null,
         item_kind: form.item_kind,
         consumption_unit: form.consumption_unit,
-        purchase_pack_unit: form.purchase_pack_unit || form.storage_unit || form.consumption_unit,
+        purchase_pack_unit: form.purchase_pack_unit || form.consumption_unit,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
-        purchase_unit_mass: form.purchase_unit_mass === "" ? null : toNumber(form.purchase_unit_mass, 0),
-        purchase_unit_mass_uom: form.purchase_unit_mass ? form.purchase_unit_mass_uom : null,
-        inner_pack_unit_mass: form.inner_pack_unit_mass === "" ? null : toNumber(form.inner_pack_unit_mass, 0),
-        inner_pack_unit_mass_uom: form.inner_pack_unit_mass ? form.inner_pack_unit_mass_uom : null,
         transfer_unit: form.transfer_unit || form.consumption_unit,
         transfer_quantity: toNumber(form.transfer_quantity, 1),
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
-        qty_decimal_places: Math.max(0, Math.min(6, Math.round(toNumber(form.qty_decimal_places, 0)))),
-        stocktake_uom: form.stocktake_uom || null,
+        qty_decimal_places: 2,
+        stocktake_uom: form.consumption_unit,
         storage_unit: form.storage_unit || null,
         storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
         storage_home_id: form.storage_home_id || null,
@@ -403,251 +374,86 @@ function ProductCreatePage() {
         <form className={styles.form} onSubmit={submit}>
           <div className={styles.fieldGrid}>
             <Field
+              label="Sku"
+              hint="Single SKU for internal, supplier, and POS mapping"
+              value={form.sku}
+              onChange={(v) => handleChange("sku", v)}
+            />
+            <Field
               label="Product name"
               hint="Friendly name staff will see"
               value={form.name}
               onChange={(v) => handleChange("name", v)}
               required
             />
-            <Field
-              label="Internal SKU"
-              hint="Optional code used for scans/search"
-              value={form.sku}
-              onChange={(v) => handleChange("sku", v)}
-            />
-            {!form.has_variations && (
-              <Field
-                label="Supplier SKU"
-                hint="Supplier-facing code used for purchase intake scans"
-                value={form.supplier_sku}
-                onChange={(v) => handleChange("supplier_sku", v)}
-              />
-            )}
             <Select
-              label="Stock kind"
+              label="Type"
               hint="Finished = sellable; Ingredient = used inside recipes; Raw = unprocessed input"
               value={form.item_kind}
               onChange={(v) => handleChange("item_kind", v)}
               options={itemKinds}
             />
+            <Select
+              label="How its consumed"
+              hint="Outlet sales and transfers use this unit"
+              value={form.consumption_unit}
+              onChange={(v) => handleChange("consumption_unit", v)}
+              options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+            />
+            {!disableVariantControlled && (
+              <>
+                {form.item_kind !== "finished" && (
+                  <Field
+                    type="number"
+                    label="How Much Is Consumed"
+                    hint="Used by recipes: how many consumption units are used per 1 finished unit"
+                    value={form.consumption_qty_per_base}
+                    onChange={(v) => handleChange("consumption_qty_per_base", v)}
+                    step="0.01"
+                    min="0"
+                  />
+                )}
+                <Select
+                  label="How its Purchased"
+                  hint="How purchases are entered (case, box, sack)"
+                  value={form.purchase_pack_unit}
+                  onChange={(v) => handleChange("purchase_pack_unit", v)}
+                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                />
+                <Field
+                  type="number"
+                  label="Units Inside Purchase Product"
+                  hint="Used to convert purchases into consumption units (e.g., 1 case = 12 bottles)"
+                  value={form.units_per_purchase_pack}
+                  onChange={(v) => handleChange("units_per_purchase_pack", v)}
+                  step="1"
+                  min="1"
+                />
+                <Select
+                  label="How Its Transfered"
+                  hint="Transfers use this unit"
+                  value={form.transfer_unit}
+                  onChange={(v) => handleChange("transfer_unit", v)}
+                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                />
+                <Field
+                  type="number"
+                  label="Units Inside A Product Transfer"
+                  hint="Multiplies transfer quantity (e.g., 1 case = 12 bottles)"
+                  value={form.transfer_quantity}
+                  onChange={(v) => handleChange("transfer_quantity", v)}
+                  step="1"
+                  min="1"
+                />
+              </>
+            )}
+            {renderStorageHomesSelect()}
             <Field
               label="Image URL (optional)"
               hint="Link to product image"
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
             />
-            {!disableVariantControlled && (
-              <>
-                <Select
-                  label="Consumption Unit"
-                  hint="Single unit used for stock, transfers, and consumption"
-                  value={form.consumption_unit}
-                  onChange={(v) => handleChange("consumption_unit", v)}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                />
-                <Select
-                  label="Stocktake Unit"
-                  hint="Optional override for counting stock (e.g., kg instead of grams)"
-                  value={form.stocktake_uom}
-                  onChange={(v) => handleChange("stocktake_uom", v)}
-                  options={[{ value: "", label: "Use consumption unit" }, ...(qtyUnitOptions as unknown as { value: string; label: string }[])]}
-                />
-                {isFinished && (
-                  <>
-                    <Select
-                      label="Supplier pack unit"
-                      hint="Unit written on supplier pack for this product"
-                      value={form.purchase_pack_unit}
-                      onChange={(v) => handleChange("purchase_pack_unit", v)}
-                      options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                    />
-                    <Field
-                      type="number"
-                      label="Inner Supplier Pack Unit Qty"
-                      hint="How many inner units are inside one supplier pack"
-                      value={form.units_per_purchase_pack}
-                      onChange={(v) => handleChange("units_per_purchase_pack", v)}
-                      step="1"
-                      min="1"
-                    />
-                    <Select
-                      label="Storage home"
-                      hint="Pick the warehouse that holds this item."
-                      value={form.storage_home_id}
-                      onChange={(v) => handleChange("storage_home_id", v)}
-                      options={[
-                        { value: "", label: "Select storage home" },
-                        ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id })),
-                      ]}
-                    />
-                    {renderStorageHomeMultiSelect()}
-                  </>
-                )}
-                {isIngredientOrRaw && !form.has_variations && (
-                    <div className={styles.ingredientCardGrid}>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Supplier Pack Unit</h3>
-                        <p className={styles.sectionHint}>Unit written on the supplier pack.</p>
-                      </div>
-                      <Select
-                        label="Supplier pack unit"
-                        hint="Unit used when receiving stock."
-                        value={form.purchase_pack_unit}
-                        onChange={(v) => handleChange("purchase_pack_unit", v)}
-                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                      />
-                    </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Units Inside One Supplier Pack</h3>
-                        <p className={styles.sectionHint}>How many base units are inside one supplier pack.</p>
-                      </div>
-                      <Field
-                        type="number"
-                        label="Inner Supplier Pack Unit Qty"
-                        hint="Used for ingredient/raw transfers and damages."
-                        value={form.units_per_purchase_pack}
-                        onChange={(v) => handleChange("units_per_purchase_pack", v)}
-                        step="1"
-                        min="1"
-                      />
-                      </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Weight/Volume Per Supplier Pack</h3>
-                        <p className={styles.sectionHint}>Set the weight or volume for one supplier pack.</p>
-                      </div>
-                      <Field
-                        type="number"
-                        label="Weight/Volume Per Supplier Pack"
-                        hint="Used to convert supplier packs to base units (e.g., 250 g)."
-                        value={form.purchase_unit_mass}
-                        onChange={(v) => handleChange("purchase_unit_mass", v)}
-                        step="0.01"
-                        min="0"
-                      />
-                      </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Weight/Volume Per Supplier Pack</h3>
-                        <p className={styles.sectionHint}>Unit used for the supplier pack weight/volume.</p>
-                      </div>
-                      <Select
-                        label="Weight/Volume Per Supplier Pack"
-                        hint="Pick the unit used in the supplier pack weight/volume."
-                        value={form.purchase_unit_mass_uom}
-                        onChange={(v) => handleChange("purchase_unit_mass_uom", v)}
-                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                      />
-                      {packMassConversion ? (
-                        <p className={styles.sectionHint}>{packMassConversion}</p>
-                      ) : null}
-                      </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Weight/Volume Per Inner Pack</h3>
-                        <p className={styles.sectionHint}>Set the weight or volume for one inner pack.</p>
-                      </div>
-                      <Field
-                        type="number"
-                        label="Weight/Volume Per Inner Pack"
-                        hint="Used to convert inner packs to base units."
-                        value={form.inner_pack_unit_mass}
-                        onChange={(v) => handleChange("inner_pack_unit_mass", v)}
-                        step="0.01"
-                        min="0"
-                      />
-                      </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Mass/Volume Unit Per Inner Pack</h3>
-                        <p className={styles.sectionHint}>Unit used for the inner pack weight/volume.</p>
-                      </div>
-                      <Select
-                        label="Mass/Volume Unit Per Inner Pack"
-                        hint="Pick the unit used in the inner pack weight/volume."
-                        value={form.inner_pack_unit_mass_uom}
-                        onChange={(v) => handleChange("inner_pack_unit_mass_uom", v)}
-                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                      />
-                      </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Transfer Unit</h3>
-                        <p className={styles.sectionHint}>Unit used for transfers and stock movements.</p>
-                      </div>
-                      <Select
-                        label="Transfer unit"
-                        hint="Shown on scanner qty prompts."
-                        value={form.transfer_unit}
-                        onChange={(v) => handleChange("transfer_unit", v)}
-                        options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                      />
-                    </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Quantity Per Transfer Line</h3>
-                        <p className={styles.sectionHint}>Default quantity per transfer line.</p>
-                      </div>
-                      <Field
-                        type="number"
-                        label="Quantity per transfer line"
-                        hint="Used when entering transfer quantities."
-                        value={form.transfer_quantity}
-                        onChange={(v) => handleChange("transfer_quantity", v)}
-                        step="1"
-                        min="1"
-                      />
-                    </div>
-                      <div className={`${styles.sectionCard} ${styles.ingredientCard}`}>
-                      <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Storage Home</h3>
-                        <p className={styles.sectionHint}>Where this ingredient/raw item is stored.</p>
-                      </div>
-                      <Select
-                        label="Storage home"
-                        hint="Pick the warehouse that holds this item."
-                        value={form.storage_home_id}
-                        onChange={(v) => handleChange("storage_home_id", v)}
-                        options={[{ value: "", label: "Select storage home" }, ...warehouses.map((w) => ({ value: w.id, label: w.name ?? w.id }))]}
-                      />
-                    </div>
-                    {renderStorageHomeMultiSelect()}
-                  </div>
-                )}
-                <Field
-                  type="number"
-                  label="Consumption qty"
-                  hint="Consumption units used per 1 unit"
-                  value={form.consumption_qty_per_base}
-                  onChange={(v) => handleChange("consumption_qty_per_base", v)}
-                  step="0.0001"
-                  min="0.0001"
-                  required
-                />
-                <Field
-                  type="number"
-                  label="Quantity decimal places"
-                  hint="0 = whole numbers, 1 or 2 = allow decimals (e.g., kg)"
-                  value={form.qty_decimal_places}
-                  onChange={(v) => handleChange("qty_decimal_places", v)}
-                  step="1"
-                  min="0"
-                />
-                {!isIngredient && (
-                  <Field
-                    type="number"
-                    label="Cost per base unit"
-                    hint="Default unit cost (not pack cost)"
-                    value={form.cost}
-                    onChange={(v) => handleChange("cost", v)}
-                    step="0.01"
-                    min="0"
-                  />
-                )}
-              </>
-            )}
           </div>
 
           {!form.has_variations && (
@@ -657,6 +463,15 @@ function ProductCreatePage() {
                 <p className={styles.sectionHint}>Enter the default selling price for this product.</p>
               </div>
               <div className={styles.sectionGrid}>
+                <Field
+                  type="number"
+                  label="Cost per base unit"
+                  hint="Default unit cost (not pack cost)"
+                  value={form.cost}
+                  onChange={(v) => handleChange("cost", v)}
+                  step="0.01"
+                  min="0"
+                />
                 <Field
                   type="number"
                   label="Selling price"

@@ -18,9 +18,13 @@ export default function WarehouseBackofficeReportsHub() {
   const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
   const goToWarehouseReports = () => router.push("/Warehouse_Backoffice/warehouse-reports");
   const goToColdroomReports = () => router.push("/Warehouse_Backoffice/coldroom-reports");
-  const goToVehicleReports = () => router.push("/Warehouse_Backoffice/vehicle-reports");
   const goToDifferences = () => router.push("/Warehouse_Backoffice/Differences");
   const goToProductionDifferences = () => router.push("/Warehouse_Backoffice/production-differences");
+  const goToFlowTraces = () => router.push("/Warehouse_Backoffice/flow-traces");
+  const goToNegativeBalances = () => router.push("/Warehouse_Backoffice/negative-balance-reports");
+  const goToPosSyncFailures = () => router.push("/Warehouse_Backoffice/pos-sync-failures");
+  const goToStockPeriodExceptions = () => router.push("/Warehouse_Backoffice/stock-period-exceptions");
+  const goToOutletShortageDetails = () => router.push("/Warehouse_Backoffice/outlet-shortage-details");
 
   if (status !== "ok") return null;
 
@@ -81,12 +85,6 @@ export default function WarehouseBackofficeReportsHub() {
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button onClick={goToVehicleReports} className={`${styles.actionCard} ${styles.vehicleReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.vehicleReportsTitle}`}>Vehicle Reports</p>
-            <p className={styles.cardBody}>Track product transfers to vehicles with driver and plate filters.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
           <button onClick={goToDifferences} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Opening Stock Differences</p>
             <p className={styles.cardBody}>Compare opening ingredient counts with recipe-based servings.</p>
@@ -96,6 +94,36 @@ export default function WarehouseBackofficeReportsHub() {
           <button onClick={goToProductionDifferences} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
             <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Production Differences</p>
             <p className={styles.cardBody}>Compare max producible servings with recorded production entries.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToFlowTraces} className={`${styles.actionCard} ${styles.reportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Flow Trace Reports</p>
+            <p className={styles.cardBody}>Audit finished, ingredient, and raw deductions with negative stock tracking.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToNegativeBalances} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Negative Balance Alerts</p>
+            <p className={styles.cardBody}>Review order and recipe shortages logged during deductions.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToPosSyncFailures} className={`${styles.actionCard} ${styles.reportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>POS Sync Failures</p>
+            <p className={styles.cardBody}>Track failed POS sync events by outlet, stage, and error details.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToStockPeriodExceptions} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Stock Period Exceptions</p>
+            <p className={styles.cardBody}>Flag missing open periods and closed periods without closing counts.</p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
+
+          <button onClick={goToOutletShortageDetails} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
+            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Outlet Shortage Details</p>
+            <p className={styles.cardBody}>Summarize shortages by outlet, item, and warehouse.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
         </section>

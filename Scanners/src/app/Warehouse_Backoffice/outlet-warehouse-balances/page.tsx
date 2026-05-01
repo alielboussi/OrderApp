@@ -171,6 +171,9 @@ export default function OutletWarehouseBalancesPage() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
   const [selectedBalanceWarehouseIds, setSelectedBalanceWarehouseIds] = useState<string[]>([]);
   const [linkedWarehouseIds, setLinkedWarehouseIds] = useState<string[]>([]);
+  const [outletWarehouseLinks, setOutletWarehouseLinks] = useState<Array<{ outlet_id: string; warehouse_id: string }>>(
+    []
+  );
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
@@ -321,6 +324,7 @@ export default function OutletWarehouseBalancesPage() {
       setLinkedWarehouseIds([]);
       setSelectedWarehouseId("");
       setSelectedBalanceWarehouseIds([]);
+      setOutletWarehouseLinks([]);
       return;
     }
     let active = true;
@@ -330,15 +334,18 @@ export default function OutletWarehouseBalancesPage() {
         setError(null);
         const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
           .from("outlet_warehouses")
-          .select("warehouse_id")
+          .select("outlet_id,warehouse_id")
           .in("outlet_id", selectedOutletIds);
 
         if (outletWarehouseError) throw outletWarehouseError;
-        const warehouseIds = Array.from(
-          new Set((outletWarehouseRows ?? []).map((row) => row?.warehouse_id).filter(Boolean))
-        ) as string[];
+        const safeRows = (outletWarehouseRows ?? []).filter((row) => row?.outlet_id && row?.warehouse_id) as Array<{
+          outlet_id: string;
+          warehouse_id: string;
+        }>;
+        const warehouseIds = Array.from(new Set(safeRows.map((row) => row.warehouse_id)));
 
         setLinkedWarehouseIds(warehouseIds);
+        setOutletWarehouseLinks(safeRows);
         if (!active) return;
         if (warehouseIds.length === 0) {
           setSelectedWarehouseId("");
@@ -493,12 +500,31 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
+        const outletIdSet = new Set(selectedOutletIds);
+        if (hasColdroomBalances && selectedBalanceWarehouseIds.length > 0) {
+          const allowedOutlets = new Set<string>();
+          outletWarehouseLinks.forEach((row) => {
+            if (!row?.outlet_id || !row?.warehouse_id) return;
+            if (!outletIdSet.has(row.outlet_id)) return;
+            if (warehouseIds.includes(row.warehouse_id)) {
+              allowedOutlets.add(row.outlet_id);
+            }
+          });
+          outletIdSet.clear();
+          allowedOutlets.forEach((id) => outletIdSet.add(id));
+        }
+        const outletIds = Array.from(outletIdSet);
+        if (outletIds.length === 0) {
+          if (active) setItems([]);
+          return;
+        }
+
         const searchValue = search.trim() || null;
 
         let stockQuery = supabase
-          .from("warehouse_stock_items")
-          .select("warehouse_id,item_id,item_name,variant_key,net_units,item_kind")
-          .in("warehouse_id", warehouseIds);
+          .from("outlet_stock_summary")
+          .select("outlet_id,item_id,item_name,variant_key,on_hand_units")
+          .in("outlet_id", outletIds);
 
         if (searchValue) {
           stockQuery = stockQuery.ilike("item_name", `%${searchValue}%`);
@@ -507,8 +533,31 @@ export default function OutletWarehouseBalancesPage() {
         const { data: stockRows, error: stockError } = await stockQuery;
         if (stockError) throw stockError;
 
-        const rows = (stockRows as StockItem[]) || [];
+        const rows = ((stockRows as Array<{
+          outlet_id: string;
+          item_id: string;
+          item_name: string | null;
+          variant_key: string | null;
+          on_hand_units: number | null;
+        }>) || []).map((row) => ({
+          item_id: row.item_id,
+          item_name: row.item_name,
+          variant_key: row.variant_key,
+          net_units: row.on_hand_units,
+          item_kind: null
+        }));
         const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
+
+        const { data: itemKindRows, error: itemKindError } = await supabase
+          .from("catalog_items")
+          .select("id,item_kind")
+          .in("id", itemIds);
+
+        if (itemKindError) throw itemKindError;
+        const itemKindMap = new Map<string, string>();
+        (itemKindRows ?? []).forEach((row) => {
+          if (row?.id) itemKindMap.set(row.id, row.item_kind);
+        });
 
         const { data: variantRows, error: variantError } = await supabase
           .from("catalog_variants")
@@ -525,7 +574,7 @@ export default function OutletWarehouseBalancesPage() {
 
         const map = new Map<string, StockItem>();
         rows.forEach((row) => {
-          const kind = row.item_kind ?? "";
+          const kind = itemKindMap.get(row.item_id) ?? "";
           if (!kinds.includes(kind)) return;
           const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           if (baseOnly && vKey !== "base") return;
@@ -579,6 +628,7 @@ export default function OutletWarehouseBalancesPage() {
     supabase,
     hasColdroomBalances,
     coldroomChildSet,
+    outletWarehouseLinks,
   ]);
 
   useEffect(() => {

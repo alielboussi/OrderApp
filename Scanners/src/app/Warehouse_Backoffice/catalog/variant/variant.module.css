@@ -106,6 +106,7 @@
   border-radius: 16px;
   border: 1.2px solid rgba(255, 255, 255, 0.12);
   background: rgba(17, 24, 39, 0.7);
+  min-height: 172px;
 }
 
 .label {
@@ -113,11 +114,13 @@
   font-weight: 700;
   color: #e8edff;
   letter-spacing: 0.3px;
+  min-height: 18px;
 }
 
 .hint {
   font-size: 12px;
   color: #93c5fd;
+  min-height: 32px;
 }
 
 .input {
@@ -131,6 +134,7 @@
   font-size: 15px;
   font-family: inherit;
   transition: border-color 150ms ease, box-shadow 150ms ease;
+  min-height: 44px;
 }
 
 .input:focus {
@@ -200,8 +204,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
-  max-height: 240px;
-  overflow-y: auto;
 }
 
 .multiSelectHint {

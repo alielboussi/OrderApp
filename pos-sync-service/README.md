@@ -1,4 +1,4 @@
-# Time Settings Lock (POS → Supabase Sync Windows Service)
+# SCPGT (POS → Supabase Sync Windows Service)
 
 A .NET 8 Worker Service that polls the local POS SQL Server database, posts orders to Supabase via an RPC, and marks POS rows processed. Installable as a Windows Service (visible in services.msc).
 
@@ -6,15 +6,15 @@ A .NET 8 Worker Service that polls the local POS SQL Server database, posts orde
 ```
 dotnet publish -c Release -r win-x64 --self-contained true -o publish
 ```
-(This produces `TimeSettingsLock.exe` in `publish/`.)
+(This produces `SCPGT.exe` in `publish/`.)
 
 ## Configure
-Edit `publish/appsettings.json` per outlet:
+Edit `publish/appsettings.txt` per outlet:
 - `PosDb.ConnectionString`: SQL Server for the POS at that outlet.
 - `Outlet.Id`: Supabase outlet UUID.
 - `Supabase.Url`: Supabase project URL.
 - `Supabase.ServiceKey`: Service role key (or a restricted key for RPC execution).
-- `Sync.PollSeconds`, `Sync.BatchSize`, `Sync.SourceSystem`: polling and idempotency settings.
+- `Sync.BatchSize`, `Sync.SourceSystem`: sync idempotency settings.
 
 ## Install as Windows Service (PowerShell as Administrator)
 Quick installer script (publishes, copies, installs service, seeds config):
@@ -22,26 +22,25 @@ Quick installer script (publishes, copies, installs service, seeds config):
 pwsh -File scripts/install-service.ps1
 ```
 Defaults:
-- Binary to `C:\Program Files\TimeSettingsLock` (configurable via `-InstallPath`)
-- Config at `%LOCALAPPDATA%\TimeSettingsLock` (configurable via `-ConfigRoot`)
+- Binary to `C:\Program Files\SCPGT` (configurable via `-InstallPath`)
+- Config at `%ProgramData%\SCPGT` (configurable via `-ConfigRoot`)
 - Publishes self-contained win-x64; use `-SkipPublish` to reuse existing `publish` folder.
 
 Manual install (if you prefer):
 ```
-New-Service -Name "TimeSettingsLock" -BinaryPathName "\"C:\\Program Files\\TimeSettingsLock\\TimeSettingsLock.exe\" --run-as-service --contentRoot \"%LOCALAPPDATA%\\TimeSettingsLock\"" -DisplayName "Time Settings Lock" -Description "POS sync and stock update service" -StartupType Automatic
-Start-Service -Name "TimeSettingsLock"
+New-Service -Name "SCPGT" -BinaryPathName "\"C:\\Program Files\\SCPGT\\SCPGT.exe\" --run-as-service --contentRoot \"%ProgramData%\\SCPGT\"" -DisplayName "SCPGT" -Description "Background sync service" -StartupType Automatic
+Start-Service -Name "SCPGT"
 ```
 
 To uninstall manually:
 ```
-Stop-Service -Name "TimeSettingsLock"
-sc delete TimeSettingsLock
+Stop-Service -Name "SCPGT"
+sc delete SCPGT
 ```
 
-## Quick status UI
-- Double-click `TimeSettingsLock.exe` (no arguments) to run a hidden-on-demand status UI: it performs one immediate sync pass and prints the last five processed sales, then exits.
-- To call it explicitly, run `TimeSettingsLock.exe --status-ui`.
-- If your config lives outside the executable directory, add `--contentRoot "C:\\Users\\<you>\\AppData\\Local\\XtZ"` so the app picks up `appsettings.json` from that folder.
+## Hotkey listener
+- The installer registers a hidden listener at Windows startup to show the UI when the hotkey is pressed.
+- Default hotkey: Shift + `+` + Backspace.
 
 ## Deploy as a single folder
 1) Run `dotnet publish -c Release -r win-x64 --self-contained true -o publish` (already done) — this produces the `publish` folder with binaries **and** the `scripts` subfolder.
@@ -49,7 +48,7 @@ sc delete TimeSettingsLock
 3) Copy that single folder to the outlet machine.
 4) On the outlet, open PowerShell as Administrator, `cd` into the folder, then run:
 ```
-pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\TimeSettingsLock" -ConfigRoot "%LOCALAPPDATA%\\TimeSettingsLock"
+pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Program Files\\SCPGT" -ConfigRoot "%ProgramData%\\SCPGT"
 ```
 - The script will skip rebuilding if it does not find the `.csproj` (typical on the outlet). To force no-build locally, add `-SkipPublish`.
 
