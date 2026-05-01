@@ -352,7 +352,7 @@ export default function RecipesPage() {
   }, [warehouses]);
 
   const addLine = (setter: Dispatch<SetStateAction<PendingLine[]>>) => {
-    setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "g" }]);
+    setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "g", sourceWarehouseId: "" }]);
   };
 
   const removeLine = (index: number, setter: Dispatch<SetStateAction<PendingLine[]>>) => {
