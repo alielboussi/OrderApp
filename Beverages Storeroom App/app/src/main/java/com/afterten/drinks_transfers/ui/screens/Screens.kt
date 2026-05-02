@@ -93,7 +93,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -149,6 +149,11 @@ val HOME_WAREHOUSE_IDS = listOf(
 )
 
 val DAMAGE_WAREHOUSE_IDS = listOf(FROM_WAREHOUSE_ID)
+
+val HIDDEN_TRANSFER_VARIANT_IDS = setOf(
+  "3f8bb7e2-e848-48de-9936-e94bafed2b92",
+  "ce5fcf2c-d35f-44b6-9f36-91333007cf42"
+)
 
 val PURCHASE_SUPPLIER_IDS = emptySet<String>()
 
@@ -605,12 +610,16 @@ fun TransferItemsScreen(
 
       if (query.isNotBlank() && variantMatches.isNotEmpty()) {
         VariantGrid(
-          items = variantMatches.sortedBy { variantSortKey(it) },
+          items = variantMatches
+            .filterNot { it.variantId in HIDDEN_TRANSFER_VARIANT_IDS }
+            .sortedBy { variantSortKey(it) },
           modifier = Modifier.weight(1f),
           onItemClick = { singleItemDialog.value = it }
         )
       } else {
-        val groupedItems = groupItems(baseCandidates)
+        val groupedItems = groupItems(
+          baseCandidates.filterNot { it.variantId in HIDDEN_TRANSFER_VARIANT_IDS }
+        )
         BaseItemGrid(
           items = groupedItems,
           modifier = Modifier.weight(1f),
@@ -2229,7 +2238,7 @@ private fun BarcodeScannerScreen(
   onClose: () -> Unit
 ) {
   val context = LocalContext.current
-  val lifecycleOwner = LocalLifecycleOwner.current
+  val lifecycleOwner = remember(context) { context as? LifecycleOwner }
   val hasPermission = remember {
     mutableStateOf(
       ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -2256,43 +2265,62 @@ private fun BarcodeScannerScreen(
     }
   }
 
-  DisposableEffect(hasPermission.value) {
-    if (!hasPermission.value) return@DisposableEffect onDispose { }
+  DisposableEffect(hasPermission.value, lifecycleOwner) {
+    if (!hasPermission.value || lifecycleOwner == null) {
+      if (lifecycleOwner == null) {
+        Log.e("BarcodeScanner", "Missing LifecycleOwner; camera cannot start")
+      }
+      return@DisposableEffect onDispose { }
+    }
     val executor = ContextCompat.getMainExecutor(context)
     val listener = Runnable {
-      val cameraProvider = cameraProviderFuture.get()
-      val preview = Preview.Builder().build().also {
-        it.setSurfaceProvider(previewView.surfaceProvider)
-      }
-      val analysis = ImageAnalysis.Builder()
-        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-        .build()
-
-      analysis.setAnalyzer(executor) { imageProxy ->
-        val mediaImage = imageProxy.image
-        if (mediaImage == null || hasScanned.value) {
-          imageProxy.close()
-          return@setAnalyzer
+      runCatching {
+        val cameraProvider = cameraProviderFuture.get()
+        Log.d("BarcodeScanner", "Camera provider acquired")
+        val preview = Preview.Builder().build().also {
+          it.setSurfaceProvider(previewView.surfaceProvider)
         }
-        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-        scanner.process(image)
-          .addOnSuccessListener { barcodes ->
-            val raw = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
-            if (!raw.isNullOrBlank() && !hasScanned.value) {
-              hasScanned.value = true
-              onScanned(raw)
-            }
-          }
-          .addOnCompleteListener { imageProxy.close() }
-      }
+        val analysis = ImageAnalysis.Builder()
+          .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+          .build()
 
-      cameraProvider.unbindAll()
-      cameraProvider.bindToLifecycle(
-        lifecycleOwner,
-        CameraSelector.DEFAULT_BACK_CAMERA,
-        preview,
-        analysis
-      )
+        analysis.setAnalyzer(executor) { imageProxy ->
+          try {
+            val mediaImage = imageProxy.image
+            if (mediaImage == null || hasScanned.value) {
+              return@setAnalyzer
+            }
+            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            scanner.process(image)
+              .addOnSuccessListener { barcodes ->
+                val raw = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
+                if (!raw.isNullOrBlank() && !hasScanned.value) {
+                  Log.d("BarcodeScanner", "Barcode scanned: $raw")
+                  hasScanned.value = true
+                  onScanned(raw)
+                }
+              }
+              .addOnFailureListener { error ->
+                Log.e("BarcodeScanner", "Barcode scan failed", error)
+              }
+              .addOnCompleteListener { imageProxy.close() }
+          } catch (error: Exception) {
+            Log.e("BarcodeScanner", "Analyzer crashed", error)
+            imageProxy.close()
+          }
+        }
+
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(
+          lifecycleOwner,
+          CameraSelector.DEFAULT_BACK_CAMERA,
+          preview,
+          analysis
+        )
+        Log.d("BarcodeScanner", "Camera bound to lifecycle")
+      }.onFailure { error ->
+        Log.e("BarcodeScanner", "Camera setup failed", error)
+      }
     }
 
     cameraProviderFuture.addListener(listener, executor)
