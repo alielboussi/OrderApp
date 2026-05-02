@@ -107,7 +107,24 @@ const formatUnitLabel = (unit: string) => {
 
 const unitOptions = qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }));
 
-const fieldOptions = [
+type FieldType =
+  | "text"
+  | "text-null"
+  | "number"
+  | "number-null"
+  | "number-int"
+  | "boolean"
+  | "select"
+  | "select-warehouse";
+
+type FieldOption = {
+  value: string;
+  label: string;
+  type: FieldType;
+  options?: { value: string; label: string }[];
+};
+
+const fieldOptions: FieldOption[] = [
   { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
   { value: "purchase_pack_unit", label: "How its Purchased", type: "select", options: unitOptions },
   { value: "units_per_purchase_pack", label: "Units Inside Purchase Product", type: "number" },
@@ -116,9 +133,7 @@ const fieldOptions = [
   { value: "selling_price", label: "Selling price", type: "number" },
   { value: "outlet_order_visible", label: "Show in outlet orders", type: "boolean" },
   { value: "active", label: "Active", type: "boolean" },
-] as const;
-
-type FieldOption = (typeof fieldOptions)[number];
+];
 
 function parseFieldValue(field: FieldOption, raw: string) {
   const trimmed = raw.trim();

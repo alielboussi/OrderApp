@@ -126,6 +126,7 @@ import java.io.ByteArrayOutputStream
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -193,7 +194,7 @@ class DamageState {
 
 class PurchaseState {
   var supplierId: String? = null
-  var invoiceNumber: String = ""
+  var invoiceNumber by mutableStateOf("")
   var warehouseId: String? = null
   var selectedItemId: String? = null
   var selectedItemName: String? = null
@@ -408,16 +409,22 @@ private fun ActionCard(
     shape = RoundedCornerShape(16.dp),
     colors = CardDefaults.cardColors(containerColor = GraySurface)
   ) {
-    Row(
-      modifier = Modifier.padding(18.dp),
-      verticalAlignment = Alignment.CenterVertically
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
     ) {
-      Icon(icon, contentDescription = null, tint = BluePrimary)
-      Spacer(Modifier.width(12.dp))
-      Column {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray)
-      }
+      Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = BluePrimary,
+        modifier = Modifier.size(32.dp)
+      )
+      Spacer(Modifier.height(10.dp))
+      Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+      Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray, textAlign = TextAlign.Center)
     }
   }
 }
@@ -477,6 +484,7 @@ fun TransferItemsScreen(
         state.availableItems = items
       }
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load transfer data"
     }
     loadingState.value = false
@@ -756,9 +764,6 @@ fun DamageItemsScreen(
   onReview: () -> Unit
 ) {
   val itemsState = remember { mutableStateOf<List<WarehouseItem>>(emptyList()) }
-  val warehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
-  val selectDialogOpen = rememberSaveable { mutableStateOf(false) }
-  val selection = remember { mutableStateOf<Warehouse?>(null) }
   val singleItemDialog = remember { mutableStateOf<WarehouseItem?>(null) }
   val queryState = rememberSaveable { mutableStateOf("") }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -767,18 +772,11 @@ fun DamageItemsScreen(
 
   LaunchedEffect(token) {
     if (token == null) return@LaunchedEffect
-    loadingState.value = true
-    runCatching {
-      val warehouses = repo.listWarehousesByIds(token, warehouseIds)
-      val sorted = warehouses.sortedBy { it.name }
-      warehousesState.value = sorted
-      val selected = sorted.firstOrNull { it.id == state.warehouseId }
-      selection.value = selected
-      selectDialogOpen.value = state.warehouseId == null
-    }.onFailure {
-      errorState.value = it.message ?: "Failed to load damage warehouses"
+    val damageWarehouseId = warehouseIds.firstOrNull { it == FROM_WAREHOUSE_ID } ?: FROM_WAREHOUSE_ID
+    if (state.warehouseId != damageWarehouseId) {
+      state.warehouseId = damageWarehouseId
+      state.items.clear()
     }
-    loadingState.value = false
   }
 
   LaunchedEffect(token, state.warehouseId) {
@@ -789,6 +787,7 @@ fun DamageItemsScreen(
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load items"
     }
     loadingState.value = false
@@ -822,38 +821,6 @@ fun DamageItemsScreen(
         .fillMaxSize(),
       verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-      if (selectDialogOpen.value && warehousesState.value.isNotEmpty()) {
-        AlertDialog(
-          onDismissRequest = { },
-          title = { Text("Select warehouse") },
-          text = {
-            WarehouseButtonGrid(
-              label = "Warehouse",
-              warehouses = warehousesState.value,
-              selected = selection.value,
-              onSelected = { selection.value = it }
-            )
-          },
-          confirmButton = {
-            TextButton(
-              enabled = selection.value != null,
-              onClick = {
-                val selected = selection.value ?: return@TextButton
-                state.warehouseId = selected.id
-                state.items.clear()
-                selectDialogOpen.value = false
-              }
-            ) {
-              Text("Continue")
-            }
-          }
-        )
-      }
-
-      if (selectDialogOpen.value) {
-        return@Column
-      }
-
       OutlinedTextField(
         modifier = Modifier.fillMaxWidth(),
         value = queryState.value,
@@ -931,11 +898,7 @@ fun DamageItemsScreen(
         modifier = Modifier.fillMaxWidth(),
         enabled = state.items.isNotEmpty(),
         onClick = {
-          if (state.warehouseId == null) {
-            selectDialogOpen.value = true
-          } else {
-            onReview()
-          }
+          onReview()
         }
       ) {
         Text("Damage (${state.items.size})")
@@ -1165,6 +1128,7 @@ fun TransferSummaryScreen(
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val dateTimeText = remember { formatDateTimeLocal() }
+  val borderWidth = rememberBorderDp()
 
   LaunchedEffect(token, user?.id) {
     val userId = user?.id
@@ -1190,6 +1154,7 @@ fun TransferSummaryScreen(
         state.pdfFileName = buildTransferPdfFileName(fromName, toName, dateTimeText)
       }
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load warehouse names"
     }
   }
@@ -1264,10 +1229,15 @@ fun TransferSummaryScreen(
       )
     }
   ) { padding ->
-    Column(
-      modifier = Modifier.padding(padding),
-      verticalArrangement = Arrangement.spacedBy(12.dp)
+    Box(
+      modifier = Modifier
+        .padding(padding)
+        .padding(12.dp)
+        .fillMaxSize()
+        .border(borderWidth, RedNegative, RoundedCornerShape(8.dp))
+        .padding(12.dp)
     ) {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Image(
         painter = painterResource(R.drawable.afterten_logo),
         contentDescription = "After Ten logo",
@@ -1417,6 +1387,7 @@ fun TransferSummaryScreen(
         Text(if (loadingState.value) "Processing..." else "Process transfer")
       }
     }
+    }
   }
 }
 
@@ -1461,6 +1432,7 @@ fun DamageSummaryScreen(
         state.pdfFileName = buildDamagePdfFileName(fromName, dateTimeText)
       }
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load warehouse"
     }
   }
@@ -1696,6 +1668,7 @@ fun PurchaseSetupScreen(
       state.supplierId = selectedSupplier.value?.id
       state.warehouseId = FROM_WAREHOUSE_ID
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load purchase setup"
     }
     loadingState.value = false
@@ -1803,6 +1776,7 @@ fun PurchaseItemsScreen(
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load items"
     }
     loadingState.value = false
@@ -1974,6 +1948,7 @@ fun PurchaseSummaryScreen(
         pdfNameState.value = buildPurchasePdfFileName(supplierName, warehouseName, dateTimeText)
       }
     }.onFailure {
+      if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load purchase details"
     }
   }
