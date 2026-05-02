@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "../menu/menu.module.css";
@@ -18,7 +18,7 @@ type RecipeIngredientsResponse = {
   error?: string;
 };
 
-export default function RecipeComponentsPage() {
+function RecipeComponentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const itemId = searchParams.get("item_id") ?? "";
@@ -182,5 +182,13 @@ export default function RecipeComponentsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function RecipeComponentsPageWrapper() {
+  return (
+    <Suspense fallback={<div className={styles.page}><main className={styles.shell}>Loading...</main></div>}>
+      <RecipeComponentsPage />
+    </Suspense>
   );
 }
