@@ -7,6 +7,7 @@ as $function$
 declare
   v_order public.orders%rowtype;
   v_recv_wh uuid;
+  v_default_sales_wh uuid;
   v_sources uuid[];
   v_source uuid;
   v_items jsonb;
@@ -16,8 +17,8 @@ begin
     raise exception 'order % not found', p_order_id;
   end if;
 
-  select default_receiving_warehouse_id
-    into v_recv_wh
+  select default_receiving_warehouse_id, default_sales_warehouse_id
+    into v_recv_wh, v_default_sales_wh
   from public.outlet_default_warehouses(v_order.outlet_id);
 
   if v_recv_wh is null then
@@ -41,29 +42,20 @@ begin
       bi.variant_key,
       bi.qty,
       coalesce(
-        r.warehouse_id,
-        cv.default_warehouse_id,
-        ci.default_warehouse_id
+        cv.storage_home_id,
+        ci.storage_home_id,
+        v_default_sales_wh
       ) as source_warehouse_id
     from base_items bi
     join public.catalog_items ci on ci.id = bi.product_id
     left join public.catalog_variants cv
       on cv.item_id = bi.product_id
-     and cv.id::text = bi.variant_key
-    left join lateral (
-      select r2.warehouse_id
-      from public.outlet_order_routes r2
-      where r2.outlet_id = v_order.outlet_id
-        and r2.item_id = bi.product_id
-        and r2.normalized_variant_key in (bi.variant_key, 'base')
-      order by (r2.normalized_variant_key = bi.variant_key) desc
-      limit 1
-    ) r on true
+     and public.normalize_variant_key(cv.id::text) = bi.variant_key
   )
   select * from sources;
 
   if exists (select 1 from tmp_item_routes where source_warehouse_id is null) then
-    raise exception 'default warehouse missing for one or more items in order %', p_order_id;
+    raise exception 'storage_home_id missing for one or more items in order %', p_order_id;
   end if;
 
   select array_agg(distinct source_warehouse_id)

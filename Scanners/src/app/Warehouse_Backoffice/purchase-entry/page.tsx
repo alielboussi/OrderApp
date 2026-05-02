@@ -12,34 +12,27 @@ type WarehouseOption = {
   active?: boolean | null;
 };
 
-type ScannerOption = {
-  id: string;
-  name: string | null;
-};
-
 type SupplierOption = {
   id: string;
   name: string | null;
-  scanner_ids?: string[] | null;
 };
 
-type CatalogItem = {
-  id: string;
-  name: string | null;
-  has_variations?: boolean | null;
-  purchase_pack_unit?: string | null;
-  transfer_unit?: string | null;
-  consumption_uom?: string | null;
-};
-
-type CatalogVariant = {
-  id: string;
+type WarehouseItem = {
+  warehouse_id: string;
   item_id: string;
-  name: string | null;
-  purchase_pack_unit?: string | null;
-  transfer_unit?: string | null;
-  consumption_uom?: string | null;
-  active?: boolean | null;
+  item_name: string | null;
+  variant_key: string | null;
+  variant_name: string | null;
+  sku: string | null;
+  net_units: number | null;
+  unit_cost: number | null;
+  item_kind: string | null;
+  image_url: string | null;
+  has_recipe: boolean | null;
+  consumption_uom: string | null;
+  purchase_pack_unit: string | null;
+  transfer_unit: string | null;
+  transfer_quantity: number | null;
 };
 
 type PurchaseCartItem = {
@@ -51,6 +44,7 @@ type PurchaseCartItem = {
   unitCost: number | null;
   uom: string;
 };
+
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
   const response = await fetch(url, { cache: "no-store" });
@@ -82,19 +76,14 @@ export default function WarehousePurchaseEntryPage() {
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
 
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
-  const [scanners, setScanners] = useState<ScannerOption[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
-  const [selectedScannerId, setSelectedScannerId] = useState("");
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
-  const [referenceCode, setReferenceCode] = useState("");
-  const [note, setNote] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
 
   const [itemSearch, setItemSearch] = useState("");
-  const [items, setItems] = useState<CatalogItem[]>([]);
-  const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
-  const [variants, setVariants] = useState<CatalogVariant[]>([]);
-  const [selectedVariantKey, setSelectedVariantKey] = useState<string>("base");
+  const [items, setItems] = useState<WarehouseItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState<WarehouseItem | null>(null);
   const [qtyInput, setQtyInput] = useState("");
   const [unitCostInput, setUnitCostInput] = useState("");
   const [cart, setCart] = useState<PurchaseCartItem[]>([]);
@@ -115,17 +104,8 @@ export default function WarehousePurchaseEntryPage() {
       try {
         const payload = await fetchJson<{ warehouses?: WarehouseOption[] }>("/api/warehouses");
         if (!active) return;
-        setWarehouses((payload.warehouses ?? []).filter((row) => row.id));
-      } catch (err) {
-        if (active) setError(toErrorMessage(err));
-      }
-    };
-
-    const loadScanners = async () => {
-      try {
-        const payload = await fetchJson<{ scanners?: ScannerOption[] }>("/api/scanners");
-        if (!active) return;
-        setScanners(payload.scanners ?? []);
+        const filtered = (payload.warehouses ?? []).filter((row) => row.id);
+        setWarehouses(filtered);
       } catch (err) {
         if (active) setError(toErrorMessage(err));
       }
@@ -142,7 +122,6 @@ export default function WarehousePurchaseEntryPage() {
     };
 
     void loadWarehouses();
-    void loadScanners();
     void loadSuppliers();
 
     return () => {
@@ -152,6 +131,7 @@ export default function WarehousePurchaseEntryPage() {
 
   useEffect(() => {
     if (status !== "ok") return;
+    if (!selectedWarehouseId) return;
     if (!itemSearch.trim()) {
       setItems([]);
       return;
@@ -161,11 +141,15 @@ export default function WarehousePurchaseEntryPage() {
     const timeout = window.setTimeout(async () => {
       try {
         setLoading(true);
-        const payload = await fetchJson<{ items?: CatalogItem[] }>(
-          `/api/catalog/items?q=${encodeURIComponent(itemSearch.trim())}`
-        );
+        const { data, error: listError } = await supabase.rpc("list_warehouse_items", {
+          p_warehouse_id: selectedWarehouseId,
+          p_outlet_id: null,
+          p_search: itemSearch.trim() || null,
+        });
+        if (listError) throw listError;
         if (!active) return;
-        setItems(payload.items ?? []);
+        const rows = (data ?? []) as WarehouseItem[];
+        setItems(rows.filter((row) => row.item_id));
       } catch (err) {
         if (active) setError(toErrorMessage(err));
       } finally {
@@ -177,49 +161,7 @@ export default function WarehousePurchaseEntryPage() {
       active = false;
       window.clearTimeout(timeout);
     };
-  }, [itemSearch, status]);
-
-  useEffect(() => {
-    if (!selectedItem?.id) {
-      setVariants([]);
-      setSelectedVariantKey("base");
-      return;
-    }
-
-    let active = true;
-    const loadVariants = async () => {
-      try {
-        const payload = await fetchJson<{ variants?: CatalogVariant[] }>(
-          `/api/catalog/variants?item_id=${encodeURIComponent(selectedItem.id)}`
-        );
-        if (!active) return;
-        const list = payload.variants ?? [];
-        setVariants(list.filter((row) => row.active !== false));
-        setSelectedVariantKey("base");
-      } catch (err) {
-        if (active) setError(toErrorMessage(err));
-      }
-    };
-
-    void loadVariants();
-
-    return () => {
-      active = false;
-    };
-  }, [selectedItem?.id]);
-
-  const filteredSuppliers = useMemo(() => {
-    if (!selectedScannerId) return suppliers;
-    return suppliers.filter((supplier) =>
-      Array.isArray(supplier.scanner_ids) ? supplier.scanner_ids.includes(selectedScannerId) : false
-    );
-  }, [selectedScannerId, suppliers]);
-
-  const selectedVariant = useMemo(() => {
-    if (!selectedItem) return null;
-    if (!selectedVariantKey || selectedVariantKey === "base") return null;
-    return variants.find((variant) => variant.id === selectedVariantKey) ?? null;
-  }, [selectedItem, selectedVariantKey, variants]);
+  }, [itemSearch, selectedWarehouseId, status, supabase]);
 
   const addToCart = () => {
     if (!selectedItem) {
@@ -238,14 +180,14 @@ export default function WarehousePurchaseEntryPage() {
       return;
     }
 
-    const variantKey = selectedVariant?.id ?? null;
-    const variantName = selectedVariant?.name ?? null;
-    const uom = normalizeUom(selectedVariant ?? selectedItem);
+    const variantKey = selectedItem.variant_key ?? "base";
+    const variantName = selectedItem.variant_name ?? null;
+    const uom = normalizeUom(selectedItem);
 
     setCart((prev) => [
       {
-        itemId: selectedItem.id,
-        itemName: selectedItem.name ?? "Item",
+        itemId: selectedItem.item_id,
+        itemName: selectedItem.item_name ?? "Item",
         variantKey,
         variantName,
         qty,
@@ -269,16 +211,12 @@ export default function WarehousePurchaseEntryPage() {
       setError("Select a warehouse.");
       return;
     }
-    if (!selectedScannerId) {
-      setError("Select a scanner.");
-      return;
-    }
     if (!selectedSupplierId) {
       setError("Select a supplier.");
       return;
     }
-    if (!referenceCode.trim()) {
-      setError("Reference / Invoice # is required.");
+    if (!invoiceNumber.trim()) {
+      setError("Invoice number is required.");
       return;
     }
     if (cart.length === 0) {
@@ -290,36 +228,27 @@ export default function WarehousePurchaseEntryPage() {
     setError(null);
     setSuccess(null);
     try {
-      const user = await supabase.auth.getUser();
-      const operatorName =
-        user.data.user?.user_metadata?.display_name ||
-        user.data.user?.user_metadata?.full_name ||
-        user.data.user?.email ||
-        "Backoffice";
-
       const payload = {
         p_warehouse_id: selectedWarehouseId,
         p_supplier_id: selectedSupplierId,
-        p_reference_code: referenceCode.trim(),
+        p_reference_code: invoiceNumber.trim(),
         p_items: cart.map((item) => ({
           product_id: item.itemId,
           variant_key: item.variantKey ?? "base",
           qty: item.qty,
           qty_input_mode: "units",
           unit_cost: item.unitCost,
-          operator_name: operatorName,
         })),
-        p_note: note.trim() || null,
+        p_note: null,
       };
 
       const { data, error: submitError } = await supabase.rpc("record_purchase_receipt", payload);
       if (submitError) throw submitError;
 
-      const reference = typeof data?.reference_code === "string" ? data.reference_code : referenceCode.trim();
+      const reference = typeof data?.reference_code === "string" ? data.reference_code : invoiceNumber.trim();
       setSuccess(`Purchase ${reference} recorded.`);
       setCart([]);
-      setReferenceCode("");
-      setNote("");
+      setInvoiceNumber("");
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -336,8 +265,8 @@ export default function WarehousePurchaseEntryPage() {
         <header className={styles.hero}>
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Warehouse Purchases Entry</h1>
-            <p className={styles.subtitle}>Record scanner purchase receipts from backoffice.</p>
+            <h1 className={styles.title}>Purchase Entry</h1>
+            <p className={styles.subtitle}>Record beverages storeroom purchase receipts.</p>
           </div>
           <div className={styles.headerButtons}>
             <button onClick={handleBackOne} className={styles.backButton}>
@@ -372,31 +301,15 @@ export default function WarehousePurchaseEntryPage() {
             </label>
 
             <label className={styles.fieldLabel}>
-              Scanner
-              <select
-                className={styles.select}
-                value={selectedScannerId}
-                onChange={(event) => setSelectedScannerId(event.target.value)}
-              >
-                <option value="">Select scanner</option>
-                {scanners.map((scanner) => (
-                  <option key={scanner.id} value={scanner.id}>
-                    {scanner.name ?? scanner.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={styles.fieldLabel}>
               Supplier
               <select
                 className={styles.select}
                 value={selectedSupplierId}
                 onChange={(event) => setSelectedSupplierId(event.target.value)}
-                disabled={!filteredSuppliers.length}
+                disabled={!suppliers.length}
               >
                 <option value="">Select supplier</option>
-                {filteredSuppliers.map((supplier) => (
+                {suppliers.map((supplier) => (
                   <option key={supplier.id} value={supplier.id}>
                     {supplier.name ?? supplier.id}
                   </option>
@@ -405,23 +318,12 @@ export default function WarehousePurchaseEntryPage() {
             </label>
 
             <label className={styles.fieldLabel}>
-              Reference / Invoice #
+              Invoice number
               <input
                 className={styles.input}
-                value={referenceCode}
-                onChange={(event) => setReferenceCode(event.target.value)}
+                value={invoiceNumber}
+                onChange={(event) => setInvoiceNumber(event.target.value.toUpperCase())}
                 placeholder="INV-0001"
-              />
-            </label>
-
-            <label className={styles.fieldLabel}>
-              Note (optional)
-              <textarea
-                className={styles.textarea}
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                rows={2}
-                placeholder="Optional note for the purchase"
               />
             </label>
           </div>
@@ -443,13 +345,20 @@ export default function WarehousePurchaseEntryPage() {
               ) : (
                 items.map((item) => (
                   <button
-                    key={item.id}
+                    key={`${item.item_id}-${item.variant_key ?? "base"}`}
                     type="button"
-                    className={`${styles.itemOption} ${selectedItem?.id === item.id ? styles.itemOptionActive : ""}`}
+                    className={`${styles.itemOption} ${selectedItem?.item_id === item.item_id && selectedItem?.variant_key === item.variant_key ? styles.itemOptionActive : ""}`}
                     onClick={() => setSelectedItem(item)}
                   >
-                    <span>{item.name ?? item.id}</span>
-                    {item.has_variations && <span className={styles.itemTag}>Variants</span>}
+                    <span>
+                      {item.item_name ?? item.item_id}
+                      {item.variant_name
+                        ? ` • ${item.variant_name}`
+                        : item.variant_key && item.variant_key !== "base"
+                          ? ` • ${item.variant_key}`
+                          : ""}
+                    </span>
+                    {item.variant_key && item.variant_key !== "base" && <span className={styles.itemTag}>Variant</span>}
                   </button>
                 ))
               )}
@@ -458,22 +367,7 @@ export default function WarehousePurchaseEntryPage() {
             {selectedItem && (
               <div className={styles.variantPanel}>
                 <label className={styles.fieldLabel}>
-                  Variant
-                  <select
-                    className={styles.select}
-                    value={selectedVariantKey}
-                    onChange={(event) => setSelectedVariantKey(event.target.value)}
-                  >
-                    <option value="base">Base</option>
-                    {variants.map((variant) => (
-                      <option key={variant.id} value={variant.id}>
-                        {variant.name ?? variant.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className={styles.fieldLabel}>
-                  Quantity ({normalizeUom(selectedVariant ?? selectedItem)})
+                  Quantity ({normalizeUom(selectedItem)})
                   <input
                     className={styles.input}
                     value={qtyInput}
@@ -501,10 +395,6 @@ export default function WarehousePurchaseEntryPage() {
         <section className={styles.panel}>
           <div className={styles.panelHeaderRow}>
             <h2 className={styles.panelTitle}>Items to submit</h2>
-            <button type="button" className={styles.outlineButton} onClick={() => router.push("/Warehouse_Backoffice/purchases")}
-            >
-              View purchase history
-            </button>
           </div>
           {cart.length === 0 ? (
             <p className={styles.helperText}>No items added yet.</p>

@@ -14,6 +14,7 @@ class SessionStore(private val context: Context) {
   private val tokenKey = stringPreferencesKey("token")
   private val userIdKey = stringPreferencesKey("user_id")
   private val emailKey = stringPreferencesKey("email")
+  private val displayNameKey = stringPreferencesKey("display_name")
   private val loginAtKey = longPreferencesKey("login_at_ms")
   private val lastTransferWarehouseKey = stringPreferencesKey("last_transfer_to_warehouse")
   private val lastPurchaseSupplierKey = stringPreferencesKey("last_purchase_supplier")
@@ -24,19 +25,31 @@ class SessionStore(private val context: Context) {
     val token = data[tokenKey]
     val userId = data[userIdKey]
     val email = data[emailKey]
+    val displayName = data[displayNameKey]
     val loginAt = data[loginAtKey]
     return if (!token.isNullOrBlank() && !userId.isNullOrBlank() && !email.isNullOrBlank() && loginAt != null) {
-      StoredSession(token, userId, email, loginAt)
+      StoredSession(token, userId, email, displayName, loginAt)
     } else {
       null
     }
   }
 
-  suspend fun saveSession(token: String, userId: String, email: String, loginAtMs: Long) {
+  suspend fun saveSession(
+    token: String,
+    userId: String,
+    email: String,
+    displayName: String?,
+    loginAtMs: Long
+  ) {
     context.sessionDataStore.edit { prefs ->
       prefs[tokenKey] = token
       prefs[userIdKey] = userId
       prefs[emailKey] = email
+      if (displayName.isNullOrBlank()) {
+        prefs.remove(displayNameKey)
+      } else {
+        prefs[displayNameKey] = displayName
+      }
       prefs[loginAtKey] = loginAtMs
     }
   }
@@ -46,6 +59,7 @@ class SessionStore(private val context: Context) {
       prefs.remove(tokenKey)
       prefs.remove(userIdKey)
       prefs.remove(emailKey)
+      prefs.remove(displayNameKey)
       prefs.remove(loginAtKey)
     }
   }
@@ -85,5 +99,6 @@ data class StoredSession(
   val token: String,
   val userId: String,
   val email: String,
+  val displayName: String?,
   val loginAtMs: Long
 )

@@ -64,6 +64,7 @@ dependencies {
   implementation("androidx.navigation:navigation-compose:2.7.7")
   implementation("androidx.datastore:datastore-preferences:1.1.1")
   implementation("androidx.lifecycle:lifecycle-process:2.8.1")
+  implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.1")
   implementation("androidx.camera:camera-core:1.3.4")
   implementation("androidx.camera:camera-camera2:1.3.4")
   implementation("androidx.camera:camera-lifecycle:1.3.4")

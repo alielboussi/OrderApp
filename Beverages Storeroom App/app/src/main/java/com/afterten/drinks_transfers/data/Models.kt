@@ -13,7 +13,8 @@ data class LoginResponse(
 data class LoginResponseRaw(
   @SerialName("token") val token: String,
   @SerialName("user_id") val userId: String,
-  @SerialName("email") val email: String
+  @SerialName("email") val email: String,
+  @SerialName("display_name") val displayName: String? = null
 )
 
 @Serializable
@@ -63,6 +64,13 @@ data class PurchaseItemRequest(
   @SerialName("variant_id") val variantId: String? = null,
   @SerialName("quantity") val quantity: Double,
   @SerialName("unit_cost") val unitCost: Double? = null
+)
+
+@Serializable
+data class DamageItemRequest(
+  @SerialName("item_id") val itemId: String,
+  @SerialName("variant_id") val variantId: String? = null,
+  @SerialName("quantity") val quantity: Double
 )
 
 @Serializable

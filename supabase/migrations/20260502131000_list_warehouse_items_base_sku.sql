@@ -1,11 +1,9 @@
-DROP FUNCTION IF EXISTS public.list_warehouse_items(uuid, uuid, text);
-
-CREATE OR REPLACE FUNCTION public.list_warehouse_items(
+create or replace function public.list_warehouse_items(
   p_warehouse_id uuid,
   p_outlet_id uuid,
-  p_search text DEFAULT NULL::text
+  p_search text default null::text
 )
-RETURNS TABLE (
+returns table(
   warehouse_id uuid,
   item_id uuid,
   item_name text,
@@ -14,7 +12,7 @@ RETURNS TABLE (
   sku text,
   net_units numeric,
   unit_cost numeric,
-  item_kind public.item_kind,
+  item_kind item_kind,
   image_url text,
   has_recipe boolean,
   consumption_uom text,
@@ -22,10 +20,10 @@ RETURNS TABLE (
   transfer_unit text,
   transfer_quantity numeric
 )
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $function$
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
   with storage_keys as (
     select
       ish.item_id,
@@ -43,7 +41,7 @@ AS $function$
       ci.name as item_name,
       'base'::text as variant_key,
       null::text as variant_name,
-      null::text as sku,
+      ci.sku as sku,
       0::numeric as net_units,
       coalesce(ci.cost, 0)::numeric as unit_cost,
       ci.item_kind as item_kind,

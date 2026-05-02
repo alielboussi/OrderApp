@@ -16,6 +16,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -104,7 +105,7 @@ class SupabaseClient {
     val raw = json.decodeFromString<LoginResponseRaw>(bodyText)
     return LoginResponse(
       token = raw.token,
-      user = LoginUser(id = raw.userId, email = raw.email)
+      user = LoginUser(id = raw.userId, email = raw.email, displayName = raw.displayName)
     )
   }
 
@@ -148,6 +149,28 @@ class SupabaseClient {
       header("Authorization", "Bearer $token")
     }
     return parseJsonResponse(response)
+  }
+
+  suspend fun getStocktakeUserDisplayName(token: String, userId: String): String? {
+    requireConfig()
+    val response = http.get("$baseUrl/rest/v1/stocktake_app_users?select=display_name&id=eq.$userId&limit=1") {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+    }
+    val bodyText = response.bodyAsText()
+    Log.d("SupabaseClient", "display_name lookup status=${response.status.value} body=$bodyText")
+    if (!response.status.isSuccess()) {
+      val error = runCatching { json.decodeFromString<PostgrestError>(bodyText) }.getOrNull()
+      val message = error?.message ?: error?.error ?: "Request failed"
+      val detail = error?.details ?: error?.hint ?: ""
+      val extra = listOfNotNull(
+        "HTTP ${response.status.value}",
+        detail.takeIf { it.isNotBlank() }
+      ).joinToString(" | ")
+      throw IllegalStateException("$message (${extra.ifBlank { "no details" }}) Raw: $bodyText")
+    }
+    val rows = json.decodeFromString<List<StocktakeUserRow>>(bodyText)
+    return rows.firstOrNull()?.displayName?.trim()?.takeIf { it.isNotBlank() }
   }
 
   suspend fun listWarehouseItems(token: String, warehouseId: String): List<WarehouseItem> {
@@ -220,9 +243,63 @@ class SupabaseClient {
     }.body<Unit>()
   }
 
+  suspend fun recordDamage(
+    token: String,
+    warehouseId: String,
+    items: List<DamageItemRequest>
+  ) {
+    requireConfig()
+    val payload = mapOf(
+      "p_warehouse_id" to warehouseId,
+      "p_items" to items.map { line ->
+        mapOf(
+          "product_id" to line.itemId,
+          "variant_key" to (line.variantId ?: "base"),
+          "qty" to line.quantity
+        )
+      }
+    )
+    http.post("$baseUrl/rest/v1/rpc/record_damage") {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+      contentType(ContentType.Application.Json)
+      setBody(payload)
+    }.body<Unit>()
+  }
+
   suspend fun uploadTransferPdf(token: String, fileName: String, bytes: ByteArray) {
     requireConfig()
     val response = http.post("$baseUrl/storage/v1/object/Transfers/$fileName") {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+      header("x-upsert", "false")
+      contentType(ContentType.parse("application/pdf"))
+      setBody(bytes)
+    }
+    if (!response.status.isSuccess()) {
+      val bodyText = response.bodyAsText()
+      throw IllegalStateException("PDF upload failed (HTTP ${response.status.value}). ${bodyText.ifBlank { "No details" }}")
+    }
+  }
+
+  suspend fun uploadPurchasePdf(token: String, fileName: String, bytes: ByteArray) {
+    requireConfig()
+    val response = http.post("$baseUrl/storage/v1/object/Purchases/$fileName") {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+      header("x-upsert", "false")
+      contentType(ContentType.parse("application/pdf"))
+      setBody(bytes)
+    }
+    if (!response.status.isSuccess()) {
+      val bodyText = response.bodyAsText()
+      throw IllegalStateException("PDF upload failed (HTTP ${response.status.value}). ${bodyText.ifBlank { "No details" }}")
+    }
+  }
+
+  suspend fun uploadDamagePdf(token: String, fileName: String, bytes: ByteArray) {
+    requireConfig()
+    val response = http.post("$baseUrl/storage/v1/object/Damages/$fileName") {
       header("apikey", anonKey)
       header("Authorization", "Bearer $token")
       header("x-upsert", "false")
@@ -239,6 +316,34 @@ class SupabaseClient {
     requireConfig()
     val payload = mapOf("expiresIn" to 3600)
     val response = http.post("$baseUrl/storage/v1/object/sign/Transfers/$fileName") {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+      contentType(ContentType.Application.Json)
+      setBody(payload)
+    }
+    val signed = parseJsonResponse<SignedUrlResponse>(response)
+    val path = signed.signedURL.trim()
+    return if (path.startsWith("http")) path else "$baseUrl$path"
+  }
+
+  suspend fun createPurchasePdfSignedUrl(token: String, fileName: String): String {
+    requireConfig()
+    val payload = mapOf("expiresIn" to 3600)
+    val response = http.post("$baseUrl/storage/v1/object/sign/Purchases/$fileName") {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+      contentType(ContentType.Application.Json)
+      setBody(payload)
+    }
+    val signed = parseJsonResponse<SignedUrlResponse>(response)
+    val path = signed.signedURL.trim()
+    return if (path.startsWith("http")) path else "$baseUrl$path"
+  }
+
+  suspend fun createDamagePdfSignedUrl(token: String, fileName: String): String {
+    requireConfig()
+    val payload = mapOf("expiresIn" to 3600)
+    val response = http.post("$baseUrl/storage/v1/object/sign/Damages/$fileName") {
       header("apikey", anonKey)
       header("Authorization", "Bearer $token")
       contentType(ContentType.Application.Json)
@@ -273,4 +378,9 @@ data class PostgrestError(
 @Serializable
 data class SignedUrlResponse(
   val signedURL: String
+)
+
+@Serializable
+data class StocktakeUserRow(
+  @SerialName("display_name") val displayName: String? = null
 )

@@ -43,6 +43,7 @@ const qtyUnits = [
   "cup",
   "straw",
   "toilet paper",
+  "case",
   "crate",
   "bottle",
   "Tin Can",
@@ -51,6 +52,7 @@ const qtyUnits = [
   "Bucket",
   "Bag",
   "Tray",
+  "plastic",
   "Packet",
   "Box",
 ] as const;
@@ -106,24 +108,14 @@ const formatUnitLabel = (unit: string) => {
 const unitOptions = qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }));
 
 const fieldOptions = [
-  { value: "sku", label: "SKU", type: "text" },
-  { value: "supplier_sku", label: "Supplier SKU", type: "text" },
-  { value: "item_kind", label: "Item kind", type: "select", options: itemKinds },
-  { value: "consumption_uom", label: "Consumption unit", type: "select", options: unitOptions },
-  { value: "stocktake_uom", label: "Stocktake unit", type: "select", options: [{ value: "", label: "Use consumption unit" }, ...unitOptions] },
-  { value: "purchase_pack_unit", label: "Supplier pack unit", type: "select", options: unitOptions },
-  { value: "units_per_purchase_pack", label: "Units inside one supplier pack", type: "number" },
-  { value: "purchase_unit_mass", label: "Weight/volume per purchase unit", type: "number-null" },
-  { value: "purchase_unit_mass_uom", label: "Mass/volume unit", type: "select", options: unitOptions },
-  { value: "transfer_unit", label: "Transfer unit", type: "select", options: unitOptions },
-  { value: "transfer_quantity", label: "Quantity per transfer line", type: "number" },
-  { value: "qty_decimal_places", label: "Quantity decimal places", type: "number-int" },
+  { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
+  { value: "purchase_pack_unit", label: "How its Purchased", type: "select", options: unitOptions },
+  { value: "units_per_purchase_pack", label: "Units Inside Purchase Product", type: "number" },
+  { value: "storage_home_id", label: "Storage home(s)", type: "select-warehouse" },
   { value: "cost", label: "Cost per base unit", type: "number" },
   { value: "selling_price", label: "Selling price", type: "number" },
   { value: "outlet_order_visible", label: "Show in outlet orders", type: "boolean" },
-  { value: "image_url", label: "Image URL", type: "text-null" },
   { value: "active", label: "Active", type: "boolean" },
-  { value: "default_warehouse_id", label: "Storage home", type: "select-warehouse" },
 ] as const;
 
 type FieldOption = (typeof fieldOptions)[number];

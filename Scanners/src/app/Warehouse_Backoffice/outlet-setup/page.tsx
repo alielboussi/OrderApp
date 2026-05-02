@@ -77,29 +77,23 @@ export default function OutletSetupPage() {
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
   const [selectedIngredientVariantKeys, setSelectedIngredientVariantKeys] = useState<string[]>(["base"]);
   const [selectedRawId, setSelectedRawId] = useState<string>("");
-  const [orderSourceItemId, setOrderSourceItemId] = useState<string>("");
-  const [orderSourceVariantKeys, setOrderSourceVariantKeys] = useState<string[]>(["base"]);
 
   type RoutingGroup = "product" | "ingredient" | "raw";
 
   const [productRoutes, setProductRoutes] = useState<RouteRecord>({});
   const [ingredientRoutes, setIngredientRoutes] = useState<RouteRecord>({});
   const [rawRoutes, setRawRoutes] = useState<RouteRecord>({});
-  const [orderSourceRoutes, setOrderSourceRoutes] = useState<RouteRecord>({});
   const [routingLoading, setRoutingLoading] = useState<Record<RoutingGroup, boolean>>({
     product: false,
     ingredient: false,
     raw: false,
   });
-  const [orderSourceLoading, setOrderSourceLoading] = useState(false);
   const [routingSavingKind, setRoutingSavingKind] = useState<RoutingGroup | null>(null);
-  const [orderSourceSaving, setOrderSourceSaving] = useState(false);
   const [routingMessage, setRoutingMessage] = useState<Record<RoutingGroup, Alert>>({
     product: null,
     ingredient: null,
     raw: null,
   });
-  const [orderSourceMessage, setOrderSourceMessage] = useState<Alert>(null);
   const [saveAllMessage, setSaveAllMessage] = useState<Alert>(null);
   const [combinedSaveMessage, setCombinedSaveMessage] = useState<Alert>(null);
   const [mappingsSaving, setMappingsSaving] = useState(false);
@@ -203,17 +197,6 @@ export default function OutletSetupPage() {
       }));
     return [base, ...scoped];
   }, [selectedProductId, variants]);
-  const orderSourceVariantOptions = useMemo(() => {
-    const base = { value: "base", label: "Base product" };
-    if (!orderSourceItemId) return [base];
-    const scoped = variants
-      .filter((variant) => variant.item_id === orderSourceItemId)
-      .map((variant) => ({
-        value: variant.id,
-        label: variant.name || variant.id,
-      }));
-    return [base, ...scoped];
-  }, [orderSourceItemId, variants]);
   const ingredientVariantOptions = useMemo(() => {
     const base = { value: "base", label: "Base ingredient" };
     if (!selectedIngredientId) return [base];
@@ -438,42 +421,6 @@ export default function OutletSetupPage() {
   }, [selectedRawId, status]);
 
   useEffect(() => {
-    if (status !== "ok") return;
-    if (!orderSourceItemId) {
-      setOrderSourceVariantKeys((prev) => (prev.length === 1 && prev[0] === "base" ? prev : ["base"]));
-      setOrderSourceRoutes({});
-      setOrderSourceMessage(null);
-      setOrderSourceLoading(false);
-      return;
-    }
-    if (orderSourceVariantKeys.length !== 1) return;
-
-    const loadRoutes = async () => {
-      setOrderSourceLoading(true);
-      setOrderSourceMessage(null);
-      try {
-        const res = await fetch(`/api/outlet-order-routes?item_id=${orderSourceItemId}&variant_key=${orderSourceVariantKeys[0]}`);
-        if (!res.ok) throw new Error("Could not load order source routes");
-        const json = await res.json();
-        const routeMap: RouteRecord = {};
-        (Array.isArray(json.routes) ? json.routes : []).forEach((route: { outlet_id?: string; warehouse_id?: string | null }) => {
-          if (route.outlet_id) {
-            routeMap[route.outlet_id] = route.warehouse_id ?? "";
-          }
-        });
-        setOrderSourceRoutes(routeMap);
-      } catch (error) {
-        console.error("order source routes load failed", error);
-        setOrderSourceMessage({ ok: false, text: "Unable to load order source routes" });
-      } finally {
-        setOrderSourceLoading(false);
-      }
-    };
-
-    loadRoutes();
-  }, [orderSourceItemId, orderSourceVariantKeys, status]);
-
-  useEffect(() => {
     if (!selectedRawId) {
       setRawDefaultWarehouseId("");
       setRawDefaultWarehouseMessage(null);
@@ -681,53 +628,6 @@ export default function OutletSetupPage() {
       return false;
     } finally {
       setRoutingSavingKind(null);
-    }
-  };
-
-  const saveOrderSourceRoutes = async () => {
-    if (readOnly) {
-      setOrderSourceMessage({ ok: false, text: "Read-only access: saving is disabled." });
-      return;
-    }
-    if (!orderSourceItemId) {
-      setOrderSourceMessage({ ok: false, text: "Choose a product first" });
-      return;
-    }
-    const hasAnyRoute = outlets.some((outlet) => Boolean(orderSourceRoutes[outlet.id]));
-    if (!hasAnyRoute) {
-      setOrderSourceMessage({ ok: false, text: "Select a warehouse for at least one outlet" });
-      return;
-    }
-
-    setOrderSourceSaving(true);
-    setOrderSourceMessage(null);
-    try {
-      const routesPayload = outlets.map((outlet) => ({ outlet_id: outlet.id, warehouse_id: orderSourceRoutes[outlet.id] || null }));
-      const keys = orderSourceVariantKeys.length ? orderSourceVariantKeys : ["base"];
-      for (const variantKey of keys) {
-        const payload = {
-          item_id: orderSourceItemId,
-          variant_key: variantKey,
-          routes: routesPayload,
-        };
-
-        const res = await fetch("/api/outlet-order-routes", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Could not save order source routes");
-        }
-      }
-      setOrderSourceMessage({ ok: true, text: "Order source routes saved" });
-    } catch (error) {
-      console.error(error);
-      setOrderSourceMessage({ ok: false, text: error instanceof Error ? error.message : "Failed to save" });
-    } finally {
-      setOrderSourceSaving(false);
     }
   };
 
@@ -1133,7 +1033,7 @@ export default function OutletSetupPage() {
               </p>
             </div>
             <div className={styles.disclaimer}>
-              Deduct = where sales and outlet usage pull stock. Storage home = where stock is received and lives. Use the section below to set source warehouses for outlet orders.
+              Deduct = where sales and outlet usage pull stock. Storage home = where stock is received and lives.
             </div>
             <div className={styles.controlGrid}>
               <div className={styles.selectGroup}>
@@ -1450,135 +1350,6 @@ export default function OutletSetupPage() {
 
           <section className={styles.panel}>
             <div>
-              <h2 className={styles.sectionTitle}>Order source warehouse (main branch)</h2>
-              <p className={styles.sectionBody}>Choose where approved outlet orders should deduct stock from.</p>
-            </div>
-
-            {orderSourceMessage && (
-              <div className={`${styles.callout} ${orderSourceMessage.ok ? styles.calloutSuccess : styles.calloutError}`}>
-                {orderSourceMessage.text}
-              </div>
-            )}
-
-            <div className={styles.controlGrid}>
-              <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Products</div>
-                <select
-                  value={orderSourceItemId}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setOrderSourceItemId(value);
-                    setOrderSourceVariantKeys(["base"]);
-                  }}
-                  className={styles.select}
-                  disabled={orderSourceLoading}
-                  aria-label="Select product for order source"
-                >
-                  {productOptions.map((item) => (
-                    <option key={`source-prod-${item.value || "placeholder"}`} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className={styles.selectGroup}>
-                <div className={styles.subHeading}>Variants (source)</div>
-                <div className={styles.variantChooser} aria-label="Select variants for order source">
-                  {!orderSourceItemId ? (
-                    <div className={styles.variantHint}>Select a product to choose variants</div>
-                  ) : (
-                    <div className={styles.variantList}>
-                      {orderSourceVariantOptions.map((variant) => {
-                        const checked = orderSourceVariantKeys.includes(variant.value);
-                        return (
-                          <label key={`source-variant-${variant.value}`} className={styles.variantOption}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={orderSourceLoading || orderSourceVariantOptions.length <= 1}
-                              onChange={(e) => {
-                                const isChecked = e.target.checked;
-                                setOrderSourceVariantKeys((prev) => {
-                                  if (isChecked) return Array.from(new Set([...prev, variant.value]));
-                                  const next = prev.filter((v) => v !== variant.value);
-                                  return next.length ? next : ["base"];
-                                });
-                              }}
-                            />
-                            <span>{variant.label}</span>
-                          </label>
-                        );
-                      })}
-                      <div className={styles.variantHint}>
-                        Tick multiple variants to apply the same source warehouse.
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.tableWrapper}>
-              <table className={styles.routesTable}>
-                <thead>
-                  <tr>
-                    <th>Outlet</th>
-                    <th>Source warehouse</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {outlets.length === 0 ? (
-                    <tr>
-                      <td colSpan={2}>No outlets found.</td>
-                    </tr>
-                  ) : (
-                    outlets.map((outlet) => (
-                      <tr key={`order-source-${outlet.id}`}>
-                        <td>
-                          <div className={styles.outletName}>{outlet.name}</div>
-                          {outlet.code ? <div className={styles.outletCode}>{outlet.code}</div> : null}
-                          {outlet.active === false ? <div className={styles.outletInactive}>Inactive</div> : null}
-                        </td>
-                        <td>
-                          <select
-                            value={orderSourceRoutes[outlet.id] ?? ""}
-                            onChange={(e) =>
-                              setOrderSourceRoutes((prev) => ({ ...prev, [outlet.id]: e.target.value }))
-                            }
-                            className={styles.select}
-                            disabled={orderSourceLoading || !orderSourceItemId}
-                            aria-label={`Order source warehouse for ${outlet.name}`}
-                          >
-                            <option value="">Use product default</option>
-                            {warehouseOptions.map((wh) => (
-                              <option key={`source-wh-${wh.id}`} value={wh.id}>
-                                {wh.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className={styles.minimalActions}>
-              <button
-                type="button"
-                className={`${styles.minimalButton} ${styles.minimalPrimary}`}
-                onClick={saveOrderSourceRoutes}
-                disabled={orderSourceSaving || orderSourceLoading || readOnly}
-              >
-                {readOnly ? "Read-only" : orderSourceSaving ? "Saving..." : "Save source routing"}
-              </button>
-            </div>
-          </section>
-
-          <section className={styles.panel}>
-            <div>
               <h2 className={styles.sectionTitle}>POS match</h2>
               <p className={styles.sectionBody}>Map POS items to catalog items and variants per outlet. Deductions use each outlet's default warehouse.</p>
             </div>
@@ -1778,14 +1549,15 @@ export default function OutletSetupPage() {
                       <td colSpan={7}>No mappings found.</td>
                     </tr>
                   ) : (
-                    filteredPosMappings.list.map((mapping) => {
+                    filteredPosMappings.list.map((mapping, index) => {
                       const posKey = `${mapping.pos_item_id}-${mapping.pos_flavour_id ?? "_"}-${mapping.catalog_item_id}-${mapping.catalog_variant_key ?? "base"}-${mapping.outlet_id}-${mapping.warehouse_id ?? "_"}`;
+                      const rowKey = `${posKey}-${index}`;
                       const catalogName = itemNameById.get(mapping.catalog_item_id) || mapping.catalog_item_name || mapping.catalog_item_id;
                       const variantLabel = variantLabels[mapping.catalog_variant_key ?? "base"] || mapping.catalog_variant_key || "base";
                       const outletName = outletNameById.get(mapping.outlet_id) || mapping.outlet_id;
                       const warehouseName = mapping.warehouse_id ? warehouseNameById.get(mapping.warehouse_id) || mapping.warehouse_id : "Outlet default";
                       return (
-                        <tr key={posKey}>
+                        <tr key={rowKey}>
                           <td>
                             <div className={styles.outletName}>{mapping.pos_item_name || mapping.pos_item_id}</div>
                             <div className={styles.outletCode}>{mapping.pos_item_id}</div>
