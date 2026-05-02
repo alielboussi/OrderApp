@@ -18,10 +18,14 @@ android {
     val supabaseUrl = project.findProperty("SUPABASE_URL") as String? ?: ""
     val supabaseAnonKey = project.findProperty("SUPABASE_ANON_KEY") as String? ?: ""
     val scannersBaseUrl = project.findProperty("SCANNERS_BASE_URL") as String? ?: ""
+    val telegramBotToken = project.findProperty("TELEGRAM_BEVERAGES_BOT_TOKEN") as String? ?: ""
+    val telegramChatId = project.findProperty("TELEGRAM_BEVERAGES_CHAT_ID") as String? ?: ""
 
     buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
     buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     buildConfigField("String", "SCANNERS_BASE_URL", "\"$scannersBaseUrl\"")
+    buildConfigField("String", "TELEGRAM_BEVERAGES_BOT_TOKEN", "\"$telegramBotToken\"")
+    buildConfigField("String", "TELEGRAM_BEVERAGES_CHAT_ID", "\"$telegramChatId\"")
   }
 
   buildFeatures {

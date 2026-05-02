@@ -1439,6 +1439,8 @@ fun DamageSummaryScreen(
 
   val groupedLines = remember(state.items) { buildDamageSummaryGroups(state.items) }
   val resolvedDisplayName = (displayNameState.value ?: user?.displayName)?.trim().orEmpty()
+  val telegramItemsBlock = buildTelegramItemsBlockFromGroups(groupedLines)
+  val operatorName = displayUserName(user).ifEmpty { resolvedDisplayName }
 
   Scaffold(topBar = {
     TopAppBar(
@@ -1617,6 +1619,25 @@ fun DamageSummaryScreen(
                   warehouseId = state.warehouseId!!,
                   items = damageItems
                 )
+                runCatching {
+                  val summary = TelegramSummary(
+                    processedBy = operatorName,
+                    sourceLabel = warehouseState.value?.name ?: "",
+                    destLabel = "Damages",
+                    itemsBlock = telegramItemsBlock,
+                    dateTime = dateTimeText,
+                    warehouseId = state.warehouseId
+                  )
+                  repo.notifyTelegram(
+                    TelegramNotifyRequest(
+                      context = "damage",
+                      scanner = "beverages",
+                      summary = summary
+                    )
+                  )
+                }.onFailure {
+                  infoState.value = "Damage saved, but Telegram notification failed"
+                }
               }.onSuccess {
                 onConfirm()
               }.onFailure {
@@ -1922,6 +1943,7 @@ fun PurchaseSummaryScreen(
   val borderWidth = rememberBorderDp()
   val pdfNameState = rememberSaveable { mutableStateOf<String?>(null) }
   val pdfUploadedState = rememberSaveable { mutableStateOf(false) }
+  val telegramItemsBlock = buildTelegramItemsBlockFromGroups(groupedLines)
 
   LaunchedEffect(token, user?.id) {
     val userId = user?.id
@@ -2136,6 +2158,26 @@ fun PurchaseSummaryScreen(
                   state.warehouseId!!,
                   state.items.map { PurchaseItemRequest(it.item.itemId, it.item.variantId, it.quantity, it.unitCost) }
                 )
+                runCatching {
+                  val summary = TelegramSummary(
+                    processedBy = resolvedUserName,
+                    sourceLabel = supplierName,
+                    destLabel = warehouseName,
+                    itemsBlock = telegramItemsBlock,
+                    reference = state.invoiceNumber.takeIf { it.isNotBlank() },
+                    dateTime = dateTimeText,
+                    warehouseId = state.warehouseId
+                  )
+                  repo.notifyTelegram(
+                    TelegramNotifyRequest(
+                      context = "purchase",
+                      scanner = "beverages",
+                      summary = summary
+                    )
+                  )
+                }.onFailure {
+                  infoState.value = "Purchase saved, but Telegram notification failed"
+                }
               }.onSuccess {
                 onConfirm()
               }.onFailure {
@@ -2539,6 +2581,21 @@ private fun buildTelegramItemsBlock(
       val currentQty = currentQtyByKey[key]
       val currentText = currentQty?.let { formatQty(it) } ?: "Null"
       lines.add("Current Qty: $currentText")
+    }
+  }
+  return lines.joinToString("\n")
+}
+
+private fun buildTelegramItemsBlockFromGroups(groups: List<TransferSummaryGroup>): String {
+  val lines = mutableListOf<String>()
+  groups.forEach { group ->
+    if (group.baseName.isNotBlank()) {
+      lines.add(group.baseName)
+    }
+    group.lines.forEach { line ->
+      val label = line.label.trim()
+      val qtyText = line.qtyText.trim()
+      lines.add("$label $qtyText".trim())
     }
   }
   return lines.joinToString("\n")

@@ -24,7 +24,8 @@ import kotlinx.serialization.json.Json
 class SupabaseClient {
   private val baseUrl = normalizeBaseUrl(BuildConfig.SUPABASE_URL)
   private val anonKey = BuildConfig.SUPABASE_ANON_KEY
-  private val scannersBaseUrl = normalizeScannersUrl(BuildConfig.SCANNERS_BASE_URL)
+  private val telegramBotToken = BuildConfig.TELEGRAM_BEVERAGES_BOT_TOKEN
+  private val telegramChatId = BuildConfig.TELEGRAM_BEVERAGES_CHAT_ID
 
   private val json = Json { ignoreUnknownKeys = true }
 
@@ -46,24 +47,59 @@ class SupabaseClient {
     }
   }
 
-  private fun normalizeScannersUrl(rawUrl: String): String {
-    var url = rawUrl.trim()
-    if (url.endsWith("/")) {
-      url = url.trimEnd('/')
-    }
-    return url
-  }
-
   private fun requireConfig() {
     if (baseUrl.isBlank() || anonKey.isBlank()) {
       error("Supabase credentials missing. Set SUPABASE_URL and SUPABASE_ANON_KEY in gradle.properties.")
     }
   }
 
-  private fun requireScannersConfig() {
-    if (scannersBaseUrl.isBlank()) {
-      error("SCANNERS_BASE_URL missing. Set SCANNERS_BASE_URL in gradle.properties.")
+  private fun requireTelegramConfig() {
+    if (telegramBotToken.isBlank() || telegramChatId.isBlank()) {
+      error("Telegram credentials missing. Set TELEGRAM_BEVERAGES_BOT_TOKEN and TELEGRAM_BEVERAGES_CHAT_ID in gradle.properties.")
     }
+  }
+
+  private fun escapeHtml(value: String): String {
+    return value
+      .replace("&", "&amp;")
+      .replace("<", "&lt;")
+      .replace(">", "&gt;")
+      .replace("\"", "&quot;")
+      .replace("'", "&#39;")
+  }
+
+  private fun buildTelegramMessage(request: TelegramNotifyRequest): String {
+    val context = request.context.trim().lowercase()
+    val typeLabel = when (context) {
+      "purchase" -> "Purchase"
+      "damage" -> "Damage"
+      else -> "Transfer"
+    }
+    val summary = request.summary
+    val operator = summary.processedBy.trim().ifBlank { "Unknown operator" }
+    val sourceLabel = summary.sourceLabel.trim().ifBlank { "Unknown source" }
+    val destLabel = summary.destLabel.trim().ifBlank { "Unknown destination" }
+    val reference = summary.reference?.trim().orEmpty()
+    val dateTime = summary.dateTime?.trim().orEmpty()
+    val itemsBlock = summary.itemsBlock.trim()
+    val lines = mutableListOf<String>()
+
+    lines.add("<b>${escapeHtml(typeLabel)}</b>")
+    if (context != "damage") {
+      lines.add("From: ${escapeHtml(sourceLabel)}")
+      lines.add("To: ${escapeHtml(destLabel)}")
+    }
+    if (context == "purchase" && reference.isNotEmpty()) {
+      lines.add("Reference / Invoice #: ${escapeHtml(reference)}")
+    }
+    if (dateTime.isNotEmpty()) {
+      lines.add("Date &amp; Time: ${escapeHtml(dateTime)}")
+    }
+    lines.add("Operator: ${escapeHtml(operator)}")
+    lines.add("Products:")
+    lines.add(if (itemsBlock.isNotEmpty()) escapeHtml(itemsBlock) else "• No line items provided")
+
+    return lines.joinToString("\n")
   }
 
   private suspend inline fun <reified T> parseJsonResponse(response: HttpResponse): T {
@@ -355,10 +391,16 @@ class SupabaseClient {
   }
 
   suspend fun notifyTelegram(request: TelegramNotifyRequest) {
-    requireScannersConfig()
-    val response = http.post("$scannersBaseUrl/api/notify-telegram") {
+    requireTelegramConfig()
+    val message = buildTelegramMessage(request)
+    val payload = mapOf(
+      "chat_id" to telegramChatId,
+      "text" to message,
+      "parse_mode" to "HTML"
+    )
+    val response = http.post("https://api.telegram.org/bot$telegramBotToken/sendMessage") {
       contentType(ContentType.Application.Json)
-      setBody(request)
+      setBody(payload)
     }
     if (!response.status.isSuccess()) {
       val bodyText = response.bodyAsText()

@@ -79,6 +79,7 @@ data class TelegramSummary(
   @SerialName("sourceLabel") val sourceLabel: String,
   @SerialName("destLabel") val destLabel: String,
   @SerialName("itemsBlock") val itemsBlock: String,
+  @SerialName("reference") val reference: String? = null,
   @SerialName("dateTime") val dateTime: String? = null,
   @SerialName("warehouseId") val warehouseId: String? = null
 )

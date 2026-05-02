@@ -329,13 +329,11 @@ function buildMessage(
   const summaryDateTime = normalizeLabel(summary.dateTime);
   const dateTime = summaryDateTime ?? serverDateTime;
   const itemsBlock = formatItemsBlock(summary, context, remainingByKey, damageByKey, consumptionUomByKey);
-  const scannerLabel = getScannerLabel(scanner);
 
   const lines = [
-    `<b>${escapeHtml(scannerLabel)}</b>`,
-    `From: ${escapeHtml(sourceLabel)}`,
-    `To: ${escapeHtml(destination)}`,
-    `Type: ${escapeHtml(typeLabel)}`,
+    `<b>${escapeHtml(typeLabel)}</b>`,
+    context === 'damage' ? '' : `From: ${escapeHtml(sourceLabel)}`,
+    context === 'damage' ? '' : `To: ${escapeHtml(destination)}`,
     context === 'purchase' && reference ? `Reference / Invoice #: ${escapeHtml(reference)}` : '',
     context === 'purchase' && supplierName ? `Supplier: ${escapeHtml(supplierName)}` : '',
     dateTime ? `Date &amp; Time: ${escapeHtml(dateTime)}` : '',
