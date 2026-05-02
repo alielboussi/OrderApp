@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import styles from "../menu/menu.module.css";
@@ -21,7 +21,7 @@ type Variant = {
   active?: boolean | null;
 };
 
-export default function CatalogVariantsPage() {
+function CatalogVariantsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const itemIdFilter = searchParams.get("item_id") ?? "";
@@ -237,5 +237,13 @@ export default function CatalogVariantsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function CatalogVariantsPageWrapper() {
+  return (
+    <Suspense fallback={<div className={styles.page}><main className={styles.shell}>Loading...</main></div>}>
+      <CatalogVariantsPage />
+    </Suspense>
   );
 }
