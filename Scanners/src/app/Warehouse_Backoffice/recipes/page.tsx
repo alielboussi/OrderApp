@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { Suspense, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
@@ -95,7 +95,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 
-export default function RecipesPage() {
+function RecipesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
@@ -793,5 +793,13 @@ export default function RecipesPage() {
       </section>
       )}
     </div>
+  );
+}
+
+export default function RecipesPageWrapper() {
+  return (
+    <Suspense fallback={<div className={styles.page}><main className={styles.shell}>Loading...</main></div>}>
+      <RecipesPage />
+    </Suspense>
   );
 }
