@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
@@ -304,7 +304,7 @@ function buildOutletOrderPdfHtml(options: {
   `;
 }
 
-export default function OutletOrdersPage() {
+function OutletOrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
@@ -697,5 +697,13 @@ export default function OutletOrdersPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+export default function OutletOrdersPageWrapper() {
+  return (
+    <Suspense fallback={<div className={styles.page}><main className={styles.shell}>Loading...</main></div>}>
+      <OutletOrdersPage />
+    </Suspense>
   );
 }
