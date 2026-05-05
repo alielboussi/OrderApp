@@ -150,6 +150,28 @@ val TRANSFER_TO_ONLY_WAREHOUSE_IDS = setOf(
   "0c9ddd9e-d42c-475f-9232-5e9d649b0916"
 )
 
+val ALLOWED_PRODUCT_IDS = setOf(
+  "4b340326-5f47-492f-924b-4771e434ea60",
+  "c446a48f-7193-44c8-a828-d6888543de6f",
+  "23c47055-cd8f-430b-83a4-08b97eef1c9d",
+  "88bcd552-5560-403a-bd79-f43e374a0755"
+)
+
+val ALLOWED_VARIANT_IDS = setOf(
+  "c4da1fe0-8b1f-4e35-8d48-98321e0734a7",
+  "1d7b2532-5ac4-45c4-993e-30c57099ffbc",
+  "4313479e-0f97-4197-a638-bee916bf4a07",
+  "79f68b7a-b82b-4432-a2b2-00f7ef1b1651",
+  "ca6c3236-05e9-42ad-a771-1c03a25dd5f1",
+  "296ff0f5-e5bc-4778-97b9-ce5e936ff8b3"
+)
+
+private fun WarehouseItem.isColdroomsAllowed(): Boolean {
+  if (itemId !in ALLOWED_PRODUCT_IDS) return false
+  val variantKey = (variantId ?: "base").lowercase()
+  return variantKey == "base" || variantId in ALLOWED_VARIANT_IDS
+}
+
 class TransferState {
   var fromWarehouseId: String? = null
   var toWarehouseId: String? = null
@@ -483,6 +505,7 @@ fun TransferItemsScreen(
     loadingState.value = true
     runCatching {
       val items = repo.listWarehouseItems(token, state.fromWarehouseId!!)
+        .filter { it.isColdroomsAllowed() }
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
@@ -840,6 +863,7 @@ fun DamageItemsScreen(
     loadingState.value = true
     runCatching {
       val items = repo.listWarehouseItems(token, state.warehouseId!!)
+        .filter { it.isColdroomsAllowed() }
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
@@ -1334,6 +1358,7 @@ fun PurchaseItemsScreen(
     loadingState.value = true
     runCatching {
       val items = repo.listWarehouseItems(token, state.warehouseId!!)
+        .filter { it.isColdroomsAllowed() }
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
