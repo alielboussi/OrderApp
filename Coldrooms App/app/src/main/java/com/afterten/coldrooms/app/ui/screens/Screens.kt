@@ -1,43 +1,28 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 
-package com.afterten.drinks_transfers.ui.screens
+package com.afterten.coldrooms.app.ui.screens
 
-import android.util.Log
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
+import android.app.DownloadManager
 import android.content.ContentValues
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import android.graphics.Color as AndroidColor
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import android.app.DownloadManager
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,7 +45,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.SyncAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -75,13 +78,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -94,101 +96,62 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
 import androidx.lifecycle.LifecycleOwner
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import coil.compose.AsyncImage
+import com.afterten.coldrooms.app.R
+import com.afterten.coldrooms.app.data.DamageItemRequest
+import com.afterten.coldrooms.app.data.LoginUser
+import com.afterten.coldrooms.app.data.PurchaseItemRequest
+import com.afterten.coldrooms.app.data.Repository
+import com.afterten.coldrooms.app.data.SessionStore
+import com.afterten.coldrooms.app.data.Supplier
+import com.afterten.coldrooms.app.data.TransferItemRequest
+import com.afterten.coldrooms.app.data.Warehouse
+import com.afterten.coldrooms.app.data.WarehouseItem
+import com.afterten.coldrooms.app.ui.theme.BluePrimary
+import com.afterten.coldrooms.app.ui.theme.GraySurface
+import com.afterten.coldrooms.app.ui.theme.GreenPositive
+import com.afterten.coldrooms.app.ui.theme.RedNegative
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import com.afterten.drinks_transfers.data.DamageItemRequest
-import com.afterten.drinks_transfers.data.LoginUser
-import com.afterten.drinks_transfers.data.PurchaseItemRequest
-import com.afterten.drinks_transfers.data.Repository
-import com.afterten.drinks_transfers.data.SessionStore
-import com.afterten.drinks_transfers.data.Supplier
-import com.afterten.drinks_transfers.data.TelegramNotifyRequest
-import com.afterten.drinks_transfers.data.TelegramSummary
-import com.afterten.drinks_transfers.data.TransferItemRequest
-import com.afterten.drinks_transfers.data.Warehouse
-import com.afterten.drinks_transfers.data.WarehouseItem
-import com.afterten.drinks_transfers.R
-import com.afterten.drinks_transfers.ui.theme.BluePrimary
-import com.afterten.drinks_transfers.ui.theme.GraySurface
-import com.afterten.drinks_transfers.ui.theme.GreenPositive
-import com.afterten.drinks_transfers.ui.theme.RedNegative
 import java.io.ByteArrayOutputStream
+import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-private const val FROM_WAREHOUSE_ID = "f71a25d0-9ec2-454d-a606-93cfaa3c606b"
-
-val TRANSFER_WAREHOUSE_IDS = listOf(
-  "c77376f7-1ede-4518-8180-b3efeecda128",
-  "c4aa315f-2e09-4060-8258-9dab077271ce"
-)
-
-val HOME_WAREHOUSE_IDS = listOf(
-  "029bf13f-0fff-47f3-bc1b-32e1f1c6e00c",
-  "1e5fac46-d190-4090-b36d-bbae2ceade11",
-  "21e1b353-9f6a-4cea-8998-128f4328b79d",
-  "251a87ae-3ff6-4d26-918a-0f7c1fc45d4d",
-  "29f617c5-9c76-4131-aebf-4be4544924db",
-  "38bfcdb0-fec1-4b91-be05-d8990bf357a8",
-  "4631b410-fc81-4f16-a74c-7e4de3c1f576",
-  "732d83ba-48f6-481a-bedf-291b5f158552",
-  "a7addcec-bcf5-4eab-94f0-6fb704ad6ca4",
-  "ac0bb46a-879b-4166-a10e-b31b688ee7c7",
-  "d4252cfd-03c0-4187-9267-18ec79a00814"
-)
-
-val DAMAGE_WAREHOUSE_IDS = listOf(FROM_WAREHOUSE_ID)
-
-val HIDDEN_TRANSFER_VARIANT_IDS = setOf(
-  "3f8bb7e2-e848-48de-9936-e94bafed2b92",
-  "ce5fcf2c-d35f-44b6-9f36-91333007cf42"
+val WAREHOUSE_IDS = listOf(
+  "d4ad6512-6d0b-448f-b407-e74b0eb80edb",
+  "89e4a592-1385-4b40-9685-2178f124a9da",
+  "94f86655-bed8-404c-8614-007a846f89f2",
+  "647ca589-f688-4c9a-b137-78efedd5dbf5",
+  "32ad8045-1526-4aaa-85d9-e762b9ec8bcc",
+  "99547ec7-3220-40c8-859b-29d26ca5a4ca",
+  "9a55ecbd-aa45-4f02-9e16-f567b8779674",
+  "9885ad87-66e0-46ec-8872-ce58c524b739",
+  "6c488b69-e793-45e0-a744-441924f5f4bb",
+  "d829d739-7311-4647-af91-cad33c21280e",
+  "9d0a3a83-1fea-45a8-8771-25cc1db9f07e"
 )
 
 val PURCHASE_SUPPLIER_IDS = setOf(
-  "4c5d2b00-1cd8-4d5e-b995-e3040bd26d8c",
-  "62cf884d-518b-4d04-a869-4836958fffcf",
-  "7bbc14aa-fdfd-4118-be52-bde6f06ae5b3",
-  "4a4f8dda-56fa-49f2-943b-2d2569e1e2a2"
+  "52d80bde-82e5-4c0c-b65f-38e21f4162fa",
+  "6f63a8f4-204c-4e38-a8bb-2bfa73584151",
+  "a24fb040-307f-41f5-9751-768daf52e96b",
+  "c7fd97d7-ef1a-4cc0-9125-836e15bb4ba4",
+  "ec184b19-4810-46e6-966b-3e3b60bfc4ee"
 )
 
-private fun presetInvoiceNumberForSupplier(supplierId: String?): String? {
-  return when (supplierId) {
-    "7bbc14aa-fdfd-4118-be52-bde6f06ae5b3" -> "INV-"
-    "4c5d2b00-1cd8-4d5e-b995-e3040bd26d8c" -> "INV"
-    else -> null
-  }
-}
-
-private fun extractInvoiceSuffix(full: String, preset: String?): String {
-  val normalized = full.uppercase()
-  if (preset.isNullOrEmpty()) return normalized
-  val withoutPreset = if (normalized.startsWith(preset)) {
-    normalized.removePrefix(preset)
-  } else {
-    normalized
-  }
-  return when {
-    withoutPreset.startsWith("INV-") -> withoutPreset.removePrefix("INV-")
-    withoutPreset.startsWith("INV") -> withoutPreset.removePrefix("INV")
-    else -> withoutPreset
-  }
-}
+val TRANSFER_TO_ONLY_WAREHOUSE_IDS = setOf(
+  "0c9ddd9e-d42c-475f-9232-5e9d649b0916"
+)
 
 class TransferState {
+  var fromWarehouseId: String? = null
   var toWarehouseId: String? = null
   var selectedItemId: String? = null
   var selectedItemName: String? = null
@@ -198,6 +161,7 @@ class TransferState {
   val items = mutableStateListOf<TransferLine>()
 
   fun reset() {
+    fromWarehouseId = null
     toWarehouseId = null
     selectedItemId = null
     selectedItemName = null
@@ -289,7 +253,7 @@ fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
     TopAppBar(
       title = {
         Text(
-          "Beverages Storeroom Login",
+          "Coldrooms",
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
@@ -353,7 +317,6 @@ fun DashboardScreen(
   user: LoginUser?,
   onTransfers: () -> Unit,
   onPurchases: () -> Unit,
-  onHomes: () -> Unit,
   onDamages: () -> Unit,
   onLogout: () -> Unit
 ) {
@@ -361,7 +324,7 @@ fun DashboardScreen(
     TopAppBar(
       title = {
         Text(
-          "Beverages Storeroom App",
+          "Coldrooms App",
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
@@ -410,14 +373,6 @@ fun DashboardScreen(
         }
         item {
           ActionCard(
-            title = "Homes",
-            subtitle = "Send stock to home warehouses",
-            icon = Icons.Filled.SyncAlt,
-            onClick = onHomes
-          )
-        }
-        item {
-          ActionCard(
             title = "Damages",
             subtitle = "Record damaged stock",
             icon = Icons.Filled.Receipt,
@@ -433,7 +388,7 @@ fun DashboardScreen(
 private fun ActionCard(
   title: String,
   subtitle: String,
-  icon: ImageVector,
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
   onClick: () -> Unit
 ) {
   Card(
@@ -471,18 +426,20 @@ fun TransferItemsScreen(
   token: String?,
   sessionStore: SessionStore,
   state: TransferState,
-  destinationWarehouseIds: List<String>,
-  screenTitle: String,
-  actionLabel: String,
+  warehouseIds: List<String>,
   onBack: () -> Unit,
   onShowVariants: () -> Unit,
   onReview: () -> Unit
 ) {
   val itemsState = remember { mutableStateOf<List<WarehouseItem>>(emptyList()) }
+  val fromWarehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
+  val toWarehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
+  val fromWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
   val toWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
-  val warehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
-  val transferDialogOpen = rememberSaveable { mutableStateOf(false) }
-  val destinationSelection = remember { mutableStateOf<Warehouse?>(null) }
+  val fromDialogOpen = rememberSaveable { mutableStateOf(false) }
+  val toDialogOpen = rememberSaveable { mutableStateOf(false) }
+  val fromSelection = remember { mutableStateOf<Warehouse?>(null) }
+  val toSelection = remember { mutableStateOf<Warehouse?>(null) }
   val singleItemDialog = remember { mutableStateOf<WarehouseItem?>(null) }
   val queryState = rememberSaveable { mutableStateOf("") }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -494,31 +451,40 @@ fun TransferItemsScreen(
     if (token == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
-      coroutineScope {
-        val warehousesDeferred = async { repo.listWarehousesByIds(token, destinationWarehouseIds) }
-        val itemsDeferred = async { repo.listWarehouseItems(token, FROM_WAREHOUSE_ID) }
-        val warehouses = warehousesDeferred.await()
-        val items = itemsDeferred.await()
-        Log.i("Transfers", "Items fetched for warehouse $FROM_WAREHOUSE_ID: ${items.size}")
-        items.take(5).forEach { item ->
-          Log.i(
-            "Transfers",
-            "Item: ${item.itemId} ${item.itemName} variant=${item.variantId ?: "base"}"
-          )
-        }
-        Log.i("Transfers", "Destination warehouses fetched: ${warehouses.size}")
-        warehouses.forEach { warehouse ->
-          Log.i("Transfers", "Warehouse option: ${warehouse.id} ${warehouse.name}")
-        }
-        val sortedWarehouses = warehouses.sortedBy { it.name }
-        warehousesState.value = sortedWarehouses
-        val selectedWarehouse = sortedWarehouses.firstOrNull { it.id == state.toWarehouseId }
-        destinationSelection.value = selectedWarehouse
-        toWarehouseState.value = selectedWarehouse
-        transferDialogOpen.value = state.toWarehouseId == null
-        itemsState.value = items
-        state.availableItems = items
+      val fromWarehouses = repo.listWarehousesByIds(token, warehouseIds).sortedBy { it.name }
+      val toWarehouses = repo
+        .listWarehousesByIds(token, (warehouseIds + TRANSFER_TO_ONLY_WAREHOUSE_IDS).distinct())
+        .sortedBy { it.name }
+      fromWarehousesState.value = fromWarehouses
+      toWarehousesState.value = toWarehouses
+      val storedFrom = sessionStore.getLastTransferFromWarehouseId()
+      val storedTo = sessionStore.getLastTransferToWarehouseId()
+      if (state.fromWarehouseId == null) state.fromWarehouseId = storedFrom
+      if (state.toWarehouseId == null) state.toWarehouseId = storedTo
+      fromSelection.value = fromWarehouses.firstOrNull { it.id == state.fromWarehouseId }
+      toSelection.value = toWarehouses.firstOrNull { it.id == state.toWarehouseId }
+      if (state.fromWarehouseId != null && fromSelection.value == null) {
+        state.fromWarehouseId = null
       }
+      if (state.toWarehouseId != null && toSelection.value == null) {
+        state.toWarehouseId = null
+      }
+      fromDialogOpen.value = state.fromWarehouseId == null
+      toDialogOpen.value = state.toWarehouseId == null && !fromDialogOpen.value
+    }.onFailure {
+      if (it is CancellationException) return@onFailure
+      errorState.value = it.message ?: "Failed to load warehouse data"
+    }
+    loadingState.value = false
+  }
+
+  LaunchedEffect(token, state.fromWarehouseId) {
+    if (token == null || state.fromWarehouseId == null) return@LaunchedEffect
+    loadingState.value = true
+    runCatching {
+      val items = repo.listWarehouseItems(token, state.fromWarehouseId!!)
+      itemsState.value = items
+      state.availableItems = items
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load transfer data"
@@ -539,7 +505,7 @@ fun TransferItemsScreen(
 
   Scaffold(topBar = {
     TopAppBar(
-      title = { Text(screenTitle) },
+      title = { Text("Transfer Items") },
       navigationIcon = {
         IconButton(onClick = onBack) {
           Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -554,30 +520,32 @@ fun TransferItemsScreen(
         .fillMaxSize(),
       verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-      if (transferDialogOpen.value && warehousesState.value.isNotEmpty()) {
+      if (fromDialogOpen.value && fromWarehousesState.value.isNotEmpty()) {
         AlertDialog(
           onDismissRequest = { },
-          title = { Text("Send to warehouse") },
+          title = { Text("From warehouse") },
           text = {
             WarehouseButtonGrid(
-              label = "Destination",
-              warehouses = warehousesState.value,
-              selected = destinationSelection.value,
-              onSelected = { destinationSelection.value = it }
+              label = "From",
+              warehouses = fromWarehousesState.value,
+              selected = fromSelection.value,
+              onSelected = { fromSelection.value = it }
             )
           },
           confirmButton = {
             TextButton(
-              enabled = destinationSelection.value != null,
+              enabled = fromSelection.value != null,
               onClick = {
-                val selected = destinationSelection.value
+                val selected = fromSelection.value
                 if (selected != null) {
-                  toWarehouseState.value = selected
-                  state.toWarehouseId = selected.id
+                  fromWarehouseState.value = selected
+                  state.fromWarehouseId = selected.id
+                  state.items.clear()
                   scope.launch {
-                    sessionStore.setLastTransferWarehouseId(selected.id)
+                    sessionStore.setLastTransferFromWarehouseId(selected.id)
                   }
-                  transferDialogOpen.value = false
+                  fromDialogOpen.value = false
+                  toDialogOpen.value = state.toWarehouseId == null
                 }
               }
             ) {
@@ -587,7 +555,40 @@ fun TransferItemsScreen(
         )
       }
 
-      if (transferDialogOpen.value) {
+      if (toDialogOpen.value && toWarehousesState.value.isNotEmpty()) {
+        AlertDialog(
+          onDismissRequest = { },
+          title = { Text("To warehouse") },
+          text = {
+            WarehouseButtonGrid(
+              label = "To",
+              warehouses = toWarehousesState.value,
+              selected = toSelection.value,
+              onSelected = { toSelection.value = it }
+            )
+          },
+          confirmButton = {
+            TextButton(
+              enabled = toSelection.value != null,
+              onClick = {
+                val selected = toSelection.value
+                if (selected != null) {
+                  toWarehouseState.value = selected
+                  state.toWarehouseId = selected.id
+                  scope.launch {
+                    sessionStore.setLastTransferToWarehouseId(selected.id)
+                  }
+                  toDialogOpen.value = false
+                }
+              }
+            ) {
+              Text("Continue")
+            }
+          }
+        )
+      }
+
+      if (fromDialogOpen.value || toDialogOpen.value) {
         return@Column
       }
 
@@ -641,16 +642,12 @@ fun TransferItemsScreen(
 
       if (query.isNotBlank() && variantMatches.isNotEmpty()) {
         VariantGrid(
-          items = variantMatches
-            .filterNot { it.variantId in HIDDEN_TRANSFER_VARIANT_IDS }
-            .sortedBy { variantSortKey(it) },
+          items = variantMatches.sortedBy { variantSortKey(it) },
           modifier = Modifier.weight(1f),
           onItemClick = { singleItemDialog.value = it }
         )
       } else {
-        val groupedItems = groupItems(
-          baseCandidates.filterNot { it.variantId in HIDDEN_TRANSFER_VARIANT_IDS }
-        )
+        val groupedItems = groupItems(baseCandidates)
         BaseItemGrid(
           items = groupedItems,
           modifier = Modifier.weight(1f),
@@ -672,14 +669,16 @@ fun TransferItemsScreen(
         modifier = Modifier.fillMaxWidth(),
         enabled = state.items.isNotEmpty(),
         onClick = {
-          if (state.toWarehouseId == null) {
-            transferDialogOpen.value = true
+          if (state.fromWarehouseId == null) {
+            fromDialogOpen.value = true
+          } else if (state.toWarehouseId == null) {
+            toDialogOpen.value = true
           } else {
             onReview()
           }
         }
       ) {
-        Text("$actionLabel (${state.items.size})")
+        Text("Transfer (${state.items.size})")
       }
     }
   }
@@ -797,6 +796,7 @@ fun TransferVariantsScreen(
 fun DamageItemsScreen(
   repo: Repository,
   token: String?,
+  sessionStore: SessionStore,
   state: DamageState,
   warehouseIds: List<String>,
   onBack: () -> Unit,
@@ -804,19 +804,35 @@ fun DamageItemsScreen(
   onReview: () -> Unit
 ) {
   val itemsState = remember { mutableStateOf<List<WarehouseItem>>(emptyList()) }
+  val warehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
+  val warehouseSelection = remember { mutableStateOf<Warehouse?>(null) }
+  val warehouseDialogOpen = rememberSaveable { mutableStateOf(false) }
   val singleItemDialog = remember { mutableStateOf<WarehouseItem?>(null) }
   val queryState = rememberSaveable { mutableStateOf("") }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
+  val scope = rememberCoroutineScope()
 
   LaunchedEffect(token) {
     if (token == null) return@LaunchedEffect
-    val damageWarehouseId = warehouseIds.firstOrNull { it == FROM_WAREHOUSE_ID } ?: FROM_WAREHOUSE_ID
-    if (state.warehouseId != damageWarehouseId) {
-      state.warehouseId = damageWarehouseId
-      state.items.clear()
+    loadingState.value = true
+    runCatching {
+      val warehouses = repo.listWarehousesByIds(token, warehouseIds).sortedBy { it.name }
+      warehousesState.value = warehouses
+      if (state.warehouseId == null) {
+        state.warehouseId = sessionStore.getLastDamageWarehouseId()
+      }
+      warehouseSelection.value = warehouses.firstOrNull { it.id == state.warehouseId }
+      if (state.warehouseId != null && warehouseSelection.value == null) {
+        state.warehouseId = null
+      }
+      warehouseDialogOpen.value = state.warehouseId == null
+    }.onFailure {
+      if (it is CancellationException) return@onFailure
+      errorState.value = it.message ?: "Failed to load warehouse data"
     }
+    loadingState.value = false
   }
 
   LaunchedEffect(token, state.warehouseId) {
@@ -861,6 +877,43 @@ fun DamageItemsScreen(
         .fillMaxSize(),
       verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+      if (warehouseDialogOpen.value && warehousesState.value.isNotEmpty()) {
+        AlertDialog(
+          onDismissRequest = { },
+          title = { Text("Select warehouse") },
+          text = {
+            WarehouseButtonGrid(
+              label = "Warehouse",
+              warehouses = warehousesState.value,
+              selected = warehouseSelection.value,
+              onSelected = { warehouseSelection.value = it }
+            )
+          },
+          confirmButton = {
+            TextButton(
+              enabled = warehouseSelection.value != null,
+              onClick = {
+                val selected = warehouseSelection.value
+                if (selected != null) {
+                  state.warehouseId = selected.id
+                  state.items.clear()
+                  scope.launch {
+                    sessionStore.setLastDamageWarehouseId(selected.id)
+                  }
+                  warehouseDialogOpen.value = false
+                }
+              }
+            ) {
+              Text("Continue")
+            }
+          }
+        )
+      }
+
+      if (warehouseDialogOpen.value) {
+        return@Column
+      }
+
       OutlinedTextField(
         modifier = Modifier.fillMaxWidth(),
         value = queryState.value,
@@ -937,9 +990,7 @@ fun DamageItemsScreen(
       Button(
         modifier = Modifier.fillMaxWidth(),
         enabled = state.items.isNotEmpty(),
-        onClick = {
-          onReview()
-        }
+        onClick = onReview
       ) {
         Text("Damage (${state.items.size})")
       }
@@ -1056,674 +1107,38 @@ fun DamageVariantsScreen(
 }
 
 @Composable
-fun PurchaseVariantsScreen(
-  state: PurchaseState,
-  onBack: () -> Unit
-) {
-  val selectedId = state.selectedItemId
-  val title = state.selectedItemName ?: "Variants"
-  val queryState = rememberSaveable { mutableStateOf("") }
-  val scanOpen = rememberSaveable { mutableStateOf(false) }
-  val variants = state.availableItems
-    .filter { it.itemId == selectedId }
-    .filterNot { (it.variantId ?: "base").lowercase() == "base" }
-  val filtered = variants.filter { item ->
-    val q = queryState.value.trim().lowercase()
-    if (q.isEmpty()) true else {
-      listOfNotNull(item.variantName, item.variantId, item.sku).any { it.lowercase().contains(q) }
-    }
-  }.sortedBy { variantSortKey(it) }
-
-  val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
-
-  if (scanOpen.value) {
-    BarcodeScannerScreen(
-      onScanned = { code ->
-        queryState.value = code
-        scanOpen.value = false
-      },
-      onClose = { scanOpen.value = false }
-    )
-    return
-  }
-
-  Scaffold(topBar = {
-    TopAppBar(
-      title = { Text(title) },
-      navigationIcon = {
-        IconButton(onClick = onBack) {
-          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-        }
-      }
-    )
-  }) { padding ->
-    Column(
-      modifier = Modifier
-        .padding(padding)
-        .padding(16.dp)
-        .fillMaxSize(),
-      verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-      OutlinedTextField(
-        modifier = Modifier.fillMaxWidth(),
-        value = queryState.value,
-        onValueChange = { queryState.value = it },
-        label = { Text("Search or scan") },
-        trailingIcon = {
-          IconButton(onClick = { scanOpen.value = true }) {
-            Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan")
-          }
-        }
-      )
-
-      if (variants.isEmpty()) {
-        Text("No variants available.")
-      } else {
-        VariantGrid(
-          items = filtered,
-          modifier = Modifier.weight(1f),
-          onItemClick = { dialogItem.value = it }
-        )
-      }
-    }
-  }
-
-  if (dialogItem.value != null) {
-    PurchaseQtyDialog(
-      item = dialogItem.value!!,
-      existingQuantity = state.items.firstOrNull {
-        it.item.itemId == dialogItem.value!!.itemId && it.item.variantId == dialogItem.value!!.variantId
-      }?.quantity,
-      onDismiss = { dialogItem.value = null },
-      onSave = { qty ->
-        val item = dialogItem.value!!
-        val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
-        if (existing == null) {
-          state.items.add(PurchaseLine(item, qty, null))
-        } else {
-          existing.quantity = qty
-          existing.unitCost = null
-        }
-        dialogItem.value = null
-      }
-    )
-  }
-}
-
-@Composable
-fun TransferSummaryScreen(
-  repo: Repository,
-  token: String?,
-  user: LoginUser?,
-  state: TransferState,
-  onBack: () -> Unit,
-  onConfirm: () -> Unit
-) {
-  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
-  val loadingState = rememberSaveable { mutableStateOf(false) }
-  val infoState = rememberSaveable { mutableStateOf<String?>(null) }
-  val fromWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
-  val toWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
-  val displayNameState = remember { mutableStateOf<String?>(null) }
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-  val dateTimeText = remember { formatDateTimeLocal() }
-  val borderWidth = rememberBorderDp()
-
-  LaunchedEffect(token, user?.id) {
-    val userId = user?.id
-    if (token == null || userId.isNullOrBlank()) return@LaunchedEffect
-    runCatching {
-      val fetched = repo.getUserDisplayName(token, userId)
-      Log.d("TransferSummary", "display_name lookup userId=$userId result=$fetched")
-      displayNameState.value = fetched
-    }.onFailure {
-      Log.w("TransferSummary", "Failed to load display name", it)
-    }
-  }
-
-  LaunchedEffect(token, state.toWarehouseId) {
-    if (token == null || state.toWarehouseId == null) return@LaunchedEffect
-    runCatching {
-      val warehouses = repo.listWarehousesByIds(token, listOf(FROM_WAREHOUSE_ID, state.toWarehouseId!!))
-      fromWarehouseState.value = warehouses.firstOrNull { it.id == FROM_WAREHOUSE_ID }
-      toWarehouseState.value = warehouses.firstOrNull { it.id == state.toWarehouseId }
-      if (state.pdfFileName.isNullOrBlank()) {
-        val fromName = fromWarehouseState.value?.name ?: "From_Warehouse"
-        val toName = toWarehouseState.value?.name ?: "To_Warehouse"
-        state.pdfFileName = buildTransferPdfFileName(fromName, toName, dateTimeText)
-      }
-    }.onFailure {
-      if (it is CancellationException) return@onFailure
-      errorState.value = it.message ?: "Failed to load warehouse names"
-    }
-  }
-
-  val groupedLines = remember(state.items) { buildTransferSummaryGroups(state.items) }
-  val userEmail = user?.email?.trim().orEmpty()
-  val resolvedUserName = if (userEmail.isNotEmpty()) userEmail else "User"
-  val resolvedDisplayName = (displayNameState.value ?: user?.displayName)?.trim().orEmpty()
-
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = { Text("Transfer Summary") },
-        navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-          }
-        },
-        actions = {
-          TextButton(
-            enabled = !loadingState.value,
-            onClick = {
-              if (token == null || state.toWarehouseId == null) {
-                errorState.value = "Missing warehouse selection"
-                return@TextButton
-              }
-              loadingState.value = true
-              errorState.value = null
-              infoState.value = null
-              scope.launch {
-                var queued = false
-                var saved = false
-                runCatching {
-                  val pdfName = state.pdfFileName ?: buildTransferPdfFileName(
-                    fromWarehouseState.value?.name ?: "From_Warehouse",
-                    toWarehouseState.value?.name ?: "To_Warehouse",
-                    dateTimeText
-                  )
-                  val pdfBytes = buildTransferPdfBytes(
-                    context = context,
-                    logoResId = R.drawable.afterten_logo,
-                    fromWarehouse = fromWarehouseState.value?.name ?: "",
-                    toWarehouse = toWarehouseState.value?.name ?: "",
-                    processedBy = resolvedUserName,
-                    dateTime = dateTimeText,
-                    groupedLines = groupedLines
-                  )
-                  repo.uploadDamagePdf(token, pdfName, pdfBytes)
-                  saved = savePdfToDownloads(context, pdfName, pdfBytes, "Damages")
-                  if (!saved) {
-                    val signedUrl = repo.createDamagePdfSignedUrl(token, pdfName)
-                    queued = enqueuePdfDownload(context, signedUrl, pdfName, "Damages")
-                  }
-                  state.pdfFileName = pdfName
-                  state.pdfUploaded = true
-                }.onSuccess {
-                  infoState.value = when {
-                    saved -> "PDF saved to Downloads/Damages"
-                    queued -> "PDF download started"
-                    else -> "PDF uploaded, but download failed"
-                  }
-                }.onFailure {
-                  errorState.value = it.message ?: "Failed to download PDF"
-                }
-                loadingState.value = false
-              }
-            }
-          ) {
-            Text("PDF")
-          }
-        }
-      )
-    }
-  ) { padding ->
-    Box(
-      modifier = Modifier
-        .padding(padding)
-        .padding(12.dp)
-        .fillMaxSize()
-        .border(borderWidth, RedNegative, RoundedCornerShape(8.dp))
-        .padding(12.dp)
-    ) {
-      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      Image(
-        painter = painterResource(R.drawable.afterten_logo),
-        contentDescription = "After Ten logo",
-        modifier = Modifier
-          .align(Alignment.CenterHorizontally)
-          .height(64.dp)
-      )
-
-      Text(
-        text = "From Warehouse: ${fromWarehouseState.value?.name ?: ""}",
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
-      Text(
-        text = "To Warehouse: ${toWarehouseState.value?.name ?: ""}",
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
-      Text(
-        text = "Username: ${resolvedDisplayName.ifEmpty { "" }}",
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
-      Text(
-        text = "Date & Time: $dateTimeText",
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
-
-      LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.weight(1f)
-      ) {
-        items(groupedLines) { group ->
-          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-              text = group.baseName,
-              modifier = Modifier.fillMaxWidth(),
-              textAlign = TextAlign.Center,
-              color = RedNegative,
-              textDecoration = TextDecoration.Underline,
-              fontWeight = FontWeight.SemiBold
-            )
-            group.lines.forEach { line ->
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(line.label, modifier = Modifier.weight(1f))
-                Text(line.qtyText, textAlign = TextAlign.End)
-              }
-              HorizontalDivider(color = Color.LightGray, thickness = 1.dp)
-            }
-          }
-        }
-      }
-
-      if (infoState.value != null) {
-        Text(infoState.value ?: "", color = Color.DarkGray)
-      }
-
-      if (errorState.value != null) {
-        Text(errorState.value ?: "", color = RedNegative)
-      }
-
-      Button(
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !loadingState.value,
-        onClick = {
-          if (token == null || state.toWarehouseId == null) {
-            errorState.value = "Missing warehouse selection"
-            return@Button
-          }
-          loadingState.value = true
-          errorState.value = null
-          infoState.value = null
-          scope.launch {
-            runCatching {
-              if (!state.pdfUploaded) {
-                val pdfName = state.pdfFileName ?: buildTransferPdfFileName(
-                  fromWarehouseState.value?.name ?: "From_Warehouse",
-                  toWarehouseState.value?.name ?: "To_Warehouse",
-                  dateTimeText
-                )
-                val pdfBytes = buildTransferPdfBytes(
-                  context = context,
-                  logoResId = R.drawable.afterten_logo,
-                  fromWarehouse = fromWarehouseState.value?.name ?: "",
-                  toWarehouse = toWarehouseState.value?.name ?: "",
-                  processedBy = displayUserName(user),
-                  dateTime = dateTimeText,
-                  groupedLines = groupedLines
-                )
-                repo.uploadTransferPdf(token, pdfName, pdfBytes)
-                state.pdfFileName = pdfName
-                state.pdfUploaded = true
-              }
-              repo.transferUnits(
-                token,
-                FROM_WAREHOUSE_ID,
-                state.toWarehouseId!!,
-                state.items.map { TransferItemRequest(it.item.itemId, it.item.variantId, it.quantity) }
-              )
-              val hasOpenPeriod = repo.hasOpenWarehousePeriod(token, state.toWarehouseId!!)
-              val currentQtyByKey = if (hasOpenPeriod) {
-                val liveItems = repo.listWarehouseItems(token, state.toWarehouseId!!)
-                liveItems.associateBy(
-                  { buildItemKey(it.itemId, it.variantId) },
-                  { it.onHand }
-                )
-              } else {
-                emptyMap()
-              }
-              val telegramItemsBlock = buildTelegramItemsBlock(
-                items = state.items,
-                currentQtyByKey = currentQtyByKey
-              )
-              val summary = TelegramSummary(
-                processedBy = resolvedUserName,
-                sourceLabel = fromWarehouseState.value?.name ?: "",
-                destLabel = toWarehouseState.value?.name ?: "",
-                itemsBlock = telegramItemsBlock,
-                dateTime = dateTimeText,
-                warehouseId = state.toWarehouseId
-              )
-              runCatching {
-                repo.notifyTelegram(
-                  TelegramNotifyRequest(
-                    context = "transfer",
-                    scanner = "beverages",
-                    summary = summary
-                  )
-                )
-              }.onFailure {
-                infoState.value = "Transfer done, but Telegram notification failed"
-              }
-            }.onSuccess {
-              onConfirm()
-            }.onFailure {
-              errorState.value = it.message ?: "Transfer failed"
-            }
-            loadingState.value = false
-          }
-        }
-      ) {
-        Text(if (loadingState.value) "Processing..." else "Process transfer")
-      }
-    }
-    }
-  }
-}
-
-@Composable
-fun DamageSummaryScreen(
-  repo: Repository,
-  token: String?,
-  user: LoginUser?,
-  state: DamageState,
-  onBack: () -> Unit,
-  onConfirm: () -> Unit
-) {
-  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
-  val loadingState = rememberSaveable { mutableStateOf(false) }
-  val infoState = rememberSaveable { mutableStateOf<String?>(null) }
-  val warehouseState = remember { mutableStateOf<Warehouse?>(null) }
-  val displayNameState = remember { mutableStateOf<String?>(null) }
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-  val dateTimeText = remember { formatDateTimeLocal() }
-  val borderWidth = rememberBorderDp()
-
-  LaunchedEffect(token, user?.id) {
-    val userId = user?.id
-    if (token == null || userId.isNullOrBlank()) return@LaunchedEffect
-    runCatching {
-      val fetched = repo.getUserDisplayName(token, userId)
-      Log.d("DamageSummary", "display_name lookup userId=$userId result=$fetched")
-      displayNameState.value = fetched
-    }.onFailure {
-      Log.w("DamageSummary", "Failed to load display name", it)
-    }
-  }
-
-  LaunchedEffect(token, state.warehouseId) {
-    if (token == null || state.warehouseId == null) return@LaunchedEffect
-    runCatching {
-      val warehouses = repo.listWarehousesByIds(token, listOf(state.warehouseId!!))
-      warehouseState.value = warehouses.firstOrNull()
-      if (state.pdfFileName.isNullOrBlank()) {
-        val fromName = warehouseState.value?.name ?: "Warehouse"
-        state.pdfFileName = buildDamagePdfFileName(fromName, dateTimeText)
-      }
-    }.onFailure {
-      if (it is CancellationException) return@onFailure
-      errorState.value = it.message ?: "Failed to load warehouse"
-    }
-  }
-
-  val groupedLines = remember(state.items) { buildDamageSummaryGroups(state.items) }
-  val resolvedDisplayName = (displayNameState.value ?: user?.displayName)?.trim().orEmpty()
-  val telegramItemsBlock = buildTelegramItemsBlockFromGroups(groupedLines)
-  val operatorName = displayUserName(user).ifEmpty { resolvedDisplayName }
-
-  Scaffold(topBar = {
-    TopAppBar(
-      title = { Text("Damage Summary") },
-      actions = {
-        TextButton(
-          enabled = !loadingState.value,
-          onClick = {
-            if (token == null || state.warehouseId == null) {
-              errorState.value = "Missing warehouse selection"
-              return@TextButton
-            }
-            loadingState.value = true
-            errorState.value = null
-            infoState.value = null
-            scope.launch {
-              var queued = false
-              var saved = false
-              runCatching {
-                val warehouseName = warehouseState.value?.name ?: "Warehouse"
-                val pdfName = state.pdfFileName ?: buildDamagePdfFileName(
-                  warehouseName,
-                  dateTimeText
-                )
-                val pdfBytes = buildTransferPdfBytes(
-                  context = context,
-                  logoResId = R.drawable.afterten_logo,
-                  fromWarehouse = warehouseName,
-                  toWarehouse = "Damages",
-                  processedBy = resolvedDisplayName,
-                  dateTime = dateTimeText,
-                  groupedLines = groupedLines
-                )
-                repo.uploadDamagePdf(token, pdfName, pdfBytes)
-                saved = savePdfToDownloads(context, pdfName, pdfBytes, "Damages")
-                if (!saved) {
-                  val signedUrl = repo.createDamagePdfSignedUrl(token, pdfName)
-                  queued = enqueuePdfDownload(context, signedUrl, pdfName, "Damages")
-                }
-                state.pdfFileName = pdfName
-                state.pdfUploaded = true
-              }.onSuccess {
-                infoState.value = when {
-                  saved -> "PDF saved to Downloads/Damages"
-                  queued -> "PDF download started"
-                  else -> "PDF uploaded, but download failed"
-                }
-              }.onFailure {
-                errorState.value = it.message ?: "Failed to download PDF"
-              }
-              loadingState.value = false
-            }
-          }
-        ) {
-          Text("PDF")
-        }
-      },
-      navigationIcon = {
-        IconButton(onClick = onBack) {
-          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-        }
-      }
-    )
-  }) { padding ->
-    Box(
-      modifier = Modifier
-        .padding(padding)
-        .padding(12.dp)
-        .fillMaxSize()
-        .border(borderWidth, RedNegative, RoundedCornerShape(8.dp))
-        .padding(12.dp)
-    ) {
-      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Image(
-          painter = painterResource(R.drawable.afterten_logo),
-          contentDescription = "After Ten logo",
-          modifier = Modifier
-            .align(Alignment.CenterHorizontally)
-            .height(64.dp)
-        )
-
-        Text(
-          text = "Warehouse: ${warehouseState.value?.name ?: ""}",
-          modifier = Modifier.fillMaxWidth(),
-          textAlign = TextAlign.Center
-        )
-        Text(
-          text = "Username: ${resolvedDisplayName.ifEmpty { "" }}",
-          modifier = Modifier.fillMaxWidth(),
-          textAlign = TextAlign.Center
-        )
-        Text(
-          text = "Date & Time: $dateTimeText",
-          modifier = Modifier.fillMaxWidth(),
-          textAlign = TextAlign.Center
-        )
-
-        LazyColumn(
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-          modifier = Modifier.weight(1f)
-        ) {
-          items(groupedLines) { group ->
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-              Text(
-                text = group.baseName,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                color = RedNegative,
-                textDecoration = TextDecoration.Underline,
-                fontWeight = FontWeight.SemiBold
-              )
-              group.lines.forEach { line ->
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Text(line.label, modifier = Modifier.weight(1f))
-                  Text(line.qtyText, textAlign = TextAlign.End)
-                }
-                HorizontalDivider(color = Color.LightGray, thickness = 1.dp)
-              }
-            }
-          }
-        }
-
-        if (infoState.value != null) {
-          Text(infoState.value ?: "", color = Color.DarkGray)
-        }
-
-        if (errorState.value != null) {
-          Text(errorState.value ?: "", color = RedNegative)
-        }
-
-        Button(
-          modifier = Modifier.fillMaxWidth(),
-          enabled = !loadingState.value,
-          onClick = {
-            if (token == null || state.warehouseId == null) {
-              errorState.value = "Missing warehouse selection"
-              return@Button
-            }
-            loadingState.value = true
-            errorState.value = null
-            infoState.value = null
-            scope.launch {
-              runCatching {
-                if (!state.pdfUploaded) {
-                  val warehouseName = warehouseState.value?.name ?: "Warehouse"
-                  val pdfName = state.pdfFileName ?: buildDamagePdfFileName(
-                    warehouseName,
-                    dateTimeText
-                  )
-                  val pdfBytes = buildTransferPdfBytes(
-                    context = context,
-                    logoResId = R.drawable.afterten_logo,
-                    fromWarehouse = warehouseName,
-                    toWarehouse = "Damages",
-                    processedBy = resolvedDisplayName,
-                    dateTime = dateTimeText,
-                    groupedLines = groupedLines
-                  )
-                  repo.uploadDamagePdf(token, pdfName, pdfBytes)
-                  state.pdfFileName = pdfName
-                  state.pdfUploaded = true
-                }
-                val damageItems = state.items.map { line ->
-                  DamageItemRequest(
-                    itemId = line.item.itemId,
-                    variantId = line.item.variantId,
-                    quantity = line.quantity
-                  )
-                }
-                repo.recordDamage(
-                  token = token,
-                  warehouseId = state.warehouseId!!,
-                  items = damageItems
-                )
-                runCatching {
-                  val summary = TelegramSummary(
-                    processedBy = operatorName,
-                    sourceLabel = warehouseState.value?.name ?: "",
-                    destLabel = "Damages",
-                    itemsBlock = telegramItemsBlock,
-                    dateTime = dateTimeText,
-                    warehouseId = state.warehouseId
-                  )
-                  repo.notifyTelegram(
-                    TelegramNotifyRequest(
-                      context = "damage",
-                      scanner = "beverages",
-                      summary = summary
-                    )
-                  )
-                }.onFailure {
-                  infoState.value = "Damage saved, but Telegram notification failed"
-                }
-              }.onSuccess {
-                onConfirm()
-              }.onFailure {
-                errorState.value = it.message ?: "Damage submit failed"
-              }
-              loadingState.value = false
-            }
-          }
-        ) {
-          Text(if (loadingState.value) "Submitting..." else "Confirm damage")
-        }
-      }
-    }
-  }
-}
-
-@Composable
 fun PurchaseSetupScreen(
   repo: Repository,
   token: String?,
   sessionStore: SessionStore,
   state: PurchaseState,
+  warehouseIds: List<String>,
   onBack: () -> Unit,
   onNext: () -> Unit
 ) {
+  val warehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
   val suppliersState = remember { mutableStateOf<List<Supplier>>(emptyList()) }
   val selectedSupplier = remember { mutableStateOf<Supplier?>(null) }
+  val selectedWarehouse = remember { mutableStateOf<Warehouse?>(null) }
+  val warehouseDialogOpen = rememberSaveable { mutableStateOf(false) }
   val supplierDialogOpen = rememberSaveable { mutableStateOf(false) }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
-  val invoicePreset = presetInvoiceNumberForSupplier(state.supplierId)
-  val invoiceSuffixState = rememberSaveable(state.supplierId) {
-    mutableStateOf(extractInvoiceSuffix(state.invoiceNumber, invoicePreset))
+
+  val applyWarehouse: (Warehouse) -> Unit = { warehouse ->
+    selectedWarehouse.value = warehouse
+    state.warehouseId = warehouse.id
+    scope.launch {
+      sessionStore.setLastPurchaseWarehouseId(warehouse.id)
+    }
   }
 
-  val applySelection: (Supplier) -> Unit = { supplier ->
+  val applySupplier: (Supplier) -> Unit = { supplier ->
     selectedSupplier.value = supplier
     state.supplierId = supplier.id
     scope.launch {
       sessionStore.setLastPurchaseSupplierId(supplier.id)
-    }
-    val preset = presetInvoiceNumberForSupplier(supplier.id)
-    if (preset != null) {
-      invoiceSuffixState.value = ""
-      state.invoiceNumber = preset
     }
   }
 
@@ -1731,6 +1146,8 @@ fun PurchaseSetupScreen(
     if (token == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
+      val warehouses = repo.listWarehousesByIds(token, warehouseIds).sortedBy { it.name }
+      warehousesState.value = warehouses
       val suppliers = repo.listSuppliers(token)
       val filteredSuppliers = if (PURCHASE_SUPPLIER_IDS.isEmpty()) {
         suppliers
@@ -1738,28 +1155,27 @@ fun PurchaseSetupScreen(
         suppliers.filter { PURCHASE_SUPPLIER_IDS.contains(it.id) }
       }
       suppliersState.value = filteredSuppliers
-      val storedSupplierId = sessionStore.getLastPurchaseSupplierId()
-      if (state.supplierId == null) {
-        state.supplierId = storedSupplierId
+      if (state.warehouseId == null) {
+        state.warehouseId = sessionStore.getLastPurchaseWarehouseId()
       }
+      if (state.supplierId == null) {
+        state.supplierId = sessionStore.getLastPurchaseSupplierId()
+      }
+      selectedWarehouse.value = warehouses.firstOrNull { it.id == state.warehouseId }
       selectedSupplier.value = filteredSuppliers.firstOrNull { it.id == state.supplierId }
-        ?: filteredSuppliers.firstOrNull()
-      state.supplierId = selectedSupplier.value?.id
-      state.warehouseId = FROM_WAREHOUSE_ID
-      supplierDialogOpen.value = filteredSuppliers.isNotEmpty()
+      if (state.warehouseId != null && selectedWarehouse.value == null) {
+        state.warehouseId = null
+      }
+      if (state.supplierId != null && selectedSupplier.value == null) {
+        state.supplierId = null
+      }
+      warehouseDialogOpen.value = state.warehouseId == null
+      supplierDialogOpen.value = state.supplierId == null && !warehouseDialogOpen.value
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load purchase setup"
     }
     loadingState.value = false
-  }
-
-  LaunchedEffect(invoicePreset) {
-    if (invoicePreset != null) {
-      val suffix = extractInvoiceSuffix(state.invoiceNumber, invoicePreset)
-      invoiceSuffixState.value = suffix
-      state.invoiceNumber = invoicePreset + suffix
-    }
   }
 
   Scaffold(topBar = {
@@ -1779,6 +1195,34 @@ fun PurchaseSetupScreen(
         .fillMaxSize(),
       verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+      if (warehouseDialogOpen.value) {
+        AlertDialog(
+          onDismissRequest = { },
+          title = { Text("Select warehouse") },
+          text = {
+            WarehouseButtonGrid(
+              label = "To warehouse",
+              warehouses = warehousesState.value,
+              selected = selectedWarehouse.value,
+              onSelected = { applyWarehouse(it) }
+            )
+          },
+          confirmButton = {
+            TextButton(
+              enabled = selectedWarehouse.value != null,
+              onClick = {
+                if (selectedWarehouse.value != null) {
+                  warehouseDialogOpen.value = false
+                  supplierDialogOpen.value = state.supplierId == null
+                }
+              }
+            ) {
+              Text("Continue")
+            }
+          }
+        )
+      }
+
       if (supplierDialogOpen.value && suppliersState.value.isNotEmpty()) {
         AlertDialog(
           onDismissRequest = { },
@@ -1788,7 +1232,7 @@ fun PurchaseSetupScreen(
               label = "Supplier",
               suppliers = suppliersState.value,
               selected = selectedSupplier.value,
-              onSelected = { applySelection(it) }
+              onSelected = { applySupplier(it) }
             )
           },
           confirmButton = {
@@ -1806,44 +1250,30 @@ fun PurchaseSetupScreen(
         )
       }
 
-      if (supplierDialogOpen.value) {
+      if (warehouseDialogOpen.value || supplierDialogOpen.value) {
         return@Column
       }
 
+      Text(
+        text = "To Warehouse: ${selectedWarehouse.value?.name ?: ""}",
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center
+      )
       Text(
         text = "Supplier: ${selectedSupplier.value?.name ?: ""}",
         modifier = Modifier.fillMaxWidth(),
         textAlign = TextAlign.Center
       )
 
-      if (invoicePreset != null) {
-        OutlinedTextField(
-          modifier = Modifier.fillMaxWidth(),
-          value = invoiceSuffixState.value,
-          onValueChange = {
-            val normalized = it.uppercase()
-            invoiceSuffixState.value = normalized
-            state.invoiceNumber = invoicePreset + normalized
-          },
-          label = { Text("Invoice number") },
-          prefix = { Text(invoicePreset) },
-          keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.Characters,
-            keyboardType = KeyboardType.Text
-          )
+      OutlinedTextField(
+        modifier = Modifier.fillMaxWidth(),
+        value = state.invoiceNumber,
+        onValueChange = { state.invoiceNumber = it.uppercase() },
+        label = { Text("Invoice number") },
+        keyboardOptions = KeyboardOptions(
+          keyboardType = KeyboardType.Text
         )
-      } else {
-        OutlinedTextField(
-          modifier = Modifier.fillMaxWidth(),
-          value = state.invoiceNumber,
-          onValueChange = { state.invoiceNumber = it.uppercase() },
-          label = { Text("Invoice number") },
-          keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.Characters,
-            keyboardType = KeyboardType.Text
-          )
-        )
-      }
+      )
 
       if (loadingState.value) {
         Text("Loading...", style = MaterialTheme.typography.bodyMedium)
@@ -2032,6 +1462,591 @@ fun PurchaseItemsScreen(
 }
 
 @Composable
+fun PurchaseVariantsScreen(
+  state: PurchaseState,
+  onBack: () -> Unit
+) {
+  val selectedId = state.selectedItemId
+  val title = state.selectedItemName ?: "Variants"
+  val queryState = rememberSaveable { mutableStateOf("") }
+  val scanOpen = rememberSaveable { mutableStateOf(false) }
+  val variants = state.availableItems
+    .filter { it.itemId == selectedId }
+    .filterNot { (it.variantId ?: "base").lowercase() == "base" }
+  val filtered = variants.filter { item ->
+    val q = queryState.value.trim().lowercase()
+    if (q.isEmpty()) true else {
+      listOfNotNull(item.variantName, item.variantId, item.sku).any { it.lowercase().contains(q) }
+    }
+  }.sortedBy { variantSortKey(it) }
+
+  val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
+
+  if (scanOpen.value) {
+    BarcodeScannerScreen(
+      onScanned = { code ->
+        queryState.value = code
+        scanOpen.value = false
+      },
+      onClose = { scanOpen.value = false }
+    )
+    return
+  }
+
+  Scaffold(topBar = {
+    TopAppBar(
+      title = { Text(title) },
+      navigationIcon = {
+        IconButton(onClick = onBack) {
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      }
+    )
+  }) { padding ->
+    Column(
+      modifier = Modifier
+        .padding(padding)
+        .padding(16.dp)
+        .fillMaxSize(),
+      verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+      OutlinedTextField(
+        modifier = Modifier.fillMaxWidth(),
+        value = queryState.value,
+        onValueChange = { queryState.value = it },
+        label = { Text("Search or scan") },
+        trailingIcon = {
+          IconButton(onClick = { scanOpen.value = true }) {
+            Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan")
+          }
+        }
+      )
+
+      if (variants.isEmpty()) {
+        Text("No variants available.")
+      } else {
+        VariantGrid(
+          items = filtered,
+          modifier = Modifier.weight(1f),
+          onItemClick = { dialogItem.value = it }
+        )
+      }
+    }
+  }
+
+  if (dialogItem.value != null) {
+    PurchaseQtyDialog(
+      item = dialogItem.value!!,
+      existingQuantity = state.items.firstOrNull {
+        it.item.itemId == dialogItem.value!!.itemId && it.item.variantId == dialogItem.value!!.variantId
+      }?.quantity,
+      onDismiss = { dialogItem.value = null },
+      onSave = { qty ->
+        val item = dialogItem.value!!
+        val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
+        if (existing == null) {
+          state.items.add(PurchaseLine(item, qty, null))
+        } else {
+          existing.quantity = qty
+          existing.unitCost = null
+        }
+        dialogItem.value = null
+      }
+    )
+  }
+}
+
+@Composable
+fun TransferSummaryScreen(
+  repo: Repository,
+  token: String?,
+  user: LoginUser?,
+  state: TransferState,
+  onBack: () -> Unit,
+  onConfirm: () -> Unit
+) {
+  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
+  val loadingState = rememberSaveable { mutableStateOf(false) }
+  val infoState = rememberSaveable { mutableStateOf<String?>(null) }
+  val fromWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
+  val toWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
+  val displayNameState = remember { mutableStateOf<String?>(null) }
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  val dateTimeText = remember { formatDateTimeLocal() }
+  val borderWidth = rememberBorderDp()
+
+  LaunchedEffect(token, user?.id) {
+    val userId = user?.id
+    if (token == null || userId.isNullOrBlank()) return@LaunchedEffect
+    runCatching {
+      val fetched = repo.getUserDisplayName(token, userId)
+      Log.d("TransferSummary", "display_name lookup userId=$userId result=$fetched")
+      displayNameState.value = fetched
+    }.onFailure {
+      Log.w("TransferSummary", "Failed to load display name", it)
+    }
+  }
+
+  LaunchedEffect(token, state.fromWarehouseId, state.toWarehouseId) {
+    if (token == null || state.fromWarehouseId == null || state.toWarehouseId == null) return@LaunchedEffect
+    runCatching {
+      val warehouses = repo.listWarehousesByIds(token, listOf(state.fromWarehouseId!!, state.toWarehouseId!!))
+      fromWarehouseState.value = warehouses.firstOrNull { it.id == state.fromWarehouseId }
+      toWarehouseState.value = warehouses.firstOrNull { it.id == state.toWarehouseId }
+      if (state.pdfFileName.isNullOrBlank()) {
+        val fromName = fromWarehouseState.value?.name ?: "From_Warehouse"
+        val toName = toWarehouseState.value?.name ?: "To_Warehouse"
+        state.pdfFileName = buildTransferPdfFileName(fromName, toName, dateTimeText)
+      }
+    }.onFailure {
+      if (it is CancellationException) return@onFailure
+      errorState.value = it.message ?: "Failed to load warehouse names"
+    }
+  }
+
+  val groupedLines = remember(state.items) { buildTransferSummaryGroups(state.items) }
+  val userEmail = user?.email?.trim().orEmpty()
+  val resolvedUserName = if (userEmail.isNotEmpty()) userEmail else "User"
+  val resolvedDisplayName = (displayNameState.value ?: user?.displayName)?.trim().orEmpty()
+
+  Scaffold(
+    topBar = {
+      TopAppBar(
+        title = { Text("Transfer Summary") },
+        navigationIcon = {
+          IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+          }
+        },
+        actions = {
+          TextButton(
+            enabled = !loadingState.value,
+            onClick = {
+              if (token == null || state.fromWarehouseId == null || state.toWarehouseId == null) {
+                errorState.value = "Missing warehouse selection"
+                return@TextButton
+              }
+              loadingState.value = true
+              errorState.value = null
+              infoState.value = null
+              scope.launch {
+                var queued = false
+                var saved = false
+                runCatching {
+                  val pdfName = state.pdfFileName ?: buildTransferPdfFileName(
+                    fromWarehouseState.value?.name ?: "From_Warehouse",
+                    toWarehouseState.value?.name ?: "To_Warehouse",
+                    dateTimeText
+                  )
+                  val pdfBytes = buildTransferPdfBytes(
+                    context = context,
+                    logoResId = R.drawable.afterten_logo,
+                    fromWarehouse = fromWarehouseState.value?.name ?: "",
+                    toWarehouse = toWarehouseState.value?.name ?: "",
+                    processedBy = resolvedUserName,
+                    dateTime = dateTimeText,
+                    groupedLines = groupedLines
+                  )
+                  repo.uploadTransferPdf(token, pdfName, pdfBytes)
+                  saved = savePdfToDownloads(context, pdfName, pdfBytes, "Transfers")
+                  if (!saved) {
+                    val signedUrl = repo.createTransferPdfSignedUrl(token, pdfName)
+                    queued = enqueuePdfDownload(context, signedUrl, pdfName, "Transfers")
+                  }
+                  state.pdfFileName = pdfName
+                  state.pdfUploaded = true
+                }.onSuccess {
+                  infoState.value = when {
+                    saved -> "PDF saved to Downloads/Transfers"
+                    queued -> "PDF download started"
+                    else -> "PDF uploaded, but download failed"
+                  }
+                }.onFailure {
+                  errorState.value = it.message ?: "Failed to download PDF"
+                }
+                loadingState.value = false
+              }
+            }
+          ) {
+            Text("PDF")
+          }
+        }
+      )
+    }
+  ) { padding ->
+    Box(
+      modifier = Modifier
+        .padding(padding)
+        .padding(12.dp)
+        .fillMaxSize()
+        .border(borderWidth, RedNegative, RoundedCornerShape(8.dp))
+        .padding(12.dp)
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Image(
+          painter = painterResource(R.drawable.afterten_logo),
+          contentDescription = "After Ten logo",
+          modifier = Modifier
+            .align(Alignment.CenterHorizontally)
+            .height(64.dp)
+        )
+
+        Text(
+          text = "From Warehouse: ${fromWarehouseState.value?.name ?: ""}",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        Text(
+          text = "To Warehouse: ${toWarehouseState.value?.name ?: ""}",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        Text(
+          text = "Username: ${resolvedDisplayName.ifEmpty { "" }}",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        Text(
+          text = "Date & Time: $dateTimeText",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+
+        LazyColumn(
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+          modifier = Modifier.weight(1f)
+        ) {
+          items(groupedLines) { group ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              Text(
+                text = group.baseName,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                color = RedNegative,
+                textDecoration = TextDecoration.Underline,
+                fontWeight = FontWeight.SemiBold
+              )
+              group.lines.forEach { line ->
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(line.label, modifier = Modifier.weight(1f))
+                  Text(line.qtyText, textAlign = TextAlign.End)
+                }
+                HorizontalDivider(color = Color.LightGray, thickness = 1.dp)
+              }
+            }
+          }
+        }
+
+        if (infoState.value != null) {
+          Text(infoState.value ?: "", color = Color.DarkGray)
+        }
+
+        if (errorState.value != null) {
+          Text(errorState.value ?: "", color = RedNegative)
+        }
+
+        Button(
+          modifier = Modifier.fillMaxWidth(),
+          enabled = !loadingState.value,
+          onClick = {
+            if (token == null || state.fromWarehouseId == null || state.toWarehouseId == null) {
+              errorState.value = "Missing warehouse selection"
+              return@Button
+            }
+            loadingState.value = true
+            errorState.value = null
+            infoState.value = null
+            scope.launch {
+              runCatching {
+                if (!state.pdfUploaded) {
+                  val pdfName = state.pdfFileName ?: buildTransferPdfFileName(
+                    fromWarehouseState.value?.name ?: "From_Warehouse",
+                    toWarehouseState.value?.name ?: "To_Warehouse",
+                    dateTimeText
+                  )
+                  val pdfBytes = buildTransferPdfBytes(
+                    context = context,
+                    logoResId = R.drawable.afterten_logo,
+                    fromWarehouse = fromWarehouseState.value?.name ?: "",
+                    toWarehouse = toWarehouseState.value?.name ?: "",
+                    processedBy = displayUserName(user),
+                    dateTime = dateTimeText,
+                    groupedLines = groupedLines
+                  )
+                  repo.uploadTransferPdf(token, pdfName, pdfBytes)
+                  state.pdfFileName = pdfName
+                  state.pdfUploaded = true
+                }
+                repo.transferUnits(
+                  token,
+                  state.fromWarehouseId!!,
+                  state.toWarehouseId!!,
+                  state.items.map { TransferItemRequest(it.item.itemId, it.item.variantId, it.quantity) }
+                )
+              }.onSuccess {
+                onConfirm()
+              }.onFailure {
+                errorState.value = it.message ?: "Transfer failed"
+              }
+              loadingState.value = false
+            }
+          }
+        ) {
+          Text(if (loadingState.value) "Processing..." else "Complete Transfer")
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun DamageSummaryScreen(
+  repo: Repository,
+  token: String?,
+  user: LoginUser?,
+  state: DamageState,
+  onBack: () -> Unit,
+  onConfirm: () -> Unit
+) {
+  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
+  val loadingState = rememberSaveable { mutableStateOf(false) }
+  val infoState = rememberSaveable { mutableStateOf<String?>(null) }
+  val warehouseState = remember { mutableStateOf<Warehouse?>(null) }
+  val displayNameState = remember { mutableStateOf<String?>(null) }
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  val dateTimeText = remember { formatDateTimeLocal() }
+  val borderWidth = rememberBorderDp()
+
+  LaunchedEffect(token, user?.id) {
+    val userId = user?.id
+    if (token == null || userId.isNullOrBlank()) return@LaunchedEffect
+    runCatching {
+      val fetched = repo.getUserDisplayName(token, userId)
+      Log.d("DamageSummary", "display_name lookup userId=$userId result=$fetched")
+      displayNameState.value = fetched
+    }.onFailure {
+      Log.w("DamageSummary", "Failed to load display name", it)
+    }
+  }
+
+  LaunchedEffect(token, state.warehouseId) {
+    if (token == null || state.warehouseId == null) return@LaunchedEffect
+    runCatching {
+      val warehouses = repo.listWarehousesByIds(token, listOf(state.warehouseId!!))
+      warehouseState.value = warehouses.firstOrNull()
+      if (state.pdfFileName.isNullOrBlank()) {
+        val fromName = warehouseState.value?.name ?: "Warehouse"
+        state.pdfFileName = buildDamagePdfFileName(fromName, dateTimeText)
+      }
+    }.onFailure {
+      if (it is CancellationException) return@onFailure
+      errorState.value = it.message ?: "Failed to load warehouse"
+    }
+  }
+
+  val groupedLines = remember(state.items) { buildDamageSummaryGroups(state.items) }
+  val resolvedDisplayName = (displayNameState.value ?: user?.displayName)?.trim().orEmpty()
+
+  Scaffold(topBar = {
+    TopAppBar(
+      title = { Text("Damage Summary") },
+      actions = {
+        TextButton(
+          enabled = !loadingState.value,
+          onClick = {
+            if (token == null || state.warehouseId == null) {
+              errorState.value = "Missing warehouse selection"
+              return@TextButton
+            }
+            loadingState.value = true
+            errorState.value = null
+            infoState.value = null
+            scope.launch {
+              var queued = false
+              var saved = false
+              runCatching {
+                val warehouseName = warehouseState.value?.name ?: "Warehouse"
+                val pdfName = state.pdfFileName ?: buildDamagePdfFileName(
+                  warehouseName,
+                  dateTimeText
+                )
+                val pdfBytes = buildTransferPdfBytes(
+                  context = context,
+                  logoResId = R.drawable.afterten_logo,
+                  fromWarehouse = warehouseName,
+                  toWarehouse = "Damages",
+                  processedBy = resolvedDisplayName,
+                  dateTime = dateTimeText,
+                  groupedLines = groupedLines
+                )
+                repo.uploadDamagePdf(token, pdfName, pdfBytes)
+                saved = savePdfToDownloads(context, pdfName, pdfBytes, "Damages")
+                if (!saved) {
+                  val signedUrl = repo.createDamagePdfSignedUrl(token, pdfName)
+                  queued = enqueuePdfDownload(context, signedUrl, pdfName, "Damages")
+                }
+                state.pdfFileName = pdfName
+                state.pdfUploaded = true
+              }.onSuccess {
+                infoState.value = when {
+                  saved -> "PDF saved to Downloads/Damages"
+                  queued -> "PDF download started"
+                  else -> "PDF uploaded, but download failed"
+                }
+              }.onFailure {
+                errorState.value = it.message ?: "Failed to download PDF"
+              }
+              loadingState.value = false
+            }
+          }
+        ) {
+          Text("PDF")
+        }
+      },
+      navigationIcon = {
+        IconButton(onClick = onBack) {
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      }
+    )
+  }) { padding ->
+    Box(
+      modifier = Modifier
+        .padding(padding)
+        .padding(12.dp)
+        .fillMaxSize()
+        .border(borderWidth, RedNegative, RoundedCornerShape(8.dp))
+        .padding(12.dp)
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Image(
+          painter = painterResource(R.drawable.afterten_logo),
+          contentDescription = "After Ten logo",
+          modifier = Modifier
+            .align(Alignment.CenterHorizontally)
+            .height(64.dp)
+        )
+
+        Text(
+          text = "Warehouse: ${warehouseState.value?.name ?: ""}",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        Text(
+          text = "Username: ${resolvedDisplayName.ifEmpty { "" }}",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        Text(
+          text = "Date & Time: $dateTimeText",
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+
+        LazyColumn(
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+          modifier = Modifier.weight(1f)
+        ) {
+          items(groupedLines) { group ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              Text(
+                text = group.baseName,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                color = RedNegative,
+                textDecoration = TextDecoration.Underline,
+                fontWeight = FontWeight.SemiBold
+              )
+              group.lines.forEach { line ->
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(line.label, modifier = Modifier.weight(1f))
+                  Text(line.qtyText, textAlign = TextAlign.End)
+                }
+                HorizontalDivider(color = Color.LightGray, thickness = 1.dp)
+              }
+            }
+          }
+        }
+
+        if (infoState.value != null) {
+          Text(infoState.value ?: "", color = Color.DarkGray)
+        }
+
+        if (errorState.value != null) {
+          Text(errorState.value ?: "", color = RedNegative)
+        }
+
+        Button(
+          modifier = Modifier.fillMaxWidth(),
+          enabled = !loadingState.value,
+          onClick = {
+            if (token == null || state.warehouseId == null) {
+              errorState.value = "Missing warehouse selection"
+              return@Button
+            }
+            loadingState.value = true
+            errorState.value = null
+            infoState.value = null
+            scope.launch {
+              runCatching {
+                if (!state.pdfUploaded) {
+                  val warehouseName = warehouseState.value?.name ?: "Warehouse"
+                  val pdfName = state.pdfFileName ?: buildDamagePdfFileName(
+                    warehouseName,
+                    dateTimeText
+                  )
+                  val pdfBytes = buildTransferPdfBytes(
+                    context = context,
+                    logoResId = R.drawable.afterten_logo,
+                    fromWarehouse = warehouseName,
+                    toWarehouse = "Damages",
+                    processedBy = resolvedDisplayName,
+                    dateTime = dateTimeText,
+                    groupedLines = groupedLines
+                  )
+                  repo.uploadDamagePdf(token, pdfName, pdfBytes)
+                  state.pdfFileName = pdfName
+                  state.pdfUploaded = true
+                }
+                val damageItems = state.items.map { line ->
+                  DamageItemRequest(
+                    itemId = line.item.itemId,
+                    variantId = line.item.variantId,
+                    quantity = line.quantity
+                  )
+                }
+                repo.recordDamage(
+                  token = token,
+                  warehouseId = state.warehouseId!!,
+                  items = damageItems
+                )
+              }.onSuccess {
+                onConfirm()
+              }.onFailure {
+                errorState.value = it.message ?: "Damage submit failed"
+              }
+              loadingState.value = false
+            }
+          }
+        ) {
+          Text(if (loadingState.value) "Submitting..." else "Confirm Damage")
+        }
+      }
+    }
+  }
+}
+
+@Composable
 fun PurchaseSummaryScreen(
   repo: Repository,
   token: String?,
@@ -2053,7 +2068,6 @@ fun PurchaseSummaryScreen(
   val borderWidth = rememberBorderDp()
   val pdfNameState = rememberSaveable { mutableStateOf<String?>(null) }
   val pdfUploadedState = rememberSaveable { mutableStateOf(false) }
-  val telegramItemsBlock = buildTelegramItemsBlockFromGroups(groupedLines)
 
   LaunchedEffect(token, user?.id) {
     val userId = user?.id
@@ -2133,7 +2147,7 @@ fun PurchaseSummaryScreen(
                 pdfUploadedState.value = true
               }.onSuccess {
                 infoState.value = when {
-                  saved -> "PDF saved to Downloads/Transfers"
+                  saved -> "PDF saved to Downloads/Purchases"
                   queued -> "PDF download started"
                   else -> "PDF uploaded, but download failed"
                 }
@@ -2268,26 +2282,6 @@ fun PurchaseSummaryScreen(
                   state.warehouseId!!,
                   state.items.map { PurchaseItemRequest(it.item.itemId, it.item.variantId, it.quantity, it.unitCost) }
                 )
-                runCatching {
-                  val summary = TelegramSummary(
-                    processedBy = resolvedUserName,
-                    sourceLabel = supplierName,
-                    destLabel = warehouseName,
-                    itemsBlock = telegramItemsBlock,
-                    reference = state.invoiceNumber.takeIf { it.isNotBlank() },
-                    dateTime = dateTimeText,
-                    warehouseId = state.warehouseId
-                  )
-                  repo.notifyTelegram(
-                    TelegramNotifyRequest(
-                      context = "purchase",
-                      scanner = "beverages",
-                      summary = summary
-                    )
-                  )
-                }.onFailure {
-                  infoState.value = "Purchase saved, but Telegram notification failed"
-                }
               }.onSuccess {
                 onConfirm()
               }.onFailure {
@@ -2297,7 +2291,7 @@ fun PurchaseSummaryScreen(
             }
           }
         ) {
-          Text(if (loadingState.value) "Submitting..." else "Confirm purchase")
+          Text(if (loadingState.value) "Submitting..." else "Process Purchase")
         }
       }
     }
@@ -2678,56 +2672,8 @@ private fun buildDamagePdfFileName(fromName: String, dateTime: String): String {
 }
 
 private fun formatDateTimeLocal(): String {
-  val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
-  return ZonedDateTime.now().format(formatter)
-}
-
-private fun buildItemKey(itemId: String, variantId: String?): String {
-  val normalized = (variantId ?: "base").trim().lowercase().ifEmpty { "base" }
-  return "$itemId::$normalized"
-}
-
-private fun buildTelegramItemsBlock(
-  items: List<TransferLine>,
-  currentQtyByKey: Map<String, Double?>
-): String {
-  val grouped = items.groupBy { it.item.itemId to it.item.itemName }
-  val lines = mutableListOf<String>()
-  grouped.forEach { (_, groupLines) ->
-    val baseName = groupLines.firstOrNull()?.item?.itemName ?: ""
-    lines.add(baseName)
-    groupLines.forEach { line ->
-      val item = line.item
-      val label = item.variantName?.takeIf { it.isNotBlank() }
-        ?: item.variantId?.takeIf { it.isNotBlank() && it.lowercase() != "base" }
-        ?: "Base"
-      val transferQty = line.quantity
-      val multiplier = item.transferQuantity ?: 1.0
-      val sentQty = if (multiplier > 0) transferQty / multiplier else transferQty
-      val uom = formatUomLabel(item.transferUnit ?: "each")
-      lines.add("- $label ${formatQty(sentQty)} $uom")
-      val key = buildItemKey(item.itemId, item.variantId)
-      val currentQty = currentQtyByKey[key]
-      val currentText = currentQty?.let { formatQty(it) } ?: "Null"
-      lines.add("Current Qty: $currentText")
-    }
-  }
-  return lines.joinToString("\n")
-}
-
-private fun buildTelegramItemsBlockFromGroups(groups: List<TransferSummaryGroup>): String {
-  val lines = mutableListOf<String>()
-  groups.forEach { group ->
-    if (group.baseName.isNotBlank()) {
-      lines.add(group.baseName)
-    }
-    group.lines.forEach { line ->
-      val label = line.label.trim()
-      val qtyText = line.qtyText.trim()
-      lines.add("$label $qtyText".trim())
-    }
-  }
-  return lines.joinToString("\n")
+  val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm 'UTC +2;00'")
+  return ZonedDateTime.now(ZoneOffset.ofHours(2)).format(formatter)
 }
 
 private fun buildTransferPdfBytes(
@@ -2750,7 +2696,7 @@ private fun buildTransferPdfBytes(
   val borderPoints = (borderMm / 25.4 * 72.0).toFloat()
   val borderPaint = Paint().apply {
     style = Paint.Style.STROKE
-    color = AndroidColor.RED
+    color = android.graphics.Color.RED
     strokeWidth = borderPoints
   }
   val half = borderPoints / 2f
@@ -2767,7 +2713,7 @@ private fun buildTransferPdfBytes(
   val centerX = pageWidth / 2f
   var y = 20f + logoHeight + 24f
   val textPaint = Paint().apply {
-    color = AndroidColor.BLACK
+    color = android.graphics.Color.BLACK
     textSize = 14f
     textAlign = Paint.Align.CENTER
   }
@@ -2781,23 +2727,23 @@ private fun buildTransferPdfBytes(
   y += 24f
 
   val headerPaint = Paint().apply {
-    color = AndroidColor.RED
+    color = android.graphics.Color.RED
     textSize = 14f
     textAlign = Paint.Align.CENTER
     isUnderlineText = true
   }
   val linePaint = Paint().apply {
-    color = AndroidColor.BLACK
+    color = android.graphics.Color.BLACK
     textSize = 12f
     textAlign = Paint.Align.LEFT
   }
   val qtyPaint = Paint().apply {
-    color = AndroidColor.BLACK
+    color = android.graphics.Color.BLACK
     textSize = 12f
     textAlign = Paint.Align.RIGHT
   }
   val dividerPaint = Paint().apply {
-    color = AndroidColor.LTGRAY
+    color = android.graphics.Color.LTGRAY
     strokeWidth = 1f
   }
 
@@ -2841,7 +2787,7 @@ private fun buildPurchasePdfBytes(
   val borderPoints = (borderMm / 25.4 * 72.0).toFloat()
   val borderPaint = Paint().apply {
     style = Paint.Style.STROKE
-    color = AndroidColor.RED
+    color = android.graphics.Color.RED
     strokeWidth = borderPoints
   }
   val half = borderPoints / 2f
@@ -2858,7 +2804,7 @@ private fun buildPurchasePdfBytes(
   val centerX = pageWidth / 2f
   var y = 20f + logoHeight + 24f
   val textPaint = Paint().apply {
-    color = AndroidColor.BLACK
+    color = android.graphics.Color.BLACK
     textSize = 14f
     textAlign = Paint.Align.CENTER
   }
@@ -2872,23 +2818,23 @@ private fun buildPurchasePdfBytes(
   y += 24f
 
   val headerPaint = Paint().apply {
-    color = AndroidColor.RED
+    color = android.graphics.Color.RED
     textSize = 14f
     textAlign = Paint.Align.CENTER
     isUnderlineText = true
   }
   val linePaint = Paint().apply {
-    color = AndroidColor.BLACK
+    color = android.graphics.Color.BLACK
     textSize = 12f
     textAlign = Paint.Align.LEFT
   }
   val qtyPaint = Paint().apply {
-    color = AndroidColor.BLACK
+    color = android.graphics.Color.BLACK
     textSize = 12f
     textAlign = Paint.Align.RIGHT
   }
   val dividerPaint = Paint().apply {
-    color = AndroidColor.LTGRAY
+    color = android.graphics.Color.LTGRAY
     strokeWidth = 1f
   }
 
@@ -3032,7 +2978,14 @@ private fun QtyEntryDialog(
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          formatUomLabel(item.transferUnit ?: "each"),
+          "How its consumed",
+          modifier = Modifier.fillMaxWidth(),
+          style = MaterialTheme.typography.titleMedium,
+          color = RedNegative,
+          textAlign = TextAlign.Center
+        )
+        Text(
+          formatUomLabel(item.consumptionUom ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,
@@ -3096,7 +3049,14 @@ private fun DamageQtyDialog(
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          formatUomLabel(item.transferUnit ?: "each"),
+          "How its consumed",
+          modifier = Modifier.fillMaxWidth(),
+          style = MaterialTheme.typography.titleMedium,
+          color = RedNegative,
+          textAlign = TextAlign.Center
+        )
+        Text(
+          formatUomLabel(item.consumptionUom ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,
@@ -3204,44 +3164,6 @@ private fun PurchaseQtyDialog(
       }
     }
   )
-}
-
-@Composable
-private fun WarehouseDropdown(
-  warehouses: List<Warehouse>,
-  selected: Warehouse?,
-  onSelected: (Warehouse) -> Unit
-) {
-  val expandedState = rememberSaveable { mutableStateOf(false) }
-  ExposedDropdownMenuBox(
-    expanded = expandedState.value,
-    onExpandedChange = { expandedState.value = !expandedState.value }
-  ) {
-    TextField(
-      modifier = Modifier
-        .fillMaxWidth()
-        .menuAnchor(),
-      value = selected?.name ?: "",
-      onValueChange = {},
-      readOnly = true,
-      label = { Text("Supplier") },
-      trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedState.value) }
-    )
-    DropdownMenu(
-      expanded = expandedState.value,
-      onDismissRequest = { expandedState.value = false }
-    ) {
-      warehouses.forEach { warehouse ->
-        DropdownMenuItem(
-          text = { Text(warehouse.name.ifEmpty { warehouse.id }) },
-          onClick = {
-            onSelected(warehouse)
-            expandedState.value = false
-          }
-        )
-      }
-    }
-  }
 }
 
 @Composable

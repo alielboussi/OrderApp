@@ -1,4 +1,4 @@
-package com.afterten.drinks_transfers.data
+package com.afterten.drinks_transfers.shared
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -44,11 +44,7 @@ data class WarehouseItem(
   @SerialName("variant_name") val variantName: String? = null,
   @SerialName("sku") val sku: String? = null,
   @SerialName("net_units") val onHand: Double? = null,
-  @SerialName("image_url") val imageUrl: String? = null,
-  @SerialName("consumption_uom") val consumptionUom: String? = null,
-  @SerialName("purchase_pack_unit") val purchasePackUnit: String? = null,
-  @SerialName("transfer_unit") val transferUnit: String? = null,
-  @SerialName("transfer_quantity") val transferQuantity: Double? = null
+  @SerialName("image_url") val imageUrl: String? = null
 )
 
 @Serializable
@@ -56,13 +52,6 @@ data class TransferItemRequest(
   @SerialName("item_id") val itemId: String,
   @SerialName("variant_id") val variantId: String? = null,
   @SerialName("quantity") val quantity: Double
-)
-
-@Serializable
-data class TransferUnitsRequest(
-  @SerialName("p_from_warehouse_id") val fromWarehouseId: String,
-  @SerialName("p_to_warehouse_id") val toWarehouseId: String,
-  @SerialName("p_items") val items: List<TransferItemRequest>
 )
 
 @Serializable
@@ -89,32 +78,14 @@ data class DamageItemRequest(
 )
 
 @Serializable
-data class DamageLineRequest(
-  @SerialName("product_id") val productId: String,
-  @SerialName("variant_key") val variantKey: String,
-  @SerialName("qty") val quantity: Double
-)
-
-@Serializable
 data class DamageRequest(
   @SerialName("p_warehouse_id") val warehouseId: String,
   @SerialName("p_items") val items: List<DamageLineRequest>
 )
 
 @Serializable
-data class TelegramSummary(
-  @SerialName("processedBy") val processedBy: String,
-  @SerialName("sourceLabel") val sourceLabel: String,
-  @SerialName("destLabel") val destLabel: String,
-  @SerialName("itemsBlock") val itemsBlock: String,
-  @SerialName("reference") val reference: String? = null,
-  @SerialName("dateTime") val dateTime: String? = null,
-  @SerialName("warehouseId") val warehouseId: String? = null
-)
-
-@Serializable
-data class TelegramNotifyRequest(
-  @SerialName("context") val context: String,
-  @SerialName("summary") val summary: TelegramSummary,
-  @SerialName("scanner") val scanner: String
+data class DamageLineRequest(
+  @SerialName("product_id") val productId: String,
+  @SerialName("variant_key") val variantKey: String,
+  @SerialName("qty") val quantity: Double
 )

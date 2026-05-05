@@ -1,11 +1,7 @@
-package com.afterten.drinks_transfers.data
+package com.afterten.coldrooms.app.data
 
 import android.util.Log
-import com.afterten.drinks_transfers.BuildConfig
-import com.afterten.drinks_transfers.data.DamageLineRequest
-import com.afterten.drinks_transfers.data.DamageRequest
-import com.afterten.drinks_transfers.data.PurchaseReceiptRequest
-import com.afterten.drinks_transfers.data.TransferUnitsRequest
+import com.afterten.coldrooms.app.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -28,8 +24,6 @@ import kotlinx.serialization.json.Json
 class SupabaseClient {
   private val baseUrl = normalizeBaseUrl(BuildConfig.SUPABASE_URL)
   private val anonKey = BuildConfig.SUPABASE_ANON_KEY
-  private val telegramBotToken = BuildConfig.TELEGRAM_BEVERAGES_BOT_TOKEN
-  private val telegramChatId = BuildConfig.TELEGRAM_BEVERAGES_CHAT_ID
 
   private val json = Json { ignoreUnknownKeys = true }
 
@@ -55,55 +49,6 @@ class SupabaseClient {
     if (baseUrl.isBlank() || anonKey.isBlank()) {
       error("Supabase credentials missing. Set SUPABASE_URL and SUPABASE_ANON_KEY in gradle.properties.")
     }
-  }
-
-  private fun requireTelegramConfig() {
-    if (telegramBotToken.isBlank() || telegramChatId.isBlank()) {
-      error("Telegram credentials missing. Set TELEGRAM_BEVERAGES_BOT_TOKEN and TELEGRAM_BEVERAGES_CHAT_ID in gradle.properties.")
-    }
-  }
-
-  private fun escapeHtml(value: String): String {
-    return value
-      .replace("&", "&amp;")
-      .replace("<", "&lt;")
-      .replace(">", "&gt;")
-      .replace("\"", "&quot;")
-      .replace("'", "&#39;")
-  }
-
-  private fun buildTelegramMessage(request: TelegramNotifyRequest): String {
-    val context = request.context.trim().lowercase()
-    val typeLabel = when (context) {
-      "purchase" -> "Purchase"
-      "damage" -> "Damage"
-      else -> "Transfer"
-    }
-    val summary = request.summary
-    val operator = summary.processedBy.trim().ifBlank { "Unknown operator" }
-    val sourceLabel = summary.sourceLabel.trim().ifBlank { "Unknown source" }
-    val destLabel = summary.destLabel.trim().ifBlank { "Unknown destination" }
-    val reference = summary.reference?.trim().orEmpty()
-    val dateTime = summary.dateTime?.trim().orEmpty()
-    val itemsBlock = summary.itemsBlock.trim()
-    val lines = mutableListOf<String>()
-
-    lines.add("<b>${escapeHtml(typeLabel)}</b>")
-    if (context != "damage") {
-      lines.add("From: ${escapeHtml(sourceLabel)}")
-      lines.add("To: ${escapeHtml(destLabel)}")
-    }
-    if (context == "purchase" && reference.isNotEmpty()) {
-      lines.add("Reference / Invoice #: ${escapeHtml(reference)}")
-    }
-    if (dateTime.isNotEmpty()) {
-      lines.add("Date &amp; Time: ${escapeHtml(dateTime)}")
-    }
-    lines.add("Operator: ${escapeHtml(operator)}")
-    lines.add("Products:")
-    lines.add(if (itemsBlock.isNotEmpty()) escapeHtml(itemsBlock) else "• No line items provided")
-
-    return lines.joinToString("\n")
   }
 
   private suspend inline fun <reified T> parseJsonResponse(response: HttpResponse): T {
@@ -248,10 +193,10 @@ class SupabaseClient {
     items: List<TransferItemRequest>
   ) {
     requireConfig()
-    val payload = TransferUnitsRequest(
-      fromWarehouseId = fromWarehouseId,
-      toWarehouseId = toWarehouseId,
-      items = items
+    val payload = mapOf(
+      "p_from_warehouse_id" to fromWarehouseId,
+      "p_to_warehouse_id" to toWarehouseId,
+      "p_items" to items
     )
     http.post("$baseUrl/rest/v1/rpc/transfer_units_between_warehouses") {
       header("apikey", anonKey)
@@ -289,13 +234,13 @@ class SupabaseClient {
     items: List<DamageItemRequest>
   ) {
     requireConfig()
-    val payload = DamageRequest(
-      warehouseId = warehouseId,
-      items = items.map { line ->
-        DamageLineRequest(
-          productId = line.itemId,
-          variantKey = line.variantId ?: "base",
-          quantity = line.quantity
+    val payload = mapOf(
+      "p_warehouse_id" to warehouseId,
+      "p_items" to items.map { line ->
+        mapOf(
+          "product_id" to line.itemId,
+          "variant_key" to (line.variantId ?: "base"),
+          "qty" to line.quantity
         )
       }
     )
@@ -392,24 +337,6 @@ class SupabaseClient {
     val signed = parseJsonResponse<SignedUrlResponse>(response)
     val path = signed.signedURL.trim()
     return if (path.startsWith("http")) path else "$baseUrl$path"
-  }
-
-  suspend fun notifyTelegram(request: TelegramNotifyRequest) {
-    requireTelegramConfig()
-    val message = buildTelegramMessage(request)
-    val payload = mapOf(
-      "chat_id" to telegramChatId,
-      "text" to message,
-      "parse_mode" to "HTML"
-    )
-    val response = http.post("https://api.telegram.org/bot$telegramBotToken/sendMessage") {
-      contentType(ContentType.Application.Json)
-      setBody(payload)
-    }
-    if (!response.status.isSuccess()) {
-      val bodyText = response.bodyAsText()
-      throw IllegalStateException("Telegram notify failed (HTTP ${response.status.value}). ${bodyText.ifBlank { "No details" }}")
-    }
   }
 }
 
