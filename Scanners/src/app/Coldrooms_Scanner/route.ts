@@ -41,7 +41,7 @@ const LOCKED_PRODUCT_IDS = [
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
-  : 'warehouse_stock_items';
+  : 'warehouse_live_items';
 const MULTIPLY_QTY_BY_PACKAGE = true;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;
@@ -3347,7 +3347,7 @@ function createHtml(config: {
         if (!warehouseId || !productIds?.length) return new Map();
         try {
           const { data, error } = await supabase
-            .from('warehouse_stock_items')
+            .from('warehouse_live_items')
             .select('item_id,variant_key,net_units')
             .eq('warehouse_id', warehouseId)
             .in('item_id', productIds);

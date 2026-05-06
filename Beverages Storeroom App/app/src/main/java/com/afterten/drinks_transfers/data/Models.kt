@@ -118,3 +118,11 @@ data class TelegramNotifyRequest(
   @SerialName("summary") val summary: TelegramSummary,
   @SerialName("scanner") val scanner: String
 )
+
+@Serializable
+data class AndroidAppVersionRow(
+  @SerialName("app_key") val appKey: String,
+  @SerialName("min_version_code") val minVersionCode: Int,
+  @SerialName("min_version_name") val minVersionName: String? = null,
+  @SerialName("force_update") val forceUpdate: Boolean = true
+)

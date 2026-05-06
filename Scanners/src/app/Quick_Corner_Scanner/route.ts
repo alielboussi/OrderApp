@@ -37,7 +37,7 @@ const ALLOW_OVERSTOCK_PRODUCT_IDS = [
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
-  : 'warehouse_stock_items';
+  : 'warehouse_live_items';
 const MULTIPLY_QTY_BY_PACKAGE = true;
 type GlobalWithOperatorSession = typeof globalThis & { OPERATOR_SESSION_TTL_MS?: number };
 const globalWithOperatorSession = globalThis as GlobalWithOperatorSession;

@@ -540,7 +540,7 @@ export default function OutletWarehouseBalancesPage() {
         });
 
         let stockQuery = supabase
-          .from("warehouse_stock_items")
+          .from("warehouse_live_items")
           .select("warehouse_id,item_id,item_name,variant_key,net_units,item_kind")
           .in("warehouse_id", warehouseIds);
 
@@ -550,45 +550,6 @@ export default function OutletWarehouseBalancesPage() {
 
         const { data: stockRows, error: stockError } = await stockQuery;
         if (stockError) throw stockError;
-
-        const { data: periodRows, error: periodError } = await supabase
-          .from("warehouse_stock_periods")
-          .select("id,warehouse_id,status")
-          .in("warehouse_id", warehouseIds)
-          .eq("status", "open");
-
-        if (periodError) throw periodError;
-
-        const openPeriodIds = (periodRows ?? []).map((row) => row.id).filter(Boolean);
-        const periodWarehouseMap = new Map<string, string>();
-        (periodRows ?? []).forEach((row) => {
-          if (row?.id && row?.warehouse_id) {
-            periodWarehouseMap.set(row.id, row.warehouse_id);
-          }
-        });
-
-        const countMap = new Map<string, number>();
-        if (openPeriodIds.length > 0) {
-          const { data: countRows, error: countError } = await supabase
-            .from("warehouse_stock_counts")
-            .select("period_id,item_id,variant_key,counted_qty,kind")
-            .in("period_id", openPeriodIds);
-
-          if (countError) throw countError;
-
-          (countRows ?? []).forEach((row) => {
-            const warehouseId = periodWarehouseMap.get(row.period_id);
-            if (!warehouseId) return;
-            const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
-            const key = `${warehouseId}::${row.item_id}::${vKey}`;
-            const qty = typeof row.counted_qty === "number" ? row.counted_qty : Number(row.counted_qty);
-            if (!Number.isFinite(qty)) return;
-            const isClosing = (row.kind ?? "").toLowerCase() === "closing";
-            if (isClosing || !countMap.has(key)) {
-              countMap.set(key, qty);
-            }
-          });
-        }
 
         const rows = ((stockRows as Array<{
           warehouse_id: string;
@@ -603,8 +564,7 @@ export default function OutletWarehouseBalancesPage() {
           item_id: row.item_id,
           item_name: row.item_name,
           variant_key: row.variant_key,
-          net_units: countMap.get(`${row.warehouse_id}::${row.item_id}::${normalizeVariantKey(row.variant_key).toLowerCase()}`)
-            ?? row.net_units,
+          net_units: row.net_units,
           item_kind: row.item_kind
         }));
         const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));

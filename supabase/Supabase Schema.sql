@@ -8,6 +8,11 @@
           "view_schema": "public"
         },
         {
+          "view_name": "warehouse_live_items",
+          "definition": " WITH storage_keys AS (\n         SELECT ish.storage_warehouse_id AS warehouse_id,\n            ish.item_id,\n            ish.normalized_variant_key AS variant_key\n           FROM item_storage_homes ish\n        ), base_items AS (\n         SELECT sk.warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            'base'::text AS variant_key,\n            COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n            ci.item_kind AS base_item_kind,\n            ci.image_url,\n            NULL::item_kind AS variant_item_kind\n           FROM (storage_keys sk\n             JOIN catalog_items ci ON ((ci.id = sk.item_id)))\n          WHERE (sk.variant_key = 'base'::text)\n        ), variant_items AS (\n         SELECT sk.warehouse_id,\n            cv.item_id,\n            ci.name AS item_name,\n            normalize_variant_key(cv.id) AS variant_key,\n            COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n            ci.item_kind AS base_item_kind,\n            COALESCE(cv.image_url, ci.image_url) AS image_url,\n            cv.item_kind AS variant_item_kind\n           FROM ((storage_keys sk\n             JOIN catalog_variants cv ON (((cv.item_id = sk.item_id) AND (normalize_variant_key(cv.id) = sk.variant_key))))\n             JOIN catalog_items ci ON ((ci.id = cv.item_id)))\n          WHERE ((sk.variant_key <> 'base'::text) AND COALESCE(cv.active, true))\n        ), available_items AS (\n         SELECT base_items.warehouse_id,\n            base_items.item_id,\n            base_items.item_name,\n            base_items.variant_key,\n            base_items.unit_cost,\n            base_items.base_item_kind,\n            base_items.image_url,\n            base_items.variant_item_kind\n           FROM base_items\n        UNION ALL\n         SELECT variant_items.warehouse_id,\n            variant_items.item_id,\n            variant_items.item_name,\n            variant_items.variant_key,\n            variant_items.unit_cost,\n            variant_items.base_item_kind,\n            variant_items.image_url,\n            variant_items.variant_item_kind\n           FROM variant_items\n        ), with_meta AS (\n         SELECT ai.warehouse_id,\n            ai.item_id,\n            ai.item_name,\n            ai.variant_key,\n            (0)::numeric AS net_units,\n            ai.unit_cost,\n                CASE\n                    WHEN (ai.variant_item_kind = ANY (ARRAY['finished'::item_kind, 'ingredient'::item_kind, 'raw'::item_kind])) THEN ai.variant_item_kind\n                    ELSE ai.base_item_kind\n                END AS item_kind,\n            ai.image_url,\n            (EXISTS ( SELECT 1\n                   FROM recipes r\n                  WHERE (r.active AND (r.finished_item_id = ai.item_id) AND (normalize_variant_key(COALESCE(r.finished_variant_key, 'base'::text)) = ai.variant_key)))) AS has_recipe\n           FROM available_items ai\n        ), merged AS (\n         SELECT wm.warehouse_id,\n            wm.item_id,\n            wm.item_name,\n            wm.variant_key,\n            COALESCE(wsi.net_units, wm.net_units) AS net_units,\n            wm.unit_cost,\n            wm.item_kind,\n            wm.image_url,\n            wm.has_recipe\n           FROM (with_meta wm\n             LEFT JOIN warehouse_stock_items wsi ON (((wsi.warehouse_id = wm.warehouse_id) AND (wsi.item_id = wm.item_id) AND (normalize_variant_key(wsi.variant_key) = normalize_variant_key(wm.variant_key)))))\n        )\n SELECT m.warehouse_id,\n    m.item_id,\n    m.item_name,\n    m.variant_key,\n    m.net_units,\n    m.unit_cost,\n    m.item_kind,\n    m.image_url,\n    m.has_recipe\n   FROM merged m\nUNION ALL\n SELECT wsi.warehouse_id,\n    wsi.item_id,\n    wsi.item_name,\n    wsi.variant_key,\n    wsi.net_units,\n    wsi.unit_cost,\n    wsi.item_kind,\n    wsi.image_url,\n    wsi.has_recipe\n   FROM warehouse_stock_items wsi\n  WHERE (NOT (EXISTS ( SELECT 1\n           FROM merged m\n          WHERE ((m.warehouse_id = wsi.warehouse_id) AND (m.item_id = wsi.item_id) AND (normalize_variant_key(m.variant_key) = normalize_variant_key(wsi.variant_key))))));",
+          "view_schema": "public"
+        },
+        {
           "view_name": "warehouse_stock_items",
           "definition": " WITH base AS (\n         SELECT w.id AS warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            COALESCE(normalize_variant_key(sl.variant_key), 'base'::text) AS variant_key,\n            sum(sl.delta_units) AS net_units,\n            ci.cost AS unit_cost,\n            ci.item_kind AS base_item_kind,\n            ci.image_url,\n            cv.item_kind AS variant_item_kind\n           FROM (((stock_ledger sl\n             JOIN warehouses w ON ((w.id = sl.warehouse_id)))\n             JOIN catalog_items ci ON ((ci.id = sl.item_id)))\n             LEFT JOIN catalog_variants cv ON (((cv.item_id = ci.id) AND (normalize_variant_key(cv.id) = normalize_variant_key(sl.variant_key)) AND COALESCE(cv.active, true))))\n          WHERE (sl.location_type = 'warehouse'::text)\n          GROUP BY w.id, ci.id, ci.name, ci.cost, ci.item_kind, ci.image_url, (normalize_variant_key(sl.variant_key)), cv.item_kind\n        ), rich AS (\n         SELECT b.warehouse_id,\n            b.item_id,\n            b.item_name,\n            b.variant_key,\n            b.net_units,\n            b.unit_cost,\n            b.base_item_kind,\n            b.image_url,\n            b.variant_item_kind,\n            (EXISTS ( SELECT 1\n                   FROM recipes r\n                  WHERE (r.active AND (r.finished_item_id = b.item_id) AND (normalize_variant_key(COALESCE(r.finished_variant_key, 'base'::text)) = b.variant_key)))) AS has_recipe\n           FROM base b\n        )\n SELECT warehouse_id,\n    item_id,\n    item_name,\n    variant_key,\n    net_units,\n    unit_cost,\n        CASE\n            WHEN (variant_item_kind = ANY (ARRAY['finished'::item_kind, 'ingredient'::item_kind, 'raw'::item_kind])) THEN variant_item_kind\n            ELSE base_item_kind\n        END AS item_kind,\n    image_url,\n    has_recipe\n   FROM rich;",
           "view_schema": "public"
@@ -19,6 +24,10 @@
         }
       ],
       "tables": [
+        {
+          "table_name": "android_app_versions",
+          "table_schema": "public"
+        },
         {
           "table_name": "catalog_items",
           "table_schema": "public"
@@ -205,6 +214,51 @@
         }
       ],
       "columns": [
+        {
+          "data_type": "text",
+          "table_name": "android_app_versions",
+          "column_name": "app_key",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "integer",
+          "table_name": "android_app_versions",
+          "column_name": "min_version_code",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "android_app_versions",
+          "column_name": "min_version_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "android_app_versions",
+          "column_name": "force_update",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "true",
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "android_app_versions",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 5
+        },
         {
           "data_type": "uuid",
           "table_name": "catalog_items",
@@ -4014,6 +4068,87 @@
         },
         {
           "data_type": "uuid",
+          "table_name": "warehouse_live_items",
+          "column_name": "warehouse_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_live_items",
+          "column_name": "item_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_live_items",
+          "column_name": "item_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_live_items",
+          "column_name": "variant_key",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "warehouse_live_items",
+          "column_name": "net_units",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "warehouse_live_items",
+          "column_name": "unit_cost",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "USER-DEFINED",
+          "table_name": "warehouse_live_items",
+          "column_name": "item_kind",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_live_items",
+          "column_name": "image_url",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "warehouse_live_items",
+          "column_name": "has_recipe",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "uuid",
           "table_name": "warehouse_purchase_items",
           "column_name": "id",
           "is_nullable": "NO",
@@ -4788,6 +4923,12 @@
         }
       ],
       "indexes": [
+        {
+          "indexdef": "CREATE UNIQUE INDEX android_app_versions_pkey ON public.android_app_versions USING btree (app_key)",
+          "indexname": "android_app_versions_pkey",
+          "table_name": "android_app_versions",
+          "table_schema": "public"
+        },
         {
           "indexdef": "CREATE UNIQUE INDEX catalog_items_pkey ON public.catalog_items USING btree (id)",
           "indexname": "catalog_items_pkey",
@@ -7098,16 +7239,34 @@
       ],
       "triggers": [
         {
+          "table_name": "android_app_versions",
+          "trigger_def": "CREATE TRIGGER trg_android_app_versions_updated_at BEFORE UPDATE ON android_app_versions FOR EACH ROW EXECUTE FUNCTION set_android_app_versions_updated_at()",
+          "table_schema": "public",
+          "trigger_name": "trg_android_app_versions_updated_at"
+        },
+        {
           "table_name": "catalog_items",
           "trigger_def": "CREATE TRIGGER trg_seed_outlet_routes_on_item AFTER INSERT ON catalog_items FOR EACH ROW EXECUTE FUNCTION seed_outlet_routes_on_item()",
           "table_schema": "public",
           "trigger_name": "trg_seed_outlet_routes_on_item"
         },
         {
+          "table_name": "catalog_items",
+          "trigger_def": "CREATE TRIGGER trg_sync_item_storage_homes_from_item AFTER INSERT OR DELETE OR UPDATE ON catalog_items FOR EACH ROW EXECUTE FUNCTION sync_item_storage_homes_from_item()",
+          "table_schema": "public",
+          "trigger_name": "trg_sync_item_storage_homes_from_item"
+        },
+        {
           "table_name": "catalog_variants",
           "trigger_def": "CREATE TRIGGER trg_refresh_catalog_has_variations AFTER INSERT OR DELETE OR UPDATE ON catalog_variants FOR EACH ROW EXECUTE FUNCTION refresh_catalog_has_variations_trigger()",
           "table_schema": "public",
           "trigger_name": "trg_refresh_catalog_has_variations"
+        },
+        {
+          "table_name": "catalog_variants",
+          "trigger_def": "CREATE TRIGGER trg_sync_item_storage_homes_from_variant AFTER INSERT OR DELETE OR UPDATE ON catalog_variants FOR EACH ROW EXECUTE FUNCTION sync_item_storage_homes_from_variant()",
+          "table_schema": "public",
+          "trigger_name": "trg_sync_item_storage_homes_from_variant"
         },
         {
           "table_name": "catalog_variants",
@@ -7311,7 +7470,7 @@
         },
         {
           "arguments": "p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.list_warehouse_items(p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text)\n RETURNS TABLE(warehouse_id uuid, item_id uuid, item_name text, variant_key text, variant_name text, sku text, net_units numeric, unit_cost numeric, item_kind item_kind, image_url text, has_recipe boolean, consumption_uom text, purchase_pack_unit text, transfer_unit text, transfer_quantity numeric)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  with storage_keys as (\r\n    select\r\n      ish.item_id,\r\n      ish.normalized_variant_key\r\n    from public.item_storage_homes ish\r\n    where ish.storage_warehouse_id = p_warehouse_id\r\n  ),\r\n  items_in_warehouse as (\r\n    select distinct item_id from storage_keys\r\n  ),\r\n  base_items as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      ci.id as item_id,\r\n      ci.name as item_name,\r\n      'base'::text as variant_key,\r\n      null::text as variant_name,\r\n      ci.sku as sku,\r\n      0::numeric as net_units,\r\n      coalesce(ci.cost, 0)::numeric as unit_cost,\r\n      ci.item_kind as item_kind,\r\n      ci.image_url,\r\n      exists (\r\n        select 1 from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = ci.id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = 'base'\r\n      ) as has_recipe,\r\n      ci.consumption_uom as consumption_uom,\r\n      ci.purchase_pack_unit as purchase_pack_unit,\r\n      ci.transfer_unit as transfer_unit,\r\n      ci.transfer_quantity as transfer_quantity\r\n    from public.catalog_items ci\r\n    where ci.id in (select item_id from items_in_warehouse)\r\n  ),\r\n  variant_items as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      cv.item_id,\r\n      ci.name as item_name,\r\n      public.normalize_variant_key(cv.id) as variant_key,\r\n      cv.name as variant_name,\r\n      cv.sku as sku,\r\n      0::numeric as net_units,\r\n      coalesce(ci.cost, 0)::numeric as unit_cost,\r\n      cv.item_kind as item_kind,\r\n      coalesce(cv.image_url, ci.image_url) as image_url,\r\n      exists (\r\n        select 1 from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = cv.item_id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = public.normalize_variant_key(cv.id)\r\n      ) as has_recipe,\r\n      coalesce(cv.consumption_uom, ci.consumption_uom) as consumption_uom,\r\n      coalesce(cv.purchase_pack_unit, ci.purchase_pack_unit) as purchase_pack_unit,\r\n      coalesce(cv.transfer_unit, ci.transfer_unit) as transfer_unit,\r\n      coalesce(cv.transfer_quantity, ci.transfer_quantity) as transfer_quantity\r\n    from storage_keys sk\r\n    join public.catalog_variants cv\r\n      on cv.item_id = sk.item_id\r\n      and public.normalize_variant_key(cv.id) = sk.normalized_variant_key\r\n    join public.catalog_items ci on ci.id = cv.item_id\r\n    where sk.normalized_variant_key <> 'base'\r\n      and coalesce(cv.active, true)\r\n  ),\r\n  available_items as (\r\n    select * from base_items\r\n    union all\r\n    select * from variant_items\r\n  ),\r\n  with_stock as (\r\n    select\r\n      wsi.warehouse_id,\r\n      wsi.item_id,\r\n      wsi.item_name,\r\n      wsi.variant_key,\r\n      cv.name as variant_name,\r\n      cv.sku as sku,\r\n      wsi.net_units,\r\n      wsi.unit_cost,\r\n      wsi.item_kind,\r\n      coalesce(cv.image_url, ci.image_url, wsi.image_url) as image_url,\r\n      wsi.has_recipe,\r\n      coalesce(cv.consumption_uom, ci.consumption_uom) as consumption_uom,\r\n      coalesce(cv.purchase_pack_unit, ci.purchase_pack_unit) as purchase_pack_unit,\r\n      coalesce(cv.transfer_unit, ci.transfer_unit) as transfer_unit,\r\n      coalesce(cv.transfer_quantity, ci.transfer_quantity) as transfer_quantity\r\n    from public.warehouse_stock_items wsi\r\n    join public.catalog_items ci on ci.id = wsi.item_id\r\n    left join public.catalog_variants cv\r\n      on cv.item_id = wsi.item_id\r\n      and public.normalize_variant_key(cv.id) = public.normalize_variant_key(wsi.variant_key)\r\n      and coalesce(cv.active, true)\r\n    where wsi.warehouse_id = p_warehouse_id\r\n  )\r\n  select\r\n    ai.warehouse_id,\r\n    ai.item_id,\r\n    ai.item_name,\r\n    ai.variant_key,\r\n    ai.variant_name,\r\n    ai.sku,\r\n    coalesce(ws.net_units, ai.net_units) as net_units,\r\n    ai.unit_cost,\r\n    ai.item_kind,\r\n    ai.image_url,\r\n    ai.has_recipe,\r\n    ai.consumption_uom,\r\n    ai.purchase_pack_unit,\r\n    ai.transfer_unit,\r\n    ai.transfer_quantity\r\n  from available_items ai\r\n  left join with_stock ws\r\n    on ws.warehouse_id = ai.warehouse_id\r\n    and ws.item_id = ai.item_id\r\n    and public.normalize_variant_key(ws.variant_key) = public.normalize_variant_key(ai.variant_key)\r\n  where (\r\n    p_search is null\r\n    or ai.item_name ilike ('%' || p_search || '%')\r\n    or coalesce(ai.variant_name, '') ilike ('%' || p_search || '%')\r\n    or coalesce(ai.sku, '') ilike ('%' || p_search || '%')\r\n  )\r\n  order by item_name asc, variant_key asc;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.list_warehouse_items(p_warehouse_id uuid, p_outlet_id uuid, p_search text DEFAULT NULL::text)\n RETURNS TABLE(warehouse_id uuid, item_id uuid, item_name text, variant_key text, variant_name text, sku text, net_units numeric, unit_cost numeric, item_kind item_kind, image_url text, has_recipe boolean, consumption_uom text, purchase_pack_unit text, transfer_unit text, transfer_quantity numeric)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  with storage_keys as (\r\n    select\r\n      ish.item_id,\r\n      ish.normalized_variant_key\r\n    from public.item_storage_homes ish\r\n    where ish.storage_warehouse_id = p_warehouse_id\r\n  ),\r\n  items_in_warehouse as (\r\n    select distinct item_id from storage_keys\r\n  ),\r\n  base_items as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      ci.id as item_id,\r\n      ci.name as item_name,\r\n      'base'::text as variant_key,\r\n      null::text as variant_name,\r\n      ci.sku as sku,\r\n      0::numeric as net_units,\r\n      coalesce(ci.cost, 0)::numeric as unit_cost,\r\n      ci.item_kind as item_kind,\r\n      ci.image_url,\r\n      exists (\r\n        select 1 from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = ci.id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = 'base'\r\n      ) as has_recipe,\r\n      ci.consumption_uom as consumption_uom,\r\n      ci.purchase_pack_unit as purchase_pack_unit,\r\n      ci.transfer_unit as transfer_unit,\r\n      ci.transfer_quantity as transfer_quantity\r\n    from public.catalog_items ci\r\n    where ci.id in (select item_id from items_in_warehouse)\r\n  ),\r\n  variant_items as (\r\n    select\r\n      p_warehouse_id as warehouse_id,\r\n      cv.item_id,\r\n      ci.name as item_name,\r\n      public.normalize_variant_key(cv.id) as variant_key,\r\n      cv.name as variant_name,\r\n      cv.sku as sku,\r\n      0::numeric as net_units,\r\n      coalesce(ci.cost, 0)::numeric as unit_cost,\r\n      cv.item_kind as item_kind,\r\n      coalesce(cv.image_url, ci.image_url) as image_url,\r\n      exists (\r\n        select 1 from public.recipes r\r\n        where r.active\r\n          and r.finished_item_id = cv.item_id\r\n          and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = public.normalize_variant_key(cv.id)\r\n      ) as has_recipe,\r\n      coalesce(cv.consumption_uom, ci.consumption_uom) as consumption_uom,\r\n      coalesce(cv.purchase_pack_unit, ci.purchase_pack_unit) as purchase_pack_unit,\r\n      coalesce(cv.transfer_unit, ci.transfer_unit) as transfer_unit,\r\n      coalesce(cv.transfer_quantity, ci.transfer_quantity) as transfer_quantity\r\n    from storage_keys sk\r\n    join public.catalog_variants cv\r\n      on cv.item_id = sk.item_id\r\n      and public.normalize_variant_key(cv.id) = sk.normalized_variant_key\r\n    join public.catalog_items ci on ci.id = cv.item_id\r\n    where sk.normalized_variant_key <> 'base'\r\n      and coalesce(cv.active, true)\r\n  ),\r\n  available_items as (\r\n    select * from base_items\r\n    union all\r\n    select * from variant_items\r\n  ),\r\n  with_stock as (\r\n    select\r\n      wli.warehouse_id,\r\n      wli.item_id,\r\n      wli.item_name,\r\n      wli.variant_key,\r\n      cv.name as variant_name,\r\n      cv.sku as sku,\r\n      wli.net_units,\r\n      wli.unit_cost,\r\n      wli.item_kind,\r\n      coalesce(cv.image_url, ci.image_url, wli.image_url) as image_url,\r\n      wli.has_recipe,\r\n      coalesce(cv.consumption_uom, ci.consumption_uom) as consumption_uom,\r\n      coalesce(cv.purchase_pack_unit, ci.purchase_pack_unit) as purchase_pack_unit,\r\n      coalesce(cv.transfer_unit, ci.transfer_unit) as transfer_unit,\r\n      coalesce(cv.transfer_quantity, ci.transfer_quantity) as transfer_quantity\r\n    from public.warehouse_live_items wli\r\n    join public.catalog_items ci on ci.id = wli.item_id\r\n    left join public.catalog_variants cv\r\n      on cv.item_id = wli.item_id\r\n      and public.normalize_variant_key(cv.id) = public.normalize_variant_key(wli.variant_key)\r\n      and coalesce(cv.active, true)\r\n    where wli.warehouse_id = p_warehouse_id\r\n  )\r\n  select\r\n    ai.warehouse_id,\r\n    ai.item_id,\r\n    ai.item_name,\r\n    ai.variant_key,\r\n    ai.variant_name,\r\n    ai.sku,\r\n    coalesce(ws.net_units, ai.net_units) as net_units,\r\n    ai.unit_cost,\r\n    ai.item_kind,\r\n    ai.image_url,\r\n    ai.has_recipe,\r\n    ai.consumption_uom,\r\n    ai.purchase_pack_unit,\r\n    ai.transfer_unit,\r\n    ai.transfer_quantity\r\n  from available_items ai\r\n  left join with_stock ws\r\n    on ws.warehouse_id = ai.warehouse_id\r\n    and ws.item_id = ai.item_id\r\n    and public.normalize_variant_key(ws.variant_key) = public.normalize_variant_key(ai.variant_key)\r\n  where (\r\n    p_search is null\r\n    or ai.item_name ilike ('%' || p_search || '%')\r\n    or coalesce(ai.variant_name, '') ilike ('%' || p_search || '%')\r\n    or coalesce(ai.sku, '') ilike ('%' || p_search || '%')\r\n  )\r\n  order by item_name asc, variant_key asc;\r\n$function$\n",
           "function_name": "list_warehouse_items",
           "function_schema": "public"
         },
@@ -7502,6 +7661,12 @@
           "function_schema": "public"
         },
         {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.set_android_app_versions_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nbegin\r\n  new.updated_at = now();\r\n  return new;\r\nend;\r\n$function$\n",
+          "function_name": "set_android_app_versions_updated_at",
+          "function_schema": "public"
+        },
+        {
           "arguments": "p_warehouse_id uuid, p_cutoff timestamp with time zone",
           "definition": "CREATE OR REPLACE FUNCTION public.set_pos_sync_cutoff_for_warehouse(p_warehouse_id uuid, p_cutoff timestamp with time zone)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_cutoff_epoch bigint;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required';\r\n  end if;\r\n\r\n  if p_cutoff is null then\r\n    raise exception 'cutoff required';\r\n  end if;\r\n\r\n  v_cutoff_epoch := floor(extract(epoch from p_cutoff));\r\n\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  select 'pos_sync_cutoff', o.id, v_cutoff_epoch\r\n  from public.outlets o\r\n  where o.default_sales_warehouse_id = p_warehouse_id\r\n\r\n  union\r\n\r\n  select 'pos_sync_cutoff', ow.outlet_id, v_cutoff_epoch\r\n  from public.outlet_warehouses ow\r\n  where ow.warehouse_id = p_warehouse_id\r\n    and coalesce(ow.show_in_stocktake, true)\r\n\r\n  on conflict (counter_key, scope_id)\r\n  do update\r\n    set last_value = excluded.last_value,\r\n        updated_at = now();\r\nend;\r\n$function$\n",
           "function_name": "set_pos_sync_cutoff_for_warehouse",
@@ -7581,6 +7746,18 @@
         },
         {
           "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_item_storage_homes_from_item()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_item_id uuid;\r\n  v_ids uuid[];\r\nbegin\r\n  v_item_id := coalesce(new.id, old.id);\r\n  if v_item_id is null then\r\n    return coalesce(new, old);\r\n  end if;\r\n\r\n  if tg_op = 'DELETE' then\r\n    delete from public.item_storage_homes\r\n    where item_id = v_item_id\r\n      and normalized_variant_key = 'base';\r\n    return old;\r\n  end if;\r\n\r\n  v_ids := array(\r\n    select distinct id\r\n    from (\r\n      select unnest(coalesce(new.storage_home_ids, array[]::uuid[])) as id\r\n      union all\r\n      select unnest(array[ new.storage_home_id, new.default_warehouse_id ]::uuid[]) as id\r\n    ) t\r\n    where id is not null\r\n  );\r\n\r\n  delete from public.item_storage_homes\r\n  where item_id = v_item_id\r\n    and normalized_variant_key = 'base';\r\n\r\n  if v_ids is not null and array_length(v_ids, 1) is not null then\r\n    insert into public.item_storage_homes (item_id, variant_key, normalized_variant_key, storage_warehouse_id)\r\n    select v_item_id, 'base', 'base', unnest(v_ids)\r\n    on conflict do nothing;\r\n  end if;\r\n\r\n  return new;\r\nend;\r\n$function$\n",
+          "function_name": "sync_item_storage_homes_from_item",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_item_storage_homes_from_variant()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_item_id uuid;\r\n  v_variant_key text;\r\n  v_ids uuid[];\r\nbegin\r\n  v_item_id := coalesce(new.item_id, old.item_id);\r\n  v_variant_key := public.normalize_variant_key(coalesce(new.id, old.id));\r\n  if v_item_id is null or v_variant_key is null then\r\n    return coalesce(new, old);\r\n  end if;\r\n\r\n  if tg_op = 'DELETE' then\r\n    delete from public.item_storage_homes\r\n    where item_id = v_item_id\r\n      and normalized_variant_key = v_variant_key;\r\n    return old;\r\n  end if;\r\n\r\n  v_ids := array(\r\n    select distinct id\r\n    from (\r\n      select unnest(coalesce(new.storage_home_ids, array[]::uuid[])) as id\r\n      union all\r\n      select unnest(array[ new.storage_home_id, new.default_warehouse_id ]::uuid[]) as id\r\n    ) t\r\n    where id is not null\r\n  );\r\n\r\n  delete from public.item_storage_homes\r\n  where item_id = v_item_id\r\n    and normalized_variant_key = v_variant_key;\r\n\r\n  if v_ids is not null and array_length(v_ids, 1) is not null then\r\n    insert into public.item_storage_homes (item_id, variant_key, normalized_variant_key, storage_warehouse_id)\r\n    select v_item_id, v_variant_key, v_variant_key, unnest(v_ids)\r\n    on conflict do nothing;\r\n  end if;\r\n\r\n  return new;\r\nend;\r\n$function$\n",
+          "function_name": "sync_item_storage_homes_from_variant",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
           "definition": "CREATE OR REPLACE FUNCTION public.sync_opening_stock_to_ledger()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_delta numeric := 0;\r\n  v_item_id uuid;\r\n  v_variant text;\r\n  v_period_id uuid;\r\n  v_warehouse_id uuid;\r\nBEGIN\r\n  IF TG_OP = 'INSERT' THEN\r\n    IF NEW.kind <> 'opening' THEN\r\n      RETURN NEW;\r\n    END IF;\r\n    v_delta := NEW.counted_qty;\r\n    v_item_id := NEW.item_id;\r\n    v_variant := public.normalize_variant_key(NEW.variant_key);\r\n    v_period_id := NEW.period_id;\r\n  ELSIF TG_OP = 'UPDATE' THEN\r\n    IF NEW.kind <> 'opening' AND OLD.kind <> 'opening' THEN\r\n      RETURN NEW;\r\n    END IF;\r\n    -- handle kind change or qty change\r\n    IF OLD.kind = 'opening' THEN\r\n      v_delta := v_delta - COALESCE(OLD.counted_qty, 0);\r\n      v_item_id := OLD.item_id;\r\n      v_variant := public.normalize_variant_key(OLD.variant_key);\r\n      v_period_id := OLD.period_id;\r\n    END IF;\r\n    IF NEW.kind = 'opening' THEN\r\n      v_delta := v_delta + COALESCE(NEW.counted_qty, 0);\r\n      v_item_id := NEW.item_id;\r\n      v_variant := public.normalize_variant_key(NEW.variant_key);\r\n      v_period_id := NEW.period_id;\r\n    END IF;\r\n  ELSIF TG_OP = 'DELETE' THEN\r\n    IF OLD.kind <> 'opening' THEN\r\n      RETURN OLD;\r\n    END IF;\r\n    v_delta := -1 * COALESCE(OLD.counted_qty, 0);\r\n    v_item_id := OLD.item_id;\r\n    v_variant := public.normalize_variant_key(OLD.variant_key);\r\n    v_period_id := OLD.period_id;\r\n  END IF;\r\n\r\n  IF v_delta = 0 THEN\r\n    RETURN COALESCE(NEW, OLD);\r\n  END IF;\r\n\r\n  SELECT wsp.warehouse_id\r\n    INTO v_warehouse_id\r\n  FROM public.warehouse_stock_periods wsp\r\n  WHERE wsp.id = v_period_id\r\n  LIMIT 1;\r\n\r\n  IF v_warehouse_id IS NULL THEN\r\n    RETURN COALESCE(NEW, OLD);\r\n  END IF;\r\n\r\n  INSERT INTO public.stock_ledger(\r\n    location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at\r\n  ) VALUES (\r\n    'warehouse', v_warehouse_id, v_item_id, v_variant, v_delta, 'opening_stock',\r\n    jsonb_build_object('period_id', v_period_id::text, 'source', 'opening_count'),\r\n    now()\r\n  );\r\n\r\n  RETURN COALESCE(NEW, OLD);\r\nEND;\r\n$function$\n",
           "function_name": "sync_opening_stock_to_ledger",
           "function_schema": "public"
@@ -7647,6 +7824,56 @@
         }
       ],
       "constraints": [
+        {
+          "table_name": "android_app_versions",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155134_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "android_app_versions",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155134_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "android_app_versions",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155134_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "android_app_versions",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155134_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "android_app_versions",
+          "column_name": "app_key",
+          "table_schema": "public",
+          "constraint_name": "android_app_versions_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "android_app_versions",
+          "foreign_column_name": "app_key",
+          "foreign_table_schema": "public"
+        },
         {
           "table_name": "catalog_items",
           "column_name": null,
@@ -8094,7 +8321,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -8104,7 +8331,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8504,16 +8731,6 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
@@ -8529,6 +8746,16 @@
         },
         {
           "table_name": "item_storage_homes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
           "column_name": "normalized_variant_key",
           "table_schema": "public",
           "constraint_name": "item_storage_homes_pkey",
@@ -8544,12 +8771,22 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "item_storage_homes",
           "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "normalized_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "storage_warehouse_id",
           "table_schema": "public",
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -8564,7 +8801,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "storage_warehouse_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8575,16 +8812,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "storage_warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9224,7 +9451,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9234,7 +9461,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9244,7 +9471,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9264,26 +9491,6 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
@@ -9294,7 +9501,27 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9464,7 +9691,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9484,6 +9711,16 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_products",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_products_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_products",
           "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
@@ -9509,32 +9746,22 @@
         },
         {
           "table_name": "outlet_products",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_products_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_products",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_products_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_products",
           "column_name": "variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_products",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_products_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_products",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9784,7 +10011,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9804,7 +10031,17 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9829,32 +10066,22 @@
         },
         {
           "table_name": "outlet_stock_balances",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
           "column_name": "variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10074,7 +10301,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "warehouse_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10084,7 +10311,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10934,7 +11161,7 @@
           "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "profile_id",
+          "foreign_column_name": "step_order",
           "foreign_table_schema": "public"
         },
         {
@@ -10944,7 +11171,7 @@
           "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "step_order",
+          "foreign_column_name": "profile_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11054,16 +11281,6 @@
           "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "active",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
           "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
@@ -11079,12 +11296,22 @@
         },
         {
           "table_name": "recipe_uom_profiles",
-          "column_name": "variant_key",
+          "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
           "foreign_column_name": "active",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "recipe_uom_profiles",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "recipe_uom_profiles",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11104,7 +11331,17 @@
           "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "active",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "recipe_uom_profiles",
+          "column_name": "active",
+          "table_schema": "public",
+          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "recipe_uom_profiles",
+          "foreign_column_name": "active",
           "foreign_table_schema": "public"
         },
         {
@@ -11125,16 +11362,6 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
           "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "active",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "active",
           "foreign_table_schema": "public"
         },
         {
@@ -11764,7 +11991,7 @@
           "constraint_name": "supplier_scanners_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "supplier_scanners",
-          "foreign_column_name": "supplier_id",
+          "foreign_column_name": "scanner_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11774,7 +12001,7 @@
           "constraint_name": "supplier_scanners_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "supplier_scanners",
-          "foreign_column_name": "scanner_id",
+          "foreign_column_name": "supplier_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11924,7 +12151,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "from_uom",
+          "foreign_column_name": "to_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -11934,16 +12161,6 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "to_uom",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "uom_conversions",
-          "column_name": "to_uom",
-          "table_schema": "public",
-          "constraint_name": "uom_conversions_from_uom_to_uom_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "uom_conversions",
           "foreign_column_name": "from_uom",
           "foreign_table_schema": "public"
         },
@@ -11955,6 +12172,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
           "foreign_column_name": "to_uom",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "uom_conversions",
+          "column_name": "to_uom",
+          "table_schema": "public",
+          "constraint_name": "uom_conversions_from_uom_to_uom_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "uom_conversions",
+          "foreign_column_name": "from_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12044,16 +12271,6 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "user_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -12064,6 +12281,26 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
+          "foreign_column_name": "role_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "user_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "role_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
           "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
@@ -12075,16 +12312,6 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "role_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
         {

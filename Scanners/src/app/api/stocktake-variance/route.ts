@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? "warehouse_stock_items";
+const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? "warehouse_live_items";
 
 function parseQty(value: number | null): number {
   if (typeof value !== "number" || Number.isNaN(value)) return 0;

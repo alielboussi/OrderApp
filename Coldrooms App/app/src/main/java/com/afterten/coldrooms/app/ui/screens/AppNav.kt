@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.afterten.coldrooms.app.BuildConfig
 import com.afterten.coldrooms.app.data.LoginUser
 import com.afterten.coldrooms.app.data.Repository
 import com.afterten.coldrooms.app.data.SessionStore
@@ -44,6 +45,8 @@ fun AppNav() {
 
   val tokenState = rememberSaveable { mutableStateOf<String?>(null) }
   val userState = remember { mutableStateOf<LoginUser?>(null) }
+  val forceUpdate = remember { mutableStateOf(false) }
+  val requiredVersionName = remember { mutableStateOf<String?>(null) }
 
   val transferState = remember { TransferState() }
   val damageState = remember { DamageState() }
@@ -61,11 +64,25 @@ fun AppNav() {
   }
 
   LaunchedEffect(Unit) {
+    val versionRow = runCatching { repo.getAndroidAppVersion("coldrooms") }.getOrNull()
+    if (versionRow != null && versionRow.forceUpdate && BuildConfig.VERSION_CODE < versionRow.minVersionCode) {
+      requiredVersionName.value = versionRow.minVersionName
+      forceUpdate.value = true
+      return@LaunchedEffect
+    }
     tokenState.value = null
     userState.value = null
     navController.navigate(ROUTE_LOGIN) {
       popUpTo(ROUTE_DASHBOARD) { inclusive = true }
     }
+  }
+
+  if (forceUpdate.value) {
+    UpdateRequiredScreen(
+      currentVersion = BuildConfig.VERSION_NAME,
+      requiredVersion = requiredVersionName.value
+    )
+    return
   }
 
   NavHost(navController, startDestination = ROUTE_LOGIN) {

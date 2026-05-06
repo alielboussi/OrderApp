@@ -24,6 +24,7 @@ const qtyUnits = [
   "Bucket",
   "Bag",
   "Tray",
+  "plastic",
   "Packet",
   "Box",
 ] as const;
@@ -67,6 +68,8 @@ const formatUnitLabel = (unit: string) => {
                   ? "Bag(s)"
                   : lower === "tray"
                     ? "Tray(s)"
+                  : lower === "plastic"
+                    ? "Plastic(s)"
                   : lower === "packet"
                     ? "Packet(s)"
                     : lower === "box"

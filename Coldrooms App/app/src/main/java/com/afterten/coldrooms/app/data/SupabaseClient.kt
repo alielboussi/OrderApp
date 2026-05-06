@@ -171,12 +171,80 @@ class SupabaseClient {
     if (itemIds.isEmpty()) return emptyList()
     val inClause = itemIds.joinToString(",") { it }
     val response = http.get(
-      "$baseUrl/rest/v1/warehouse_stock_items?select=item_id,variant_key,net_units&warehouse_id=eq.$warehouseId&item_id=in.($inClause)"
+      "$baseUrl/rest/v1/warehouse_live_items?select=item_id,variant_key,net_units&warehouse_id=eq.$warehouseId&item_id=in.($inClause)"
+    ) {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+    }
+    val bodyText = response.bodyAsText()
+    Log.d("SupabaseClient", "warehouse stock items status=${response.status.value} body=$bodyText")
+    if (!response.status.isSuccess()) {
+      val error = runCatching { json.decodeFromString<PostgrestError>(bodyText) }.getOrNull()
+      val message = error?.message ?: error?.error ?: "Request failed"
+      val detail = error?.details ?: error?.hint ?: ""
+      val raw = if (bodyText.isBlank()) "<empty>" else bodyText
+      val extra = listOfNotNull(
+        "HTTP ${response.status.value}",
+        detail.takeIf { it.isNotBlank() }
+      ).joinToString(" | ")
+      throw IllegalStateException("$message (${extra.ifBlank { "no details" }}) Raw: $raw")
+    }
+    return json.decodeFromString(bodyText)
+  }
+
+  suspend fun getOpenWarehousePeriod(token: String, warehouseId: String): WarehouseStockPeriodRow? {
+    requireConfig()
+    val response = http.get(
+      "$baseUrl/rest/v1/warehouse_stock_periods?select=id,warehouse_id,status&warehouse_id=eq.$warehouseId&order=opened_at.desc&limit=5"
+    ) {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+    }
+    val bodyText = response.bodyAsText()
+    Log.d("SupabaseClient", "open period lookup status=${response.status.value} body=$bodyText")
+    if (!response.status.isSuccess()) {
+      val error = runCatching { json.decodeFromString<PostgrestError>(bodyText) }.getOrNull()
+      val message = error?.message ?: error?.error ?: "Request failed"
+      val detail = error?.details ?: error?.hint ?: ""
+      val raw = if (bodyText.isBlank()) "<empty>" else bodyText
+      val extra = listOfNotNull(
+        "HTTP ${response.status.value}",
+        detail.takeIf { it.isNotBlank() }
+      ).joinToString(" | ")
+      throw IllegalStateException("$message (${extra.ifBlank { "no details" }}) Raw: $raw")
+    }
+    val rows = json.decodeFromString<List<WarehouseStockPeriodRow>>(bodyText)
+    val match = rows.firstOrNull { row -> row.status.trim().lowercase() == "open" }
+    Log.d("SupabaseClient", "open period match=${match?.id ?: "none"} rows=${rows.size}")
+    return match
+  }
+
+  suspend fun listWarehouseOpeningCounts(
+    token: String,
+    periodId: String,
+    itemIds: List<String>
+  ): List<WarehouseOpeningKeyRow> {
+    requireConfig()
+    if (itemIds.isEmpty()) return emptyList()
+    val inClause = itemIds.joinToString(",") { it }
+    val response = http.get(
+      "$baseUrl/rest/v1/warehouse_stock_counts?select=item_id,variant_key&period_id=eq.$periodId&kind=eq.opening&item_id=in.($inClause)"
     ) {
       header("apikey", anonKey)
       header("Authorization", "Bearer $token")
     }
     return parseJsonResponse(response)
+  }
+
+  suspend fun getAndroidAppVersion(appKey: String): AndroidAppVersionRow? {
+    requireConfig()
+    val response = http.get(
+      "$baseUrl/rest/v1/android_app_versions?select=app_key,min_version_code,min_version_name,force_update&app_key=eq.$appKey&limit=1"
+    ) {
+      header("apikey", anonKey)
+    }
+    val rows: List<AndroidAppVersionRow> = parseJsonResponse(response)
+    return rows.firstOrNull()
   }
 
   suspend fun getStocktakeUserDisplayName(token: String, userId: String): String? {

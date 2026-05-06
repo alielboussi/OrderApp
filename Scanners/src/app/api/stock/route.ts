@@ -3,7 +3,7 @@ import { getServiceClient } from '@/lib/supabase-server';
 import { aggregateStockRows, collectDescendantIds, filterRowsBySearch } from '@/lib/warehouse-helpers';
 import type { Warehouse, WarehouseStockRow } from '@/types/warehouse';
 
-const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_stock_items';
+const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? 'warehouse_live_items';
 
 type WarehouseRecord = {
   id: string;

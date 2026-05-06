@@ -213,6 +213,17 @@ class SupabaseClient {
     return rows.firstOrNull()?.displayName?.trim()?.takeIf { it.isNotBlank() }
   }
 
+  suspend fun getAndroidAppVersion(appKey: String): AndroidAppVersionRow? {
+    requireConfig()
+    val response = http.get(
+      "$baseUrl/rest/v1/android_app_versions?select=app_key,min_version_code,min_version_name,force_update&app_key=eq.$appKey&limit=1"
+    ) {
+      header("apikey", anonKey)
+    }
+    val rows: List<AndroidAppVersionRow> = parseJsonResponse(response)
+    return rows.firstOrNull()
+  }
+
   suspend fun listWarehouseItems(token: String, warehouseId: String): List<WarehouseItem> {
     requireConfig()
     val payload = mapOf(

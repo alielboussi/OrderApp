@@ -12,8 +12,8 @@ android {
     applicationId = "com.afterten.coldrooms.app"
     minSdk = 26
     targetSdk = 34
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.0.1"
 
     val supabaseUrl = project.findProperty("SUPABASE_URL") as String? ?: ""
     val supabaseAnonKey = project.findProperty("SUPABASE_ANON_KEY") as String? ?: ""

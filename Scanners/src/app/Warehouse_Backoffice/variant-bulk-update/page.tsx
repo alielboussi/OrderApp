@@ -95,6 +95,8 @@ const formatUnitLabel = (unit: string) => {
                     ? "Bag(s)"
                       : lower === "tray"
                         ? "Tray(s)"
+                        : lower === "plastic"
+                          ? "Plastic(s)"
                     : lower === "packet"
                       ? "Packet(s)"
                       : lower === "box"

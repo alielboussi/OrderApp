@@ -21,6 +21,10 @@ class Repository(private val client: SupabaseClient) {
     return client.getStocktakeUserDisplayName(token, userId)
   }
 
+  suspend fun getAndroidAppVersion(appKey: String): AndroidAppVersionRow? {
+    return client.getAndroidAppVersion(appKey)
+  }
+
   suspend fun listWarehouseItems(token: String, warehouseId: String): List<WarehouseItem> {
     return client.listWarehouseItems(token, warehouseId)
   }

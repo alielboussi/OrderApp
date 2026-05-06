@@ -169,24 +169,59 @@ private suspend fun listAllowedItemsForWarehouse(
   warehouseId: String
 ): List<WarehouseItem> {
   val allowedItemIds = ALLOWED_PRODUCT_IDS.toList()
-  val (allowedVariantRows, allowedItemRows, stockRows) = coroutineScope {
+  val (allowedVariantRows, allowedItemRows, openPeriod, openingRows, stockRows) = coroutineScope {
     val variantsDeferred = async {
       repo
         .listCatalogVariantsByIds(token, ALLOWED_VARIANT_IDS.toList())
         .filter { ALLOWED_PRODUCT_IDS.contains(it.itemId) }
     }
     val itemsDeferred = async { repo.listCatalogItemsByIds(token, allowedItemIds) }
-    val stockDeferred = async { repo.listWarehouseStockItems(token, warehouseId, allowedItemIds) }
-    Triple(variantsDeferred.await(), itemsDeferred.await(), stockDeferred.await())
+    val periodDeferred = async { repo.getOpenWarehousePeriod(token, warehouseId) }
+    val openingDeferred = async {
+      val period = periodDeferred.await()
+      if (period == null) emptyList() else repo.listWarehouseOpeningCounts(token, period.id, allowedItemIds)
+    }
+    val stockDeferred = async {
+      repo.listWarehouseStockItems(token, warehouseId, allowedItemIds)
+    }
+    Quintuple(
+      variantsDeferred.await(),
+      itemsDeferred.await(),
+      periodDeferred.await(),
+      openingDeferred.await(),
+      stockDeferred.await()
+    )
   }
   val itemsById = allowedItemRows.associateBy { it.id }
   val variantsByItem = allowedVariantRows.groupBy { it.itemId }
-  val stockByKey = stockRows.associateBy { stockKey(it.itemId, it.variantKey) }
+  val hasOpeningRows = openingRows.isNotEmpty()
+  val openingKeys = openingRows.map { stockKey(it.itemId, it.variantKey) }.toSet()
+  val filteredStock = if (hasOpeningRows) {
+    stockRows.filter { openingKeys.contains(stockKey(it.itemId, it.variantKey)) }
+  } else {
+    stockRows
+  }
+  val stockByKey = filteredStock.associateBy { stockKey(it.itemId, it.variantKey) }
+  if (openPeriod == null) {
+    logDebug("ColdroomItems", "warehouseId=$warehouseId has no open period; stock hidden")
+  }
 
   val merged = mutableListOf<WarehouseItem>()
-  allowedItemIds.forEach { itemId ->
-    val item = itemsById[itemId] ?: return@forEach
-    val baseStock = stockByKey[stockKey(item.id, null)]
+  allowedItemIds.forEach itemLoop@{ itemId ->
+    val item = itemsById[itemId] ?: return@itemLoop
+    val baseKey = stockKey(item.id, null)
+    val hasOpeningForItem = !hasOpeningRows || openingKeys.any { it.startsWith("${item.id}::") }
+    if (!hasOpeningForItem) return@itemLoop
+    val baseStock = stockByKey[baseKey]
+    val variantStocks = filteredStock
+      .filter { it.itemId == item.id && !it.variantKey.isNullOrBlank() && it.variantKey != "base" }
+      .map { it.netUnits ?: 0.0 }
+    val variantSum = variantStocks.sum()
+    val baseQty = when {
+      baseStock?.netUnits == null -> variantSum
+      baseStock.netUnits == 0.0 && variantSum > 0.0 -> variantSum
+      else -> baseStock.netUnits
+    }
     merged.add(
       WarehouseItem(
         itemId = item.id,
@@ -194,7 +229,7 @@ private suspend fun listAllowedItemsForWarehouse(
         itemName = item.name,
         variantName = null,
         sku = item.sku,
-        onHand = baseStock?.netUnits ?: 0.0,
+        onHand = baseQty,
         imageUrl = item.imageUrl,
         consumptionUom = item.consumptionUom,
         purchasePackUnit = item.purchasePackUnit,
@@ -204,8 +239,10 @@ private suspend fun listAllowedItemsForWarehouse(
     )
 
     val variants = variantsByItem[item.id].orEmpty()
-    variants.forEach { variant ->
-      val stock = stockByKey[stockKey(item.id, variant.id)]
+    variants.forEach variantLoop@{ variant ->
+      val key = stockKey(item.id, variant.id)
+      if (hasOpeningRows && !openingKeys.contains(key)) return@variantLoop
+      val stock = stockByKey[key]
       merged.add(
         WarehouseItem(
           itemId = item.id,
@@ -224,10 +261,18 @@ private suspend fun listAllowedItemsForWarehouse(
     }
   }
 
-  logStockSample("ColdroomItems", "warehouse stock", stockRows)
+  logStockSample("ColdroomItems", "warehouse stock", filteredStock)
   logItemsSample("ColdroomItems", "allowed catalog", merged)
   return merged
 }
+
+private data class Quintuple<A, B, C, D, E>(
+  val first: A,
+  val second: B,
+  val third: C,
+  val fourth: D,
+  val fifth: E
+)
 
 val PURCHASE_SUPPLIER_IDS = setOf(
   "52d80bde-82e5-4c0c-b65f-38e21f4162fa",
@@ -283,6 +328,7 @@ class TransferState {
   var selectedItemId: String? = null
   var selectedItemName: String? = null
   var availableItems: List<WarehouseItem> = emptyList()
+  var itemsRevision by mutableStateOf(0)
   var pdfFileName: String? = null
   var pdfUploaded: Boolean = false
   val items = mutableStateListOf<TransferLine>()
@@ -294,6 +340,7 @@ class TransferState {
     selectedItemId = null
     selectedItemName = null
     availableItems = emptyList()
+    itemsRevision = 0
     pdfFileName = null
     pdfUploaded = false
     items.clear()
@@ -306,6 +353,7 @@ class DamageState {
   var selectedItemId: String? = null
   var selectedItemName: String? = null
   var availableItems: List<WarehouseItem> = emptyList()
+  var itemsRevision by mutableStateOf(0)
   var pdfFileName: String? = null
   var pdfUploaded: Boolean = false
   val items = mutableStateListOf<TransferLine>()
@@ -316,6 +364,7 @@ class DamageState {
     selectedItemId = null
     selectedItemName = null
     availableItems = emptyList()
+    itemsRevision = 0
     pdfFileName = null
     pdfUploaded = false
     items.clear()
@@ -330,6 +379,7 @@ class PurchaseState {
   var selectedItemId: String? = null
   var selectedItemName: String? = null
   var availableItems: List<WarehouseItem> = emptyList()
+  var itemsRevision by mutableStateOf(0)
   val items = mutableStateListOf<PurchaseLine>()
 
   fun reset() {
@@ -340,6 +390,7 @@ class PurchaseState {
     selectedItemId = null
     selectedItemName = null
     availableItems = emptyList()
+    itemsRevision = 0
     items.clear()
   }
 }
@@ -448,6 +499,33 @@ fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
 }
 
 @Composable
+fun UpdateRequiredScreen(currentVersion: String, requiredVersion: String?) {
+  Scaffold { padding ->
+    Column(
+      modifier = Modifier
+        .padding(padding)
+        .padding(24.dp)
+        .fillMaxSize(),
+      verticalArrangement = Arrangement.Center,
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+      Text("Update required", style = MaterialTheme.typography.headlineSmall)
+      Spacer(Modifier.height(12.dp))
+      Text(
+        text = "Please update the app to continue.",
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center
+      )
+      Spacer(Modifier.height(12.dp))
+      Text("Current: $currentVersion", style = MaterialTheme.typography.bodySmall)
+      if (!requiredVersion.isNullOrBlank()) {
+        Text("Required: $requiredVersion", style = MaterialTheme.typography.bodySmall)
+      }
+    }
+  }
+}
+
+@Composable
 fun DashboardScreen(
   user: LoginUser?,
   onTransfers: () -> Unit,
@@ -488,7 +566,7 @@ fun DashboardScreen(
         textAlign = TextAlign.Center
       )
       Text(
-        text = "V1.1",
+        text = "V1.2",
         style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.fillMaxWidth(),
         textAlign = TextAlign.Center
@@ -640,7 +718,7 @@ fun TransferItemsScreen(
     loadingState.value = false
   }
 
-  LaunchedEffect(token, state.fromWarehouseId, refreshTick.value) {
+  LaunchedEffect(token, state.fromWarehouseId, state.itemsRevision, refreshTick.value) {
     if (token == null || state.fromWarehouseId == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
@@ -711,6 +789,8 @@ fun TransferItemsScreen(
                   fromWarehouseState.value = selected
                   state.fromWarehouseId = selected.id
                   state.items.clear()
+                  state.itemsRevision += 1
+                  logDebug("TransferItems", "from warehouse selected id=${selected.id}")
                   scope.launch {
                     sessionStore.setLastTransferFromWarehouseId(selected.id)
                   }
@@ -745,6 +825,7 @@ fun TransferItemsScreen(
                 if (selected != null) {
                   toWarehouseState.value = selected
                   state.toWarehouseId = selected.id
+                  logDebug("TransferItems", "to warehouse selected id=${selected.id}")
                   scope.launch {
                     sessionStore.setLastTransferToWarehouseId(selected.id)
                   }
@@ -817,8 +898,10 @@ fun TransferItemsScreen(
           modifier = Modifier.weight(1f),
           onItemClick = {
             if (it.onHandUnits() <= 0.0) {
+              logDebug("TransferItems", "variant no stock itemId=${it.itemId} variantId=${it.variantId}")
               errorState.value = "No stock available"
             } else {
+              logDebug("TransferItems", "variant selected itemId=${it.itemId} variantId=${it.variantId}")
               singleItemDialog.value = it
             }
           }
@@ -832,12 +915,15 @@ fun TransferItemsScreen(
             if (groupHasVariants(group)) {
               state.selectedItemId = group.itemId
               state.selectedItemName = group.itemName
+              logDebug("TransferItems", "base selected itemId=${group.itemId} name=${group.itemName}")
               onShowVariants()
             } else {
               val item = group.variants.firstOrNull()
               if (item != null && item.onHandUnits() <= 0.0) {
+                logDebug("TransferItems", "base no stock itemId=${item.itemId} variantId=${item.variantId}")
                 errorState.value = "No stock available"
               } else {
+                logDebug("TransferItems", "single item selected itemId=${item?.itemId} variantId=${item?.variantId}")
                 singleItemDialog.value = item
               }
             }
@@ -871,6 +957,7 @@ fun TransferItemsScreen(
       onDismiss = { singleItemDialog.value = null },
       onSave = { qty ->
         val item = singleItemDialog.value!!
+        logDebug("TransferItems", "qty saved itemId=${item.itemId} variantId=${item.variantId} qty=$qty")
         val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
         if (existing == null) {
           state.items.add(TransferLine(item, qty))
@@ -896,18 +983,9 @@ fun TransferVariantsScreen(
   val queryState = rememberSaveable { mutableStateOf("") }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
-  val baseRow = state.availableItems.firstOrNull {
-    it.itemId == selectedId && (it.variantId ?: "base").lowercase() == "base"
-  }
-  val variantRows = state.availableItems
+  val variants = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
-  val variants = buildList {
-    if (baseRow != null && baseRow.onHandUnits() > 0.0) {
-      add(baseRow.copy(variantName = "Base"))
-    }
-    addAll(variantRows)
-  }
   val filtered = variants.filter { item ->
     val q = queryState.value.trim().lowercase()
     if (q.isEmpty()) true else {
@@ -977,8 +1055,10 @@ fun TransferVariantsScreen(
           modifier = Modifier.weight(1f),
           onItemClick = {
             if (it.onHandUnits() <= 0.0) {
+              logDebug("TransferVariants", "no stock itemId=${it.itemId} variantId=${it.variantId}")
               errorState.value = "No stock available"
             } else {
+              logDebug("TransferVariants", "variant selected itemId=${it.itemId} variantId=${it.variantId}")
               dialogItem.value = it
             }
           }
@@ -993,6 +1073,7 @@ fun TransferVariantsScreen(
       onDismiss = { dialogItem.value = null },
       onSave = { qty ->
         val item = dialogItem.value!!
+        logDebug("TransferVariants", "qty saved itemId=${item.itemId} variantId=${item.variantId} qty=$qty")
         val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
         if (existing == null) {
           state.items.add(TransferLine(item, qty))
@@ -1054,7 +1135,7 @@ fun DamageItemsScreen(
     loadingState.value = false
   }
 
-  LaunchedEffect(token, state.warehouseId, refreshTick.value) {
+  LaunchedEffect(token, state.warehouseId, state.itemsRevision, refreshTick.value) {
     if (token == null || state.warehouseId == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
@@ -1124,6 +1205,8 @@ fun DamageItemsScreen(
                 if (selected != null) {
                   state.warehouseId = selected.id
                   state.items.clear()
+                  state.itemsRevision += 1
+                  logDebug("DamageItems", "warehouse selected id=${selected.id}")
                   scope.launch {
                     sessionStore.setLastDamageWarehouseId(selected.id)
                   }
@@ -1196,8 +1279,10 @@ fun DamageItemsScreen(
           modifier = Modifier.weight(1f),
           onItemClick = {
             if (it.onHandUnits() <= 0.0) {
+              logDebug("DamageItems", "variant no stock itemId=${it.itemId} variantId=${it.variantId}")
               errorState.value = "No stock available"
             } else {
+              logDebug("DamageItems", "variant selected itemId=${it.itemId} variantId=${it.variantId}")
               singleItemDialog.value = it
             }
           }
@@ -1211,12 +1296,15 @@ fun DamageItemsScreen(
             if (groupHasVariants(group)) {
               state.selectedItemId = group.itemId
               state.selectedItemName = group.itemName
+              logDebug("DamageItems", "base selected itemId=${group.itemId} name=${group.itemName}")
               onShowVariants()
             } else {
               val item = group.variants.firstOrNull()
               if (item != null && item.onHandUnits() <= 0.0) {
+                logDebug("DamageItems", "base no stock itemId=${item.itemId} variantId=${item.variantId}")
                 errorState.value = "No stock available"
               } else {
+                logDebug("DamageItems", "single item selected itemId=${item?.itemId} variantId=${item?.variantId}")
                 singleItemDialog.value = item
               }
             }
@@ -1242,6 +1330,7 @@ fun DamageItemsScreen(
       onDismiss = { singleItemDialog.value = null },
       onSave = { qty ->
         val item = singleItemDialog.value!!
+        logDebug("DamageItems", "qty saved itemId=${item.itemId} variantId=${item.variantId} qty=$qty")
         val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
         if (existing == null) {
           state.items.add(TransferLine(item, qty))
@@ -1271,18 +1360,9 @@ fun DamageVariantsScreen(
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val refreshTick = remember { mutableStateOf(0) }
-  val baseRow = state.availableItems.firstOrNull {
-    it.itemId == selectedId && (it.variantId ?: "base").lowercase() == "base"
-  }
-  val variantRows = state.availableItems
+  val variants = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
-  val variants = buildList {
-    if (baseRow != null && baseRow.onHandUnits() > 0.0) {
-      add(baseRow.copy(variantName = "Base"))
-    }
-    addAll(variantRows)
-  }
   val filtered = variants.filter { item ->
     val q = queryState.value.trim().lowercase()
     if (q.isEmpty()) true else {
@@ -1300,7 +1380,7 @@ fun DamageVariantsScreen(
     )
   }
 
-  LaunchedEffect(token, state.warehouseId, refreshTick.value) {
+  LaunchedEffect(token, state.warehouseId, state.itemsRevision, refreshTick.value) {
     if (token == null || state.warehouseId == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
@@ -1377,8 +1457,10 @@ fun DamageVariantsScreen(
           modifier = Modifier.weight(1f),
           onItemClick = {
             if (it.onHandUnits() <= 0.0) {
+              logDebug("DamageVariants", "no stock itemId=${it.itemId} variantId=${it.variantId}")
               errorState.value = "No stock available"
             } else {
+              logDebug("DamageVariants", "variant selected itemId=${it.itemId} variantId=${it.variantId}")
               dialogItem.value = it
             }
           }
@@ -1393,6 +1475,7 @@ fun DamageVariantsScreen(
       onDismiss = { dialogItem.value = null },
       onSave = { qty ->
         val item = dialogItem.value!!
+        logDebug("DamageVariants", "qty saved itemId=${item.itemId} variantId=${item.variantId} qty=$qty")
         val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
         if (existing == null) {
           state.items.add(TransferLine(item, qty))
@@ -1432,6 +1515,7 @@ fun PurchaseSetupScreen(
   val applyWarehouse: (Warehouse) -> Unit = { warehouse ->
     selectedWarehouse.value = warehouse
     state.warehouseId = warehouse.id
+    state.itemsRevision += 1
     scope.launch {
       sessionStore.setLastPurchaseWarehouseId(warehouse.id)
     }
@@ -1735,7 +1819,10 @@ fun PurchaseItemsScreen(
         VariantGrid(
           items = variantMatches.sortedBy { variantSortKey(it) },
           modifier = Modifier.weight(1f),
-          onItemClick = { singleItemDialog.value = it }
+          onItemClick = {
+            logDebug("PurchaseItems", "variant selected itemId=${it.itemId} variantId=${it.variantId}")
+            singleItemDialog.value = it
+          }
         )
       } else {
         val groupedItems = groupItems(baseCandidates)
@@ -1746,8 +1833,10 @@ fun PurchaseItemsScreen(
             if (groupHasVariants(group)) {
               state.selectedItemId = group.itemId
               state.selectedItemName = group.itemName
+              logDebug("PurchaseItems", "base selected itemId=${group.itemId} name=${group.itemName}")
               onShowVariants()
             } else {
+              logDebug("PurchaseItems", "single item selected itemId=${group.itemId}")
               singleItemDialog.value = group.variants.firstOrNull()
             }
           }
@@ -1775,6 +1864,7 @@ fun PurchaseItemsScreen(
       onDismiss = { singleItemDialog.value = null },
       onSave = { qty ->
         val item = singleItemDialog.value!!
+        logDebug("PurchaseItems", "qty saved itemId=${item.itemId} variantId=${item.variantId} qty=$qty")
         val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
         if (existing == null) {
           state.items.add(PurchaseLine(item, qty, null))
@@ -1805,18 +1895,9 @@ fun PurchaseVariantsScreen(
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val refreshTick = remember { mutableStateOf(0) }
-  val baseRow = state.availableItems.firstOrNull {
-    it.itemId == selectedId && (it.variantId ?: "base").lowercase() == "base"
-  }
-  val variantRows = state.availableItems
+  val variants = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
-  val variants = buildList {
-    if (baseRow != null) {
-      add(baseRow.copy(variantName = "Base"))
-    }
-    addAll(variantRows)
-  }
   val filtered = variants.filter { item ->
     val q = queryState.value.trim().lowercase()
     if (q.isEmpty()) true else {
@@ -1909,7 +1990,10 @@ fun PurchaseVariantsScreen(
         VariantGrid(
           items = filtered,
           modifier = Modifier.weight(1f),
-          onItemClick = { dialogItem.value = it }
+          onItemClick = {
+            logDebug("PurchaseVariants", "variant selected itemId=${it.itemId} variantId=${it.variantId}")
+            dialogItem.value = it
+          }
         )
       }
     }
@@ -1924,6 +2008,7 @@ fun PurchaseVariantsScreen(
       onDismiss = { dialogItem.value = null },
       onSave = { qty ->
         val item = dialogItem.value!!
+        logDebug("PurchaseVariants", "qty saved itemId=${item.itemId} variantId=${item.variantId} qty=$qty")
         val existing = state.items.firstOrNull { it.item.itemId == item.itemId && it.item.variantId == item.variantId }
         if (existing == null) {
           state.items.add(PurchaseLine(item, qty, null))
@@ -2175,9 +2260,14 @@ fun TransferSummaryScreen(
                 }
                 if (insufficient != null) {
                   val name = insufficient.item.variantName ?: insufficient.item.itemName
+                  logDebug("TransferSummary", "insufficient stock itemId=${insufficient.item.itemId} variantId=${insufficient.item.variantId}")
                   errorState.value = "Not enough stock for $name"
                   return@runCatching
                 }
+                logDebug(
+                  "TransferSummary",
+                  "submit transfer from=${state.fromWarehouseId} to=${state.toWarehouseId} lines=${state.items.size}"
+                )
                 repo.transferUnits(
                   token,
                   state.fromWarehouseId!!,
@@ -2185,8 +2275,10 @@ fun TransferSummaryScreen(
                   state.items.map { TransferItemRequest(it.item.itemId, it.item.variantId, it.quantity) }
                 )
               }.onSuccess {
+                logDebug("TransferSummary", "transfer success")
                 onConfirm()
               }.onFailure {
+                logDebug("TransferSummary", "transfer failed message=${it.message}")
                 errorState.value = it.message ?: "Transfer failed"
               }
               loadingState.value = false
@@ -2421,14 +2513,17 @@ fun DamageSummaryScreen(
                     quantity = line.quantity
                   )
                 }
+                logDebug("DamageSummary", "submit damage warehouse=${state.warehouseId} lines=${damageItems.size}")
                 repo.recordDamage(
                   token = token,
                   warehouseId = state.warehouseId!!,
                   items = damageItems
                 )
               }.onSuccess {
+                logDebug("DamageSummary", "damage success")
                 onConfirm()
               }.onFailure {
+                logDebug("DamageSummary", "damage failed message=${it.message}")
                 errorState.value = it.message ?: "Damage submit failed"
               }
               loadingState.value = false
@@ -2679,8 +2774,10 @@ fun PurchaseSummaryScreen(
                   state.items.map { PurchaseItemRequest(it.item.itemId, it.item.variantId, it.quantity, it.unitCost) }
                 )
               }.onSuccess {
+                logDebug("PurchaseSummary", "purchase success lines=${state.items.size}")
                 onConfirm()
               }.onFailure {
+                logDebug("PurchaseSummary", "purchase failed message=${it.message}")
                 errorState.value = it.message ?: "Purchase failed"
               }
               loadingState.value = false
@@ -3334,8 +3431,9 @@ private fun variantSortKey(item: WarehouseItem): String {
 }
 
 private fun stockKey(itemId: String, variantId: String?): String {
-  val variant = (variantId ?: "base").lowercase()
-  return "$itemId::$variant"
+  val trimmed = variantId?.trim()?.lowercase().orEmpty()
+  val normalized = if (trimmed.isBlank() || trimmed == "base" || trimmed == itemId.lowercase()) "base" else trimmed
+  return "$itemId::$normalized"
 }
 
 private fun WarehouseItem.stockKey(): String = stockKey(itemId, variantId)
@@ -3353,7 +3451,7 @@ private fun LiveQtyBadge(item: WarehouseItem, uom: String?) {
   val qtyText = formatQty(item.onHandUnits())
   val uomLabel = formatUomLabel(uom ?: "each")
   Text(
-    text = "($qtyText $uomLabel)",
+    text = "$qtyText $uomLabel",
     style = MaterialTheme.typography.labelMedium,
     color = Color.DarkGray,
     modifier = Modifier.fillMaxWidth(),
@@ -3404,20 +3502,13 @@ private fun QtyEntryDialog(
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
-        LiveQtyBadge(item, item.transferUnit ?: item.purchasePackUnit ?: "each")
+        LiveQtyBadge(item, item.consumptionUom ?: "each")
       }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          "How its transferred",
-          modifier = Modifier.fillMaxWidth(),
-          style = MaterialTheme.typography.titleMedium,
-          color = RedNegative,
-          textAlign = TextAlign.Center
-        )
-        Text(
-          formatUomLabel(item.transferUnit ?: item.purchasePackUnit ?: "each"),
+          formatUomLabel(item.consumptionUom ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,
@@ -3493,13 +3584,6 @@ private fun DamageQtyDialog(
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          "How its consumed",
-          modifier = Modifier.fillMaxWidth(),
-          style = MaterialTheme.typography.titleMedium,
-          color = RedNegative,
-          textAlign = TextAlign.Center
-        )
-        Text(
           formatUomLabel(item.consumptionUom ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
@@ -3572,20 +3656,13 @@ private fun PurchaseQtyDialog(
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
-        LiveQtyBadge(item, item.purchasePackUnit ?: "each")
+        LiveQtyBadge(item, item.consumptionUom ?: "each")
       }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          "How its purchased",
-          modifier = Modifier.fillMaxWidth(),
-          style = MaterialTheme.typography.titleMedium,
-          color = RedNegative,
-          textAlign = TextAlign.Center
-        )
-        Text(
-          formatUomLabel(item.purchasePackUnit ?: "each"),
+          formatUomLabel(item.consumptionUom ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,

@@ -290,7 +290,7 @@ export default function WarehouseProductionDifferences() {
             .eq("recipe_for_kind", "finished"),
           supabase.from("uom_conversions").select("from_uom,to_uom,multiplier,active").eq("active", true),
           supabase
-            .from("warehouse_stock_items")
+            .from("warehouse_live_items")
             .select("item_id,item_name,variant_key,net_units,item_kind")
             .eq("warehouse_id", warehouseId)
             .in("item_kind", ["ingredient", "raw"]),

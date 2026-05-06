@@ -1505,6 +1505,7 @@ export default function StocktakesPage() {
       const key = makeKey(row.item_id, variantKey);
       if (seen.has(key)) return;
       seen.add(key);
+      if (!unsavedKeys[key]) return;
 
       const openingLocked = openingLockedKeys.has(key);
       const entryMode: "opening" | "closing" = openingLocked ? "closing" : "opening";
@@ -1577,6 +1578,25 @@ export default function StocktakesPage() {
     setLoading(true);
     setInputError(null);
 
+    let nextOpenPeriodId: string | null = null;
+    const needsNextOpening = entries.some((entry) => entry.kind === "closing");
+    if (needsNextOpening && activePeriod?.warehouse_id) {
+      try {
+        const { data, error: nextPeriodError } = await supabase
+          .from("warehouse_stock_periods")
+          .select("id,opened_at")
+          .eq("warehouse_id", activePeriod.warehouse_id)
+          .eq("status", "open")
+          .order("opened_at", { ascending: false })
+          .limit(5);
+        if (!nextPeriodError) {
+          nextOpenPeriodId = (data ?? []).find((row) => row.id !== activePeriodId)?.id ?? null;
+        }
+      } catch {
+        nextOpenPeriodId = null;
+      }
+    }
+
     let hadFailure = false;
     const savedKeys: string[] = [];
     let lastSaved: { kind: string; counted_qty: number } | null = null;
@@ -1591,6 +1611,21 @@ export default function StocktakesPage() {
           p_kind: entry.kind,
         });
         if (recordError) throw recordError;
+        if (entry.kind === "closing" && nextOpenPeriodId) {
+          try {
+            const { error: nextOpenError } = await supabase.rpc("record_stock_count", {
+              p_period_id: nextOpenPeriodId,
+              p_item_id: entry.itemId,
+              p_qty: entry.qty,
+              p_variant_key: entry.variantKey,
+              p_kind: "opening",
+              p_context: { auto_seed: "true", reason: "carry_forward_from_closing", from_period: activePeriodId },
+            });
+            if (nextOpenError) throw nextOpenError;
+          } catch {
+            hadFailure = true;
+          }
+        }
         lastSaved = { kind: entry.kind, counted_qty: entry.qty };
         savedKeys.push(makeKey(entry.itemId, entry.variantKey));
       } catch (err) {

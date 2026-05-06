@@ -14,7 +14,7 @@ const EXTRA_HOMES_IDS = ['029bf13f-0fff-47f3-bc1b-32e1f1c6e00c', 'a7addcec-bcf5-
 const STOCK_VIEW_ENV = process.env.STOCK_VIEW_NAME ?? '';
 const STOCK_VIEW_NAME = STOCK_VIEW_ENV && STOCK_VIEW_ENV !== 'warehouse_layer_stock'
   ? STOCK_VIEW_ENV
-  : 'warehouse_stock_items';
+  : 'warehouse_live_items';
 const MULTIPLY_QTY_BY_PACKAGE = true;
 const QUICK_TRANSFER_PRODUCT_IDS = [
   'd54abc42-200b-40a7-96e8-3e5980677f32',

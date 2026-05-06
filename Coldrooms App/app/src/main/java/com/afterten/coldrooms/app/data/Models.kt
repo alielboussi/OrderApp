@@ -81,6 +81,19 @@ data class WarehouseStockRow(
 )
 
 @Serializable
+data class WarehouseStockPeriodRow(
+  @SerialName("id") val id: String,
+  @SerialName("warehouse_id") val warehouseId: String,
+  @SerialName("status") val status: String
+)
+
+@Serializable
+data class WarehouseOpeningKeyRow(
+  @SerialName("item_id") val itemId: String,
+  @SerialName("variant_key") val variantKey: String? = null
+)
+
+@Serializable
 data class TransferItemRequest(
   @SerialName("item_id") val itemId: String,
   @SerialName("variant_id") val variantId: String? = null,
@@ -108,4 +121,12 @@ data class DamageItemRequest(
   @SerialName("item_id") val itemId: String,
   @SerialName("variant_id") val variantId: String? = null,
   @SerialName("quantity") val quantity: Double
+)
+
+@Serializable
+data class AndroidAppVersionRow(
+  @SerialName("app_key") val appKey: String,
+  @SerialName("min_version_code") val minVersionCode: Int,
+  @SerialName("min_version_name") val minVersionName: String? = null,
+  @SerialName("force_update") val forceUpdate: Boolean = true
 )

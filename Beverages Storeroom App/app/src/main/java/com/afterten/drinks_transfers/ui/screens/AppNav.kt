@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import android.util.Log
+import com.afterten.drinks_transfers.BuildConfig
 import com.afterten.drinks_transfers.data.LoginUser
 import com.afterten.drinks_transfers.data.Repository
 import com.afterten.drinks_transfers.data.SessionStore
@@ -48,6 +49,8 @@ fun AppNav() {
 
   val tokenState = rememberSaveable { mutableStateOf<String?>(null) }
   val userState = remember { mutableStateOf<LoginUser?>(null) }
+  val forceUpdate = remember { mutableStateOf(false) }
+  val requiredVersionName = remember { mutableStateOf<String?>(null) }
 
   val transferState = remember { TransferState() }
   val homesState = remember { TransferState() }
@@ -66,6 +69,12 @@ fun AppNav() {
   }
 
   LaunchedEffect(Unit) {
+    val versionRow = runCatching { repo.getAndroidAppVersion("beverages_storeroom") }.getOrNull()
+    if (versionRow != null && versionRow.forceUpdate && BuildConfig.VERSION_CODE < versionRow.minVersionCode) {
+      requiredVersionName.value = versionRow.minVersionName
+      forceUpdate.value = true
+      return@LaunchedEffect
+    }
     val stored = sessionStore.readSession()
     if (stored != null) {
       Log.d("AppNav", "Restored session userId=${stored.userId} email=${stored.email} displayName=${stored.displayName}")
@@ -84,6 +93,14 @@ fun AppNav() {
         popUpTo(ROUTE_LOGIN) { inclusive = true }
       }
     }
+  }
+
+  if (forceUpdate.value) {
+    UpdateRequiredScreen(
+      currentVersion = BuildConfig.VERSION_NAME,
+      requiredVersion = requiredVersionName.value
+    )
+    return
   }
 
   NavHost(navController, startDestination = ROUTE_LOGIN) {

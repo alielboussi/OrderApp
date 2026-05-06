@@ -349,6 +349,33 @@ fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
 }
 
 @Composable
+fun UpdateRequiredScreen(currentVersion: String, requiredVersion: String?) {
+  Scaffold { padding ->
+    Column(
+      modifier = Modifier
+        .padding(padding)
+        .padding(24.dp)
+        .fillMaxSize(),
+      verticalArrangement = Arrangement.Center,
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+      Text("Update required", style = MaterialTheme.typography.headlineSmall)
+      Spacer(Modifier.height(12.dp))
+      Text(
+        text = "Please update the app to continue.",
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center
+      )
+      Spacer(Modifier.height(12.dp))
+      Text("Current: $currentVersion", style = MaterialTheme.typography.bodySmall)
+      if (!requiredVersion.isNullOrBlank()) {
+        Text("Required: $requiredVersion", style = MaterialTheme.typography.bodySmall)
+      }
+    }
+  }
+}
+
+@Composable
 fun DashboardScreen(
   user: LoginUser?,
   onTransfers: () -> Unit,

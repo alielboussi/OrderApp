@@ -634,7 +634,7 @@ class StocktakeViewModel(
                     runCatching {
                         val fetched = repo.listWarehouseItems(jwt, warehouseId, null, null)
                         val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
-                            .onFailure { pushDebug("import: warehouse_stock_items failed: ${it.message}") }
+                            .onFailure { pushDebug("import: warehouse_live_items failed: ${it.message}") }
                             .getOrElse { emptyList() }
                         (fetched + direct).distinctBy { it.itemId to (it.variantKey ?: "base") }
                     }.getOrElse { emptyList() }
@@ -988,7 +988,7 @@ class StocktakeViewModel(
                     pushDebug("item sample id=${row.itemId} name=${row.itemName} kind=${row.itemKind} variant=${row.variantKey} hasRecipe=${row.hasRecipe}")
                 }
                 val direct = runCatching { repo.listWarehouseIngredientsDirect(jwt, warehouseId) }
-                    .onFailure { pushDebug("warehouse_stock_items failed: ${it.message}") }
+                    .onFailure { pushDebug("warehouse_live_items failed: ${it.message}") }
                     .getOrElse { emptyList() }
                 val combined = (fetched + direct)
                     .distinctBy { it.itemId to (it.variantKey ?: "base") }

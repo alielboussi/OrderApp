@@ -1240,7 +1240,7 @@ class SupabaseProvider(context: Context) {
         }
         val url = buildString {
             append(supabaseUrl)
-            append("/rest/v1/warehouse_stock_items")
+            append("/rest/v1/warehouse_live_items")
             append("?select=item_id,item_name,variant_key,net_units,item_kind")
             append("&warehouse_id=eq.")
             append(warehouseId)
@@ -1262,7 +1262,7 @@ class SupabaseProvider(context: Context) {
         }
         val code = resp.status.value
         val txt = resp.bodyAsText()
-        if (code !in 200..299) throw IllegalStateException("warehouse_stock_items failed: HTTP $code $txt")
+        if (code !in 200..299) throw IllegalStateException("warehouse_live_items failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), txt)
     }
 
@@ -2097,7 +2097,7 @@ class SupabaseProvider(context: Context) {
     ): List<WarehouseStockItem> {
         val url = buildString {
             append(supabaseUrl)
-            append("/rest/v1/warehouse_stock_items")
+            append("/rest/v1/warehouse_live_items")
             append("?select=item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url")
             append("&warehouse_id=eq.").append(warehouseId)
             append("&item_kind=eq.ingredient")
@@ -2109,7 +2109,7 @@ class SupabaseProvider(context: Context) {
         }
         val code = resp.status.value
         val txt = resp.bodyAsText()
-        if (code !in 200..299) throw IllegalStateException("warehouse_stock_items failed: HTTP $code $txt")
+        if (code !in 200..299) throw IllegalStateException("warehouse_live_items failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), txt)
     }
 
