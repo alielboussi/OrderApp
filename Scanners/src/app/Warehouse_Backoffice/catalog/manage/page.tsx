@@ -371,7 +371,7 @@ export default function CatalogManagePage() {
         purchase_pack_unit: productForm.purchase_pack_unit || productForm.consumption_unit,
         units_per_purchase_pack: toNumber(productForm.units_per_purchase_pack, 1),
         transfer_unit: productForm.consumption_unit,
-        transfer_quantity: toNumber(productForm.units_per_purchase_pack, 1),
+        transfer_quantity: 1,
         consumption_qty_per_base: toNumber(productForm.consumption_qty_per_base, 1),
         qty_decimal_places: 2,
         stocktake_uom: productForm.consumption_unit,
@@ -561,13 +561,15 @@ export default function CatalogManagePage() {
                   onChange={(v) => handleProductChange("item_kind", v)}
                   options={itemKinds}
                 />
-                <Select
-                  label="How its consumed"
-                  hint="Outlet sales and transfers use this unit"
-                  value={productForm.consumption_unit}
-                  onChange={(v) => handleProductChange("consumption_unit", v)}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                />
+                {!productForm.has_variations && (
+                  <Select
+                    label="How its consumed"
+                    hint="Outlet sales and transfers use this unit"
+                    value={productForm.consumption_unit}
+                    onChange={(v) => handleProductChange("consumption_unit", v)}
+                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                  />
+                )}
                 {!disableVariantControlled && (
                   <>
                     {productForm.item_kind !== "finished" && (

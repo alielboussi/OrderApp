@@ -304,8 +304,8 @@ function ProductCreatePage() {
         consumption_unit: form.consumption_unit,
         purchase_pack_unit: form.purchase_pack_unit || form.consumption_unit,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
-        transfer_unit: form.transfer_unit || form.consumption_unit,
-        transfer_quantity: toNumber(form.transfer_quantity, 1),
+        transfer_unit: form.consumption_unit,
+        transfer_quantity: 1,
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
         qty_decimal_places: 2,
         stocktake_uom: form.consumption_unit,
@@ -426,22 +426,6 @@ function ProductCreatePage() {
                   hint="Used to convert purchases into consumption units (e.g., 1 case = 12 bottles)"
                   value={form.units_per_purchase_pack}
                   onChange={(v) => handleChange("units_per_purchase_pack", v)}
-                  step="1"
-                  min="1"
-                />
-                <Select
-                  label="How Its Transfered"
-                  hint="Transfers use this unit"
-                  value={form.transfer_unit}
-                  onChange={(v) => handleChange("transfer_unit", v)}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
-                />
-                <Field
-                  type="number"
-                  label="Units Inside A Product Transfer"
-                  hint="Multiplies transfer quantity (e.g., 1 case = 12 bottles)"
-                  value={form.transfer_quantity}
-                  onChange={(v) => handleChange("transfer_quantity", v)}
                   step="1"
                   min="1"
                 />

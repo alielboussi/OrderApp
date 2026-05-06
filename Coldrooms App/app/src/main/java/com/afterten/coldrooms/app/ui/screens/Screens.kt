@@ -107,6 +107,7 @@ import com.afterten.coldrooms.app.data.Supplier
 import com.afterten.coldrooms.app.data.TransferItemRequest
 import com.afterten.coldrooms.app.data.Warehouse
 import com.afterten.coldrooms.app.data.WarehouseItem
+import com.afterten.coldrooms.app.data.WarehouseStockRow
 import com.afterten.coldrooms.app.ui.theme.BluePrimary
 import com.afterten.coldrooms.app.ui.theme.GraySurface
 import com.afterten.coldrooms.app.ui.theme.GreenPositive
@@ -124,6 +125,29 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
+private const val LOG_TAG = "ColdroomsDebug"
+
+private fun logDebug(screen: String, message: String) {
+  Log.d(LOG_TAG, "[$screen] $message")
+}
+
+private fun logItemsSample(screen: String, label: String, items: List<WarehouseItem>) {
+  val sample = items.take(10).joinToString { item ->
+    val variant = item.variantId ?: "base"
+    "${item.itemId}:$variant:${formatQty(item.onHandUnits())}"
+  }
+  logDebug(screen, "$label count=${items.size} sample=[$sample]")
+}
+
+private fun logStockSample(screen: String, label: String, rows: List<WarehouseStockRow>) {
+  val sample = rows.take(10).joinToString { row ->
+    val variant = row.variantKey ?: "base"
+    val qty = row.netUnits ?: 0.0
+    "${row.itemId}:$variant:${formatQty(qty)}"
+  }
+  logDebug(screen, "$label count=${rows.size} sample=[$sample]")
+}
+
 val WAREHOUSE_IDS = listOf(
   "d4ad6512-6d0b-448f-b407-e74b0eb80edb",
   "89e4a592-1385-4b40-9685-2178f124a9da",
@@ -137,6 +161,67 @@ val WAREHOUSE_IDS = listOf(
   "d829d739-7311-4647-af91-cad33c21280e",
   "9d0a3a83-1fea-45a8-8771-25cc1db9f07e"
 )
+
+private suspend fun listAllowedItemsForWarehouse(
+  repo: Repository,
+  token: String,
+  warehouseId: String
+): List<WarehouseItem> {
+  val allowedItemIds = ALLOWED_PRODUCT_IDS.toList()
+  val allowedVariantRows = repo
+    .listCatalogVariantsByIds(token, ALLOWED_VARIANT_IDS.toList())
+    .filter { ALLOWED_PRODUCT_IDS.contains(it.itemId) }
+  val allowedItemRows = repo.listCatalogItemsByIds(token, allowedItemIds)
+  val itemsById = allowedItemRows.associateBy { it.id }
+  val variantsByItem = allowedVariantRows.groupBy { it.itemId }
+  val stockRows = repo.listWarehouseStockItems(token, warehouseId, allowedItemIds)
+  val stockByKey = stockRows.associateBy { stockKey(it.itemId, it.variantKey) }
+
+  val merged = mutableListOf<WarehouseItem>()
+  allowedItemIds.forEach { itemId ->
+    val item = itemsById[itemId] ?: return@forEach
+    val baseStock = stockByKey[stockKey(item.id, null)]
+    merged.add(
+      WarehouseItem(
+        itemId = item.id,
+        variantId = null,
+        itemName = item.name,
+        variantName = null,
+        sku = item.sku,
+        onHand = baseStock?.netUnits ?: 0.0,
+        imageUrl = item.imageUrl,
+        consumptionUom = item.consumptionUom,
+        purchasePackUnit = item.purchasePackUnit,
+        transferUnit = item.transferUnit,
+        transferQuantity = item.transferQuantity
+      )
+    )
+
+    val variants = variantsByItem[item.id].orEmpty()
+    variants.forEach { variant ->
+      val stock = stockByKey[stockKey(item.id, variant.id)]
+      merged.add(
+        WarehouseItem(
+          itemId = item.id,
+          variantId = variant.id,
+          itemName = item.name,
+          variantName = variant.name,
+          sku = variant.sku,
+          onHand = stock?.netUnits ?: 0.0,
+          imageUrl = variant.imageUrl ?: item.imageUrl,
+          consumptionUom = variant.consumptionUom ?: item.consumptionUom,
+          purchasePackUnit = item.purchasePackUnit,
+          transferUnit = item.transferUnit,
+          transferQuantity = item.transferQuantity
+        )
+      )
+    }
+  }
+
+  logStockSample("ColdroomItems", "warehouse stock", stockRows)
+  logItemsSample("ColdroomItems", "allowed catalog", merged)
+  return merged
+}
 
 val PURCHASE_SUPPLIER_IDS = setOf(
   "52d80bde-82e5-4c0c-b65f-38e21f4162fa",
@@ -152,16 +237,30 @@ val TRANSFER_TO_ONLY_WAREHOUSE_IDS = setOf(
 
 val ALLOWED_PRODUCT_IDS = setOf(
   "4b340326-5f47-492f-924b-4771e434ea60",
-  "c446a48f-7193-44c8-a828-d6888543de6f",
   "23c47055-cd8f-430b-83a4-08b97eef1c9d",
-  "88bcd552-5560-403a-bd79-f43e374a0755"
+  "88bcd552-5560-403a-bd79-f43e374a0755",
+  "db361d3b-6e00-435b-b242-d94306b3ba35",
+  "84119987-fd59-496e-9140-001860eb10fa",
+  "c446a48f-7193-44c8-a828-d6888543de6f"
 )
 
 val ALLOWED_VARIANT_IDS = setOf(
+  "3b86b0c2-1621-4c69-bdd8-0cb2cd5e30ac",
+  "798b89bf-df72-4604-8af0-73b368dc4075",
   "c4da1fe0-8b1f-4e35-8d48-98321e0734a7",
   "1d7b2532-5ac4-45c4-993e-30c57099ffbc",
+  "84a62432-988c-4727-b4e0-40e5862e2a34",
   "4313479e-0f97-4197-a638-bee916bf4a07",
+  "741ff69e-78fe-475a-a067-c16d55c49ca4",
   "79f68b7a-b82b-4432-a2b2-00f7ef1b1651",
+  "99de4912-8811-4322-a930-2b7769ec0da8",
+  "baf373b5-bb2b-4fdf-ac4c-66d707826073",
+  "db34ac2f-0ed9-43b9-90d6-a02e287a139c",
+  "d550d20b-78f8-434f-a079-b7613cc00512",
+  "234b67ec-aa6b-4d59-a3b3-19beecb00d8c",
+  "5729f377-6d00-438c-b98c-70708c029567",
+  "313da1a5-60c7-4375-adf1-5d6c000d2c69",
+  "3747d538-c356-45a2-ad36-1bf11b00dd33",
   "ca6c3236-05e9-42ad-a771-1c03a25dd5f1",
   "296ff0f5-e5bc-4778-97b9-ce5e936ff8b3"
 )
@@ -263,6 +362,9 @@ data class TransferSummaryGroup(
 
 @Composable
 fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
+  LaunchedEffect(Unit) {
+    logDebug("Login", "screen open")
+  }
   val emailState = rememberSaveable { mutableStateOf("") }
   val pinState = rememberSaveable { mutableStateOf("") }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -342,6 +444,9 @@ fun DashboardScreen(
   onDamages: () -> Unit,
   onLogout: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("Dashboard", "screen open user=${user?.id ?: ""}")
+  }
   Scaffold(topBar = {
     TopAppBar(
       title = {
@@ -368,6 +473,12 @@ fun DashboardScreen(
       Text(
         text = "Welcome ${user?.displayName ?: user?.email ?: ""}",
         style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center
+      )
+      Text(
+        text = "V1.1",
+        style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.fillMaxWidth(),
         textAlign = TextAlign.Center
       )
@@ -468,6 +579,11 @@ fun TransferItemsScreen(
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
   val scanOpen = rememberSaveable { mutableStateOf(false) }
+  val refreshTick = remember { mutableStateOf(0) }
+
+  LaunchedEffect(Unit) {
+    logDebug("TransferItems", "screen open")
+  }
 
   LaunchedEffect(token) {
     if (token == null) return@LaunchedEffect
@@ -477,12 +593,20 @@ fun TransferItemsScreen(
       val toWarehouses = repo
         .listWarehousesByIds(token, (warehouseIds + TRANSFER_TO_ONLY_WAREHOUSE_IDS).distinct())
         .sortedBy { it.name }
+      logDebug(
+        "TransferItems",
+        "warehouses loaded from=${fromWarehouses.size} to=${toWarehouses.size}"
+      )
       fromWarehousesState.value = fromWarehouses
       toWarehousesState.value = toWarehouses
       val storedFrom = sessionStore.getLastTransferFromWarehouseId()
       val storedTo = sessionStore.getLastTransferToWarehouseId()
       if (state.fromWarehouseId == null) state.fromWarehouseId = storedFrom
       if (state.toWarehouseId == null) state.toWarehouseId = storedTo
+      logDebug(
+        "TransferItems",
+        "stored from=${storedFrom ?: ""} to=${storedTo ?: ""}"
+      )
       fromSelection.value = fromWarehouses.firstOrNull { it.id == state.fromWarehouseId }
       toSelection.value = toWarehouses.firstOrNull { it.id == state.toWarehouseId }
       if (state.fromWarehouseId != null && fromSelection.value == null) {
@@ -491,8 +615,8 @@ fun TransferItemsScreen(
       if (state.toWarehouseId != null && toSelection.value == null) {
         state.toWarehouseId = null
       }
-      fromDialogOpen.value = state.fromWarehouseId == null
-      toDialogOpen.value = state.toWarehouseId == null && !fromDialogOpen.value
+      fromDialogOpen.value = true
+      toDialogOpen.value = false
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load warehouse data"
@@ -500,12 +624,14 @@ fun TransferItemsScreen(
     loadingState.value = false
   }
 
-  LaunchedEffect(token, state.fromWarehouseId) {
+  LaunchedEffect(token, state.fromWarehouseId, refreshTick.value) {
     if (token == null || state.fromWarehouseId == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
-      val items = repo.listWarehouseItems(token, state.fromWarehouseId!!)
-        .filter { it.isColdroomsAllowed() }
+      val rawItems = listAllowedItemsForWarehouse(repo, token, state.fromWarehouseId!!)
+      val items = rawItems.filter { it.isColdroomsAllowed() }
+      logItemsSample("TransferItems", "raw items", rawItems)
+      logItemsSample("TransferItems", "allowed items", items)
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
@@ -532,6 +658,11 @@ fun TransferItemsScreen(
       navigationIcon = {
         IconButton(onClick = onBack) {
           Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      },
+      actions = {
+        TextButton(onClick = { refreshTick.value += 1 }) {
+          Text("Refresh now")
         }
       }
     )
@@ -667,7 +798,13 @@ fun TransferItemsScreen(
         VariantGrid(
           items = variantMatches.sortedBy { variantSortKey(it) },
           modifier = Modifier.weight(1f),
-          onItemClick = { singleItemDialog.value = it }
+          onItemClick = {
+            if (it.onHandUnits() <= 0.0) {
+              errorState.value = "No stock available"
+            } else {
+              singleItemDialog.value = it
+            }
+          }
         )
       } else {
         val groupedItems = groupItems(baseCandidates)
@@ -680,7 +817,12 @@ fun TransferItemsScreen(
               state.selectedItemName = group.itemName
               onShowVariants()
             } else {
-              singleItemDialog.value = group.variants.firstOrNull()
+              val item = group.variants.firstOrNull()
+              if (item != null && item.onHandUnits() <= 0.0) {
+                errorState.value = "No stock available"
+              } else {
+                singleItemDialog.value = item
+              }
             }
           }
         )
@@ -729,10 +871,14 @@ fun TransferVariantsScreen(
   state: TransferState,
   onBack: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("TransferVariants", "screen open")
+  }
   val selectedId = state.selectedItemId
   val title = state.selectedItemName ?: "Variants"
   val queryState = rememberSaveable { mutableStateOf("") }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
+  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val variants = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
@@ -744,6 +890,13 @@ fun TransferVariantsScreen(
   }.sortedBy { variantSortKey(it) }
 
   val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
+
+  LaunchedEffect(selectedId, state.availableItems.size) {
+    logDebug(
+      "TransferVariants",
+      "selectedId=${selectedId ?: ""} available=${state.availableItems.size}"
+    )
+  }
 
   if (scanOpen.value) {
     BarcodeScannerScreen(
@@ -785,13 +938,23 @@ fun TransferVariantsScreen(
         }
       )
 
+      if (errorState.value != null) {
+        Text(errorState.value ?: "", color = RedNegative)
+      }
+
       if (variants.isEmpty()) {
         Text("No variants available.")
       } else {
         VariantGrid(
           items = filtered,
           modifier = Modifier.weight(1f),
-          onItemClick = { dialogItem.value = it }
+          onItemClick = {
+            if (it.onHandUnits() <= 0.0) {
+              errorState.value = "No stock available"
+            } else {
+              dialogItem.value = it
+            }
+          }
         )
       }
     }
@@ -836,12 +999,18 @@ fun DamageItemsScreen(
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
+  val refreshTick = remember { mutableStateOf(0) }
+
+  LaunchedEffect(Unit) {
+    logDebug("DamageItems", "screen open")
+  }
 
   LaunchedEffect(token) {
     if (token == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
       val warehouses = repo.listWarehousesByIds(token, warehouseIds).sortedBy { it.name }
+      logDebug("DamageItems", "warehouses loaded count=${warehouses.size}")
       warehousesState.value = warehouses
       if (state.warehouseId == null) {
         state.warehouseId = sessionStore.getLastDamageWarehouseId()
@@ -858,12 +1027,14 @@ fun DamageItemsScreen(
     loadingState.value = false
   }
 
-  LaunchedEffect(token, state.warehouseId) {
+  LaunchedEffect(token, state.warehouseId, refreshTick.value) {
     if (token == null || state.warehouseId == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
-      val items = repo.listWarehouseItems(token, state.warehouseId!!)
-        .filter { it.isColdroomsAllowed() }
+      val rawItems = listAllowedItemsForWarehouse(repo, token, state.warehouseId!!)
+      val items = rawItems.filter { it.isColdroomsAllowed() }
+      logItemsSample("DamageItems", "raw items", rawItems)
+      logItemsSample("DamageItems", "allowed items", items)
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
@@ -890,6 +1061,11 @@ fun DamageItemsScreen(
       navigationIcon = {
         IconButton(onClick = onBack) {
           Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      },
+      actions = {
+        TextButton(onClick = { refreshTick.value += 1 }) {
+          Text("Refresh now")
         }
       }
     )
@@ -990,7 +1166,13 @@ fun DamageItemsScreen(
         VariantGrid(
           items = variantMatches.sortedBy { variantSortKey(it) },
           modifier = Modifier.weight(1f),
-          onItemClick = { singleItemDialog.value = it }
+          onItemClick = {
+            if (it.onHandUnits() <= 0.0) {
+              errorState.value = "No stock available"
+            } else {
+              singleItemDialog.value = it
+            }
+          }
         )
       } else {
         val groupedItems = groupItems(baseCandidates)
@@ -1003,7 +1185,12 @@ fun DamageItemsScreen(
               state.selectedItemName = group.itemName
               onShowVariants()
             } else {
-              singleItemDialog.value = group.variants.firstOrNull()
+              val item = group.variants.firstOrNull()
+              if (item != null && item.onHandUnits() <= 0.0) {
+                errorState.value = "No stock available"
+              } else {
+                singleItemDialog.value = item
+              }
             }
           }
         )
@@ -1041,13 +1228,21 @@ fun DamageItemsScreen(
 
 @Composable
 fun DamageVariantsScreen(
+  repo: Repository,
+  token: String?,
   state: DamageState,
   onBack: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("DamageVariants", "screen open")
+  }
   val selectedId = state.selectedItemId
   val title = state.selectedItemName ?: "Variants"
   val queryState = rememberSaveable { mutableStateOf("") }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
+  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
+  val loadingState = rememberSaveable { mutableStateOf(false) }
+  val refreshTick = remember { mutableStateOf(0) }
   val variants = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
@@ -1059,6 +1254,29 @@ fun DamageVariantsScreen(
   }.sortedBy { variantSortKey(it) }
 
   val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
+
+  LaunchedEffect(selectedId, state.availableItems.size) {
+    logDebug(
+      "DamageVariants",
+      "selectedId=${selectedId ?: ""} available=${state.availableItems.size}"
+    )
+  }
+
+  LaunchedEffect(token, state.warehouseId, refreshTick.value) {
+    if (token == null || state.warehouseId == null) return@LaunchedEffect
+    loadingState.value = true
+    runCatching {
+      val rawItems = listAllowedItemsForWarehouse(repo, token, state.warehouseId!!)
+      val items = rawItems.filter { it.isColdroomsAllowed() }
+      logItemsSample("DamageVariants", "raw items", rawItems)
+      logItemsSample("DamageVariants", "allowed items", items)
+      state.availableItems = items
+    }.onFailure {
+      if (it is CancellationException) return@onFailure
+      errorState.value = it.message ?: "Failed to load items"
+    }
+    loadingState.value = false
+  }
 
   if (scanOpen.value) {
     BarcodeScannerScreen(
@@ -1077,6 +1295,11 @@ fun DamageVariantsScreen(
       navigationIcon = {
         IconButton(onClick = onBack) {
           Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      },
+      actions = {
+        TextButton(onClick = { refreshTick.value += 1 }) {
+          Text("Refresh now")
         }
       }
     )
@@ -1100,13 +1323,27 @@ fun DamageVariantsScreen(
         }
       )
 
+      if (errorState.value != null) {
+        Text(errorState.value ?: "", color = RedNegative)
+      }
+
+      if (loadingState.value) {
+        Text("Loading items...")
+      }
+
       if (variants.isEmpty()) {
         Text("No variants available.")
       } else {
         VariantGrid(
           items = filtered,
           modifier = Modifier.weight(1f),
-          onItemClick = { dialogItem.value = it }
+          onItemClick = {
+            if (it.onHandUnits() <= 0.0) {
+              errorState.value = "No stock available"
+            } else {
+              dialogItem.value = it
+            }
+          }
         )
       }
     }
@@ -1150,6 +1387,10 @@ fun PurchaseSetupScreen(
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
 
+  LaunchedEffect(Unit) {
+    logDebug("PurchaseSetup", "screen open")
+  }
+
   val applyWarehouse: (Warehouse) -> Unit = { warehouse ->
     selectedWarehouse.value = warehouse
     state.warehouseId = warehouse.id
@@ -1171,6 +1412,7 @@ fun PurchaseSetupScreen(
     loadingState.value = true
     runCatching {
       val warehouses = repo.listWarehousesByIds(token, warehouseIds).sortedBy { it.name }
+      logDebug("PurchaseSetup", "warehouses loaded count=${warehouses.size}")
       warehousesState.value = warehouses
       val suppliers = repo.listSuppliers(token)
       val filteredSuppliers = if (PURCHASE_SUPPLIER_IDS.isEmpty()) {
@@ -1178,6 +1420,10 @@ fun PurchaseSetupScreen(
       } else {
         suppliers.filter { PURCHASE_SUPPLIER_IDS.contains(it.id) }
       }
+      logDebug(
+        "PurchaseSetup",
+        "suppliers loaded all=${suppliers.size} allowed=${filteredSuppliers.size}"
+      )
       suppliersState.value = filteredSuppliers
       if (state.warehouseId == null) {
         state.warehouseId = sessionStore.getLastPurchaseWarehouseId()
@@ -1193,8 +1439,8 @@ fun PurchaseSetupScreen(
       if (state.supplierId != null && selectedSupplier.value == null) {
         state.supplierId = null
       }
-      warehouseDialogOpen.value = state.warehouseId == null
-      supplierDialogOpen.value = state.supplierId == null && !warehouseDialogOpen.value
+      warehouseDialogOpen.value = true
+      supplierDialogOpen.value = false
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load purchase setup"
@@ -1341,6 +1587,11 @@ fun PurchaseItemsScreen(
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
   val singleItemDialog = remember { mutableStateOf<WarehouseItem?>(null) }
+  val refreshTick = remember { mutableStateOf(0) }
+
+  LaunchedEffect(Unit) {
+    logDebug("PurchaseItems", "screen open")
+  }
 
   if (scanOpen.value) {
     BarcodeScannerScreen(
@@ -1353,12 +1604,14 @@ fun PurchaseItemsScreen(
     return
   }
 
-  LaunchedEffect(token, state.warehouseId) {
+  LaunchedEffect(token, state.warehouseId, refreshTick.value) {
     if (token == null || state.warehouseId == null) return@LaunchedEffect
     loadingState.value = true
     runCatching {
-      val items = repo.listWarehouseItems(token, state.warehouseId!!)
-        .filter { it.isColdroomsAllowed() }
+      val rawItems = listAllowedItemsForWarehouse(repo, token, state.warehouseId!!)
+      val items = rawItems.filter { it.isColdroomsAllowed() }
+      logItemsSample("PurchaseItems", "raw items", rawItems)
+      logItemsSample("PurchaseItems", "allowed items", items)
       itemsState.value = items
       state.availableItems = items
     }.onFailure {
@@ -1374,6 +1627,11 @@ fun PurchaseItemsScreen(
       navigationIcon = {
         IconButton(onClick = onBack) {
           Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      },
+      actions = {
+        TextButton(onClick = { refreshTick.value += 1 }) {
+          Text("Refresh now")
         }
       }
     )
@@ -1488,13 +1746,21 @@ fun PurchaseItemsScreen(
 
 @Composable
 fun PurchaseVariantsScreen(
+  repo: Repository,
+  token: String?,
   state: PurchaseState,
   onBack: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("PurchaseVariants", "screen open")
+  }
   val selectedId = state.selectedItemId
   val title = state.selectedItemName ?: "Variants"
   val queryState = rememberSaveable { mutableStateOf("") }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
+  val errorState = rememberSaveable { mutableStateOf<String?>(null) }
+  val loadingState = rememberSaveable { mutableStateOf(false) }
+  val refreshTick = remember { mutableStateOf(0) }
   val variants = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
@@ -1506,6 +1772,29 @@ fun PurchaseVariantsScreen(
   }.sortedBy { variantSortKey(it) }
 
   val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
+
+  LaunchedEffect(selectedId, state.availableItems.size) {
+    logDebug(
+      "PurchaseVariants",
+      "selectedId=${selectedId ?: ""} available=${state.availableItems.size}"
+    )
+  }
+
+  LaunchedEffect(token, state.warehouseId, refreshTick.value) {
+    if (token == null || state.warehouseId == null) return@LaunchedEffect
+    loadingState.value = true
+    runCatching {
+      val rawItems = listAllowedItemsForWarehouse(repo, token, state.warehouseId!!)
+      val items = rawItems.filter { it.isColdroomsAllowed() }
+      logItemsSample("PurchaseVariants", "raw items", rawItems)
+      logItemsSample("PurchaseVariants", "allowed items", items)
+      state.availableItems = items
+    }.onFailure {
+      if (it is CancellationException) return@onFailure
+      errorState.value = it.message ?: "Failed to load items"
+    }
+    loadingState.value = false
+  }
 
   if (scanOpen.value) {
     BarcodeScannerScreen(
@@ -1524,6 +1813,11 @@ fun PurchaseVariantsScreen(
       navigationIcon = {
         IconButton(onClick = onBack) {
           Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+      },
+      actions = {
+        TextButton(onClick = { refreshTick.value += 1 }) {
+          Text("Refresh now")
         }
       }
     )
@@ -1546,6 +1840,14 @@ fun PurchaseVariantsScreen(
           }
         }
       )
+
+      if (errorState.value != null) {
+        Text(errorState.value ?: "", color = RedNegative)
+      }
+
+      if (loadingState.value) {
+        Text("Loading items...")
+      }
 
       if (variants.isEmpty()) {
         Text("No variants available.")
@@ -1600,6 +1902,10 @@ fun TransferSummaryScreen(
   val scope = rememberCoroutineScope()
   val dateTimeText = remember { formatDateTimeLocal() }
   val borderWidth = rememberBorderDp()
+
+  LaunchedEffect(Unit) {
+    logDebug("TransferSummary", "screen open items=${state.items.size}")
+  }
 
   LaunchedEffect(token, user?.id) {
     val userId = user?.id
@@ -1806,6 +2112,17 @@ fun TransferSummaryScreen(
                   repo.uploadTransferPdf(token, pdfName, pdfBytes)
                   state.pdfFileName = pdfName
                   state.pdfUploaded = true
+                }
+                val latest = repo.listWarehouseItems(token, state.fromWarehouseId!!)
+                val latestByKey = latest.associateBy { it.stockKey() }
+                val insufficient = state.items.firstOrNull { line ->
+                  val current = latestByKey[stockKey(line.item.itemId, line.item.variantId)]?.onHandUnits() ?: 0.0
+                  line.quantity > current
+                }
+                if (insufficient != null) {
+                  val name = insufficient.item.variantName ?: insufficient.item.itemName
+                  errorState.value = "Not enough stock for $name"
+                  return@runCatching
                 }
                 repo.transferUnits(
                   token,
@@ -2958,6 +3275,34 @@ private fun variantSortKey(item: WarehouseItem): String {
   return label.lowercase()
 }
 
+private fun stockKey(itemId: String, variantId: String?): String {
+  val variant = (variantId ?: "base").lowercase()
+  return "$itemId::$variant"
+}
+
+private fun WarehouseItem.stockKey(): String = stockKey(itemId, variantId)
+
+private fun WarehouseItem.onHandUnits(): Double = onHand ?: 0.0
+
+private fun formatQty(value: Double): String {
+  if (!value.isFinite()) return "0"
+  val rounded = kotlin.math.round(value * 100) / 100
+  return if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
+}
+
+@Composable
+private fun LiveQtyBadge(item: WarehouseItem) {
+  val qtyText = formatQty(item.onHandUnits())
+  val uom = formatUomLabel(item.purchasePackUnit ?: "each")
+  Text(
+    text = "($qtyText $uom)",
+    style = MaterialTheme.typography.labelMedium,
+    color = Color.DarkGray,
+    modifier = Modifier.fillMaxWidth(),
+    textAlign = TextAlign.End
+  )
+}
+
 private fun baseImageUrlForGroup(group: ItemGroup): String? {
   return group.variants
     .firstOrNull { (it.variantId ?: "base").lowercase() == "base" }
@@ -2991,26 +3336,30 @@ private fun QtyEntryDialog(
 ) {
   val qtyState = remember { mutableStateOf("") }
   val validationState = remember { mutableStateOf<String?>(null) }
+  val availableQty = item.onHandUnits()
   AlertDialog(
     onDismissRequest = onDismiss,
     title = {
-      Text(
-        text = item.variantName ?: item.itemName,
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+          text = item.variantName ?: item.itemName,
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        LiveQtyBadge(item)
+      }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          "How its consumed",
+          "How its transferred",
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,
           textAlign = TextAlign.Center
         )
         Text(
-          formatUomLabel(item.consumptionUom ?: "each"),
+          formatUomLabel(item.transferUnit ?: item.purchasePackUnit ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,
@@ -3038,9 +3387,17 @@ private fun QtyEntryDialog(
           validationState.value = "Enter a quantity greater than 0"
           return@TextButton
         }
+        val requested = qty.toDouble()
+        if (availableQty <= 0.0) {
+          validationState.value = "No stock available"
+          return@TextButton
+        }
+        if (requested > availableQty) {
+          validationState.value = "Not enough stock available"
+          return@TextButton
+        }
         validationState.value = null
-        val multiplier = item.transferQuantity ?: 1.0
-        onSave(qty.toDouble() * multiplier)
+        onSave(requested)
       }) {
         Text("OK")
       }
@@ -3061,15 +3418,19 @@ private fun DamageQtyDialog(
 ) {
   val qtyState = remember { mutableStateOf("") }
   val validationState = remember { mutableStateOf<String?>(null) }
+  val availableQty = item.onHandUnits()
 
   AlertDialog(
     onDismissRequest = onDismiss,
     title = {
-      Text(
-        text = item.variantName ?: item.itemName,
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+          text = item.variantName ?: item.itemName,
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        LiveQtyBadge(item)
+      }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3109,9 +3470,17 @@ private fun DamageQtyDialog(
           validationState.value = "Enter a quantity greater than 0"
           return@TextButton
         }
+        val requested = qty.toDouble()
+        if (availableQty <= 0.0) {
+          validationState.value = "No stock available"
+          return@TextButton
+        }
+        if (requested > availableQty) {
+          validationState.value = "Not enough stock available"
+          return@TextButton
+        }
         validationState.value = null
-        val multiplier = item.transferQuantity ?: 1.0
-        onSave(qty.toDouble() * multiplier)
+        onSave(requested)
       }) {
         Text("OK")
       }
@@ -3139,14 +3508,24 @@ private fun PurchaseQtyDialog(
   AlertDialog(
     onDismissRequest = onDismiss,
     title = {
-      Text(
-        text = item.variantName ?: item.itemName,
-        modifier = Modifier.fillMaxWidth(),
-        textAlign = TextAlign.Center
-      )
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+          text = item.variantName ?: item.itemName,
+          modifier = Modifier.fillMaxWidth(),
+          textAlign = TextAlign.Center
+        )
+        LiveQtyBadge(item)
+      }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          "How its purchased",
+          modifier = Modifier.fillMaxWidth(),
+          style = MaterialTheme.typography.titleMedium,
+          color = RedNegative,
+          textAlign = TextAlign.Center
+        )
         Text(
           formatUomLabel(item.purchasePackUnit ?: "each"),
           modifier = Modifier.fillMaxWidth(),
@@ -3177,8 +3556,7 @@ private fun PurchaseQtyDialog(
           return@TextButton
         }
         validationState.value = null
-        val multiplier = item.transferQuantity ?: 1.0
-        onSave(qty.toDouble() * multiplier)
+        onSave(qty.toDouble())
       }) {
         Text("OK")
       }

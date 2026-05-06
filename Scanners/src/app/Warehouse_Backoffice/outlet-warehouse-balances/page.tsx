@@ -13,6 +13,8 @@ type OutletOption = {
 };
 
 type StockItem = {
+  warehouse_id: string;
+  warehouse_name: string | null;
   item_id: string;
   item_name: string | null;
   variant_key: string | null;
@@ -177,6 +179,8 @@ export default function OutletWarehouseBalancesPage() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
+  const [itemConsumption, setItemConsumption] = useState<Record<string, { uom: string; perBase: number }>>({});
+  const [variantUoms, setVariantUoms] = useState<Record<string, string>>({});
   const [itemPackMass, setItemPackMass] = useState<Record<string, { mass: number | null; uom: string | null }>>({});
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
@@ -521,10 +525,24 @@ export default function OutletWarehouseBalancesPage() {
 
         const searchValue = search.trim() || null;
 
+        const { data: warehouseRows, error: warehouseError } = await supabase
+          .from("warehouses")
+          .select("id,name,parent_warehouse_id")
+          .in("id", warehouseIds);
+
+        if (warehouseError) throw warehouseError;
+
+        const warehouseNameMap = new Map<string, string>();
+        (warehouseRows || []).forEach((row) => {
+          if (!row?.id) return;
+          const label = row.name?.trim() || coldroomLabelMap.get(row.id) || row.id;
+          warehouseNameMap.set(row.id, label);
+        });
+
         let stockQuery = supabase
-          .from("outlet_stock_summary")
-          .select("outlet_id,item_id,item_name,variant_key,on_hand_units")
-          .in("outlet_id", outletIds);
+          .from("warehouse_stock_items")
+          .select("warehouse_id,item_id,item_name,variant_key,net_units,item_kind")
+          .in("warehouse_id", warehouseIds);
 
         if (searchValue) {
           stockQuery = stockQuery.ilike("item_name", `%${searchValue}%`);
@@ -534,30 +552,22 @@ export default function OutletWarehouseBalancesPage() {
         if (stockError) throw stockError;
 
         const rows = ((stockRows as Array<{
-          outlet_id: string;
+          warehouse_id: string;
           item_id: string;
           item_name: string | null;
           variant_key: string | null;
-          on_hand_units: number | null;
+          net_units: number | null;
+          item_kind: string | null;
         }>) || []).map((row) => ({
+          warehouse_id: row.warehouse_id,
+          warehouse_name: warehouseNameMap.get(row.warehouse_id) || coldroomLabelMap.get(row.warehouse_id) || row.warehouse_id,
           item_id: row.item_id,
           item_name: row.item_name,
           variant_key: row.variant_key,
-          net_units: row.on_hand_units,
-          item_kind: null
+          net_units: row.net_units,
+          item_kind: row.item_kind
         }));
         const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
-
-        const { data: itemKindRows, error: itemKindError } = await supabase
-          .from("catalog_items")
-          .select("id,item_kind")
-          .in("id", itemIds);
-
-        if (itemKindError) throw itemKindError;
-        const itemKindMap = new Map<string, string>();
-        (itemKindRows ?? []).forEach((row) => {
-          if (row?.id) itemKindMap.set(row.id, row.item_kind);
-        });
 
         const { data: variantRows, error: variantError } = await supabase
           .from("catalog_variants")
@@ -574,13 +584,13 @@ export default function OutletWarehouseBalancesPage() {
 
         const map = new Map<string, StockItem>();
         rows.forEach((row) => {
-          const kind = itemKindMap.get(row.item_id) ?? "";
+          const kind = row.item_kind ?? "";
           if (!kinds.includes(kind)) return;
           const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
           if (baseOnly && vKey !== "base") return;
           if (vKey === "base" && itemsWithVariants.has(row.item_id)) return;
 
-          const key = `${row.item_id}::${vKey}`;
+          const key = `${row.warehouse_id}::${row.item_id}::${vKey}`;
           const existing = map.get(key);
           const onHandUnits = typeof row.net_units === "number" ? row.net_units : 0;
 
@@ -588,6 +598,8 @@ export default function OutletWarehouseBalancesPage() {
             existing.net_units = (existing.net_units ?? 0) + onHandUnits;
           } else {
             map.set(key, {
+              warehouse_id: row.warehouse_id,
+              warehouse_name: row.warehouse_name,
               item_id: row.item_id,
               item_name: row.item_name,
               variant_key: normalizeVariantKey(row.variant_key),
@@ -597,9 +609,40 @@ export default function OutletWarehouseBalancesPage() {
           }
         });
 
-        const aggregated = Array.from(map.values()).sort((a, b) =>
-          (a.item_name ?? "").localeCompare(b.item_name ?? "")
-        );
+        const aggregated = Array.from(map.values());
+        const coldroomChildRows = aggregated.filter((row) => coldroomChildSet.has(row.warehouse_id));
+        if (coldroomChildRows.length > 0) {
+          const parentName = coldroomLabelMap.get(COLDROOM_PARENT_ID) ?? "Coldrooms (all)";
+          const parentMap = new Map<string, StockItem>();
+          coldroomChildRows.forEach((row) => {
+            const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
+            const key = `${row.item_id}::${vKey}`;
+            const existing = parentMap.get(key);
+            const onHandUnits = typeof row.net_units === "number" ? row.net_units : 0;
+            if (existing) {
+              existing.net_units = (existing.net_units ?? 0) + onHandUnits;
+            } else {
+              parentMap.set(key, {
+                warehouse_id: COLDROOM_PARENT_ID,
+                warehouse_name: parentName,
+                item_id: row.item_id,
+                item_name: row.item_name,
+                variant_key: row.variant_key,
+                item_kind: row.item_kind,
+                net_units: onHandUnits,
+              });
+            }
+          });
+          aggregated.push(...parentMap.values());
+        }
+
+        aggregated.sort((a, b) => {
+          const warehouseCompare = (a.warehouse_name ?? a.warehouse_id).localeCompare(
+            b.warehouse_name ?? b.warehouse_id
+          );
+          if (warehouseCompare !== 0) return warehouseCompare;
+          return (a.item_name ?? "").localeCompare(b.item_name ?? "");
+        });
         setItems(aggregated);
       } catch (err) {
         if (!active) return;
@@ -646,9 +689,14 @@ export default function OutletWarehouseBalancesPage() {
         const [{ data: itemData, error: itemError }, { data: variantData, error: variantError }] = await Promise.all([
           supabase
             .from("catalog_items")
-            .select("id,consumption_unit,consumption_uom,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom")
+            .select(
+              "id,consumption_unit,consumption_uom,consumption_qty_per_base,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom"
+            )
             .in("id", ids),
-          supabase.from("catalog_variants").select("id,item_id,name,active").in("item_id", ids),
+          supabase
+            .from("catalog_variants")
+            .select("id,item_id,name,active,consumption_uom")
+            .in("item_id", ids),
         ]);
 
         if (itemError) throw itemError;
@@ -657,10 +705,18 @@ export default function OutletWarehouseBalancesPage() {
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
+        const consumptionMap: Record<string, { uom: string; perBase: number }> = {};
+        const variantUomMap: Record<string, string> = {};
         const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
         (itemData || []).forEach((row) => {
-          const fallbackUom = row.purchase_pack_unit ?? row.consumption_unit ?? row.consumption_uom ?? "each";
-          if (row.id) uomMap[row.id] = fallbackUom;
+          const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? row.purchase_pack_unit ?? "each";
+          const perBase = typeof row.consumption_qty_per_base === "number" && row.consumption_qty_per_base > 0
+            ? row.consumption_qty_per_base
+            : 1;
+          if (row.id) {
+            uomMap[row.id] = fallbackUom;
+            consumptionMap[row.id] = { uom: fallbackUom, perBase };
+          }
           if (row.id) {
             packMap[row.id] = {
               mass: typeof row.purchase_unit_mass === "number" ? row.purchase_unit_mass : null,
@@ -680,15 +736,24 @@ export default function OutletWarehouseBalancesPage() {
           if (!name || !variant?.id) return;
           map[variant.id] = name;
           map[normalizeVariantKey(variant.id)] = name;
+          const uom = variant.consumption_uom?.trim();
+          if (uom) {
+            variantUomMap[variant.id] = uom;
+            variantUomMap[normalizeVariantKey(variant.id)] = uom;
+          }
         });
 
         setVariantNames(map);
         setItemUoms(uomMap);
+        setItemConsumption(consumptionMap);
+        setVariantUoms(variantUomMap);
         setItemPackMass(packMap);
       } catch {
         if (active) {
           setVariantNames({});
           setItemUoms({});
+          setItemConsumption({});
+          setVariantUoms({});
           setItemPackMass({});
         }
       }
@@ -902,6 +967,7 @@ export default function OutletWarehouseBalancesPage() {
 
           <div className={styles.table}>
             <div className={`${styles.tableRow} ${styles.tableHead} ${showPackWeightTotals ? styles.tableRowWide : ""}`}>
+              <span>Warehouse</span>
               <span>Item</span>
               <span>Variant</span>
               <span>Kind</span>
@@ -911,9 +977,10 @@ export default function OutletWarehouseBalancesPage() {
 
             {items.map((item) => (
               <div
-                key={`${item.item_id}-${item.variant_key ?? "base"}`}
+                key={`${item.warehouse_id}-${item.item_id}-${item.variant_key ?? "base"}`}
                 className={`${styles.tableRow} ${showPackWeightTotals ? styles.tableRowWide : ""}`}
               >
+                <span>{item.warehouse_name || item.warehouse_id}</span>
                 <span>{item.item_name || item.item_id}</span>
                 <span>
                   {(() => {
@@ -928,8 +995,17 @@ export default function OutletWarehouseBalancesPage() {
                 <span className={styles.kindTag}>{item.item_kind || "-"}</span>
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {
-                    const uom = itemUoms[item.item_id];
-                    const formatted = formatQtyWithUom(item.net_units, uom);
+                    const variantKey = normalizeVariantKey(item.variant_key);
+                    const consumption = itemConsumption[item.item_id];
+                    const perBase = consumption?.perBase ?? 1;
+                    const uom = variantUoms[variantKey] || consumption?.uom || itemUoms[item.item_id];
+                    const displayQty =
+                      item.net_units == null
+                        ? null
+                        : perBase > 0
+                          ? item.net_units / perBase
+                          : item.net_units;
+                    const formatted = formatQtyWithUom(displayQty, uom);
                     return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                   })()}
                 </span>
@@ -938,7 +1014,10 @@ export default function OutletWarehouseBalancesPage() {
                     {(() => {
                       const packInfo = itemPackMass[item.item_id];
                       if (!packInfo || packInfo.mass == null || item.net_units == null) return "-";
-                      const total = item.net_units * packInfo.mass;
+                      const consumption = itemConsumption[item.item_id];
+                      const perBase = consumption?.perBase ?? 1;
+                      const baseQty = perBase > 0 ? item.net_units / perBase : item.net_units;
+                      const total = baseQty * packInfo.mass;
                       const formatted = formatQtyWithUom(total, packInfo.uom ?? undefined);
                       return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                     })()}

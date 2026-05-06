@@ -335,7 +335,7 @@ function VariantCreatePage() {
       const payload = {
         ...form,
         units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1, 0),
-        transfer_quantity: toNumber(form.transfer_quantity, 1, 0),
+        transfer_quantity: 1,
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
@@ -344,7 +344,7 @@ function VariantCreatePage() {
         default_warehouse_id: form.storage_home_id || null,
         supplier_sku: null,
         purchase_pack_unit: form.purchase_pack_unit || form.consumption_uom,
-        transfer_unit: form.transfer_unit || form.consumption_uom,
+        transfer_unit: form.consumption_uom,
         stocktake_uom: form.consumption_uom,
         ...(editingId ? { id: editingId } : {}),
       };
@@ -446,22 +446,6 @@ function VariantCreatePage() {
               hint="Used to convert purchases into consumption units (e.g., 1 case = 12 bottles)"
               value={form.units_per_purchase_pack}
               onChange={(v) => handleChange("units_per_purchase_pack", v)}
-              step="1"
-              min="1"
-            />
-            <Select
-              label="How Its Transfered"
-              hint="Transfers use this unit"
-              value={form.transfer_unit}
-              onChange={(v) => handleChange("transfer_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
-            />
-            <Field
-              type="number"
-              label="Units Inside A Product Transfer"
-              hint="Multiplies transfer quantity (e.g., 1 case = 12 bottles)"
-              value={form.transfer_quantity}
-              onChange={(v) => handleChange("transfer_quantity", v)}
               step="1"
               min="1"
             />

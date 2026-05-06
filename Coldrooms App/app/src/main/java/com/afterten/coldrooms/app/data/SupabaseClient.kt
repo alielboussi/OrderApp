@@ -136,6 +136,49 @@ class SupabaseClient {
     return parseJsonResponse(response)
   }
 
+  suspend fun listCatalogItemsByIds(token: String, ids: List<String>): List<CatalogItemRow> {
+    requireConfig()
+    if (ids.isEmpty()) return emptyList()
+    val inClause = ids.joinToString(",") { it }
+    val response = http.get(
+      "$baseUrl/rest/v1/catalog_items?select=id,name,sku,image_url,consumption_uom,purchase_pack_unit,transfer_unit,transfer_quantity&id=in.($inClause)"
+    ) {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+    }
+    return parseJsonResponse(response)
+  }
+
+  suspend fun listCatalogVariantsByIds(token: String, ids: List<String>): List<CatalogVariantRow> {
+    requireConfig()
+    if (ids.isEmpty()) return emptyList()
+    val inClause = ids.joinToString(",") { it }
+    val response = http.get(
+      "$baseUrl/rest/v1/catalog_variants?select=id,item_id,name,sku,image_url,consumption_uom&id=in.($inClause)"
+    ) {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+    }
+    return parseJsonResponse(response)
+  }
+
+  suspend fun listWarehouseStockItems(
+    token: String,
+    warehouseId: String,
+    itemIds: List<String>
+  ): List<WarehouseStockRow> {
+    requireConfig()
+    if (itemIds.isEmpty()) return emptyList()
+    val inClause = itemIds.joinToString(",") { it }
+    val response = http.get(
+      "$baseUrl/rest/v1/warehouse_stock_items?select=item_id,variant_key,net_units&warehouse_id=eq.$warehouseId&item_id=in.($inClause)"
+    ) {
+      header("apikey", anonKey)
+      header("Authorization", "Bearer $token")
+    }
+    return parseJsonResponse(response)
+  }
+
   suspend fun getStocktakeUserDisplayName(token: String, userId: String): String? {
     requireConfig()
     val response = http.get("$baseUrl/rest/v1/stocktake_app_users?select=display_name&id=eq.$userId&limit=1") {

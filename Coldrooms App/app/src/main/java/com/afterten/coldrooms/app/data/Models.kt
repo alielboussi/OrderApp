@@ -52,6 +52,35 @@ data class WarehouseItem(
 )
 
 @Serializable
+data class CatalogItemRow(
+  @SerialName("id") val id: String,
+  @SerialName("name") val name: String,
+  @SerialName("sku") val sku: String? = null,
+  @SerialName("image_url") val imageUrl: String? = null,
+  @SerialName("consumption_uom") val consumptionUom: String? = null,
+  @SerialName("purchase_pack_unit") val purchasePackUnit: String? = null,
+  @SerialName("transfer_unit") val transferUnit: String? = null,
+  @SerialName("transfer_quantity") val transferQuantity: Double? = null
+)
+
+@Serializable
+data class CatalogVariantRow(
+  @SerialName("id") val id: String,
+  @SerialName("item_id") val itemId: String,
+  @SerialName("name") val name: String,
+  @SerialName("sku") val sku: String? = null,
+  @SerialName("image_url") val imageUrl: String? = null,
+  @SerialName("consumption_uom") val consumptionUom: String? = null
+)
+
+@Serializable
+data class WarehouseStockRow(
+  @SerialName("item_id") val itemId: String,
+  @SerialName("variant_key") val variantKey: String? = null,
+  @SerialName("net_units") val netUnits: Double? = null
+)
+
+@Serializable
 data class TransferItemRequest(
   @SerialName("item_id") val itemId: String,
   @SerialName("variant_id") val variantId: String? = null,

@@ -14,6 +14,15 @@ type CatalogItem = {
   sku: string | null;
   item_kind: ItemKind;
   default_warehouse_id: string | null;
+  consumption_unit?: string | null;
+  consumption_uom?: string | null;
+};
+
+type CatalogVariant = {
+  id: string;
+  item_id: string;
+  name: string;
+  consumption_uom?: string | null;
 };
 
 type WarehouseOption = {
@@ -31,29 +40,61 @@ type PendingLine = {
   sourceWarehouseId: string;
 };
 
+type RecipeUomStep = {
+  id: string;
+  from_uom: string;
+  to_uom: string;
+  multiplier: string;
+};
+
+type RecipeUomAvailability = {
+  source_uom: string;
+  target_uom: string;
+  base_qty: number;
+  recipe_qty: number;
+};
+
 const qtyUnits = [
-  "each",
+  "pc",
   "g",
   "kg",
   "mg",
   "ml",
   "l",
+  "cup",
+  "straw",
+  "toilet paper",
+  "case",
+  "crate",
+  "bottle",
+  "Tin Can",
+  "Jar",
+  "Block",
+  "Bucket",
+  "Bag",
+  "Tray",
+  "plastic",
+  "Packet",
+  "Box",
 ] as const;
 
 const RECIPE_UOM_ALIASES: Record<string, string> = {
-  pc: "each",
-  pcs: "each",
-  piece: "each",
-  pieces: "each",
+  each: "pc",
+  pcs: "pc",
+  piece: "pc",
+  pieces: "pc",
 };
 
 const normalizeRecipeUom = (value: string) => {
   const trimmed = value.trim();
   const lower = trimmed.toLowerCase();
-  return RECIPE_UOM_ALIASES[lower] ?? lower;
+  if (RECIPE_UOM_ALIASES[lower]) return RECIPE_UOM_ALIASES[lower];
+  const canonical = qtyUnits.find((unit) => unit.toLowerCase() === lower);
+  return canonical ?? trimmed;
 };
 
-const isAllowedRecipeUom = (value: string) => qtyUnits.includes(value as (typeof qtyUnits)[number]);
+const isAllowedRecipeUom = (value: string) =>
+  qtyUnits.includes(normalizeRecipeUom(value) as (typeof qtyUnits)[number]);
 
 type UomOption = { value: string; label: string };
 
@@ -61,20 +102,50 @@ const formatUnitLabel = (unit: string) => {
   const trimmed = unit.trim();
   if (!trimmed) return "";
   const lower = trimmed.toLowerCase();
-  const mapped =
-    lower === "each" || lower === "pc" || lower === "pcs"
-      ? "Piece(s)"
-      : lower === "g"
-        ? "Gram(s)"
-        : lower === "kg"
-          ? "Kilogram(s)"
-          : lower === "mg"
-            ? "Milligram(s)"
-            : lower === "ml"
-              ? "Millilitre(s)"
-              : lower === "l"
-                ? "Litre(s)"
-                : null;
+    const mapped =
+      lower === "pc" || lower === "pcs" || lower === "each"
+        ? "Pc(s)"
+        : lower === "g"
+          ? "Gram(s)"
+          : lower === "kg"
+            ? "Kilogram(s)"
+            : lower === "mg"
+              ? "Milligram(s)"
+              : lower === "ml"
+                ? "Millilitre(s)"
+                : lower === "l"
+                  ? "Litre(s)"
+                  : lower === "cup"
+                    ? "Cup(s)"
+                    : lower === "straw"
+                      ? "Straw(s)"
+                      : lower === "toilet paper"
+                        ? "Toilet Paper(s)"
+                        : lower === "case"
+                          ? "Case(s)"
+                          : lower === "crate"
+                            ? "Crate(s)"
+                            : lower === "bottle"
+                              ? "Bottle(s)"
+                              : lower === "tin can"
+                                ? "Tin Can(s)"
+                                : lower === "jar"
+                                  ? "Jar(s)"
+                                  : lower === "block"
+                                    ? "Block(s)"
+                                    : lower === "bucket"
+                                      ? "Bucket(s)"
+                                      : lower === "bag"
+                                        ? "Bag(s)"
+                                        : lower === "tray"
+                                          ? "Tray(s)"
+                                          : lower === "plastic"
+                                            ? "Plastic(s)"
+                                            : lower === "packet"
+                                              ? "Packet(s)"
+                                              : lower === "box"
+                                                ? "Box(es)"
+                                                : null;
   if (mapped) return mapped;
   const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
   return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
@@ -82,7 +153,7 @@ const formatUnitLabel = (unit: string) => {
 
 const DEFAULT_UOMS: UomOption[] = qtyUnits.map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
 
-const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "g", sourceWarehouseId: "" };
+const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "pc", sourceWarehouseId: "" };
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -93,6 +164,14 @@ function toErrorMessage(error: unknown): string {
     return "Unknown error";
   }
 }
+
+const createStepId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const formatQty = (value: number) => {
+  if (!Number.isFinite(value)) return "0";
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? `${rounded}` : `${rounded}`;
+};
 
 
 function RecipesPage() {
@@ -120,6 +199,17 @@ function RecipesPage() {
   const [recipeMode, setRecipeMode] = useState<"finished" | "ingredient">("finished");
   const [initialQueryApplied, setInitialQueryApplied] = useState(false);
 
+  const [recipeUomItemId, setRecipeUomItemId] = useState("");
+  const [recipeUomVariantId, setRecipeUomVariantId] = useState("");
+  const [recipeUomSource, setRecipeUomSource] = useState("");
+  const [recipeUomTarget, setRecipeUomTarget] = useState("pc");
+  const [recipeUomSteps, setRecipeUomSteps] = useState<RecipeUomStep[]>([]);
+  const [recipeUomProfileId, setRecipeUomProfileId] = useState<string | null>(null);
+  const [recipeUomSaving, setRecipeUomSaving] = useState(false);
+  const [recipeUomWarehouseId, setRecipeUomWarehouseId] = useState("");
+  const [recipeUomAvailable, setRecipeUomAvailable] = useState<RecipeUomAvailability | null>(null);
+  const [variants, setVariants] = useState<CatalogVariant[]>([]);
+
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -128,26 +218,22 @@ function RecipesPage() {
         setSuccess(null);
         setLoading(true);
 
-        const [fin, ing, raw, uomRes, warehouseRes] = await Promise.all([
+        const [fin, ing, raw, warehouseRes] = await Promise.all([
           supabase
             .from("catalog_items")
-            .select("id,name,sku,item_kind,default_warehouse_id")
+            .select("id,name,sku,item_kind,default_warehouse_id,consumption_unit,consumption_uom")
             .eq("item_kind", "finished")
             .order("name", { ascending: true }),
           supabase
             .from("catalog_items")
-            .select("id,name,sku,item_kind,default_warehouse_id")
+            .select("id,name,sku,item_kind,default_warehouse_id,consumption_unit,consumption_uom")
             .eq("item_kind", "ingredient")
             .order("name", { ascending: true }),
           supabase
             .from("catalog_items")
-            .select("id,name,sku,item_kind,default_warehouse_id")
+            .select("id,name,sku,item_kind,default_warehouse_id,consumption_unit,consumption_uom")
             .eq("item_kind", "raw")
             .order("name", { ascending: true }),
-          supabase
-            .from("uom_conversions")
-            .select("from_uom,to_uom")
-            .eq("active", true),
           supabase
             .from("warehouses")
             .select("id,name,code,parent_warehouse_id,active")
@@ -159,28 +245,13 @@ function RecipesPage() {
         if (fin.error) throw fin.error;
         if (ing.error) throw ing.error;
         if (raw.error) throw raw.error;
-        if (uomRes.error) throw uomRes.error;
         if (warehouseRes.error) throw warehouseRes.error;
 
         setFinishedItems(fin.data || []);
         setIngredientItems(ing.data || []);
         setRawItems(raw.data || []);
         setWarehouses((warehouseRes.data as WarehouseOption[]) || []);
-        const uomSet = new Set<string>(qtyUnits);
-        (uomRes.data || []).forEach((row) => {
-          if (row.from_uom) {
-            const normalized = normalizeRecipeUom(row.from_uom);
-            if (isAllowedRecipeUom(normalized)) uomSet.add(normalized);
-          }
-          if (row.to_uom) {
-            const normalized = normalizeRecipeUom(row.to_uom);
-            if (isAllowedRecipeUom(normalized)) uomSet.add(normalized);
-          }
-        });
-        const nextUoms = Array.from(uomSet)
-          .sort((a, b) => a.localeCompare(b))
-          .map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
-        setUoms(nextUoms.length ? nextUoms : DEFAULT_UOMS);
+        setUoms(DEFAULT_UOMS);
       } catch (error) {
         if (!active) return;
         setError(toErrorMessage(error) || "Failed to load catalog items");
@@ -322,6 +393,10 @@ function RecipesPage() {
 
   const ingredientOptionsForFinished = useMemo(() => ingredientItems, [ingredientItems]);
   const rawOptionsForIngredient = useMemo(() => rawItems, [rawItems]);
+  const allCatalogItems = useMemo(
+    () => [...finishedItems, ...ingredientItems, ...rawItems].sort((a, b) => a.name.localeCompare(b.name)),
+    [finishedItems, ingredientItems, rawItems]
+  );
 
   const catalogById = useMemo(() => {
     const map = new Map<string, CatalogItem>();
@@ -351,8 +426,126 @@ function RecipesPage() {
     return map;
   }, [warehouses]);
 
+  useEffect(() => {
+    let active = true;
+    const loadVariants = async () => {
+      if (!recipeUomItemId) {
+        setVariants([]);
+        setRecipeUomVariantId("");
+        return;
+      }
+      try {
+        const res = await fetch(`/api/catalog/variants?item_id=${encodeURIComponent(recipeUomItemId)}`);
+        if (!res.ok) throw new Error("Failed to load variants");
+        const json = await res.json();
+        if (!active) return;
+        const nextVariants = Array.isArray(json.variants) ? (json.variants as CatalogVariant[]) : [];
+        setVariants(nextVariants);
+      } catch (error) {
+        if (!active) return;
+        console.error(error);
+        setVariants([]);
+      }
+    };
+    loadVariants();
+    return () => {
+      active = false;
+    };
+  }, [recipeUomItemId]);
+
+  useEffect(() => {
+    let active = true;
+    const loadProfile = async () => {
+      if (!recipeUomItemId) {
+        setRecipeUomProfileId(null);
+        setRecipeUomSteps([]);
+        setRecipeUomTarget("pc");
+        setRecipeUomSource("");
+        return;
+      }
+
+      const variant = variants.find((row) => row.id === recipeUomVariantId);
+      const item = catalogById.get(recipeUomItemId);
+      const sourceUom =
+        normalizeRecipeUom(variant?.consumption_uom || item?.consumption_unit || item?.consumption_uom || "pc");
+      setRecipeUomSource(sourceUom);
+
+      try {
+        const params = new URLSearchParams({
+          item_id: recipeUomItemId,
+          variant_key: recipeUomVariantId || "base",
+        });
+        const res = await fetch(`/api/recipe-uom?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to load recipe UOM profile");
+        const json = await res.json();
+        if (!active) return;
+        if (!json.profile) {
+          setRecipeUomProfileId(null);
+          setRecipeUomTarget(sourceUom);
+          setRecipeUomSteps([]);
+          return;
+        }
+        setRecipeUomProfileId(json.profile.id || null);
+        setRecipeUomTarget(normalizeRecipeUom(json.profile.target_uom || sourceUom));
+        const steps = Array.isArray(json.steps) ? json.steps : [];
+        setRecipeUomSteps(
+          steps.map((step: { step_order: number; from_uom: string; to_uom: string; multiplier: number }) => ({
+            id: createStepId(),
+            from_uom: normalizeRecipeUom(step.from_uom || sourceUom),
+            to_uom: normalizeRecipeUom(step.to_uom || sourceUom),
+            multiplier: step.multiplier?.toString() ?? "1",
+          }))
+        );
+      } catch (error) {
+        if (!active) return;
+        console.error(error);
+        setRecipeUomProfileId(null);
+        setRecipeUomSteps([]);
+        setRecipeUomTarget(sourceUom);
+      }
+    };
+
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, [recipeUomItemId, recipeUomVariantId, variants, catalogById]);
+
+  useEffect(() => {
+    let active = true;
+    const loadAvailable = async () => {
+      if (!recipeUomWarehouseId || !recipeUomItemId) {
+        setRecipeUomAvailable(null);
+        return;
+      }
+      try {
+        const res = await fetch("/api/recipe-uom/available", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            warehouse_id: recipeUomWarehouseId,
+            item_id: recipeUomItemId,
+            variant_key: recipeUomVariantId || "base",
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to load recipe UOM availability");
+        const json = await res.json();
+        if (!active) return;
+        setRecipeUomAvailable(json.row || null);
+      } catch (error) {
+        if (!active) return;
+        console.error(error);
+        setRecipeUomAvailable(null);
+      }
+    };
+    loadAvailable();
+    return () => {
+      active = false;
+    };
+  }, [recipeUomWarehouseId, recipeUomItemId, recipeUomVariantId]);
+
   const addLine = (setter: Dispatch<SetStateAction<PendingLine[]>>) => {
-    setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "g", sourceWarehouseId: "" }]);
+    setter((prev) => [...prev, { ingredientId: "", qty: "", uom: "pc", sourceWarehouseId: "" }]);
   };
 
   const removeLine = (index: number, setter: Dispatch<SetStateAction<PendingLine[]>>) => {
@@ -369,6 +562,76 @@ function RecipesPage() {
     setter: Dispatch<SetStateAction<PendingLine[]>>
   ) => {
     setter((prev) => prev.map((line, i) => (i === idx ? { ...line, [field]: value } : line)));
+  };
+
+  const addRecipeUomStep = () => {
+    setRecipeUomSteps((prev) => {
+      const last = prev[prev.length - 1];
+      const from = last?.to_uom || recipeUomSource || "pc";
+      const to = recipeUomTarget || from;
+      return [...prev, { id: createStepId(), from_uom: from, to_uom: to, multiplier: "1" }];
+    });
+  };
+
+  const removeRecipeUomStep = (id: string) => {
+    setRecipeUomSteps((prev) => prev.filter((step) => step.id !== id));
+  };
+
+  const updateRecipeUomStep = (id: string, field: keyof RecipeUomStep, value: string) => {
+    setRecipeUomSteps((prev) =>
+      prev.map((step) => (step.id === id ? { ...step, [field]: value } : step))
+    );
+  };
+
+  const saveRecipeUomProfile = async () => {
+    if (readOnly) {
+      setError("Read-only access: saving is disabled.");
+      setSuccess(null);
+      return;
+    }
+    if (!recipeUomItemId) {
+      setError("Select a product to configure recipe UOMs.");
+      setSuccess(null);
+      return;
+    }
+    setRecipeUomSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const steps = recipeUomSteps
+        .map((step, index) => ({
+          step_order: index + 1,
+          from_uom: normalizeRecipeUom(step.from_uom),
+          to_uom: normalizeRecipeUom(step.to_uom),
+          multiplier: Number(step.multiplier),
+        }))
+        .filter((step) => step.from_uom && step.to_uom && Number.isFinite(step.multiplier) && step.multiplier > 0);
+
+      const payload = {
+        item_id: recipeUomItemId,
+        variant_key: recipeUomVariantId || "base",
+        source_uom: normalizeRecipeUom(recipeUomSource || "pc"),
+        target_uom: normalizeRecipeUom(recipeUomTarget || recipeUomSource || "pc"),
+        steps,
+      };
+
+      const res = await fetch("/api/recipe-uom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Failed to save recipe UOM profile");
+      }
+      const json = await res.json();
+      setRecipeUomProfileId(json.profile?.id ?? null);
+      setSuccess("Recipe UOM profile saved.");
+    } catch (error) {
+      setError(toErrorMessage(error) || "Unable to save recipe UOM profile.");
+    } finally {
+      setRecipeUomSaving(false);
+    }
   };
 
   const validFinishedLines = finishedLines.filter((l) => l.ingredientId && l.qty);
@@ -504,6 +767,207 @@ function RecipesPage() {
           {loading && <span className={styles.pill}>Loading…</span>}
         </div>
       </header>
+
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div>
+            <h2 className={styles.cardTitle}>Recipe UOM Setup</h2>
+            <p className={styles.cardSubtitle}>
+              Define how stock converts into a recipe UOM for each product + variant using a chain (A → B → C).
+            </p>
+          </div>
+          <button className={styles.secondaryButton} type="button" onClick={addRecipeUomStep}>
+            Add step
+          </button>
+        </div>
+
+        <div className={styles.lineRow}>
+          <div className={styles.lineField}>
+            <span className={styles.label}>Product</span>
+            <select
+              className={styles.select}
+              value={recipeUomItemId}
+              aria-label="Recipe UOM product"
+              onChange={(event) => {
+                setRecipeUomItemId(event.target.value);
+                setRecipeUomVariantId("");
+              }}
+            >
+              <option value="">Select product...</option>
+              {allCatalogItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.lineField}>
+            <span className={styles.label}>Variant</span>
+            <select
+              className={styles.select}
+              value={recipeUomVariantId}
+              aria-label="Recipe UOM variant"
+              onChange={(event) => setRecipeUomVariantId(event.target.value)}
+              disabled={!recipeUomItemId}
+            >
+              <option value="">Base product (no variant)</option>
+              {variants.map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  {variant.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.lineField}>
+            <span className={styles.label}>Source UOM</span>
+            <input
+              className={styles.input}
+              value={formatUnitLabel(recipeUomSource || "pc")}
+              aria-label="Recipe UOM source unit"
+              readOnly
+            />
+          </div>
+
+          <div className={styles.lineField}>
+            <span className={styles.label}>Recipe UOM</span>
+            <select
+              className={styles.select}
+              value={recipeUomTarget}
+              aria-label="Recipe UOM target unit"
+              onChange={(event) => setRecipeUomTarget(event.target.value)}
+            >
+              {uoms.map((uom) => (
+                <option key={uom.value} value={uom.value}>
+                  {uom.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.lineField}>
+            <span className={styles.label}>Warehouse (preview)</span>
+            <select
+              className={styles.select}
+              value={recipeUomWarehouseId}
+              aria-label="Recipe UOM warehouse preview"
+              onChange={(event) => setRecipeUomWarehouseId(event.target.value)}
+            >
+              <option value="">Select warehouse...</option>
+              {warehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name ?? warehouse.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className={styles.linesHeader}>
+          <span>Conversion chain (A → B → C)</span>
+        </div>
+
+        <div className={styles.lines}>
+          {recipeUomSteps.length === 0 ? (
+            <p className={styles.warehouseHint}>No conversion steps yet. Add one if your recipe UOM differs.</p>
+          ) : (
+            recipeUomSteps.map((step) => (
+              <div key={step.id} className={styles.lineRow}>
+                <div className={styles.lineField}>
+                  <span className={styles.label}>From</span>
+                  <select
+                    className={styles.select}
+                    value={step.from_uom}
+                    aria-label="Recipe UOM step from"
+                    onChange={(event) => updateRecipeUomStep(step.id, "from_uom", event.target.value)}
+                  >
+                    {uoms.map((uom) => (
+                      <option key={uom.value} value={uom.value}>
+                        {uom.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.lineField}>
+                  <span className={styles.label}>To</span>
+                  <select
+                    className={styles.select}
+                    value={step.to_uom}
+                    aria-label="Recipe UOM step to"
+                    onChange={(event) => updateRecipeUomStep(step.id, "to_uom", event.target.value)}
+                  >
+                    {uoms.map((uom) => (
+                      <option key={uom.value} value={uom.value}>
+                        {uom.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.lineField}>
+                  <span className={styles.label}>Multiplier</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={step.multiplier}
+                    aria-label="Recipe UOM step multiplier"
+                    onChange={(event) => updateRecipeUomStep(step.id, "multiplier", event.target.value)}
+                  />
+                </div>
+                <div className={styles.lineField}>
+                  <span className={styles.label}>Remove</span>
+                  <button
+                    type="button"
+                    className={styles.deleteButton}
+                    onClick={() => removeRecipeUomStep(step.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className={styles.linesHeader}>
+          <span>Available qty (preview)</span>
+          <button
+            className={styles.primaryButton}
+            type="button"
+            onClick={saveRecipeUomProfile}
+            disabled={recipeUomSaving}
+          >
+            {recipeUomSaving ? "Saving..." : "Save UOM Setup"}
+          </button>
+        </div>
+
+        <div className={styles.lineRow}>
+          {recipeUomAvailable ? (
+            <>
+              <div className={styles.lineField}>
+                <span className={styles.label}>Base qty</span>
+                <span>
+                  {formatQty(recipeUomAvailable.base_qty)} {formatUnitLabel(recipeUomAvailable.source_uom)}
+                </span>
+              </div>
+              <div className={styles.lineField}>
+                <span className={styles.label}>Recipe qty</span>
+                <span>
+                  {formatQty(recipeUomAvailable.recipe_qty)} {formatUnitLabel(recipeUomAvailable.target_uom)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <span className={styles.warehouseHint}>
+              {recipeUomProfileId
+                ? "Profile saved. Pick a warehouse to preview available recipe qty."
+                : "Pick a warehouse to preview available recipe qty."}
+            </span>
+          )}
+        </div>
+      </div>
 
       <div className={styles.modeToggle}>
         <button

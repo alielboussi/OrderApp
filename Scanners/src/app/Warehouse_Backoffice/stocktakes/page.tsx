@@ -403,11 +403,28 @@ export default function StocktakesPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const [lastCount, setLastCount] = useState<{ kind: string; counted_qty: number } | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+
+  const toastTimerRef = useRef<number | null>(null);
 
   const autoImportAttempted = useRef<Set<string>>(new Set());
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
+
+  const showToast = (message: string, tone: "success" | "error" = "success") => {
+    setToast({ message, tone });
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+    }, 3200);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   const toggleChildWarehouse = (id: string) => {
     setSelectedChildWarehouseIds((prev) =>
@@ -660,209 +677,45 @@ export default function StocktakesPage() {
           ? selectedChildWarehouseIds
           : COLDROOM_CHILD_IDS
         : [warehouseId];
-    const fallbackWarehouseIds = Array.from(
-      new Set(
-        warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)
-          ? [...targetWarehouseIds, COLDROOM_PARENT_ID]
-          : targetWarehouseIds
+    const rpcResponses = await Promise.all(
+      targetWarehouseIds.map((id) =>
+        supabase.rpc("list_warehouse_items", {
+          p_warehouse_id: id,
+          p_outlet_id: null,
+          p_search: null,
+        })
       )
     );
 
-    const directResponses = await Promise.all(
-      targetWarehouseIds.map((id) =>
-        supabase
-          .from("warehouse_stock_items")
-          .select("item_id,item_name,variant_key,net_units,unit_cost,item_kind,image_url,has_recipe")
-          .eq("warehouse_id", id)
-          .in("item_kind", ["ingredient", "finished"])
-          .order("item_name", { ascending: true })
-      )
-    );
-    directResponses.forEach((resp) => {
+    rpcResponses.forEach((resp) => {
       if (resp.error) throw resp.error;
     });
 
-    const combined = [...directResponses.flatMap((resp) => (resp.data as WarehouseStockItem[]) ?? [])];
-
-    let fallbackDefaultItems: Array<{
-      id: string;
-      name: string | null;
-      cost: number | null;
-      item_kind: string | null;
-      image_url: string | null;
-    }> = [];
-
-    if (products.length) {
-      fallbackDefaultItems = products
-        .filter((item) => {
-          const kind = (item.item_kind ?? "").toLowerCase();
-          return (
-            Boolean(item.id) &&
-            fallbackWarehouseIds.includes(item.default_warehouse_id ?? "") &&
-            ["ingredient", "finished"].includes(kind)
-          );
-        })
-        .map((item) => ({
-          id: item.id,
-          name: item.name,
-          cost: item.cost,
-          item_kind: item.item_kind ?? null,
-          image_url: item.image_url ?? null,
-        }));
-    } else {
-      const { data, error: fallbackDefaultError } = await supabase
-        .from("catalog_items")
-        .select("id,name,cost,item_kind,image_url")
-        .eq("active", true)
-        .in("item_kind", ["ingredient", "finished"])
-        .in("default_warehouse_id", fallbackWarehouseIds);
-      if (fallbackDefaultError) throw fallbackDefaultError;
-      fallbackDefaultItems = data ?? [];
-    }
-
-    const fallbackItemsById = new Map<string, {
-      id: string;
-      name: string | null;
-      cost: number | null;
-      item_kind: string | null;
-      image_url: string | null;
-    }>();
-    (fallbackDefaultItems ?? []).forEach((item) => {
-      if (!item?.id) return;
-      fallbackItemsById.set(item.id, item);
-    });
-
-    fallbackItemsById.forEach((item) => {
-      combined.push({
-        warehouse_id: warehouseId,
-        item_id: item.id,
-        item_name: item.name ?? "Item",
-        variant_key: "base",
-        net_units: 0,
-        unit_cost: typeof item.cost === "number" ? item.cost : 0,
-        item_kind: item.item_kind,
-        image_url: item.image_url ?? null,
-        has_recipe: false,
-      });
-    });
-
-    const { data: storageHomes, error: storageHomesError } = await supabase
-      .from("item_storage_homes")
-      .select("item_id,normalized_variant_key,storage_warehouse_id")
-      .in("storage_warehouse_id", targetWarehouseIds);
-    if (storageHomesError) throw storageHomesError;
-
-    const storageHomePairs = (storageHomes ?? [])
-      .map((row) => ({
-        itemId: row?.item_id,
-        variantKey: normalizeVariantKey(row?.normalized_variant_key)
-      }))
-      .filter((row) => Boolean(row.itemId)) as Array<{ itemId: string; variantKey: string }>;
-
-    const storageItemIds = Array.from(new Set(storageHomePairs.map((row) => row.itemId)));
-
-    if (storageItemIds.length) {
-      const storageItems = products.length
-        ? products
-            .filter((item) => storageItemIds.includes(item.id))
-            .map((item) => ({
-              id: item.id,
-              name: item.name,
-              cost: item.cost,
-              item_kind: item.item_kind ?? null,
-              image_url: item.image_url ?? null,
-            }))
-        : [];
-
-      const storageItemsById = new Map<string, {
-        id: string;
-        name: string | null;
-        cost: number | null;
+    const combined = rpcResponses.flatMap((resp) =>
+      ((resp.data as Array<{
+        warehouse_id: string;
+        item_id: string;
+        item_name: string | null;
+        variant_key: string | null;
+        net_units: number | null;
+        unit_cost: number | null;
         item_kind: string | null;
         image_url: string | null;
-      }>();
-      storageItems.forEach((item) => {
-        if (!item?.id) return;
-        storageItemsById.set(item.id, item);
-      });
-
-      const missingStorageIds = storageItemIds.filter((id) => !storageItemsById.has(id));
-      if (missingStorageIds.length) {
-        const { data: storageFallback, error: storageFallbackError } = await supabase
-          .from("catalog_items")
-          .select("id,name,cost,item_kind,image_url")
-          .eq("active", true)
-          .in("item_kind", ["ingredient", "finished"])
-          .in("id", missingStorageIds);
-        if (storageFallbackError) throw storageFallbackError;
-        (storageFallback ?? []).forEach((item) => {
-          if (!item?.id) return;
-          storageItemsById.set(item.id, item);
-        });
-      }
-
-      storageHomePairs.forEach((pair) => {
-        const item = storageItemsById.get(pair.itemId);
-        if (!item) return;
-        combined.push({
-          warehouse_id: warehouseId,
-          item_id: item.id,
-          item_name: item.name ?? "Item",
-          variant_key: pair.variantKey,
-          net_units: 0,
-          unit_cost: typeof item.cost === "number" ? item.cost : 0,
-          item_kind: item.item_kind,
-          image_url: item.image_url ?? null,
-          has_recipe: false,
-        });
-      });
-    }
-
-    if (warehouseId === COLDROOM_PARENT_ID || COLDROOM_CHILD_IDS.includes(warehouseId)) {
-      const storageItems = products.length
-        ? products
-            .filter(
-              (item) =>
-                item.id &&
-                item.default_warehouse_id === COLDROOM_PARENT_ID &&
-                (item.item_kind ?? "").toLowerCase() === "ingredient"
-            )
-            .map((item) => ({
-              id: item.id,
-              name: item.name,
-              cost: item.cost,
-              item_kind: item.item_kind ?? "ingredient",
-              image_url: item.image_url ?? null,
-            }))
-        : null;
-
-      let coldroomStorageItems = storageItems;
-      if (!coldroomStorageItems) {
-        const { data, error: storageError } = await supabase
-          .from("catalog_items")
-          .select("id,name,cost,item_kind,image_url")
-          .eq("active", true)
-          .eq("item_kind", "ingredient")
-          .eq("default_warehouse_id", COLDROOM_PARENT_ID);
-        if (storageError) throw storageError;
-        coldroomStorageItems = data ?? [];
-      }
-
-      (coldroomStorageItems ?? []).forEach((item) => {
-        if (!item?.id) return;
-        combined.push({
-          warehouse_id: warehouseId,
-          item_id: item.id,
-          item_name: item.name ?? "Item",
-          variant_key: "base",
-          net_units: 0,
-          unit_cost: typeof item.cost === "number" ? item.cost : 0,
-          item_kind: item.item_kind ?? "ingredient",
-          image_url: item.image_url ?? null,
-          has_recipe: false,
-        });
-      });
-    }
+        has_recipe: boolean | null;
+      }>) || [])
+        .filter((row) => ["ingredient", "finished"].includes((row.item_kind ?? "").toLowerCase()))
+        .map((row) => ({
+          warehouse_id: row.warehouse_id,
+          item_id: row.item_id,
+          item_name: row.item_name ?? "Item",
+          variant_key: row.variant_key,
+          net_units: row.net_units ?? 0,
+          unit_cost: row.unit_cost ?? 0,
+          item_kind: row.item_kind,
+          image_url: row.image_url ?? null,
+          has_recipe: row.has_recipe ?? false,
+        }))
+    );
     const deduped = new Map<string, WarehouseStockItem>();
     combined.forEach((row) => {
       const key = makeKey(row.item_id, row.variant_key);
@@ -1520,6 +1373,95 @@ export default function StocktakesPage() {
       setLoading(true);
       setError(null);
 
+      const ensureOpeningCounts = async (periodId: string, warehouseId: string) => {
+        const { data: openingRows, error: openingError } = await supabase
+          .from("warehouse_stock_counts")
+          .select("item_id,variant_key")
+          .eq("period_id", periodId)
+          .eq("kind", "opening");
+        if (openingError) throw openingError;
+
+        const existingKeys = new Set(
+          (openingRows ?? [])
+            .filter((row) => row?.item_id)
+            .map((row) => makeKey(row.item_id, row.variant_key))
+        );
+
+        let sourceItems = allItems;
+        if (!sourceItems.length) {
+          const fetched = await fetchItemsForWarehouse(warehouseId);
+          sourceItems = fetched.allItems;
+        }
+
+        const missing: Array<{ itemId: string; variantKey: string }> = [];
+        const seen = new Set<string>();
+        sourceItems.forEach((row) => {
+          const variantKey = normalizeVariantKey(row.variant_key);
+          const key = makeKey(row.item_id, variantKey);
+          if (seen.has(key) || existingKeys.has(key)) return;
+          seen.add(key);
+          missing.push({ itemId: row.item_id, variantKey });
+        });
+
+        for (const row of missing) {
+          const { error: recordError } = await supabase.rpc("record_stock_count", {
+            p_period_id: periodId,
+            p_item_id: row.itemId,
+            p_qty: 0,
+            p_variant_key: row.variantKey,
+            p_kind: "opening",
+            p_context: { auto_seed: "true", reason: "auto_close_opening_zero" },
+          });
+          if (recordError) throw recordError;
+        }
+      };
+
+      const ensureClosingCounts = async (periodId: string, warehouseId: string) => {
+        const { data: closingRows, error: closingError } = await supabase
+          .from("warehouse_stock_counts")
+          .select("item_id,variant_key")
+          .eq("period_id", periodId)
+          .eq("kind", "closing");
+        if (closingError) throw closingError;
+
+        const existingKeys = new Set(
+          (closingRows ?? [])
+            .filter((row) => row?.item_id)
+            .map((row) => makeKey(row.item_id, row.variant_key))
+        );
+
+        let sourceItems = allItems;
+        if (!sourceItems.length) {
+          const fetched = await fetchItemsForWarehouse(warehouseId);
+          sourceItems = fetched.allItems;
+        }
+
+        const missing: Array<{ itemId: string; variantKey: string }> = [];
+        const seen = new Set<string>();
+        sourceItems.forEach((row) => {
+          const variantKey = normalizeVariantKey(row.variant_key);
+          const key = makeKey(row.item_id, variantKey);
+          if (seen.has(key) || existingKeys.has(key)) return;
+          seen.add(key);
+          missing.push({ itemId: row.item_id, variantKey });
+        });
+
+        for (const row of missing) {
+          const { error: recordError } = await supabase.rpc("record_stock_count", {
+            p_period_id: periodId,
+            p_item_id: row.itemId,
+            p_qty: 0,
+            p_variant_key: row.variantKey,
+            p_kind: "closing",
+            p_context: { auto_seed: "true", reason: "auto_close_zero" },
+          });
+          if (recordError) throw recordError;
+        }
+      };
+
+      await ensureOpeningCounts(openPeriod.id, openPeriod.warehouse_id);
+      await ensureClosingCounts(openPeriod.id, openPeriod.warehouse_id);
+
       const { data: closedData, error: closeError } = await supabase.rpc("close_stock_period", {
         p_period_id: openPeriod.id,
       });
@@ -1533,47 +1475,17 @@ export default function StocktakesPage() {
         p_cutoff: closedAt,
       });
 
-      const { data: closingCounts, error: closingError } = await supabase
-        .from("warehouse_stock_counts")
-        .select("item_id,variant_key,counted_qty")
-        .eq("period_id", closedPeriod.id)
-        .eq("kind", "closing");
-      if (closingError) throw closingError;
+      setOpenPeriod(null);
+      setSelectedPeriod(null);
+      setActivePeriodId(null);
+      setPeriodOpeningCounts([]);
+      setPeriodClosingCounts([]);
+      setOpeningLockedKeys(new Set());
+      setClosingLockedKeys(new Set());
+      setVariance([]);
+      setView("dashboard");
+      showToast("Stocktake period closed.", "success");
 
-      const { data: newPeriodData, error: startError } = await supabase.rpc("start_stock_period", {
-        p_warehouse_id: closedPeriod.warehouse_id,
-        p_note: `Auto-opened from ${closedPeriod.stocktake_number || closedPeriod.id.slice(0, 8)}`,
-      });
-      if (startError) throw startError;
-      const newPeriod = (Array.isArray(newPeriodData) ? newPeriodData[0] : newPeriodData) as StockPeriod | null;
-      if (!newPeriod) throw new Error("start_stock_period returned no period");
-      setOpenPeriod(newPeriod);
-
-      const openedAt = newPeriod.opened_at || new Date().toISOString();
-      await supabase.rpc("set_pos_sync_opening_for_warehouse", {
-        p_warehouse_id: newPeriod.warehouse_id,
-        p_opened: openedAt,
-      });
-
-      let hadSeedFailure = false;
-      for (const row of (closingCounts as StockCountRow[]) ?? []) {
-        const variantKey = normalizeVariantKey(row.variant_key);
-        const { error: seedError } = await supabase.rpc("record_stock_count", {
-          p_period_id: newPeriod.id,
-          p_item_id: row.item_id,
-          p_qty: row.counted_qty,
-          p_variant_key: variantKey,
-          p_kind: "opening",
-          p_context: { auto_seed: "true", from_period: closedPeriod.id },
-        });
-        if (seedError) hadSeedFailure = true;
-      }
-
-      if (hadSeedFailure) {
-        setError("New period opened, but some opening counts failed to copy.");
-      }
-
-      await loadPeriodCounts(openPeriod.id);
       await loadPeriods(closedPeriod.warehouse_id);
     } catch (err) {
       setError(toErrorMessage(err));
@@ -2098,6 +2010,15 @@ export default function StocktakesPage() {
   return (
     <div className={styles.page}>
       <style>{globalStyles}</style>
+      {toast && (
+        <div
+          className={`${styles.toast} ${styles.toastVisible} ${toast.tone === "error" ? styles.toastError : styles.toastSuccess}`}
+          role="status"
+          aria-live="polite"
+        >
+          {toast.message}
+        </div>
+      )}
       <main className={styles.shell}>
         <header className={styles.hero}>
           <div className={styles.grow}>

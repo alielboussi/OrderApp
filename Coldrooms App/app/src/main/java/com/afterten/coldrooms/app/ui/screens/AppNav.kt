@@ -190,6 +190,8 @@ fun AppNav() {
 
     composable(ROUTE_DAMAGES_VARIANTS) {
       DamageVariantsScreen(
+        repo = repo,
+        token = tokenState.value,
         state = damageState,
         onBack = { navController.popBackStack() }
       )
@@ -244,6 +246,8 @@ fun AppNav() {
 
     composable(ROUTE_PURCHASE_VARIANTS) {
       PurchaseVariantsScreen(
+        repo = repo,
+        token = tokenState.value,
         state = purchaseState,
         onBack = { navController.popBackStack() }
       )

@@ -17,6 +17,22 @@ class Repository(private val client: SupabaseClient) {
     return client.listSuppliers(token)
   }
 
+  suspend fun listCatalogItemsByIds(token: String, ids: List<String>): List<CatalogItemRow> {
+    return client.listCatalogItemsByIds(token, ids)
+  }
+
+  suspend fun listCatalogVariantsByIds(token: String, ids: List<String>): List<CatalogVariantRow> {
+    return client.listCatalogVariantsByIds(token, ids)
+  }
+
+  suspend fun listWarehouseStockItems(
+    token: String,
+    warehouseId: String,
+    itemIds: List<String>
+  ): List<WarehouseStockRow> {
+    return client.listWarehouseStockItems(token, warehouseId, itemIds)
+  }
+
   suspend fun getUserDisplayName(token: String, userId: String): String? {
     return client.getStocktakeUserDisplayName(token, userId)
   }
