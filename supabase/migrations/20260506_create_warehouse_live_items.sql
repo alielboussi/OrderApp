@@ -5,6 +5,15 @@ with storage_keys as (
     ish.item_id,
     ish.normalized_variant_key as variant_key
   from public.item_storage_homes ish
+  union all
+  select
+    w.id as warehouse_id,
+    ish.item_id,
+    ish.normalized_variant_key as variant_key
+  from public.item_storage_homes ish
+  join public.warehouses w
+    on w.parent_warehouse_id = ish.storage_warehouse_id
+  where coalesce(w.active, true)
 ),
 base_items as (
   select
