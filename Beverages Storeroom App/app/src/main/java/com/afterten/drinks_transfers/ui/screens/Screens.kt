@@ -3096,7 +3096,14 @@ private fun DamageQtyDialog(
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          formatUomLabel(item.transferUnit ?: "each"),
+          "How its consumed",
+          modifier = Modifier.fillMaxWidth(),
+          style = MaterialTheme.typography.titleMedium,
+          color = RedNegative,
+          textAlign = TextAlign.Center
+        )
+        Text(
+          formatUomLabel(item.consumptionUom ?: "each"),
           modifier = Modifier.fillMaxWidth(),
           style = MaterialTheme.typography.titleMedium,
           color = RedNegative,

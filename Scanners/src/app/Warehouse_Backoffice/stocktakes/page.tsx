@@ -58,6 +58,7 @@ type SimpleProduct = {
   qty_decimal_places: number | null;
   selling_price: number | null;
   cost: number | null;
+  has_recipe?: boolean | null;
 };
 
 type StockCountRow = {
@@ -473,11 +474,7 @@ export default function StocktakesPage() {
     const map = new Map<string, string>();
     variations.forEach((variation) => {
       const key = normalizeVariantKey(variation.id);
-      const uom =
-        variation.purchase_pack_unit?.trim() ||
-        variation.stocktake_uom?.trim() ||
-        variation.consumption_uom?.trim() ||
-        "each";
+      const uom = variation.consumption_uom?.trim() || "each";
       map.set(key, uom);
     });
     return map;
@@ -487,11 +484,7 @@ export default function StocktakesPage() {
     const map = new Map<string, string>();
     variations.forEach((variation) => {
       const key = normalizeVariantKey(variation.id);
-      const uom =
-        variation.purchase_pack_unit?.trim() ||
-        variation.stocktake_uom?.trim() ||
-        variation.consumption_uom?.trim() ||
-        "each";
+      const uom = variation.consumption_uom?.trim() || "each";
       map.set(key, uom);
     });
     return map;
@@ -671,12 +664,15 @@ export default function StocktakesPage() {
   }, [status, supabase]);
 
   const fetchItemsForWarehouse = async (warehouseId: string) => {
+    const isColdroomChild = COLDROOM_CHILD_IDS.includes(warehouseId);
     const targetWarehouseIds =
       warehouseId === COLDROOM_PARENT_ID
         ? selectedChildWarehouseIds.length
           ? selectedChildWarehouseIds
           : COLDROOM_CHILD_IDS
-        : [warehouseId];
+        : isColdroomChild
+          ? [COLDROOM_PARENT_ID]
+          : [warehouseId];
     const rpcResponses = await Promise.all(
       targetWarehouseIds.map((id) =>
         supabase.rpc("list_warehouse_items", {
@@ -705,7 +701,7 @@ export default function StocktakesPage() {
       }>) || [])
         .filter((row) => ["ingredient", "finished"].includes((row.item_kind ?? "").toLowerCase()))
         .map((row) => ({
-          warehouse_id: row.warehouse_id,
+          warehouse_id: isColdroomChild ? warehouseId : row.warehouse_id,
           item_id: row.item_id,
           item_name: row.item_name ?? "Item",
           variant_key: row.variant_key,
@@ -910,10 +906,9 @@ export default function StocktakesPage() {
         const decimalsMap: Record<string, number> = {};
 
         productsList.forEach((product) => {
-          const uom = product.purchase_pack_unit?.trim() || product.consumption_uom?.trim() || "each";
+          const uom = product.consumption_uom?.trim() || "each";
           uomMap[product.id] = uom;
-          const stocktakeUom = product.purchase_pack_unit?.trim() || product.stocktake_uom?.trim() || uom;
-          stocktakeMap[product.id] = stocktakeUom;
+          stocktakeMap[product.id] = uom;
           if (product.qty_decimal_places != null) {
             decimalsMap[makeKey(product.id, "base")] = product.qty_decimal_places;
           }

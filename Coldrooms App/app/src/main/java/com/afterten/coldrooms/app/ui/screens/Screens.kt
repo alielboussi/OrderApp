@@ -277,6 +277,7 @@ private fun WarehouseItem.isColdroomsAllowed(): Boolean {
 }
 
 class TransferState {
+  var promptOnEntry: Boolean = true
   var fromWarehouseId: String? = null
   var toWarehouseId: String? = null
   var selectedItemId: String? = null
@@ -287,6 +288,7 @@ class TransferState {
   val items = mutableStateListOf<TransferLine>()
 
   fun reset() {
+    promptOnEntry = true
     fromWarehouseId = null
     toWarehouseId = null
     selectedItemId = null
@@ -299,6 +301,7 @@ class TransferState {
 }
 
 class DamageState {
+  var promptOnEntry: Boolean = true
   var warehouseId: String? = null
   var selectedItemId: String? = null
   var selectedItemName: String? = null
@@ -308,6 +311,7 @@ class DamageState {
   val items = mutableStateListOf<TransferLine>()
 
   fun reset() {
+    promptOnEntry = true
     warehouseId = null
     selectedItemId = null
     selectedItemName = null
@@ -319,6 +323,7 @@ class DamageState {
 }
 
 class PurchaseState {
+  var promptOnEntry: Boolean = true
   var supplierId: String? = null
   var invoiceNumber by mutableStateOf("")
   var warehouseId: String? = null
@@ -328,6 +333,7 @@ class PurchaseState {
   val items = mutableStateListOf<PurchaseLine>()
 
   fun reset() {
+    promptOnEntry = true
     supplierId = null
     invoiceNumber = ""
     warehouseId = null
@@ -620,8 +626,13 @@ fun TransferItemsScreen(
       if (state.toWarehouseId != null && toSelection.value == null) {
         state.toWarehouseId = null
       }
-      fromDialogOpen.value = state.fromWarehouseId == null
-      toDialogOpen.value = state.fromWarehouseId != null && state.toWarehouseId == null
+      if (state.promptOnEntry) {
+        fromDialogOpen.value = true
+        toDialogOpen.value = false
+      } else {
+        fromDialogOpen.value = false
+        toDialogOpen.value = false
+      }
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load warehouse data"
@@ -704,7 +715,7 @@ fun TransferItemsScreen(
                     sessionStore.setLastTransferFromWarehouseId(selected.id)
                   }
                   fromDialogOpen.value = false
-                  toDialogOpen.value = state.toWarehouseId == null
+                  toDialogOpen.value = true
                 }
               }
             ) {
@@ -738,6 +749,7 @@ fun TransferItemsScreen(
                     sessionStore.setLastTransferToWarehouseId(selected.id)
                   }
                   toDialogOpen.value = false
+                  state.promptOnEntry = false
                 }
               }
             ) {
@@ -884,15 +896,25 @@ fun TransferVariantsScreen(
   val queryState = rememberSaveable { mutableStateOf("") }
   val scanOpen = rememberSaveable { mutableStateOf(false) }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
-  val variants = state.availableItems
+  val baseRow = state.availableItems.firstOrNull {
+    it.itemId == selectedId && (it.variantId ?: "base").lowercase() == "base"
+  }
+  val variantRows = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
+  val variants = buildList {
+    if (baseRow != null && baseRow.onHandUnits() > 0.0) {
+      add(baseRow.copy(variantName = "Base"))
+    }
+    addAll(variantRows)
+  }
   val filtered = variants.filter { item ->
     val q = queryState.value.trim().lowercase()
     if (q.isEmpty()) true else {
       listOfNotNull(item.variantName, item.variantId, item.sku).any { it.lowercase().contains(q) }
     }
-  }.sortedBy { variantSortKey(it) }
+  }.sortedWith(compareBy<WarehouseItem> { (it.variantId ?: "base").lowercase() != "base" }
+    .thenBy { variantSortKey(it) })
 
   val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
 
@@ -1024,7 +1046,7 @@ fun DamageItemsScreen(
       if (state.warehouseId != null && warehouseSelection.value == null) {
         state.warehouseId = null
       }
-      warehouseDialogOpen.value = state.warehouseId == null
+      warehouseDialogOpen.value = state.promptOnEntry
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load warehouse data"
@@ -1106,6 +1128,7 @@ fun DamageItemsScreen(
                     sessionStore.setLastDamageWarehouseId(selected.id)
                   }
                   warehouseDialogOpen.value = false
+                  state.promptOnEntry = false
                 }
               }
             ) {
@@ -1248,15 +1271,25 @@ fun DamageVariantsScreen(
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val refreshTick = remember { mutableStateOf(0) }
-  val variants = state.availableItems
+  val baseRow = state.availableItems.firstOrNull {
+    it.itemId == selectedId && (it.variantId ?: "base").lowercase() == "base"
+  }
+  val variantRows = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
+  val variants = buildList {
+    if (baseRow != null && baseRow.onHandUnits() > 0.0) {
+      add(baseRow.copy(variantName = "Base"))
+    }
+    addAll(variantRows)
+  }
   val filtered = variants.filter { item ->
     val q = queryState.value.trim().lowercase()
     if (q.isEmpty()) true else {
       listOfNotNull(item.variantName, item.variantId, item.sku).any { it.lowercase().contains(q) }
     }
-  }.sortedBy { variantSortKey(it) }
+  }.sortedWith(compareBy<WarehouseItem> { (it.variantId ?: "base").lowercase() != "base" }
+    .thenBy { variantSortKey(it) })
 
   val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
 
@@ -1444,8 +1477,13 @@ fun PurchaseSetupScreen(
       if (state.supplierId != null && selectedSupplier.value == null) {
         state.supplierId = null
       }
-      warehouseDialogOpen.value = true
-      supplierDialogOpen.value = false
+      if (state.promptOnEntry) {
+        warehouseDialogOpen.value = true
+        supplierDialogOpen.value = false
+      } else {
+        warehouseDialogOpen.value = false
+        supplierDialogOpen.value = false
+      }
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load purchase setup"
@@ -1516,6 +1554,7 @@ fun PurchaseSetupScreen(
               onClick = {
                 if (selectedSupplier.value != null) {
                   supplierDialogOpen.value = false
+                  state.promptOnEntry = false
                 }
               }
             ) {
@@ -1766,15 +1805,25 @@ fun PurchaseVariantsScreen(
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val refreshTick = remember { mutableStateOf(0) }
-  val variants = state.availableItems
+  val baseRow = state.availableItems.firstOrNull {
+    it.itemId == selectedId && (it.variantId ?: "base").lowercase() == "base"
+  }
+  val variantRows = state.availableItems
     .filter { it.itemId == selectedId }
     .filterNot { (it.variantId ?: "base").lowercase() == "base" }
+  val variants = buildList {
+    if (baseRow != null) {
+      add(baseRow.copy(variantName = "Base"))
+    }
+    addAll(variantRows)
+  }
   val filtered = variants.filter { item ->
     val q = queryState.value.trim().lowercase()
     if (q.isEmpty()) true else {
       listOfNotNull(item.variantName, item.variantId, item.sku).any { it.lowercase().contains(q) }
     }
-  }.sortedBy { variantSortKey(it) }
+  }.sortedWith(compareBy<WarehouseItem> { (it.variantId ?: "base").lowercase() != "base" }
+    .thenBy { variantSortKey(it) })
 
   val dialogItem = remember { mutableStateOf<WarehouseItem?>(null) }
 
@@ -3300,11 +3349,11 @@ private fun formatQty(value: Double): String {
 }
 
 @Composable
-private fun LiveQtyBadge(item: WarehouseItem) {
+private fun LiveQtyBadge(item: WarehouseItem, uom: String?) {
   val qtyText = formatQty(item.onHandUnits())
-  val uom = formatUomLabel(item.purchasePackUnit ?: "each")
+  val uomLabel = formatUomLabel(uom ?: "each")
   Text(
-    text = "($qtyText $uom)",
+    text = "($qtyText $uomLabel)",
     style = MaterialTheme.typography.labelMedium,
     color = Color.DarkGray,
     modifier = Modifier.fillMaxWidth(),
@@ -3355,7 +3404,7 @@ private fun QtyEntryDialog(
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
-        LiveQtyBadge(item)
+        LiveQtyBadge(item, item.transferUnit ?: item.purchasePackUnit ?: "each")
       }
     },
     text = {
@@ -3438,7 +3487,7 @@ private fun DamageQtyDialog(
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
-        LiveQtyBadge(item)
+        LiveQtyBadge(item, item.consumptionUom ?: "each")
       }
     },
     text = {
@@ -3523,7 +3572,7 @@ private fun PurchaseQtyDialog(
           modifier = Modifier.fillMaxWidth(),
           textAlign = TextAlign.Center
         )
-        LiveQtyBadge(item)
+        LiveQtyBadge(item, item.purchasePackUnit ?: "each")
       }
     },
     text = {

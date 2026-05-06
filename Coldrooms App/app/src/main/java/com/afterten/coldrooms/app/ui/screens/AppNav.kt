@@ -61,23 +61,10 @@ fun AppNav() {
   }
 
   LaunchedEffect(Unit) {
-    val stored = sessionStore.readSession()
-    if (stored != null) {
-      Log.d("AppNav", "Restored session userId=${stored.userId} email=${stored.email} displayName=${stored.displayName}")
-      val now = System.currentTimeMillis()
-      if (now - stored.loginAtMs > SESSION_TIMEOUT_MS) {
-        performLogout()
-        return@LaunchedEffect
-      }
-      tokenState.value = stored.token
-      userState.value = LoginUser(
-        id = stored.userId,
-        email = stored.email,
-        displayName = stored.displayName
-      )
-      navController.navigate(ROUTE_DASHBOARD) {
-        popUpTo(ROUTE_LOGIN) { inclusive = true }
-      }
+    tokenState.value = null
+    userState.value = null
+    navController.navigate(ROUTE_LOGIN) {
+      popUpTo(ROUTE_DASHBOARD) { inclusive = true }
     }
   }
 
@@ -101,7 +88,6 @@ fun AppNav() {
               userState.value = user.copy(displayName = resolvedDisplayName)
             }
             Log.d("AppNav", "Resolved displayName=$resolvedDisplayName")
-            sessionStore.saveSession(token, user.id, user.email, resolvedDisplayName, System.currentTimeMillis())
           }
           navController.navigate(ROUTE_DASHBOARD) {
             popUpTo(ROUTE_LOGIN) { inclusive = true }
