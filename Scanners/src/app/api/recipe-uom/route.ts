@@ -92,7 +92,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "source_uom and target_uom are required" }, { status: 400 });
     }
 
-    const rawSteps = Array.isArray(payload.steps) ? payload.steps : [];
+    const rawSteps = Array.isArray(payload.steps)
+      ? (payload.steps as Array<Partial<ChainStepPayload>>)
+      : [];
     const steps: ChainStepPayload[] = rawSteps
       .map((step: Partial<ChainStepPayload>, index: number) => ({
         step_order: typeof step.step_order === "number" ? step.step_order : index + 1,
@@ -100,7 +102,10 @@ export async function POST(request: Request) {
         to_uom: cleanText(step.to_uom) ?? "",
         multiplier: typeof step.multiplier === "number" ? step.multiplier : Number(step.multiplier),
       }))
-      .filter((step) => step.from_uom && step.to_uom && Number.isFinite(step.multiplier) && step.multiplier > 0);
+      .filter(
+        (step: ChainStepPayload) =>
+          step.from_uom && step.to_uom && Number.isFinite(step.multiplier) && step.multiplier > 0
+      );
 
     const supabase = getServiceClient();
 

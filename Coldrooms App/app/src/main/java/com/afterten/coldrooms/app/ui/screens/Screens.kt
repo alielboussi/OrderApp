@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -168,13 +169,18 @@ private suspend fun listAllowedItemsForWarehouse(
   warehouseId: String
 ): List<WarehouseItem> {
   val allowedItemIds = ALLOWED_PRODUCT_IDS.toList()
-  val allowedVariantRows = repo
-    .listCatalogVariantsByIds(token, ALLOWED_VARIANT_IDS.toList())
-    .filter { ALLOWED_PRODUCT_IDS.contains(it.itemId) }
-  val allowedItemRows = repo.listCatalogItemsByIds(token, allowedItemIds)
+  val (allowedVariantRows, allowedItemRows, stockRows) = coroutineScope {
+    val variantsDeferred = async {
+      repo
+        .listCatalogVariantsByIds(token, ALLOWED_VARIANT_IDS.toList())
+        .filter { ALLOWED_PRODUCT_IDS.contains(it.itemId) }
+    }
+    val itemsDeferred = async { repo.listCatalogItemsByIds(token, allowedItemIds) }
+    val stockDeferred = async { repo.listWarehouseStockItems(token, warehouseId, allowedItemIds) }
+    Triple(variantsDeferred.await(), itemsDeferred.await(), stockDeferred.await())
+  }
   val itemsById = allowedItemRows.associateBy { it.id }
   val variantsByItem = allowedVariantRows.groupBy { it.itemId }
-  val stockRows = repo.listWarehouseStockItems(token, warehouseId, allowedItemIds)
   val stockByKey = stockRows.associateBy { stockKey(it.itemId, it.variantKey) }
 
   val merged = mutableListOf<WarehouseItem>()
@@ -247,7 +253,6 @@ val ALLOWED_PRODUCT_IDS = setOf(
 val ALLOWED_VARIANT_IDS = setOf(
   "3b86b0c2-1621-4c69-bdd8-0cb2cd5e30ac",
   "798b89bf-df72-4604-8af0-73b368dc4075",
-  "c4da1fe0-8b1f-4e35-8d48-98321e0734a7",
   "1d7b2532-5ac4-45c4-993e-30c57099ffbc",
   "84a62432-988c-4727-b4e0-40e5862e2a34",
   "4313479e-0f97-4197-a638-bee916bf4a07",
@@ -615,8 +620,8 @@ fun TransferItemsScreen(
       if (state.toWarehouseId != null && toSelection.value == null) {
         state.toWarehouseId = null
       }
-      fromDialogOpen.value = true
-      toDialogOpen.value = false
+      fromDialogOpen.value = state.fromWarehouseId == null
+      toDialogOpen.value = state.fromWarehouseId != null && state.toWarehouseId == null
     }.onFailure {
       if (it is CancellationException) return@onFailure
       errorState.value = it.message ?: "Failed to load warehouse data"
@@ -2834,10 +2839,12 @@ private fun BaseItemGrid(
   modifier: Modifier = Modifier,
   onItemClick: (ItemGroup) -> Unit
 ) {
+  val gridState = rememberLazyGridState()
   LazyVerticalGrid(
     columns = GridCells.Fixed(2),
     verticalArrangement = Arrangement.spacedBy(12.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),
+    state = gridState,
     modifier = modifier.fillMaxWidth()
   ) {
     items(items) { group ->
@@ -2871,10 +2878,12 @@ private fun VariantGrid(
   modifier: Modifier = Modifier,
   onItemClick: (WarehouseItem) -> Unit
 ) {
+  val gridState = rememberLazyGridState()
   LazyVerticalGrid(
     columns = GridCells.Fixed(2),
     verticalArrangement = Arrangement.spacedBy(12.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),
+    state = gridState,
     modifier = modifier.fillMaxWidth()
   ) {
     items(items) { item ->
