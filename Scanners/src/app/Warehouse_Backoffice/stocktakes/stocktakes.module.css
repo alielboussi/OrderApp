@@ -529,6 +529,18 @@
   gap: 16px;
 }
 
+.dialogStock {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: rgba(226, 232, 255, 0.7);
+}
+
+.childStock {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(226, 232, 255, 0.7);
+}
+
 .dialogHeader {
   display: flex;
   align-items: center;

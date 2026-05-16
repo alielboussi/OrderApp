@@ -184,7 +184,7 @@ class StocktakeRepository(private val supabase: SupabaseProvider) {
         itemId: String,
         qty: Double,
         variantKey: String = "base",
-        kind: String = "closing",
+        kind: String = "auto",
         context: Map<String, String>? = null
     ): StockCount {
         val payload = RecordCountPayload(

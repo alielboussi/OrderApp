@@ -19,11 +19,11 @@ WITH RECURSIVE warehouse_tree AS (
     ON w.parent_warehouse_id = wt.id
 ),
 current_total AS (
-  SELECT COALESCE(SUM(wsi.net_units), 0)::numeric AS qty
-  FROM public.warehouse_stock_items wsi
+  SELECT COALESCE(SUM(wli.net_units), 0)::numeric AS qty
+  FROM public.warehouse_live_items wli
   JOIN warehouse_tree wt
-    ON wt.id = wsi.warehouse_id
-  WHERE wsi.item_id = '4b340326-5f47-492f-924b-4771e434ea60'::uuid
+    ON wt.id = wli.warehouse_id
+  WHERE wli.item_id = '4b340326-5f47-492f-924b-4771e434ea60'::uuid
 ),
 delta AS (
   SELECT (110::numeric - qty) AS delta_qty, qty AS current_qty
@@ -68,8 +68,8 @@ WITH RECURSIVE warehouse_tree AS (
   JOIN warehouse_tree wt
     ON w.parent_warehouse_id = wt.id
 )
-SELECT COALESCE(SUM(wsi.net_units), 0) AS parent_tree_total
-FROM public.warehouse_stock_items wsi
+SELECT COALESCE(SUM(wli.net_units), 0) AS parent_tree_total
+FROM public.warehouse_live_items wli
 JOIN warehouse_tree wt
-  ON wt.id = wsi.warehouse_id
-WHERE wsi.item_id = '4b340326-5f47-492f-924b-4771e434ea60'::uuid;
+  ON wt.id = wli.warehouse_id
+WHERE wli.item_id = '4b340326-5f47-492f-924b-4771e434ea60'::uuid;

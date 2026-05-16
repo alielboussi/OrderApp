@@ -155,8 +155,8 @@ fun SupervisorOrderDetailScreen(
         val s = session ?: error("Session expired")
         val pdfGroups = rows.toPdfGroups()
         if (pdfGroups.isEmpty()) error("Order has no products to approve")
-        val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Lusaka"
-        val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Lusaka") }
+        val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Johannesburg"
+        val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Johannesburg") }
         val now = ZonedDateTime.now(zone)
         val outletName = detail.outlet?.name ?: detail.outletId ?: s.outletName.ifBlank { "Outlet" }
         val outletFolder = detail.outletId ?: s.outletId.ifBlank { "orders" }
@@ -217,8 +217,8 @@ fun SupervisorOrderDetailScreen(
         val s = session ?: error("Session expired")
         val pdfGroups = rows.toPdfGroups()
         if (pdfGroups.isEmpty()) error("Order has no products to load")
-        val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Lusaka"
-        val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Lusaka") }
+        val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Johannesburg"
+        val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Johannesburg") }
         val now = ZonedDateTime.now(zone)
         val outletName = detail.outlet?.name ?: detail.outletId ?: s.outletName.ifBlank { "Outlet" }
         val outletFolder = detail.outletId ?: s.outletId.ifBlank { "orders" }

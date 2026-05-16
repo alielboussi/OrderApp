@@ -32,7 +32,7 @@ Open in Android Studio and run. First launch shows Outlet Login; after successfu
 ## Notes
 - Passwords are stored hashed via `pgcrypto` (bcrypt) on the database. Never send/store plaintext.
 - JWTs include `role=outlet` and `outlet_id` claims so RLS can restrict access.
-- Africa/Lusaka timezone handling and PDF generation will be implemented in Phase 2.
+- UTC+2 timezone handling and PDF generation will be implemented in Phase 2.
 
 ## Troubleshooting: No suitable key or wrong key type
 If the Products screen shows an error like:

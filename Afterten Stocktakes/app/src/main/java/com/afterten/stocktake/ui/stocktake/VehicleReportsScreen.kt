@@ -63,6 +63,7 @@ import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZonedDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -83,7 +84,7 @@ private fun startOfDayUtc(date: String): String? {
     if (trimmed.isEmpty()) return null
     return runCatching {
         LocalDate.parse(trimmed)
-            .atStartOfDay(ZoneOffset.UTC)
+            .atStartOfDay(ZoneOffset.ofHours(2))
             .format(DateTimeFormatter.ISO_INSTANT)
     }.getOrNull()
 }
@@ -94,14 +95,14 @@ private fun endOfDayUtcExclusive(date: String): String? {
     return runCatching {
         LocalDate.parse(trimmed)
             .plusDays(1)
-            .atStartOfDay(ZoneOffset.UTC)
+            .atStartOfDay(ZoneOffset.ofHours(2))
             .format(DateTimeFormatter.ISO_INSTANT)
     }.getOrNull()
 }
 
 private fun nowLabel(): String {
     return runCatching {
-        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        ZonedDateTime.now(ZoneOffset.ofHours(2)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
     }.getOrDefault("")
 }
 

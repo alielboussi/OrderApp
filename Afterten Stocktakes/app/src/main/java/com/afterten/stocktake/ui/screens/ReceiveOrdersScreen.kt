@@ -143,8 +143,8 @@ fun ReceiveOrdersScreen(
         val itemsForPdf = repo.listOrderItems(jwt = s.token, orderId = row.id)
         val pdfGroups = itemsForPdf.toPdfGroups()
         if (pdfGroups.isEmpty()) error("Order has no items to receive")
-        val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Lusaka"
-        val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Lusaka") }
+        val tzId = detail.timezone?.takeIf { it.isNotBlank() } ?: "Africa/Johannesburg"
+        val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Africa/Johannesburg") }
         val now = ZonedDateTime.now(zone)
         val outletName = detail.outlet?.name ?: s.outletName.ifBlank { detail.outletId ?: "Outlet" }
         val outletFolder = detail.outletId ?: s.outletId.ifBlank { "orders" }

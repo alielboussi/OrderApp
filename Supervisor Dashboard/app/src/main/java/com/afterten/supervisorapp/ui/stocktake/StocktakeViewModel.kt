@@ -264,7 +264,8 @@ class StocktakeViewModel(
             if (existing != null) {
                 Log.d(TAG, "startStocktake: open period exists id=${existing.id}")
                 pushDebug("Open period already exists id=${existing.id}")
-                val openedUtc = existing.openedAt ?: Instant.now().toString()
+                    val openedUtc = existing.openedAt
+                        ?: java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(2)).toString()
                 runCatching { repo.setPosSyncOpeningForWarehouse(jwt, existing.warehouseId, openedUtc) }
                     .onSuccess { pushDebug("pos sync opening updated for warehouse=${existing.warehouseId} opened=$openedUtc") }
                     .onFailure { err ->
@@ -278,7 +279,8 @@ class StocktakeViewModel(
                 .onSuccess { period ->
                     Log.d(TAG, "startStocktake: started id=${period.id} number=${period.stocktakeNumber}")
                     pushDebug("Started period id=${period.id} number=${period.stocktakeNumber}")
-                    val openedUtc = period.openedAt ?: Instant.now().toString()
+                    val openedUtc = period.openedAt
+                        ?: java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(2)).toString()
                     runCatching { repo.setPosSyncOpeningForWarehouse(jwt, period.warehouseId, openedUtc) }
                         .onSuccess { pushDebug("pos sync opening updated for warehouse=${period.warehouseId} opened=$openedUtc") }
                         .onFailure { err ->
@@ -301,18 +303,22 @@ class StocktakeViewModel(
         val warehouseId = _ui.value.selectedWarehouseId ?: return
         val normalizedVariant = variantKey.ifBlank { "base" }
         val key = "${itemId}|${normalizedVariant}"
-        pushDebug("recordCount period=$periodId item=$itemId qty=$qty variant=$variantKey kind=$kind")
-        _ui.value = _ui.value.copy(
-            loading = true,
-            error = null,
-            openingLockedKeys = if (kind == "opening") _ui.value.openingLockedKeys + key else _ui.value.openingLockedKeys,
-            closingLockedKeys = if (kind == "closing") _ui.value.closingLockedKeys + key else _ui.value.closingLockedKeys
-        )
+        pushDebug("recordCount period=$periodId item=$itemId qty=$qty variant=$variantKey kind=auto")
+        _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch {
-            runCatching { repo.recordCount(jwt, periodId, itemId, qty, variantKey, kind) }
+            runCatching { repo.recordCount(jwt, periodId, itemId, qty, variantKey, "auto") }
                 .onSuccess { count ->
+                    val current = _ui.value
+                    val openingKeys = if (count.kind == "opening") current.openingLockedKeys + key else current.openingLockedKeys
+                    val closingKeys = if (count.kind == "closing") current.closingLockedKeys + key else current.closingLockedKeys
                     pushDebug("recordCount success id=${count.id} kind=${count.kind} qty=${count.countedQty}")
-                    _ui.value = _ui.value.copy(lastCount = count, loading = false, error = null)
+                    _ui.value = current.copy(
+                        lastCount = count,
+                        loading = false,
+                        error = null,
+                        openingLockedKeys = openingKeys,
+                        closingLockedKeys = closingKeys
+                    )
                     // Refresh items so ingredient counts reflect immediately; recipe-based availability is derived from updated stock.
                     loadItems(warehouseId)
                     refreshOpeningLocks(periodId)
@@ -331,40 +337,39 @@ class StocktakeViewModel(
         val jwt = session?.token ?: return
         val periodId = _ui.value.openPeriod?.id ?: return
         val warehouseId = _ui.value.selectedWarehouseId ?: return
-        val openingKeys = entries
-            .filter { it.kind == "opening" }
-            .map { "${it.itemId}|${it.variantKey.ifBlank { "base" }}" }
-        val closingKeys = entries
-            .filter { it.kind == "closing" }
-            .map { "${it.itemId}|${it.variantKey.ifBlank { "base" }}" }
-        _ui.value = _ui.value.copy(
-            loading = true,
-            error = null,
-            openingLockedKeys = _ui.value.openingLockedKeys + openingKeys,
-            closingLockedKeys = _ui.value.closingLockedKeys + closingKeys
-        )
+        _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch {
             var last: StocktakeRepository.StockCount? = null
             var hadFailure = false
             val savedKeys = mutableSetOf<String>()
+            val openingSaved = mutableSetOf<String>()
+            val closingSaved = mutableSetOf<String>()
             entries.forEach { entry ->
                 runCatching {
-                    repo.recordCount(jwt, periodId, entry.itemId, entry.qty, entry.variantKey, entry.kind)
+                    repo.recordCount(jwt, periodId, entry.itemId, entry.qty, entry.variantKey, "auto")
                 }.onSuccess { count ->
                     last = count
                     val key = "${entry.itemId}|${entry.variantKey.ifBlank { "base" }}"
                     savedKeys.add(key)
+                    if (count.kind == "opening") {
+                        openingSaved.add(key)
+                    } else if (count.kind == "closing") {
+                        closingSaved.add(key)
+                    }
                 }.onFailure { err ->
                     hadFailure = true
                     Log.e(TAG, "recordCount batch failed", err)
                     pushDebug("recordCount batch failed: ${err.message}")
                 }
             }
-            _ui.value = _ui.value.copy(
+            val current = _ui.value
+            _ui.value = current.copy(
                 lastCount = last,
                 lastBatchSavedKeys = savedKeys,
                 loading = false,
-                error = if (hadFailure) "Some counts failed to save." else null
+                error = if (hadFailure) "Some counts failed to save." else null,
+                openingLockedKeys = current.openingLockedKeys + openingSaved,
+                closingLockedKeys = current.closingLockedKeys + closingSaved
             )
             loadItems(warehouseId)
             refreshOpeningLocks(periodId)
@@ -382,42 +387,36 @@ class StocktakeViewModel(
             runCatching { repo.closePeriod(jwt, periodId) }
                 .onSuccess { period ->
                     pushDebug("closePeriod success id=${period.id}")
-                    val cutoffUtc = period.closedAt ?: Instant.now().toString()
+                    val cutoffUtc = period.closedAt
+                        ?: java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(2)).toString()
                     runCatching { repo.setPosSyncCutoffForWarehouse(jwt, period.warehouseId, cutoffUtc) }
                         .onSuccess { pushDebug("pos sync cutoff updated for warehouse=${period.warehouseId} cutoff=$cutoffUtc") }
                         .onFailure { err ->
                             Log.e(TAG, "setPosSyncCutoffForWarehouse failed", err)
                             pushDebug("setPosSyncCutoffForWarehouse failed: ${err.message}")
                         }
-                    val closingCounts = runCatching {
-                        repo.listCountsForPeriod(jwt, period.id, "closing")
-                    }.onFailure { err ->
-                        Log.e(TAG, "closePeriod: failed to load closing counts", err)
-                        pushDebug("closePeriod: load closing counts failed: ${err.message}")
-                    }.getOrElse { emptyList() }
+                    val newPeriod = runCatching { repo.fetchOpenPeriod(jwt, warehouseId) }
+                        .onFailure { err ->
+                            Log.e(TAG, "closePeriod: fetch open period failed", err)
+                            pushDebug("closePeriod: fetch open period failed: ${err.message}")
+                        }
+                        .getOrNull()
 
-                    val newPeriod = runCatching {
-                        repo.startPeriod(jwt, warehouseId, "Auto-opened from ${period.stocktakeNumber ?: period.id}")
-                    }.onFailure { err ->
-                        Log.e(TAG, "closePeriod: startPeriod failed", err)
-                        pushDebug("closePeriod: startPeriod failed: ${err.message}")
-                    }.getOrNull()
-
-                    if (newPeriod == null) {
+                    if (newPeriod?.id == null) {
                         _ui.value = _ui.value.copy(
                             openPeriod = null,
                             openingLockedKeys = emptySet(),
                             closingLockedKeys = emptySet(),
                             lastCount = null,
                             loading = false,
-                            error = "Closed period but failed to start a new one."
+                            error = "Closed period but no new open period found."
                         )
-                        refreshOpenPeriod(warehouseId)
                         loadItems(warehouseId)
                         return@onSuccess
                     }
 
-                    val openedUtc = newPeriod.openedAt ?: Instant.now().toString()
+                    val openedUtc = newPeriod.openedAt
+                        ?: java.time.OffsetDateTime.now(java.time.ZoneOffset.ofHours(2)).toString()
                     runCatching { repo.setPosSyncOpeningForWarehouse(jwt, newPeriod.warehouseId, openedUtc) }
                         .onSuccess { pushDebug("pos sync opening updated for warehouse=${newPeriod.warehouseId} opened=$openedUtc") }
                         .onFailure { err ->
@@ -425,36 +424,13 @@ class StocktakeViewModel(
                             pushDebug("setPosSyncOpeningForWarehouse failed: ${err.message}")
                         }
 
-                    var hadSeedFailure = false
-                    val seededKeys = mutableSetOf<String>()
-                    closingCounts.forEach { row ->
-                        val variant = row.variantKey?.ifBlank { "base" } ?: "base"
-                        val key = "${row.itemId}|${variant}".lowercase()
-                        runCatching {
-                            repo.recordCount(
-                                jwt = jwt,
-                                periodId = newPeriod.id,
-                                itemId = row.itemId,
-                                qty = row.countedQty,
-                                variantKey = variant,
-                                kind = "opening",
-                                context = mapOf("auto_seed" to "true", "from_period" to period.id)
-                            )
-                        }.onFailure { err ->
-                            hadSeedFailure = true
-                            Log.e(TAG, "closePeriod: seed opening count failed", err)
-                            pushDebug("closePeriod: seed opening count failed: ${err.message}")
-                        }
-                        seededKeys.add(key)
-                    }
-
                     _ui.value = _ui.value.copy(
                         openPeriod = newPeriod,
                         openingLockedKeys = emptySet(),
                         closingLockedKeys = emptySet(),
                         lastCount = null,
                         loading = false,
-                        error = if (hadSeedFailure) "New period opened, but some opening counts failed to copy." else null
+                        error = null
                     )
                     refreshOpeningLocks(newPeriod.id)
                     refreshClosingLocks(newPeriod.id)
@@ -748,7 +724,7 @@ class StocktakeViewModel(
         val jwt = session?.token ?: error("No session")
         val period = repo.fetchPeriodById(jwt, periodId) ?: error("Stocktake period not found")
         val openedAt = period.openedAt ?: error("Period missing opening time")
-        val closedAt = period.closedAt ?: java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
+        val closedAt = period.closedAt ?: java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Johannesburg"))
             .toString()
 
         fun parseInstant(value: String?): java.time.Instant? {
@@ -766,7 +742,7 @@ class StocktakeViewModel(
             .map { row -> "${row.itemId}|${row.variantKey?.ifBlank { "base" } ?: "base"}".lowercase() }
             .toSet()
 
-        val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Lusaka"))
+        val nowLabel = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Johannesburg"))
             .toString()
 
         if (includedKeys.isEmpty()) {

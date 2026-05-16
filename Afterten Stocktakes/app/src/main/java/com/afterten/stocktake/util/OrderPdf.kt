@@ -12,6 +12,7 @@ import androidx.core.graphics.drawable.toBitmap
 import java.io.File
 import java.io.FileOutputStream
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
@@ -105,7 +106,8 @@ fun generateOrderPdf(
     var y = 40f
     canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
     canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-    canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
+    val localCreated = createdAt.withZoneSameInstant(ZoneId.of("Africa/Johannesburg"))
+    canvas.drawText("Date: ${localCreated.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
     canvas.drawText("Items:", 40f, y, paint); y += 10f
 
     fun newPageIfNeeded(targetY: Float) {
@@ -116,7 +118,7 @@ fun generateOrderPdf(
             y = 40f
             canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
             canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-            canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
+            canvas.drawText("Date: ${localCreated.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
             canvas.drawText("Items:", 40f, y, paint); y += 10f
         }
     }

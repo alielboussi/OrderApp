@@ -82,7 +82,7 @@ fun OrderSummaryScreen(
     var orderNumber by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var placing by remember { mutableStateOf(false) }
-    val lusakaNow = remember { ZonedDateTime.now(ZoneId.of("Africa/Lusaka")) }
+    val joburgNow = remember { ZonedDateTime.now(ZoneId.of("Africa/Johannesburg")) }
     val sigState = rememberSignatureState()
     var sigSize by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()
@@ -151,7 +151,7 @@ fun OrderSummaryScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(text = "Order #: ${orderNumber ?: "…"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(text = "Date: ${lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", color = Color.White)
+            Text(text = "Date: ${joburgNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", color = Color.White)
             Spacer(Modifier.height(12.dp))
             Text(text = "Items: ${cart.sumOf { it.qty }}  •  Subtotal: ${formatMoney(cart.sumOf { it.lineTotal })}", color = Color.White)
 
@@ -322,7 +322,7 @@ fun OrderSummaryScreen(
                                         val capFn = fn.lowercase().replaceFirstChar { it.titlecase() }
                                         val capLn = ln.lowercase().replaceFirstChar { it.titlecase() }
                                         val outletSafe = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
-                                        val sigDate = lusakaNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+                                        val sigDate = joburgNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
                                         val sigFile = "${capFn}_${capLn}_${sigDate}_${outletSafe}.png"
                                         val sp = "${ses.outletId}/$sigFile"
                                         root.supabaseProvider.uploadToStorage(
@@ -375,14 +375,14 @@ fun OrderSummaryScreen(
                                         cacheDir = ctx.cacheDir,
                                         outletName = ses.outletName,
                                         orderNo = number,
-                                        createdAt = lusakaNow,
+                                        createdAt = joburgNow,
                                         groups = pdfGroups,
                                         signerLabel = "Signed By Outlet Employee Name",
                                         signerName = title,
                                         signatureBitmap = signatureBitmap
                                     )
                                     val pdfBytes = pdf.readBytes()
-                                    val dateStr = lusakaNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                                    val dateStr = joburgNow.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
                                     val safeOutlet = ses.outletName.sanitizeForFile(ses.outletId.ifBlank { "outlet" })
                                     val pdfFileName = "${safeOutlet}_${number}_${dateStr}.pdf"
                                     val storagePath = "${ses.outletId}/$pdfFileName"
@@ -436,7 +436,7 @@ fun OrderSummaryScreen(
                                                 jwt = ses.token,
                                                 outletId = ses.outletId,
                                                 orderNumber = number,
-                                                tz = lusakaNow.zone.id,
+                                                tz = joburgNow.zone.id,
                                                 status = "placed"
                                             )
                                             root.supabaseProvider.insertOrderItems(

@@ -109,7 +109,7 @@ private fun formatUtcIso(value: String?): String? {
     val candidate = if (normalized.endsWith("Z") || normalized.contains("+")) normalized else "${normalized}Z"
     return runCatching {
         OffsetDateTime.parse(candidate)
-            .withOffsetSameInstant(ZoneOffset.UTC)
+            .withOffsetSameInstant(ZoneOffset.ofHours(2))
             .format(DateTimeFormatter.ISO_INSTANT)
     }.getOrElse { raw }
 }

@@ -500,6 +500,12 @@ fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
 
 @Composable
 fun UpdateRequiredScreen(currentVersion: String, requiredVersion: String?) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "UpdateRequired",
+      "screen open current=$currentVersion required=${requiredVersion ?: ""}"
+    )
+  }
   Scaffold { padding ->
     Column(
       modifier = Modifier
@@ -2798,6 +2804,9 @@ fun SuccessScreen(
   buttonLabel: String,
   onAction: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("Success", "screen open title=$title")
+  }
   Scaffold { padding ->
     Column(
       modifier = Modifier
@@ -2825,6 +2834,9 @@ private fun BarcodeScannerScreen(
   onScanned: (String) -> Unit,
   onClose: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("BarcodeScanner", "screen open")
+  }
   val context = LocalContext.current
   val lifecycleOwner = remember(context) { context as? LifecycleOwner }
   val hasPermission = remember {
@@ -3169,7 +3181,7 @@ private fun buildDamagePdfFileName(fromName: String, dateTime: String): String {
 }
 
 private fun formatDateTimeLocal(): String {
-  val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm 'UTC +2;00'")
+  val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm 'UTC +2:00'")
   return ZonedDateTime.now(ZoneOffset.ofHours(2)).format(formatter)
 }
 

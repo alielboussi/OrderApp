@@ -124,12 +124,14 @@ import com.afterten.drinks_transfers.ui.theme.GreenPositive
 import com.afterten.drinks_transfers.ui.theme.RedNegative
 import java.io.ByteArrayOutputStream
 import java.time.ZonedDateTime
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
+private const val LOG_TAG = "BeveragesScreens"
 private const val FROM_WAREHOUSE_ID = "f71a25d0-9ec2-454d-a606-93cfaa3c606b"
 
 val TRANSFER_WAREHOUSE_IDS = listOf(
@@ -164,6 +166,10 @@ val PURCHASE_SUPPLIER_IDS = setOf(
   "7bbc14aa-fdfd-4118-be52-bde6f06ae5b3",
   "4a4f8dda-56fa-49f2-943b-2d2569e1e2a2"
 )
+
+private fun logDebug(screen: String, message: String) {
+  Log.d(LOG_TAG, "[$screen] $message")
+}
 
 private fun presetInvoiceNumberForSupplier(supplierId: String?): String? {
   return when (supplierId) {
@@ -277,6 +283,9 @@ data class TransferSummaryGroup(
 
 @Composable
 fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
+  LaunchedEffect(Unit) {
+    logDebug("Login", "screen open")
+  }
   val emailState = rememberSaveable { mutableStateOf("") }
   val pinState = rememberSaveable { mutableStateOf("") }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -350,6 +359,12 @@ fun LoginScreen(repo: Repository, onLogin: (String, LoginUser) -> Unit) {
 
 @Composable
 fun UpdateRequiredScreen(currentVersion: String, requiredVersion: String?) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "UpdateRequired",
+      "screen open current=$currentVersion required=${requiredVersion ?: ""}"
+    )
+  }
   Scaffold { padding ->
     Column(
       modifier = Modifier
@@ -384,6 +399,9 @@ fun DashboardScreen(
   onDamages: () -> Unit,
   onLogout: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("Dashboard", "screen open user=${user?.id ?: ""}")
+  }
   Scaffold(topBar = {
     TopAppBar(
       title = {
@@ -505,6 +523,12 @@ fun TransferItemsScreen(
   onShowVariants: () -> Unit,
   onReview: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "TransferItems",
+      "screen open token=${token != null} toWarehouse=${state.toWarehouseId ?: ""}"
+    )
+  }
   val itemsState = remember { mutableStateOf<List<WarehouseItem>>(emptyList()) }
   val toWarehouseState = remember { mutableStateOf<Warehouse?>(null) }
   val warehousesState = remember { mutableStateOf<List<Warehouse>>(emptyList()) }
@@ -734,6 +758,9 @@ fun TransferVariantsScreen(
   state: TransferState,
   onBack: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("TransferVariants", "screen open item=${state.selectedItemId ?: ""}")
+  }
   val selectedId = state.selectedItemId
   val title = state.selectedItemName ?: "Variants"
   val queryState = rememberSaveable { mutableStateOf("") }
@@ -830,6 +857,12 @@ fun DamageItemsScreen(
   onShowVariants: () -> Unit,
   onReview: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "DamageItems",
+      "screen open token=${token != null} warehouse=${state.warehouseId ?: ""}"
+    )
+  }
   val itemsState = remember { mutableStateOf<List<WarehouseItem>>(emptyList()) }
   val singleItemDialog = remember { mutableStateOf<WarehouseItem?>(null) }
   val queryState = rememberSaveable { mutableStateOf("") }
@@ -996,6 +1029,9 @@ fun DamageVariantsScreen(
   state: DamageState,
   onBack: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("DamageVariants", "screen open item=${state.selectedItemId ?: ""}")
+  }
   val selectedId = state.selectedItemId
   val title = state.selectedItemName ?: "Variants"
   val queryState = rememberSaveable { mutableStateOf("") }
@@ -1087,6 +1123,9 @@ fun PurchaseVariantsScreen(
   state: PurchaseState,
   onBack: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("PurchaseVariants", "screen open item=${state.selectedItemId ?: ""}")
+  }
   val selectedId = state.selectedItemId
   val title = state.selectedItemName ?: "Variants"
   val queryState = rememberSaveable { mutableStateOf("") }
@@ -1186,6 +1225,12 @@ fun TransferSummaryScreen(
   onBack: () -> Unit,
   onConfirm: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "TransferSummary",
+      "screen open token=${token != null} toWarehouse=${state.toWarehouseId ?: ""}"
+    )
+  }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val infoState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -1467,6 +1512,12 @@ fun DamageSummaryScreen(
   onBack: () -> Unit,
   onConfirm: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "DamageSummary",
+      "screen open token=${token != null} warehouse=${state.warehouseId ?: ""}"
+    )
+  }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val infoState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -1730,6 +1781,12 @@ fun PurchaseSetupScreen(
   onBack: () -> Unit,
   onNext: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "PurchaseSetup",
+      "screen open token=${token != null} supplier=${state.supplierId ?: ""}"
+    )
+  }
   val suppliersState = remember { mutableStateOf<List<Supplier>>(emptyList()) }
   val selectedSupplier = remember { mutableStateOf<Supplier?>(null) }
   val supplierDialogOpen = rememberSaveable { mutableStateOf(false) }
@@ -1908,6 +1965,12 @@ fun PurchaseItemsScreen(
   onShowVariants: () -> Unit,
   onNext: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "PurchaseItems",
+      "screen open token=${token != null} warehouse=${state.warehouseId ?: ""}"
+    )
+  }
   val itemsState = remember { mutableStateOf<List<WarehouseItem>>(emptyList()) }
   val queryState = rememberSaveable { mutableStateOf("") }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -2067,6 +2130,12 @@ fun PurchaseSummaryScreen(
   onBack: () -> Unit,
   onConfirm: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug(
+      "PurchaseSummary",
+      "screen open token=${token != null} supplier=${state.supplierId ?: ""}"
+    )
+  }
   val errorState = rememberSaveable { mutableStateOf<String?>(null) }
   val loadingState = rememberSaveable { mutableStateOf(false) }
   val infoState = rememberSaveable { mutableStateOf<String?>(null) }
@@ -2338,6 +2407,9 @@ fun SuccessScreen(
   buttonLabel: String,
   onAction: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("Success", "screen open title=$title")
+  }
   Scaffold { padding ->
     Column(
       modifier = Modifier
@@ -2365,6 +2437,9 @@ private fun BarcodeScannerScreen(
   onScanned: (String) -> Unit,
   onClose: () -> Unit
 ) {
+  LaunchedEffect(Unit) {
+    logDebug("BarcodeScanner", "screen open")
+  }
   val context = LocalContext.current
   val lifecycleOwner = remember(context) { context as? LifecycleOwner }
   val hasPermission = remember {
@@ -2705,8 +2780,8 @@ private fun buildDamagePdfFileName(fromName: String, dateTime: String): String {
 }
 
 private fun formatDateTimeLocal(): String {
-  val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
-  return ZonedDateTime.now().format(formatter)
+  val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm 'UTC +2:00'")
+  return ZonedDateTime.now(ZoneOffset.ofHours(2)).format(formatter)
 }
 
 private fun buildItemKey(itemId: String, variantId: String?): String {

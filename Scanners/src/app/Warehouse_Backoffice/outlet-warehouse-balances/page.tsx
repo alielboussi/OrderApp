@@ -186,7 +186,9 @@ export default function OutletWarehouseBalancesPage() {
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
-  const [orderDate, setOrderDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [orderDate, setOrderDate] = useState<string>(
+    () => new Date().toLocaleDateString("sv-SE", { timeZone: "Africa/Johannesburg" })
+  );
   const [orderTotals, setOrderTotals] = useState<OrderTotals>({ count: 0, qty: 0, amount: 0 });
   const [ordersLoading, setOrdersLoading] = useState(false);
 

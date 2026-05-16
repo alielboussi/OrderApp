@@ -82,7 +82,7 @@ fun OrderSummaryScreen(
     var orderNumber by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var placing by remember { mutableStateOf(false) }
-    val lusakaNow = remember { ZonedDateTime.now(ZoneId.of("Africa/Lusaka")) }
+    val lusakaNow = remember { ZonedDateTime.now(ZoneId.of("Africa/Johannesburg")) }
     val sigState = rememberSignatureState()
     var sigSize by remember { mutableStateOf(IntSize.Zero) }
     val scope = rememberCoroutineScope()

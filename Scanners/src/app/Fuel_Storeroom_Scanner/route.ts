@@ -4908,9 +4908,9 @@ function createHtml(config: {
           if (error) throw error;
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Johannesburg' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Johannesburg' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const itemsBlock = buildItemsBlockFromLines(lineItems);
           const rawReference = typeof data === 'string' ? data : String(data ?? '');
@@ -5001,9 +5001,9 @@ function createHtml(config: {
 
           const now = new Date();
           const windowLabel =
-            now.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            now.toLocaleDateString('en-US', { timeZone: 'Africa/Johannesburg' }) +
             ' ' +
-            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            now.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Johannesburg' });
           const lineItems = mapCartSnapshotToLineItems(cartSnapshot);
           const itemsBlock = buildItemsBlockFromLines(lineItems);
           const summary = {
@@ -5122,9 +5122,9 @@ function createHtml(config: {
           const timestampSource = data?.received_at ?? data?.recorded_at ?? new Date().toISOString();
           const timestamp = new Date(timestampSource);
           const windowLabel =
-            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Lusaka' }) +
+            timestamp.toLocaleDateString('en-US', { timeZone: 'Africa/Johannesburg' }) +
             ' ' +
-            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lusaka' });
+            timestamp.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Johannesburg' });
 
           const summary = {
             reference: receiptRef,

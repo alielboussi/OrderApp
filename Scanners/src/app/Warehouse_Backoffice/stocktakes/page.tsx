@@ -187,8 +187,11 @@ function makeChildKey(childId: string, itemId: string, variantKey?: string | nul
 
 function formatStamp(raw?: string | null): string {
   if (!raw) return "--";
-  const trimmed = raw.replace("T", " ");
-  return trimmed.length > 19 ? trimmed.slice(0, 19) : trimmed;
+  const normalized = raw.replace(" ", "T");
+  const iso = normalized.endsWith("Z") || normalized.includes("+") ? normalized : `${normalized}Z`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleString("sv-SE", { timeZone: "Africa/Johannesburg", hour12: false });
 }
 
 function formatUtcIso(value?: string | null): string | null {
@@ -198,7 +201,7 @@ function formatUtcIso(value?: string | null): string | null {
   const candidate = normalized.endsWith("Z") || normalized.includes("+") ? normalized : `${normalized}Z`;
   const date = new Date(candidate);
   if (Number.isNaN(date.getTime())) return raw;
-  return date.toISOString();
+  return date.toLocaleString("sv-SE", { timeZone: "Africa/Johannesburg", hour12: false });
 }
 
 function toErrorMessage(error: unknown): string {
@@ -509,6 +512,16 @@ export default function StocktakesPage() {
       acc.set(row.item_id, list);
       return acc;
     }, new Map<string, WarehouseStockItem[]>());
+  }, [allItems, items]);
+
+  const currentStockMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (allItems.length ? allItems : items).forEach((row) => {
+      const key = `${row.warehouse_id ?? ""}::${makeKey(row.item_id, row.variant_key)}`;
+      const qty = typeof row.net_units === "number" ? row.net_units : Number(row.net_units ?? 0);
+      map.set(key, Number.isFinite(qty) ? qty : 0);
+    });
+    return map;
   }, [allItems, items]);
 
   const displayItemsByItemId = useMemo(() => {
@@ -1578,25 +1591,6 @@ export default function StocktakesPage() {
     setLoading(true);
     setInputError(null);
 
-    let nextOpenPeriodId: string | null = null;
-    const needsNextOpening = entries.some((entry) => entry.kind === "closing");
-    if (needsNextOpening && activePeriod?.warehouse_id) {
-      try {
-        const { data, error: nextPeriodError } = await supabase
-          .from("warehouse_stock_periods")
-          .select("id,opened_at")
-          .eq("warehouse_id", activePeriod.warehouse_id)
-          .eq("status", "open")
-          .order("opened_at", { ascending: false })
-          .limit(5);
-        if (!nextPeriodError) {
-          nextOpenPeriodId = (data ?? []).find((row) => row.id !== activePeriodId)?.id ?? null;
-        }
-      } catch {
-        nextOpenPeriodId = null;
-      }
-    }
-
     let hadFailure = false;
     const savedKeys: string[] = [];
     let lastSaved: { kind: string; counted_qty: number } | null = null;
@@ -1608,25 +1602,12 @@ export default function StocktakesPage() {
           p_item_id: entry.itemId,
           p_qty: entry.qty,
           p_variant_key: entry.variantKey,
-          p_kind: entry.kind,
+          p_kind: "auto",
         });
         if (recordError) throw recordError;
-        if (entry.kind === "closing" && nextOpenPeriodId) {
-          try {
-            const { error: nextOpenError } = await supabase.rpc("record_stock_count", {
-              p_period_id: nextOpenPeriodId,
-              p_item_id: entry.itemId,
-              p_qty: entry.qty,
-              p_variant_key: entry.variantKey,
-              p_kind: "opening",
-              p_context: { auto_seed: "true", reason: "carry_forward_from_closing", from_period: activePeriodId },
-            });
-            if (nextOpenError) throw nextOpenError;
-          } catch {
-            hadFailure = true;
-          }
-        }
-        lastSaved = { kind: entry.kind, counted_qty: entry.qty };
+        const returned = Array.isArray(data) ? data[0] : data;
+        const resolvedKind = returned?.kind ?? entry.kind;
+        lastSaved = { kind: resolvedKind, counted_qty: entry.qty };
         savedKeys.push(makeKey(entry.itemId, entry.variantKey));
       } catch (err) {
         hadFailure = true;
@@ -1699,15 +1680,17 @@ export default function StocktakesPage() {
       }
       periodMap[entry.childId] = period;
       try {
-        const { error: recordError } = await supabase.rpc("record_stock_count", {
+        const { data, error: recordError } = await supabase.rpc("record_stock_count", {
           p_period_id: period.id,
           p_item_id: entry.itemId,
           p_qty: entry.qty,
           p_variant_key: entry.variantKey,
-          p_kind: entry.kind,
+          p_kind: "auto",
         });
         if (recordError) throw recordError;
-        lastSaved = { kind: entry.kind, counted_qty: entry.qty };
+        const returned = Array.isArray(data) ? data[0] : data;
+        const resolvedKind = returned?.kind ?? entry.kind;
+        lastSaved = { kind: resolvedKind, counted_qty: entry.qty };
         savedKeys.push(makeChildKey(entry.childId, entry.itemId, entry.variantKey));
       } catch (err) {
         hadFailure = true;
@@ -1996,7 +1979,6 @@ export default function StocktakesPage() {
             selectedChildWarehouseIds.forEach((childId) => {
               const childKey = makeChildKey(childId, row.item_id, variantKey);
               if (unsavedKeys[childKey]) return;
-              // NOTE: Keep dialog inputs empty on open; do not prefill with prior counts.
               if (next[childKey] !== "") {
                 next[childKey] = "";
                 changed = true;
@@ -2015,7 +1997,6 @@ export default function StocktakesPage() {
       dialogDisplayRows.forEach((row) => {
         const key = makeKey(row.item_id, row.variant_key);
         if (unsavedKeys[key]) return;
-        // NOTE: Keep dialog inputs empty on open; do not prefill with prior counts.
         if (next[key] !== "") {
           next[key] = "";
           changed = true;
@@ -2233,7 +2214,9 @@ export default function StocktakesPage() {
                       <p className={styles.summaryMeta}>Opened: {formatStamp(openPeriod.opened_at)}</p>
                       <p className={styles.summaryMeta}>Closed: {formatStamp(openPeriod.closed_at)}</p>
                       {formatUtcIso(openPeriod.opened_at) && (
-                        <p className={styles.summaryMeta}>Sync cutoff (UTC): {formatUtcIso(openPeriod.opened_at)}</p>
+                        <p className={styles.summaryMeta}>
+                          Sync cutoff (UTC+2): {formatUtcIso(openPeriod.opened_at)}
+                        </p>
                       )}
                       {openPeriod.note ? <p className={styles.summaryMeta}>Note: {openPeriod.note}</p> : null}
                     </div>
@@ -2731,6 +2714,9 @@ export default function StocktakesPage() {
                     ? row.image_url
                     : variantImageMap.get(variantKey) || row.image_url;
                 const fieldPlaceholder = isLocked ? "Locked" : "Qty";
+                const stockKey = `${selectedWarehouseId}::${makeKey(row.item_id, variantKey)}`;
+                const currentStock = currentStockMap.get(stockKey) ?? 0;
+                const stockLabel = formatQty(currentStock, decimals);
 
                 return (
                   <div key={qtyKey} className={styles.dialogCard}>
@@ -2742,6 +2728,9 @@ export default function StocktakesPage() {
                     )}
                     <p className={styles.dialogLabel}>{label}</p>
                     <p className={styles.dialogUom}>{formatUomLabel(uom)}</p>
+                    {!isColdroomParent && (
+                      <p className={styles.dialogStock}>Current stock: {stockLabel}</p>
+                    )}
                     {isColdroomParent ? (
                       <div className={styles.childQtyGrid}>
                         {selectedChildWarehouseIds.map((childId) => {
@@ -2757,12 +2746,16 @@ export default function StocktakesPage() {
                             : "Will open on save";
                           const childLocked = readOnly || !hasStocktakeAccess;
                           const childLabel = COLDROOM_CHILDREN.find((child) => child.id === childId)?.name || childId;
+                          const childStockKey = `${childId}::${makeKey(row.item_id, variantKey)}`;
+                          const childStock = currentStockMap.get(childStockKey) ?? 0;
+                          const childStockLabel = formatQty(childStock, decimals);
 
                           return (
                             <div key={childKey} className={styles.childQtyRow}>
                               <div className={styles.childMeta}>
                                 <p className={styles.childLabel}>{childLabel}</p>
                                 <p className={styles.childMode}>{childMode}</p>
+                                <p className={styles.childStock}>Current: {childStockLabel}</p>
                               </div>
                               <div className={styles.childQtyControl}>
                                 <button

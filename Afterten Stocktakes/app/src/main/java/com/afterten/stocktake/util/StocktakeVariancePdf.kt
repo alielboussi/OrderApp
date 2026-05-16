@@ -12,8 +12,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private data class PdfColumn(
@@ -36,8 +38,11 @@ private fun formatCurrencyK(value: Double): String {
 
 private fun formatStamp(raw: String?): String {
     if (raw.isNullOrBlank()) return "—"
-    val trimmed = raw.replace('T', ' ')
-    return if (trimmed.length > 19) trimmed.take(19) else trimmed
+    val normalized = raw.replace(" ", "T")
+    val candidate = if (normalized.endsWith("Z") || normalized.contains("+")) normalized else "${normalized}Z"
+    val parsed = runCatching { OffsetDateTime.parse(candidate) }.getOrNull() ?: return raw
+    val local = parsed.atZoneSameInstant(ZoneId.of("Africa/Johannesburg"))
+    return local.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
 }
 
 private fun loadAppLogo(context: Context, sizePx: Int): Bitmap? {
