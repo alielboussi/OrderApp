@@ -120,7 +120,7 @@ export default function WarehousePurchaseEntryPage() {
   const { status } = useWarehouseAuth();
 
   const syncInFlight = useRef(false);
-  const syncTimer = useRef<ReturnType<typeof window.setInterval> | null>(null);
+  const syncTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [importRows, setImportRows] = useState<ApiImportRow[]>([]);
   const [importSummary, setImportSummary] = useState<ApiImportSummary | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -170,16 +170,16 @@ export default function WarehousePurchaseEntryPage() {
 
     void runImportSync("auto");
     if (syncTimer.current) {
-      window.clearInterval(syncTimer.current);
+      clearInterval(syncTimer.current);
     }
-    syncTimer.current = window.setInterval(() => {
+    syncTimer.current = setInterval(() => {
       void runImportSync("auto");
     }, SYNC_INTERVAL_MS);
     setNextSyncAt(new Date(Date.now() + SYNC_INTERVAL_MS).toISOString());
 
     return () => {
       if (syncTimer.current) {
-        window.clearInterval(syncTimer.current);
+        clearInterval(syncTimer.current);
       }
       syncTimer.current = null;
     };
