@@ -120,7 +120,7 @@ export default function WarehousePurchaseEntryPage() {
   const { status } = useWarehouseAuth();
 
   const syncInFlight = useRef(false);
-  const syncTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncTimer = useRef<ReturnType<typeof window.setInterval> | null>(null);
   const [importRows, setImportRows] = useState<ApiImportRow[]>([]);
   const [importSummary, setImportSummary] = useState<ApiImportSummary | null>(null);
   const [importLoading, setImportLoading] = useState(false);
