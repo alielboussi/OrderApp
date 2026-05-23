@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
+import { useUomOptions } from "@/lib/use-uom-options";
 import styles from "../product/product.module.css";
 
 type Item = {
@@ -39,30 +40,6 @@ type ProductFormState = {
   image_url: string;
   active: boolean;
 };
-
-const qtyUnitOptions = [
-  { value: "pc", label: "Pc(s)" },
-  { value: "g", label: "Gram(s)" },
-  { value: "kg", label: "Kilogram(s)" },
-  { value: "mg", label: "Milligram(s)" },
-  { value: "ml", label: "Millilitre(s)" },
-  { value: "l", label: "Litre(s)" },
-  { value: "cup", label: "Cup(s)" },
-  { value: "straw", label: "Straw(s)" },
-  { value: "toilet paper", label: "Toilet Paper(s)" },
-  { value: "case", label: "Case(s)" },
-  { value: "crate", label: "Crate(s)" },
-  { value: "bottle", label: "Bottle(s)" },
-  { value: "Tin Can", label: "Tin Can(s)" },
-  { value: "Jar", label: "Jar(s)" },
-  { value: "Block", label: "Block(s)" },
-  { value: "Bucket", label: "Bucket(s)" },
-  { value: "Bag", label: "Bag(s)" },
-  { value: "Tray", label: "Tray(s)" },
-  { value: "plastic", label: "Plastic(s)" },
-  { value: "Packet", label: "Packet(s)" },
-  { value: "Box", label: "Box(es)" },
-] as const;
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -130,6 +107,7 @@ export default function CatalogManagePage() {
   const [variantSaving, setVariantSaving] = useState(false);
   const [variantAlert, setVariantAlert] = useState<Alert>(null);
   const [entryMode, setEntryMode] = useState<"product" | "variant">("product");
+  const uomOptions = useUomOptions();
 
   const disableVariantControlled = productForm.has_variations;
   const isProductMode = entryMode === "product";
@@ -567,7 +545,7 @@ export default function CatalogManagePage() {
                     hint="Outlet sales and transfers use this unit"
                     value={productForm.consumption_unit}
                     onChange={(v) => handleProductChange("consumption_unit", v)}
-                    options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                    options={uomOptions}
                   />
                 )}
                 {!disableVariantControlled && (
@@ -588,7 +566,7 @@ export default function CatalogManagePage() {
                       hint="How purchases are entered (case, box, sack)"
                       value={productForm.purchase_pack_unit}
                       onChange={(v) => handleProductChange("purchase_pack_unit", v)}
-                      options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                      options={uomOptions}
                     />
                     <Field
                       type="number"
@@ -736,14 +714,14 @@ export default function CatalogManagePage() {
                   hint="Outlet sales and transfers use this unit"
                   value={variantConsumptionUom}
                   onChange={setVariantConsumptionUom}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                  options={uomOptions}
                 />
                 <Select
                   label="How its Purchased"
                   hint="How purchases are entered (case, box, sack)"
                   value={variantPurchasePackUnit}
                   onChange={setVariantPurchasePackUnit}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                  options={uomOptions}
                 />
                 <Field
                   type="number"

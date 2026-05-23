@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState, type Dispatch, type SetStateAct
 import { useRouter, useSearchParams } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { formatUomLabel, useUomOptions } from "@/lib/use-uom-options";
 import styles from "./recipes.module.css";
 
 type ItemKind = "raw" | "ingredient" | "finished";
@@ -54,104 +55,22 @@ type RecipeUomAvailability = {
   recipe_qty: number;
 };
 
-const qtyUnits = [
-  "pc",
-  "g",
-  "kg",
-  "mg",
-  "ml",
-  "l",
-  "cup",
-  "straw",
-  "toilet paper",
-  "case",
-  "crate",
-  "bottle",
-  "Tin Can",
-  "Jar",
-  "Block",
-  "Bucket",
-  "Bag",
-  "Tray",
-  "plastic",
-  "Packet",
-  "Box",
-] as const;
-
 const RECIPE_UOM_ALIASES: Record<string, string> = {
   each: "pc",
   pcs: "pc",
   piece: "pc",
   pieces: "pc",
 };
-
-const normalizeRecipeUom = (value: string) => {
+const normalizeRecipeUomValue = (value: string, uomValues: string[]) => {
   const trimmed = value.trim();
   const lower = trimmed.toLowerCase();
   if (RECIPE_UOM_ALIASES[lower]) return RECIPE_UOM_ALIASES[lower];
-  const canonical = qtyUnits.find((unit) => unit.toLowerCase() === lower);
+  const canonical = uomValues.find((unit) => unit.toLowerCase() === lower);
   return canonical ?? trimmed;
 };
 
-const isAllowedRecipeUom = (value: string) =>
-  qtyUnits.includes(normalizeRecipeUom(value) as (typeof qtyUnits)[number]);
-
-type UomOption = { value: string; label: string };
-
-const formatUnitLabel = (unit: string) => {
-  const trimmed = unit.trim();
-  if (!trimmed) return "";
-  const lower = trimmed.toLowerCase();
-    const mapped =
-      lower === "pc" || lower === "pcs" || lower === "each"
-        ? "Pc(s)"
-        : lower === "g"
-          ? "Gram(s)"
-          : lower === "kg"
-            ? "Kilogram(s)"
-            : lower === "mg"
-              ? "Milligram(s)"
-              : lower === "ml"
-                ? "Millilitre(s)"
-                : lower === "l"
-                  ? "Litre(s)"
-                  : lower === "cup"
-                    ? "Cup(s)"
-                    : lower === "straw"
-                      ? "Straw(s)"
-                      : lower === "toilet paper"
-                        ? "Toilet Paper(s)"
-                        : lower === "case"
-                          ? "Case(s)"
-                          : lower === "crate"
-                            ? "Crate(s)"
-                            : lower === "bottle"
-                              ? "Bottle(s)"
-                              : lower === "tin can"
-                                ? "Tin Can(s)"
-                                : lower === "jar"
-                                  ? "Jar(s)"
-                                  : lower === "block"
-                                    ? "Block(s)"
-                                    : lower === "bucket"
-                                      ? "Bucket(s)"
-                                      : lower === "bag"
-                                        ? "Bag(s)"
-                                        : lower === "tray"
-                                          ? "Tray(s)"
-                                          : lower === "plastic"
-                                            ? "Plastic(s)"
-                                            : lower === "packet"
-                                              ? "Packet(s)"
-                                              : lower === "box"
-                                                ? "Box(es)"
-                                                : null;
-  if (mapped) return mapped;
-  const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-  return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
-};
-
-const DEFAULT_UOMS: UomOption[] = qtyUnits.map((uom) => ({ value: uom, label: formatUnitLabel(uom) }));
+const isAllowedRecipeUomValue = (value: string, uomValues: string[]) =>
+  uomValues.includes(normalizeRecipeUomValue(value, uomValues));
 
 const EMPTY_LINE: PendingLine = { ingredientId: "", qty: "", uom: "pc", sourceWarehouseId: "" };
 
@@ -194,7 +113,7 @@ function RecipesPage() {
   const [ingredientLines, setIngredientLines] = useState<PendingLine[]>([EMPTY_LINE]);
   const [hasFinishedRecipe, setHasFinishedRecipe] = useState(false);
   const [hasIngredientRecipe, setHasIngredientRecipe] = useState(false);
-  const [uoms, setUoms] = useState<UomOption[]>(DEFAULT_UOMS);
+  const uoms = useUomOptions();
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [recipeMode, setRecipeMode] = useState<"finished" | "ingredient">("finished");
   const [initialQueryApplied, setInitialQueryApplied] = useState(false);
@@ -209,6 +128,16 @@ function RecipesPage() {
   const [recipeUomWarehouseId, setRecipeUomWarehouseId] = useState("");
   const [recipeUomAvailable, setRecipeUomAvailable] = useState<RecipeUomAvailability | null>(null);
   const [variants, setVariants] = useState<CatalogVariant[]>([]);
+
+  const uomValues = useMemo(() => uoms.map((uom) => uom.value), [uoms]);
+  const uomLabelMap = useMemo(
+    () => new Map(uoms.map((uom) => [uom.value.toLowerCase(), uom.label])),
+    [uoms]
+  );
+  const normalizeRecipeUom = (value: string) => normalizeRecipeUomValue(value, uomValues);
+  const isAllowedRecipeUom = (value: string) => isAllowedRecipeUomValue(value, uomValues);
+  const formatRecipeUomLabel = (value: string) =>
+    uomLabelMap.get(value.toLowerCase()) ?? formatUomLabel(value);
 
   useEffect(() => {
     let active = true;
@@ -251,7 +180,6 @@ function RecipesPage() {
         setIngredientItems(ing.data || []);
         setRawItems(raw.data || []);
         setWarehouses((warehouseRes.data as WarehouseOption[]) || []);
-        setUoms(DEFAULT_UOMS);
       } catch (error) {
         if (!active) return;
         setError(toErrorMessage(error) || "Failed to load catalog items");
@@ -338,7 +266,7 @@ function RecipesPage() {
     return () => {
       active = false;
     };
-  }, [selectedFinished, supabase]);
+  }, [selectedFinished, supabase, uomValues]);
 
   useEffect(() => {
     let active = true;
@@ -389,7 +317,7 @@ function RecipesPage() {
     return () => {
       active = false;
     };
-  }, [selectedIngredientTarget, supabase]);
+  }, [selectedIngredientTarget, supabase, uomValues]);
 
   const ingredientOptionsForFinished = useMemo(() => ingredientItems, [ingredientItems]);
   const rawOptionsForIngredient = useMemo(() => rawItems, [rawItems]);
@@ -509,7 +437,7 @@ function RecipesPage() {
     return () => {
       active = false;
     };
-  }, [recipeUomItemId, recipeUomVariantId, variants, catalogById]);
+  }, [recipeUomItemId, recipeUomVariantId, variants, catalogById, uomValues]);
 
   useEffect(() => {
     let active = true;
@@ -824,7 +752,7 @@ function RecipesPage() {
             <span className={styles.label}>Source UOM</span>
             <input
               className={styles.input}
-              value={formatUnitLabel(recipeUomSource || "pc")}
+              value={formatRecipeUomLabel(recipeUomSource || "pc")}
               aria-label="Recipe UOM source unit"
               readOnly
             />
@@ -949,13 +877,13 @@ function RecipesPage() {
               <div className={styles.lineField}>
                 <span className={styles.label}>Base qty</span>
                 <span>
-                  {formatQty(recipeUomAvailable.base_qty)} {formatUnitLabel(recipeUomAvailable.source_uom)}
+                  {formatQty(recipeUomAvailable.base_qty)} {formatRecipeUomLabel(recipeUomAvailable.source_uom)}
                 </span>
               </div>
               <div className={styles.lineField}>
                 <span className={styles.label}>Recipe qty</span>
                 <span>
-                  {formatQty(recipeUomAvailable.recipe_qty)} {formatUnitLabel(recipeUomAvailable.target_uom)}
+                  {formatQty(recipeUomAvailable.recipe_qty)} {formatRecipeUomLabel(recipeUomAvailable.target_uom)}
                 </span>
               </div>
             </>

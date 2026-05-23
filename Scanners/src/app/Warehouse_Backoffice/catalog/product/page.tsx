@@ -3,31 +3,9 @@
 import { useEffect, useMemo, useState, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
+import { useUomOptions } from "@/lib/use-uom-options";
 import styles from "./product.module.css";
 
-const qtyUnitOptions = [
-  { value: "pc", label: "Pc(s)" },
-  { value: "g", label: "Gram(s)" },
-  { value: "kg", label: "Kilogram(s)" },
-  { value: "mg", label: "Milligram(s)" },
-  { value: "ml", label: "Millilitre(s)" },
-  { value: "l", label: "Litre(s)" },
-  { value: "cup", label: "Cup(s)" },
-  { value: "straw", label: "Straw(s)" },
-  { value: "toilet paper", label: "Toilet Paper(s)" },
-  { value: "case", label: "Case(s)" },
-  { value: "crate", label: "Crate(s)" },
-  { value: "bottle", label: "Bottle(s)" },
-  { value: "Tin Can", label: "Tin Can(s)" },
-  { value: "Jar", label: "Jar(s)" },
-  { value: "Block", label: "Block(s)" },
-  { value: "Bucket", label: "Bucket(s)" },
-  { value: "Bag", label: "Bag(s)" },
-  { value: "Tray", label: "Tray(s)" },
-  { value: "plastic", label: "Plastic(s)" },
-  { value: "Packet", label: "Packet(s)" },
-  { value: "Box", label: "Box(es)" },
-] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },
@@ -104,6 +82,7 @@ function ProductCreatePage() {
   const [, setLoadingItem] = useState(false);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string | null }[]>([]);
   const [storageSearch, setStorageSearch] = useState("");
+  const uomOptions = useUomOptions();
 
   const editingId = searchParams?.get("id")?.trim() || "";
 
@@ -398,7 +377,7 @@ function ProductCreatePage() {
               hint="Outlet sales and transfers use this unit"
               value={form.consumption_unit}
               onChange={(v) => handleChange("consumption_unit", v)}
-              options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+              options={uomOptions}
             />
             {!disableVariantControlled && (
               <>
@@ -418,7 +397,7 @@ function ProductCreatePage() {
                   hint="How purchases are entered (case, box, sack)"
                   value={form.purchase_pack_unit}
                   onChange={(v) => handleChange("purchase_pack_unit", v)}
-                  options={qtyUnitOptions as unknown as { value: string; label: string }[]}
+                  options={uomOptions}
                 />
                 <Field
                   type="number"

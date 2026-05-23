@@ -180,6 +180,10 @@
           "table_schema": "public"
         },
         {
+          "table_name": "warehouse_purchase_imports",
+          "table_schema": "public"
+        },
+        {
           "table_name": "warehouse_purchase_items",
           "table_schema": "public"
         },
@@ -4144,6 +4148,141 @@
         },
         {
           "data_type": "uuid",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "gen_random_uuid()",
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "source",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "source_movement_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "source_invoice_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "warehouse_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "item_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "variant_key",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "qty_units",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "unit_cost",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "movement_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 10
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "receipt_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 11
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "status",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'imported'::text",
+          "ordinal_position": 12
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "error_message",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 13
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 14
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 15
+        },
+        {
+          "data_type": "uuid",
           "table_name": "warehouse_purchase_items",
           "column_name": "id",
           "is_nullable": "NO",
@@ -5441,6 +5580,30 @@
           "indexdef": "CREATE UNIQUE INDEX warehouse_damages_pkey ON public.warehouse_damages USING btree (id)",
           "indexname": "warehouse_damages_pkey",
           "table_name": "warehouse_damages",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_purchase_imports_receipt ON public.warehouse_purchase_imports USING btree (receipt_id)",
+          "indexname": "idx_purchase_imports_receipt",
+          "table_name": "warehouse_purchase_imports",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_purchase_imports_warehouse ON public.warehouse_purchase_imports USING btree (warehouse_id)",
+          "indexname": "idx_purchase_imports_warehouse",
+          "table_name": "warehouse_purchase_imports",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX ux_purchase_import_source_movement ON public.warehouse_purchase_imports USING btree (source, source_movement_id)",
+          "indexname": "ux_purchase_import_source_movement",
+          "table_name": "warehouse_purchase_imports",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX warehouse_purchase_imports_pkey ON public.warehouse_purchase_imports USING btree (id)",
+          "indexname": "warehouse_purchase_imports_pkey",
+          "table_name": "warehouse_purchase_imports",
           "table_schema": "public"
         },
         {
@@ -8235,7 +8398,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8245,7 +8408,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -8315,7 +8478,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8325,7 +8488,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8605,7 +8768,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8615,7 +8778,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8645,6 +8808,16 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
@@ -8660,32 +8833,22 @@
         },
         {
           "table_name": "item_storage_homes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
           "column_name": "normalized_variant_key",
           "table_schema": "public",
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "storage_warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8705,6 +8868,16 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "storage_warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
@@ -8716,16 +8889,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "storage_warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9355,7 +9518,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9365,12 +9528,32 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "outlet_item_routes",
           "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -9390,22 +9573,12 @@
         },
         {
           "table_name": "outlet_item_routes",
-          "column_name": "item_id",
+          "column_name": "normalized_variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9416,16 +9589,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9675,7 +9838,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9685,7 +9848,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9935,7 +10098,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9945,7 +10108,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9985,16 +10148,6 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -10006,6 +10159,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10305,7 +10468,7 @@
           "constraint_name": "outlets_default_wh_match",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_receiving_warehouse_id",
+          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10313,6 +10476,16 @@
           "column_name": null,
           "table_schema": "public",
           "constraint_name": "outlets_default_wh_match",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "outlets",
+          "foreign_column_name": "default_receiving_warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlets",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
           "foreign_column_name": "default_sales_warehouse_id",
@@ -10326,16 +10499,6 @@
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
           "foreign_column_name": "deduct_on_pos_sale",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlets",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "outlets_sales_wh_required",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "outlets",
-          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11055,7 +11218,7 @@
           "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "profile_id",
+          "foreign_column_name": "step_order",
           "foreign_table_schema": "public"
         },
         {
@@ -11065,7 +11228,7 @@
           "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "step_order",
+          "foreign_column_name": "profile_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11195,16 +11358,6 @@
           "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -11220,12 +11373,12 @@
         },
         {
           "table_name": "recipe_uom_profiles",
-          "column_name": "variant_key",
+          "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -11236,6 +11389,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "recipe_uom_profiles",
           "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "recipe_uom_profiles",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "recipe_uom_profiles",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11885,7 +12048,7 @@
           "constraint_name": "supplier_scanners_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "supplier_scanners",
-          "foreign_column_name": "supplier_id",
+          "foreign_column_name": "scanner_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11895,7 +12058,7 @@
           "constraint_name": "supplier_scanners_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "supplier_scanners",
-          "foreign_column_name": "scanner_id",
+          "foreign_column_name": "supplier_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12085,7 +12248,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "to_uom",
+          "foreign_column_name": "from_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12095,7 +12258,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "from_uom",
+          "foreign_column_name": "to_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12195,7 +12358,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12205,27 +12368,17 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "role_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "role_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "role_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12240,6 +12393,16 @@
         },
         {
           "table_name": "user_roles",
+          "column_name": "role_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "role_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
           "column_name": "outlet_id",
           "table_schema": "public",
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
@@ -12255,7 +12418,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
+          "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12265,7 +12428,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12375,6 +12538,76 @@
           "constraint_name": "warehouse_damages_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "warehouse_damages",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155268_12_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155268_14_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155268_15_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155268_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155268_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155268_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_purchase_imports",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_purchase_imports_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "warehouse_purchase_imports",
           "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },

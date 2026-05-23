@@ -4,6 +4,7 @@ import { getServiceClient } from "@/lib/supabase-server";
 const SOURCE = "afterten_stock_api";
 const API_BASE_URL = "https://afterten-stock-api-896827614552.us-central1.run.app";
 const API_PATH = "/stock/movements?type=receive";
+const DEFAULT_ITEM_KIND = "ingredient";
 
 type ApiMovementRaw = {
   _id?: string | null;
@@ -13,6 +14,14 @@ type ApiMovementRaw = {
   sku?: string | null;
   variantSku?: string | null;
   itemSku?: string | null;
+  purchaseUom?: string | null;
+  purchase_uom?: string | null;
+  purchasePackUnit?: string | null;
+  purchase_pack_unit?: string | null;
+  unitsInsidePurchaseProduct?: number | string | null;
+  units_inside_purchase_product?: number | string | null;
+  unitsPerPurchasePack?: number | string | null;
+  units_per_purchase_pack?: number | string | null;
   warehouseId?: string | null;
   warehouseName?: string | null;
   outletId?: string | null;
@@ -21,6 +30,9 @@ type ApiMovementRaw = {
   unitCost?: number | string | null;
   totalCost?: number | string | null;
   balanceAfter?: number | string | null;
+  unit?: string | null;
+  unitId?: string | null;
+  unitName?: string | null;
   ref?: { invoiceId?: string | null } | null;
   by?: { name?: string | null } | null;
   at?: string | null;
@@ -33,6 +45,11 @@ type CatalogVariantRow = {
   default_warehouse_id: string | null;
   active: boolean | null;
   sku: string | null;
+  item_kind: string | null;
+  units_per_purchase_pack: number | null;
+  purchase_pack_unit: string | null;
+  consumption_uom: string | null;
+  cost: number | null;
 };
 
 type CatalogItemRow = {
@@ -41,6 +58,12 @@ type CatalogItemRow = {
   default_warehouse_id: string | null;
   active: boolean | null;
   sku: string | null;
+  item_kind: string | null;
+  units_per_purchase_pack: number | null;
+  purchase_pack_unit: string | null;
+  consumption_uom: string | null;
+  consumption_qty_per_base: number | null;
+  cost: number | null;
 };
 
 type StorageHomeRow = {
@@ -97,6 +120,8 @@ type MatchedMovement = {
   sku: string | null;
   variantSku?: string | null;
   itemSku?: string | null;
+  apiPurchasePackUnit?: string | null;
+  apiUnitsPerPurchasePack?: number | null;
   qty: number | null;
   unitCost: number | null;
   totalCost: number | null;
@@ -107,10 +132,15 @@ type MatchedMovement = {
   movementAt: string | null;
   itemId: string | null;
   itemName: string | null;
+  variantId?: string | null;
   variantKey: string | null;
   variantName: string | null;
   defaultWarehouseId: string | null;
   storageWarehouseId?: string | null;
+  unitsPerPurchasePack?: number | null;
+  purchasePackUnit?: string | null;
+  consumptionUom?: string | null;
+  itemKind?: string | null;
 };
 
 type ImportItem = {
@@ -139,6 +169,8 @@ type ImportItem = {
   receipt_id: string | null;
   status: ImportStatus;
   status_message?: string | null;
+  created_item: boolean;
+  created_variant: boolean;
 };
 
 type ImportSummary = {
@@ -170,6 +202,71 @@ function normalizeVariantKey(value?: string | null): string {
   const trimmed = value?.trim();
   if (!trimmed) return "base";
   return trimmed.toLowerCase();
+}
+
+function normalizeWarehouseName(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed.toLowerCase() : null;
+}
+
+function normalizePackUnit(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function readPurchasePackUnit(raw: Record<string, unknown>): string | null {
+  return (
+    normalizePackUnit(cleanText(raw.unitName)) ??
+    normalizePackUnit(cleanText(raw.unit)) ??
+    normalizePackUnit(cleanText(raw.purchaseUom)) ??
+    normalizePackUnit(cleanText(raw.purchase_uom)) ??
+    normalizePackUnit(cleanText(raw.purchasePackUnit)) ??
+    normalizePackUnit(cleanText(raw.purchase_pack_unit)) ??
+    normalizePackUnit(cleanText(raw.purchaseUOM)) ??
+    null
+  );
+}
+
+function readUnitsPerPurchasePack(raw: Record<string, unknown>): number | null {
+  const candidate =
+    cleanNumber(raw.unitsInsidePurchaseProduct) ??
+    cleanNumber(raw.units_inside_purchase_product) ??
+    cleanNumber(raw.unitsPerPurchasePack) ??
+    cleanNumber(raw.units_per_purchase_pack) ??
+    null;
+  if (candidate === null || candidate === undefined) return null;
+  if (!Number.isFinite(candidate) || candidate <= 0) return null;
+  return candidate;
+}
+
+function resolveUnitsPerPurchasePack(
+  variant?: CatalogVariantRow | null,
+  item?: CatalogItemRow | null
+): number {
+  const variantUnits =
+    typeof variant?.units_per_purchase_pack === "number" ? variant.units_per_purchase_pack : null;
+  const itemUnits =
+    typeof item?.units_per_purchase_pack === "number" ? item.units_per_purchase_pack : null;
+  const candidate = variantUnits ?? itemUnits ?? 1;
+  if (!Number.isFinite(candidate) || candidate <= 0) return 1;
+  return candidate;
+}
+
+function computeEffectiveQty(qty: number | null, unitsPerPack: number): number | null {
+  if (qty === null || qty === undefined) return null;
+  const numeric = Number(qty);
+  if (!Number.isFinite(numeric)) return null;
+  return numeric * (Number.isFinite(unitsPerPack) && unitsPerPack > 0 ? unitsPerPack : 1);
+}
+
+function computeEffectiveUnitCost(unitCost: number | null, unitsPerPack: number): number | null {
+  if (unitCost === null || unitCost === undefined) return null;
+  const numeric = Number(unitCost);
+  if (!Number.isFinite(numeric)) return null;
+  if (!Number.isFinite(unitsPerPack) || unitsPerPack <= 0) return numeric;
+  return numeric / unitsPerPack;
 }
 
 function isUuid(value: unknown): value is string {
@@ -236,13 +333,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const dryRun = body?.dryRun === true;
 
-    const token = process.env.Afterten_Purchases_Api_Token?.trim();
+    const envToken = process.env.Afterten_Purchases_Api_Token?.trim();
+    const headerToken = req.headers.get("x-afterten-token")?.trim();
+    const token = envToken || (process.env.NODE_ENV !== "production" ? headerToken : undefined);
     if (!token) {
       return NextResponse.json(
         { ok: false, error: "Afterten_Purchases_Api_Token is missing" },
         { status: 500 }
       );
     }
+
+    const envStocktakeUserId = process.env.Afterten_Stocktake_User_Id?.trim();
+    const headerStocktakeUserId = req.headers.get("x-afterten-stocktake-user")?.trim();
+    const rawStocktakeUserId =
+      envStocktakeUserId || (process.env.NODE_ENV !== "production" ? headerStocktakeUserId : undefined);
+    const stocktakeUserId = rawStocktakeUserId && isUuid(rawStocktakeUserId)
+      ? rawStocktakeUserId
+      : null;
 
     const response = await fetch(`${API_BASE_URL}${API_PATH}`, {
       headers: {
@@ -267,6 +374,8 @@ export async function POST(req: NextRequest) {
       const qty = cleanNumber(item.qty);
       const unitCost = cleanNumber(item.unitCost);
       const totalCost = cleanNumber(item.totalCost);
+      const apiPurchasePackUnit = readPurchasePackUnit(item as Record<string, unknown>);
+      const apiUnitsPerPurchasePack = readUnitsPerPurchasePack(item as Record<string, unknown>);
       return {
         movementId: cleanText(item._id),
         lotId: cleanText(item.lotId),
@@ -275,6 +384,8 @@ export async function POST(req: NextRequest) {
         sku: cleanText(item.sku),
         variantSku: cleanText(item.variantSku),
         itemSku: cleanText(item.itemSku),
+        apiPurchasePackUnit,
+        apiUnitsPerPurchasePack,
         qty,
         unitCost,
         totalCost,
@@ -296,26 +407,44 @@ export async function POST(req: NextRequest) {
           .filter((value): value is string => !!value)
       )
     );
+    const warehouseNames = Array.from(
+      new Set(movements.map((row) => row.warehouseName).filter((value): value is string => !!value))
+    );
 
     const supabase = getServiceClient();
 
-    const [variantByIdRes, variantBySkuRes] = await Promise.all([
+    const [variantByIdRes, variantBySkuRes, warehouseByNameRes] = await Promise.all([
       productIds.length
         ? supabase
             .from("catalog_variants")
-            .select("id,item_id,name,default_warehouse_id,active,sku")
+            .select(
+              "id,item_id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost"
+            )
             .in("id", productIds)
         : Promise.resolve({ data: [], error: null }),
       skuList.length
         ? supabase
             .from("catalog_variants")
-            .select("id,item_id,name,default_warehouse_id,active,sku")
+            .select(
+              "id,item_id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost"
+            )
             .in("sku", skuList)
+        : Promise.resolve({ data: [], error: null }),
+      warehouseNames.length
+        ? supabase.from("warehouses").select("id,name").in("name", warehouseNames)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (variantByIdRes.error) throw variantByIdRes.error;
     if (variantBySkuRes.error) throw variantBySkuRes.error;
+    if (warehouseByNameRes.error) throw warehouseByNameRes.error;
+
+    const warehouseByNameRows = (warehouseByNameRes.data as WarehouseRow[] | null) ?? [];
+    const warehouseByName = new Map<string, WarehouseRow>();
+    warehouseByNameRows.forEach((row) => {
+      const key = normalizeWarehouseName(row.name ?? null);
+      if (key) warehouseByName.set(key, row);
+    });
 
     const variantRows = [
       ...((variantByIdRes.data as CatalogVariantRow[] | null) ?? []),
@@ -337,13 +466,17 @@ export async function POST(req: NextRequest) {
       itemIdsToFetch.length
         ? supabase
             .from("catalog_items")
-            .select("id,name,default_warehouse_id,active,sku")
+            .select(
+              "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
+            )
             .in("id", itemIdsToFetch)
         : Promise.resolve({ data: [], error: null }),
       skuList.length
         ? supabase
             .from("catalog_items")
-            .select("id,name,default_warehouse_id,active,sku")
+            .select(
+              "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
+            )
             .in("sku", skuList)
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -364,15 +497,11 @@ export async function POST(req: NextRequest) {
       if (row.sku) itemBySku.set(row.sku, row);
     });
 
-    const matchedItems: MatchedMovement[] = movements.map((row) => {
+    const matchMovement = (row: typeof movements[number]): MatchedMovement => {
       const variantMatch =
-        (row.productId ? variantById.get(row.productId) : undefined) ||
+        (row.productId && isUuid(row.productId) ? variantById.get(row.productId) : undefined) ||
         (row.variantSku ? variantBySku.get(row.variantSku) : undefined) ||
-        (row.sku ? variantBySku.get(row.sku) : undefined);
-      const itemMatch =
-        (row.productId ? itemById.get(row.productId) : undefined) ||
-        (row.itemSku ? itemBySku.get(row.itemSku) : undefined) ||
-        (row.sku ? itemBySku.get(row.sku) : undefined);
+        (!row.variantSku && row.sku ? variantBySku.get(row.sku) : undefined);
 
       if (variantMatch) {
         const parentItem = itemById.get(variantMatch.item_id) ?? null;
@@ -380,20 +509,52 @@ export async function POST(req: NextRequest) {
           ...row,
           itemId: variantMatch.item_id,
           itemName: parentItem?.name ?? row.productName ?? null,
+          variantId: variantMatch.id,
           variantKey: normalizeVariantKey(variantMatch.id),
           variantName: variantMatch.name ?? null,
-          defaultWarehouseId: variantMatch.default_warehouse_id ?? parentItem?.default_warehouse_id ?? null,
+          defaultWarehouseId:
+            variantMatch.default_warehouse_id ?? parentItem?.default_warehouse_id ?? null,
+          unitsPerPurchasePack: resolveUnitsPerPurchasePack(variantMatch, parentItem),
+          purchasePackUnit: variantMatch.purchase_pack_unit ?? parentItem?.purchase_pack_unit ?? null,
+          consumptionUom: variantMatch.consumption_uom ?? parentItem?.consumption_uom ?? null,
+          itemKind: variantMatch.item_kind ?? parentItem?.item_kind ?? null,
         };
       }
+
+      if (row.variantSku) {
+        return {
+          ...row,
+          itemId: null,
+          itemName: row.productName ?? null,
+          variantId: null,
+          variantKey: null,
+          variantName: null,
+          defaultWarehouseId: null,
+          unitsPerPurchasePack: null,
+          purchasePackUnit: null,
+          consumptionUom: null,
+          itemKind: null,
+        };
+      }
+
+      const itemMatch =
+        (row.productId && isUuid(row.productId) ? itemById.get(row.productId) : undefined) ||
+        (row.itemSku ? itemBySku.get(row.itemSku) : undefined) ||
+        (row.sku ? itemBySku.get(row.sku) : undefined);
 
       if (itemMatch) {
         return {
           ...row,
           itemId: itemMatch.id,
           itemName: itemMatch.name ?? row.productName ?? null,
+          variantId: null,
           variantKey: "base",
           variantName: null,
           defaultWarehouseId: itemMatch.default_warehouse_id ?? null,
+          unitsPerPurchasePack: resolveUnitsPerPurchasePack(null, itemMatch),
+          purchasePackUnit: itemMatch.purchase_pack_unit ?? null,
+          consumptionUom: itemMatch.consumption_uom ?? null,
+          itemKind: itemMatch.item_kind ?? null,
         };
       }
 
@@ -401,11 +562,217 @@ export async function POST(req: NextRequest) {
         ...row,
         itemId: null,
         itemName: row.productName ?? null,
+        variantId: null,
         variantKey: null,
         variantName: null,
         defaultWarehouseId: null,
+        unitsPerPurchasePack: null,
+        purchasePackUnit: null,
+        consumptionUom: null,
+        itemKind: null,
       };
+    };
+
+    const itemCreationPlans = new Map<
+      string,
+      {
+        key: string;
+        name: string;
+        sku: string | null;
+        defaultWarehouseId: string | null;
+        itemKind: string;
+        cost: number | null;
+        purchasePackUnit: string | null;
+        unitsPerPurchasePack: number | null;
+      }
+    >();
+    const variantCreationPlans = new Map<
+      string,
+      {
+        key: string;
+        itemKey: string | null;
+        itemId: string | null;
+        id: string;
+        name: string;
+        sku: string | null;
+        defaultWarehouseId: string | null;
+        itemKind: string;
+        cost: number | null;
+        purchasePackUnit: string | null;
+        unitsPerPurchasePack: number | null;
+      }
+    >();
+    const createdItemIds = new Set<string>();
+    const createdVariantIds = new Set<string>();
+
+    const resolveItemKey = (row: typeof movements[number], baseSku: string | null): string | null => {
+      if (baseSku) return `sku:${baseSku}`;
+      if (row.productName) return `name:${row.productName}`;
+      return null;
+    };
+
+    movements.forEach((row) => {
+      const baseSku = row.itemSku || (row.sku && row.sku !== row.variantSku ? row.sku : null) || null;
+      const variantMatch =
+        (row.productId && isUuid(row.productId) ? variantById.get(row.productId) : undefined) ||
+        (row.variantSku ? variantBySku.get(row.variantSku) : undefined) ||
+        (!row.variantSku && row.sku ? variantBySku.get(row.sku) : undefined);
+      const itemMatch =
+        (row.productId && isUuid(row.productId) ? itemById.get(row.productId) : undefined) ||
+        (row.itemSku ? itemBySku.get(row.itemSku) : undefined) ||
+        (!row.variantSku && row.sku ? itemBySku.get(row.sku) : undefined);
+
+      const preferredWarehouseId =
+        warehouseByName.get(normalizeWarehouseName(row.warehouseName ?? null) ?? "")?.id ?? null;
+      const rawUnitCost = row.unitCost ?? (row.totalCost && row.qty ? row.totalCost / row.qty : null);
+      const apiPurchasePackUnit = normalizePackUnit(row.apiPurchasePackUnit ?? null);
+      const apiUnitsPerPurchasePack =
+        typeof row.apiUnitsPerPurchasePack === "number" && row.apiUnitsPerPurchasePack > 0
+          ? row.apiUnitsPerPurchasePack
+          : null;
+      const baseCostPerUnit = computeEffectiveUnitCost(rawUnitCost, apiUnitsPerPurchasePack ?? 1);
+
+      if (row.variantSku) {
+        if (!variantMatch) {
+          const itemKey = resolveItemKey(row, baseSku);
+          if (!itemMatch && itemKey && !itemCreationPlans.has(itemKey)) {
+            const name = row.productName ?? baseSku ?? row.variantSku ?? row.sku ?? "Unnamed product";
+            itemCreationPlans.set(itemKey, {
+              key: itemKey,
+              name,
+              sku: baseSku,
+              defaultWarehouseId: preferredWarehouseId,
+              itemKind: DEFAULT_ITEM_KIND,
+              cost: baseCostPerUnit,
+              purchasePackUnit: apiPurchasePackUnit,
+              unitsPerPurchasePack: apiUnitsPerPurchasePack,
+            });
+          }
+
+          const variantId = row.variantSku.trim();
+          const variantKey = `${itemMatch?.id ?? itemKey ?? "missing"}|${variantId}`;
+          if (!variantCreationPlans.has(variantKey)) {
+            const name = row.variantSku ?? row.productName ?? "Variant";
+            const itemKind = itemMatch?.item_kind ?? DEFAULT_ITEM_KIND;
+            const unitsForCost = apiUnitsPerPurchasePack ?? resolveUnitsPerPurchasePack(null, itemMatch ?? null);
+            const costPerUnit = computeEffectiveUnitCost(rawUnitCost, unitsForCost);
+            variantCreationPlans.set(variantKey, {
+              key: variantKey,
+              itemKey: itemMatch ? null : itemKey,
+              itemId: itemMatch?.id ?? null,
+              id: variantId,
+              name,
+              sku: row.variantSku ?? null,
+              defaultWarehouseId: preferredWarehouseId,
+              itemKind,
+              cost: costPerUnit,
+              purchasePackUnit: apiPurchasePackUnit,
+              unitsPerPurchasePack: apiUnitsPerPurchasePack,
+            });
+          }
+        }
+        return;
+      }
+
+      if (!itemMatch) {
+        const itemKey = resolveItemKey(row, baseSku);
+        if (itemKey && !itemCreationPlans.has(itemKey)) {
+          const name = row.productName ?? baseSku ?? row.sku ?? "Unnamed product";
+          itemCreationPlans.set(itemKey, {
+            key: itemKey,
+            name,
+            sku: baseSku,
+            defaultWarehouseId: preferredWarehouseId,
+            itemKind: DEFAULT_ITEM_KIND,
+            cost: baseCostPerUnit,
+            purchasePackUnit: apiPurchasePackUnit,
+            unitsPerPurchasePack: apiUnitsPerPurchasePack,
+          });
+        }
+      }
     });
+
+    if (!dryRun) {
+      if (itemCreationPlans.size) {
+        const itemsToCreate = Array.from(itemCreationPlans.values()).map((plan) => ({
+          name: plan.name,
+          sku: plan.sku,
+          item_kind: plan.itemKind,
+          consumption_qty_per_base: 1,
+          cost: plan.cost ?? undefined,
+          purchase_pack_unit: plan.purchasePackUnit ?? "each",
+          units_per_purchase_pack: plan.unitsPerPurchasePack ?? 1,
+          default_warehouse_id: plan.defaultWarehouseId,
+        }));
+
+        const { data, error } = await supabase
+          .from("catalog_items")
+          .insert(itemsToCreate)
+          .select(
+            "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
+          );
+        if (error) throw error;
+
+        const createdItems = (data as CatalogItemRow[] | null) ?? [];
+        createdItems.forEach((row) => {
+          if (!row?.id) return;
+          itemById.set(row.id, row);
+          if (row.sku) itemBySku.set(row.sku, row);
+          createdItemIds.add(row.id);
+        });
+
+        const createdByKey = new Map<string, CatalogItemRow>();
+        createdItems.forEach((row) => {
+          const matchKey = row.sku ? `sku:${row.sku}` : row.name ? `name:${row.name}` : null;
+          if (matchKey && !createdByKey.has(matchKey)) {
+            createdByKey.set(matchKey, row);
+          }
+        });
+
+        variantCreationPlans.forEach((plan) => {
+          if (!plan.itemId && plan.itemKey) {
+            const created = createdByKey.get(plan.itemKey);
+            if (created) plan.itemId = created.id;
+          }
+        });
+      }
+
+      if (variantCreationPlans.size) {
+        const variantsToCreate = Array.from(variantCreationPlans.values())
+          .filter((plan) => plan.itemId)
+          .map((plan) => ({
+            id: plan.id,
+            item_id: plan.itemId,
+            name: plan.name,
+            sku: plan.sku,
+            item_kind: plan.itemKind,
+            cost: plan.cost ?? undefined,
+            purchase_pack_unit: plan.purchasePackUnit ?? "each",
+            units_per_purchase_pack: plan.unitsPerPurchasePack ?? 1,
+            default_warehouse_id: plan.defaultWarehouseId,
+          }));
+
+        if (variantsToCreate.length) {
+          const { data, error } = await supabase
+            .from("catalog_variants")
+            .insert(variantsToCreate)
+            .select(
+              "id,item_id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost"
+            );
+          if (error) throw error;
+
+          const createdVariants = (data as CatalogVariantRow[] | null) ?? [];
+          createdVariants.forEach((row) => {
+            if (!row?.id) return;
+            variantById.set(row.id, row);
+            if (row.sku) variantBySku.set(row.sku, row);
+            createdVariantIds.add(row.id);
+          });
+        }
+      }
+    }
+
+    const matchedItems: MatchedMovement[] = movements.map((row) => matchMovement(row));
 
     const itemIds = Array.from(
       new Set(matchedItems.map((row) => row.itemId).filter((value): value is string => !!value))
@@ -437,7 +804,13 @@ export async function POST(req: NextRequest) {
       }
       const storageKey = `${row.itemId}|${normalizeVariantKey(row.variantKey)}`;
       const storageIds = storageMap.get(storageKey) ?? [];
-      const resolvedWarehouseId = row.defaultWarehouseId || storageIds[0] || null;
+      const warehouseNameKey = normalizeWarehouseName(row.warehouseName ?? null);
+      const fallbackWarehouseId = warehouseNameKey
+        ? warehouseByName.get(warehouseNameKey)?.id ?? null
+        : null;
+      const resolvedWarehouseId = createdItemIds.has(row.itemId)
+        ? storageIds[0] ?? null
+        : row.defaultWarehouseId || storageIds[0] || fallbackWarehouseId || null;
       return { ...row, storageWarehouseId: resolvedWarehouseId };
     });
 
@@ -471,6 +844,45 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    const warehousesWithExistingItems = new Set<string>();
+    const warehousesWithNewItems = new Set<string>();
+    resolvedRows.forEach((row) => {
+      if (!row.storageWarehouseId || !row.itemId) return;
+      if (createdItemIds.has(row.itemId)) {
+        warehousesWithNewItems.add(row.storageWarehouseId);
+      } else {
+        warehousesWithExistingItems.add(row.storageWarehouseId);
+      }
+    });
+
+    const missingOpenWarehouses = storageWarehouseIds.filter((warehouseId) => {
+      if (openPeriodByWarehouse.has(warehouseId)) return false;
+      if (!warehousesWithNewItems.has(warehouseId)) return false;
+      if (warehousesWithExistingItems.has(warehouseId)) return false;
+      return true;
+    });
+
+    if (!dryRun && stocktakeUserId && missingOpenWarehouses.length) {
+      const newPeriods = missingOpenWarehouses.map((warehouseId) => ({
+        warehouse_id: warehouseId,
+        opened_by: stocktakeUserId,
+        status: "open",
+        note: "Auto-open from API purchase import",
+      }));
+
+      const { data, error } = await supabase
+        .from("warehouse_stock_periods")
+        .insert(newPeriods)
+        .select("id,warehouse_id");
+      if (error) throw error;
+
+      (data as { id?: string | null; warehouse_id?: string | null }[] | null)?.forEach((row) => {
+        if (row?.id && row?.warehouse_id) {
+          openPeriodByWarehouse.set(row.warehouse_id, row.id);
+        }
+      });
+    }
+
     const periodIds = Array.from(new Set(openPeriodByWarehouse.values()));
 
     const openingRowsRes = periodIds.length && itemIds.length
@@ -487,6 +899,56 @@ export async function POST(req: NextRequest) {
     const openingSet = new Set(
       openingRows.map((row) => `${row.period_id}|${row.item_id}|${normalizeVariantKey(row.variant_key ?? "base")}`)
     );
+
+    if (!dryRun && stocktakeUserId) {
+      const openingInserts: Record<string, unknown>[] = [];
+
+      resolvedRows.forEach((row) => {
+        if (!row.storageWarehouseId || !row.itemId || !row.variantKey) return;
+        if (!createdItemIds.has(row.itemId)) return;
+        const openPeriodId = openPeriodByWarehouse.get(row.storageWarehouseId) ?? null;
+        if (!openPeriodId) return;
+        const unitsPerPack =
+          typeof row.apiUnitsPerPurchasePack === "number" && row.apiUnitsPerPurchasePack > 0
+            ? row.apiUnitsPerPurchasePack
+            : typeof row.unitsPerPurchasePack === "number" && row.unitsPerPurchasePack > 0
+              ? row.unitsPerPurchasePack
+              : 1;
+        const effectiveQty = computeEffectiveQty(row.qty, unitsPerPack);
+        if (!effectiveQty || effectiveQty <= 0) return;
+
+        const openingKey = `${openPeriodId}|${row.itemId}|${normalizeVariantKey(row.variantKey)}`;
+        if (openingSet.has(openingKey)) return;
+
+        openingInserts.push({
+          period_id: openPeriodId,
+          item_id: row.itemId,
+          variant_key: normalizeVariantKey(row.variantKey),
+          kind: "opening",
+          counted_qty: effectiveQty,
+          counted_by: stocktakeUserId,
+          context: {
+            source: SOURCE,
+            movement_id: row.movementId,
+            invoice_id: row.invoiceId,
+          },
+        });
+      });
+
+      if (openingInserts.length) {
+        const { error } = await supabase
+          .from("warehouse_stock_counts")
+          .upsert(openingInserts, { onConflict: "period_id,item_id,variant_key,kind" });
+        if (error) throw error;
+
+        openingInserts.forEach((row) => {
+          const key = `${row.period_id}|${row.item_id}|${normalizeVariantKey(
+            typeof row.variant_key === "string" ? row.variant_key : "base"
+          )}`;
+          openingSet.add(key);
+        });
+      }
+    }
 
     const movementIds = Array.from(
       new Set(resolvedRows.map((row) => row.movementId).filter((value): value is string => !!value))
@@ -534,7 +996,16 @@ export async function POST(req: NextRequest) {
         : null;
       const existingImport = movementId ? importMap.get(movementId) : null;
       const existingReceiptId = receiptKey ? receiptMap.get(receiptKey) ?? null : null;
-      const qtyValid = typeof row.qty === "number" && row.qty > 0;
+      const unitsPerPack =
+        typeof row.apiUnitsPerPurchasePack === "number" && row.apiUnitsPerPurchasePack > 0
+          ? row.apiUnitsPerPurchasePack
+          : typeof row.unitsPerPurchasePack === "number" && row.unitsPerPurchasePack > 0
+            ? row.unitsPerPurchasePack
+            : 1;
+      const effectiveQty = computeEffectiveQty(row.qty, unitsPerPack);
+      const rawUnitCost = row.unitCost ?? (row.totalCost && row.qty ? row.totalCost / row.qty : null);
+      const effectiveUnitCost = computeEffectiveUnitCost(rawUnitCost, unitsPerPack);
+      const qtyValid = typeof effectiveQty === "number" && effectiveQty > 0;
 
       const openPeriodId = row.storageWarehouseId
         ? openPeriodByWarehouse.get(row.storageWarehouseId) ?? null
@@ -543,6 +1014,8 @@ export async function POST(req: NextRequest) {
         ? `${openPeriodId}|${row.itemId}|${normalizeVariantKey(row.variantKey)}`
         : null;
       const hasOpening = openingKey ? openingSet.has(openingKey) : false;
+      const createdItem = row.itemId ? createdItemIds.has(row.itemId) : false;
+      const createdVariant = row.variantId ? createdVariantIds.has(row.variantId) : false;
 
       let status: ImportStatus = "ready";
       let statusMessage: string | null = null;
@@ -561,10 +1034,18 @@ export async function POST(req: NextRequest) {
         statusMessage = "Storage home is not configured.";
       } else if (!openPeriodId) {
         status = "missing_open_period";
-        statusMessage = "No open stock period for storage home.";
+        statusMessage = stocktakeUserId
+          ? createdItem
+            ? "No open stock period for new item."
+            : "No open stock period for storage home."
+          : "No open stock period for storage home (stocktake user id missing).";
       } else if (!hasOpening) {
         status = "missing_opening_stock";
-        statusMessage = "Opening stock not recorded yet.";
+        statusMessage = stocktakeUserId
+          ? createdItem
+            ? "Opening stock not recorded for new item."
+            : "Opening stock not recorded yet."
+          : "Opening stock missing (stocktake user id missing).";
       } else if (!qtyValid) {
         status = "invalid_qty";
         statusMessage = "Quantity must be greater than zero.";
@@ -578,9 +1059,10 @@ export async function POST(req: NextRequest) {
         item_sku: row.itemSku ?? null,
         variant_sku: row.variantSku ?? null,
         sku: row.variantSku ?? row.itemSku ?? row.sku ?? null,
-        qty: row.qty,
-        unit_cost: row.unitCost ?? (row.totalCost && row.qty ? row.totalCost / row.qty : null),
-        total_cost: row.totalCost ?? null,
+        qty: effectiveQty,
+        unit_cost: effectiveUnitCost,
+        total_cost:
+          row.totalCost ?? (effectiveUnitCost && effectiveQty ? effectiveUnitCost * effectiveQty : null),
         movement_at: row.movementAt ?? null,
         invoice_id: row.invoiceId ?? null,
         operator_name: row.operatorName ?? null,
@@ -598,8 +1080,90 @@ export async function POST(req: NextRequest) {
         receipt_id: existingImport?.receipt_id ?? existingReceiptId ?? null,
         status,
         status_message: statusMessage,
+        created_item: createdItem,
+        created_variant: createdVariant,
       };
     });
+
+    if (!dryRun) {
+      const itemUpdates = new Map<string, Record<string, unknown>>();
+      const variantUpdates = new Map<string, Record<string, unknown>>();
+
+      resolvedRows.forEach((row, index) => {
+        const importRow = imports[index];
+        if (!importRow) return;
+        if (importRow.status !== "ready" && importRow.status !== "imported") return;
+
+        const apiPackUnit = normalizePackUnit(row.apiPurchasePackUnit ?? null);
+        const apiUnitsPerPack =
+          typeof row.apiUnitsPerPurchasePack === "number" && row.apiUnitsPerPurchasePack > 0
+            ? row.apiUnitsPerPurchasePack
+            : null;
+
+        if (row.variantId) {
+          const updates = variantUpdates.get(row.variantId) ?? { id: row.variantId };
+          const existingUnits =
+            typeof row.unitsPerPurchasePack === "number" ? row.unitsPerPurchasePack : null;
+
+          if (importRow.unit_cost !== null && importRow.unit_cost !== undefined) {
+            updates.cost = importRow.unit_cost;
+          }
+
+          if (apiPackUnit && normalizePackUnit(row.purchasePackUnit ?? null)?.toLowerCase() !== apiPackUnit.toLowerCase()) {
+            updates.purchase_pack_unit = apiPackUnit;
+          }
+
+          if (apiUnitsPerPack !== null && existingUnits !== apiUnitsPerPack) {
+            updates.units_per_purchase_pack = apiUnitsPerPack;
+          }
+
+          if (Object.keys(updates).length > 1) {
+            updates.updated_at = new Date().toISOString();
+            variantUpdates.set(row.variantId, updates);
+          }
+          return;
+        }
+
+        if (row.itemId) {
+          const updates = itemUpdates.get(row.itemId) ?? { id: row.itemId };
+          const existingUnits =
+            typeof row.unitsPerPurchasePack === "number" ? row.unitsPerPurchasePack : null;
+
+          if (importRow.unit_cost !== null && importRow.unit_cost !== undefined) {
+            updates.cost = importRow.unit_cost;
+          }
+
+          if (apiPackUnit && normalizePackUnit(row.purchasePackUnit ?? null)?.toLowerCase() !== apiPackUnit.toLowerCase()) {
+            updates.purchase_pack_unit = apiPackUnit;
+          }
+
+          if (apiUnitsPerPack !== null && existingUnits !== apiUnitsPerPack) {
+            updates.units_per_purchase_pack = apiUnitsPerPack;
+          }
+
+          if (Object.keys(updates).length > 1) {
+            updates.updated_at = new Date().toISOString();
+            itemUpdates.set(row.itemId, updates);
+          }
+        }
+      });
+
+      if (itemUpdates.size) {
+        const updates = Array.from(itemUpdates.values());
+        const { error } = await supabase
+          .from("catalog_items")
+          .upsert(updates, { onConflict: "id" });
+        if (error) throw error;
+      }
+
+      if (variantUpdates.size) {
+        const updates = Array.from(variantUpdates.values());
+        const { error } = await supabase
+          .from("catalog_variants")
+          .upsert(updates, { onConflict: "id" });
+        if (error) throw error;
+      }
+    }
 
     const importRowsToUpsert: Record<string, unknown>[] = [];
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { useUomOptions } from "@/lib/use-uom-options";
 import styles from "./variant-bulk-update.module.css";
 
 type Warehouse = { id: string; name: string };
@@ -33,81 +34,11 @@ type VariantSummary = {
   active: boolean;
 };
 
-const qtyUnits = [
-  "pc",
-  "g",
-  "kg",
-  "mg",
-  "ml",
-  "l",
-  "cup",
-  "straw",
-  "toilet paper",
-  "case",
-  "crate",
-  "bottle",
-  "Tin Can",
-  "Jar",
-  "Block",
-  "Bucket",
-  "Bag",
-  "Tray",
-  "plastic",
-  "Packet",
-  "Box",
-] as const;
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },
   { value: "raw", label: "Raw (unprocessed material)" },
 ];
-
-const formatUnitLabel = (unit: string) => {
-  const trimmed = unit.trim();
-  if (!trimmed) return "";
-  const lower = trimmed.toLowerCase();
-  const mapped =
-    lower === "each"
-      ? "Each"
-      : lower === "pc" || lower === "pcs"
-        ? "Pc(s)"
-      : lower === "g"
-        ? "Gram(s)"
-        : lower === "kg"
-          ? "Kilogram(s)"
-          : lower === "mg"
-            ? "Milligram(s)"
-            : lower === "ml"
-              ? "Millilitre(s)"
-              : lower === "l"
-                ? "Litre(s)"
-                : lower === "cup"
-                  ? "Cup(s)"
-        : lower === "straw"
-          ? "Straw(s)"
-        : lower === "toilet paper"
-          ? "Toilet Paper(s)"
-        : lower === "block"
-          ? "Block(s)"
-                : lower === "bucket"
-                  ? "Bucket(s)"
-                  : lower === "bag"
-                    ? "Bag(s)"
-                      : lower === "tray"
-                        ? "Tray(s)"
-                        : lower === "plastic"
-                          ? "Plastic(s)"
-                    : lower === "packet"
-                      ? "Packet(s)"
-                      : lower === "box"
-                        ? "Box(es)"
-                        : null;
-  if (mapped) return mapped;
-  const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-  return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
-};
-
-const unitOptions = qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }));
 
 type FieldType =
   | "text"
@@ -126,16 +57,6 @@ type FieldOption = {
   options?: { value: string; label: string }[];
 };
 
-const fieldOptions: FieldOption[] = [
-  { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
-  { value: "purchase_pack_unit", label: "How its Purchased", type: "select", options: unitOptions },
-  { value: "units_per_purchase_pack", label: "Units Inside Purchase Product", type: "number" },
-  { value: "storage_home_id", label: "Storage home(s)", type: "select-warehouse" },
-  { value: "cost", label: "Cost per base unit", type: "number" },
-  { value: "selling_price", label: "Selling price", type: "number" },
-  { value: "outlet_order_visible", label: "Show in outlet orders", type: "boolean" },
-  { value: "active", label: "Active", type: "boolean" },
-];
 
 function parseFieldValue(field: FieldOption, raw: string) {
   const trimmed = raw.trim();
@@ -191,6 +112,7 @@ export default function VariantBulkUpdatePage() {
   const [fieldValue, setFieldValue] = useState<string>("");
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const unitOptions = useUomOptions();
 
   useEffect(() => {
     async function loadCatalog() {
@@ -240,7 +162,24 @@ export default function VariantBulkUpdatePage() {
     };
   }, [selectedItemId]);
 
-  const fieldMeta = useMemo(() => fieldOptions.find((field) => field.value === selectedField), [selectedField]);
+  const fieldOptions: FieldOption[] = useMemo(
+    () => [
+      { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
+      { value: "purchase_pack_unit", label: "How its Purchased", type: "select", options: unitOptions },
+      { value: "units_per_purchase_pack", label: "Units Inside Purchase Product", type: "number" },
+      { value: "storage_home_id", label: "Storage home(s)", type: "select-warehouse" },
+      { value: "cost", label: "Cost per base unit", type: "number" },
+      { value: "selling_price", label: "Selling price", type: "number" },
+      { value: "outlet_order_visible", label: "Show in outlet orders", type: "boolean" },
+      { value: "active", label: "Active", type: "boolean" },
+    ],
+    [unitOptions]
+  );
+
+  const fieldMeta = useMemo(
+    () => fieldOptions.find((field) => field.value === selectedField),
+    [fieldOptions, selectedField]
+  );
 
   const warehouseOptions = useMemo(
     () => [{ id: "", name: "Not set" }, ...warehouses].map((w) => ({ value: w.id, label: w.name })),

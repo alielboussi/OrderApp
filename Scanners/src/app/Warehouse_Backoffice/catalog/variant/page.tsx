@@ -4,81 +4,13 @@ import { useEffect, useMemo, useState, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./variant.module.css";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
-
-const qtyUnits = [
-  "pc",
-  "g",
-  "kg",
-  "mg",
-  "ml",
-  "l",
-  "cup",
-  "case",
-  "straw",
-  "toilet paper",
-  "crate",
-  "bottle",
-  "Tin Can",
-  "Jar",
-  "Block",
-  "Bucket",
-  "Bag",
-  "Tray",
-  "plastic",
-  "Packet",
-  "Box",
-] as const;
+import { useUomOptions } from "@/lib/use-uom-options";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
   { value: "ingredient", label: "Ingredient (used in production)" },
   { value: "raw", label: "Raw (unprocessed material)" },
 ];
-
-const formatUnitLabel = (unit: string) => {
-  const trimmed = unit.trim();
-  if (!trimmed) return "";
-  const lower = trimmed.toLowerCase();
-  const mapped =
-    lower === "each"
-      ? "Each"
-      : lower === "pc" || lower === "pcs"
-        ? "Pc(s)"
-      : lower === "g"
-      ? "Gram(s)"
-      : lower === "kg"
-        ? "Kilogram(s)"
-        : lower === "mg"
-          ? "Milligram(s)"
-          : lower === "ml"
-            ? "Millilitre(s)"
-            : lower === "l"
-              ? "Litre(s)"
-              : lower === "cup"
-                ? "Cup(s)"
-                : lower === "straw"
-                  ? "Straw(s)"
-                : lower === "toilet paper"
-                  ? "Toilet Paper(s)"
-              : lower === "block"
-                ? "Block(s)"
-              : lower === "bucket"
-                ? "Bucket(s)"
-                : lower === "bag"
-                  ? "Bag(s)"
-                  : lower === "tray"
-                    ? "Tray(s)"
-                  : lower === "plastic"
-                    ? "Plastic(s)"
-                  : lower === "packet"
-                    ? "Packet(s)"
-                    : lower === "box"
-                      ? "Box(es)"
-                      : null;
-  if (mapped) return mapped;
-  const capitalized = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-  return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
-};
 
 type Warehouse = { id: string; name: string };
 type Item = { id: string; name: string; sku?: string | null };
@@ -146,6 +78,7 @@ function VariantCreatePage() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingVariant] = useState(false);
   const [storageSearch, setStorageSearch] = useState("");
+  const uomOptions = useUomOptions();
 
   const editingId = searchParams?.get("id")?.trim() || "";
   const incomingItemId = searchParams?.get("item_id")?.trim() || "";
@@ -434,14 +367,14 @@ function VariantCreatePage() {
               hint="Outlet sales and transfers use this unit"
               value={form.consumption_uom}
               onChange={(v) => handleChange("consumption_uom", v)}
-              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
+              options={uomOptions}
             />
             <Select
               label="How its Purchased"
               hint="How purchases are entered (case, box, sack)"
               value={form.purchase_pack_unit}
               onChange={(v) => handleChange("purchase_pack_unit", v)}
-              options={qtyUnits.map((value) => ({ value, label: formatUnitLabel(value) }))}
+              options={uomOptions}
             />
             <Field
               type="number"

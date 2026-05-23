@@ -43,6 +43,8 @@ type ApiImportRow = {
   receipt_id: string | null;
   status: ApiImportStatus;
   status_message?: string | null;
+  created_item: boolean;
+  created_variant: boolean;
 };
 
 type ApiImportSummary = {
@@ -129,6 +131,10 @@ export default function WarehousePurchaseEntryPage() {
   const [nextSyncAt, setNextSyncAt] = useState<string | null>(null);
   const [importSearch, setImportSearch] = useState("");
   const [importStatusFilter, setImportStatusFilter] = useState<"all" | ApiImportStatus>("all");
+  const [localToken, setLocalToken] = useState("");
+  const [localTokenSaved, setLocalTokenSaved] = useState(false);
+  const [showMissingStoragePopup, setShowMissingStoragePopup] = useState(false);
+  const [lastMissingStorageKey, setLastMissingStorageKey] = useState<string | null>(null);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -139,10 +145,15 @@ export default function WarehousePurchaseEntryPage() {
     setImportLoading(true);
     setImportError(null);
 
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (process.env.NODE_ENV !== "production" && localToken.trim()) {
+      headers["x-afterten-token"] = localToken.trim();
+    }
+
     try {
       const response = await fetch("/api/warehouse-purchase-import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ dryRun: false, mode }),
       });
       if (!response.ok) {
@@ -185,6 +196,29 @@ export default function WarehousePurchaseEntryPage() {
     };
   }, [status, runImportSync]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (typeof window === "undefined") return;
+    const saved = window.sessionStorage.getItem("afterten_purchase_token") ?? "";
+    if (saved) {
+      setLocalToken(saved);
+      setLocalTokenSaved(true);
+    }
+  }, []);
+
+  const handleSaveLocalToken = () => {
+    if (process.env.NODE_ENV === "production") return;
+    if (typeof window === "undefined") return;
+    const trimmed = localToken.trim();
+    if (trimmed) {
+      window.sessionStorage.setItem("afterten_purchase_token", trimmed);
+      setLocalTokenSaved(true);
+    } else {
+      window.sessionStorage.removeItem("afterten_purchase_token");
+      setLocalTokenSaved(false);
+    }
+  };
+
   const filteredImportRows = useMemo(() => {
     const term = importSearch.trim().toLowerCase();
     return importRows.filter((row) => {
@@ -208,6 +242,31 @@ export default function WarehousePurchaseEntryPage() {
       return haystack.includes(term);
     });
   }, [importRows, importSearch, importStatusFilter]);
+
+  const missingStorageRows = useMemo(() => {
+    const seen = new Set<string>();
+    return importRows.filter((row) => {
+      if (row.status !== "missing_storage_home") return false;
+      if (!row.created_item && !row.created_variant) return false;
+      const key = row.item_id ?? row.product_id ?? row.movement_id;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [importRows]);
+
+  useEffect(() => {
+    if (!missingStorageRows.length) {
+      setShowMissingStoragePopup(false);
+      setLastMissingStorageKey(null);
+      return;
+    }
+    const key = missingStorageRows.map((row) => row.item_id ?? row.movement_id).join("|");
+    if (key !== lastMissingStorageKey) {
+      setLastMissingStorageKey(key);
+      setShowMissingStoragePopup(true);
+    }
+  }, [missingStorageRows, lastMissingStorageKey]);
 
   if (status !== "ok") return null;
 
@@ -260,6 +319,26 @@ export default function WarehousePurchaseEntryPage() {
                 Show ready
               </button>
             </div>
+            {process.env.NODE_ENV !== "production" && (
+              <div className={styles.localTokenCard}>
+                <label className={styles.fieldLabel}>
+                  Local API token (dev only)
+                  <input
+                    className={styles.input}
+                    value={localToken}
+                    onChange={(event) => setLocalToken(event.target.value)}
+                    placeholder="Paste Afterten_Purchases_Api_Token"
+                    type="password"
+                  />
+                </label>
+                <div className={styles.localTokenRow}>
+                  <button type="button" className={styles.outlineButton} onClick={handleSaveLocalToken}>
+                    {localTokenSaved ? "Update token" : "Save token"}
+                  </button>
+                  <span className={styles.helperText}>Stored in session only.</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className={styles.syncCard}>
@@ -272,6 +351,44 @@ export default function WarehousePurchaseEntryPage() {
             </ul>
           </div>
         </section>
+
+        {showMissingStoragePopup && missingStorageRows.length > 0 && (
+          <div className={styles.popupOverlay} role="dialog" aria-modal="true">
+            <div className={styles.popupCard}>
+              <div className={styles.popupHeader}>
+                <div>
+                  <p className={styles.popupTitle}>New items need storage homes</p>
+                  <p className={styles.popupSubtitle}>
+                    Assign storage homes before these products can import.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={styles.ghostButton}
+                  onClick={() => setShowMissingStoragePopup(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className={styles.popupList}>
+                {missingStorageRows.map((row) => (
+                  <div key={row.item_id ?? row.movement_id} className={styles.popupRow}>
+                    <div>
+                      <p className={styles.popupItemTitle}>
+                        {row.product_name ?? row.item_name ?? row.item_sku ?? "New product"}
+                      </p>
+                      <p className={styles.popupItemMeta}>
+                        SKU: {row.item_sku ?? row.variant_sku ?? row.sku ?? "--"} •
+                        Warehouse: {row.api_warehouse_name ?? row.api_warehouse_id ?? "--"}
+                      </p>
+                    </div>
+                    <span className={styles.popupTag}>Storage home missing</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className={styles.panel}>
           <div className={styles.panelHeaderRow}>
