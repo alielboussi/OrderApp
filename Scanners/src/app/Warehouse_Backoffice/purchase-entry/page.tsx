@@ -64,6 +64,9 @@ type ApiImportResponse = {
   ok: boolean;
   summary: ApiImportSummary;
   items: ApiImportRow[];
+  error?: string | null;
+  details?: unknown;
+  debug?: unknown;
 };
 
 const SYNC_INTERVAL_MS = 300_000;
@@ -133,6 +136,9 @@ export default function WarehousePurchaseEntryPage() {
   const [importStatusFilter, setImportStatusFilter] = useState<"all" | ApiImportStatus>("all");
   const [localToken, setLocalToken] = useState("");
   const [localTokenSaved, setLocalTokenSaved] = useState(false);
+  const [debugToken, setDebugToken] = useState("");
+  const [debugTokenSaved, setDebugTokenSaved] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [showMissingStoragePopup, setShowMissingStoragePopup] = useState(false);
   const [lastMissingStorageKey, setLastMissingStorageKey] = useState<string | null>(null);
 
@@ -144,10 +150,14 @@ export default function WarehousePurchaseEntryPage() {
     syncInFlight.current = true;
     setImportLoading(true);
     setImportError(null);
+    setDebugInfo(null);
 
     const headers: HeadersInit = { "Content-Type": "application/json" };
     if (process.env.NODE_ENV !== "production" && localToken.trim()) {
       headers["x-afterten-token"] = localToken.trim();
+    }
+    if (debugToken.trim()) {
+      headers["x-afterten-debug"] = debugToken.trim();
     }
 
     try {
@@ -156,13 +166,26 @@ export default function WarehousePurchaseEntryPage() {
         headers,
         body: JSON.stringify({ dryRun: false, mode }),
       });
+      let payload: ApiImportResponse | null = null;
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || response.statusText);
+        try {
+          payload = (await response.json()) as ApiImportResponse;
+        } catch {
+          const text = await response.text();
+          throw new Error(text || response.statusText);
+        }
+        if (payload?.details || payload?.debug) {
+          setDebugInfo(JSON.stringify(payload.details ?? payload.debug, null, 2));
+        }
+        throw new Error(payload?.error ? String(payload.error) : "Import failed");
       }
-      const payload = (await response.json()) as ApiImportResponse;
+
+      payload = (await response.json()) as ApiImportResponse;
+      if (payload?.details || payload?.debug) {
+        setDebugInfo(JSON.stringify(payload.details ?? payload.debug, null, 2));
+      }
       if (!payload.ok) {
-        throw new Error("Import failed");
+        throw new Error(payload?.error ? String(payload.error) : "Import failed");
       }
       setImportRows(payload.items ?? []);
       setImportSummary(payload.summary ?? null);
@@ -206,6 +229,15 @@ export default function WarehousePurchaseEntryPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.sessionStorage.getItem("afterten_purchase_debug_token") ?? "";
+    if (saved) {
+      setDebugToken(saved);
+      setDebugTokenSaved(true);
+    }
+  }, []);
+
   const handleSaveLocalToken = () => {
     if (process.env.NODE_ENV === "production") return;
     if (typeof window === "undefined") return;
@@ -216,6 +248,18 @@ export default function WarehousePurchaseEntryPage() {
     } else {
       window.sessionStorage.removeItem("afterten_purchase_token");
       setLocalTokenSaved(false);
+    }
+  };
+
+  const handleSaveDebugToken = () => {
+    if (typeof window === "undefined") return;
+    const trimmed = debugToken.trim();
+    if (trimmed) {
+      window.sessionStorage.setItem("afterten_purchase_debug_token", trimmed);
+      setDebugTokenSaved(true);
+    } else {
+      window.sessionStorage.removeItem("afterten_purchase_debug_token");
+      setDebugTokenSaved(false);
     }
   };
 
@@ -291,6 +335,12 @@ export default function WarehousePurchaseEntryPage() {
         </header>
 
         {importError && <p className={styles.errorBanner}>API import: {importError}</p>}
+        {debugInfo && (
+          <div className={styles.debugPanel}>
+            <p className={styles.debugTitle}>Debug details</p>
+            <pre className={styles.debugBody}>{debugInfo}</pre>
+          </div>
+        )}
 
         <section className={styles.syncGrid}>
           <div className={styles.syncCard}>
@@ -339,6 +389,24 @@ export default function WarehousePurchaseEntryPage() {
                 </div>
               </div>
             )}
+            <div className={styles.localTokenCard}>
+              <label className={styles.fieldLabel}>
+                Debug token (optional)
+                <input
+                  className={styles.input}
+                  value={debugToken}
+                  onChange={(event) => setDebugToken(event.target.value)}
+                  placeholder="Paste Afterten_Debug_Token"
+                  type="password"
+                />
+              </label>
+              <div className={styles.localTokenRow}>
+                <button type="button" className={styles.outlineButton} onClick={handleSaveDebugToken}>
+                  {debugTokenSaved ? "Update debug token" : "Save debug token"}
+                </button>
+                <span className={styles.helperText}>Stored in session only.</span>
+              </div>
+            </div>
           </div>
 
           <div className={styles.syncCard}>

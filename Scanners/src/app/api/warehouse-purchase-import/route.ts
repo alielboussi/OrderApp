@@ -329,6 +329,11 @@ function buildSummary(items: ImportItem[]): ImportSummary {
 }
 
 export async function POST(req: NextRequest) {
+  let debugStep = "init";
+  let debugEnabled = false;
+  let debugEnv: Record<string, boolean> | undefined;
+  const debugCounts: Record<string, number> = {};
+
   try {
     const body = await req.json().catch(() => ({}));
     const dryRun = body?.dryRun === true;
@@ -347,10 +352,22 @@ export async function POST(req: NextRequest) {
     const headerStocktakeUserId = req.headers.get("x-afterten-stocktake-user")?.trim();
     const rawStocktakeUserId =
       envStocktakeUserId || (process.env.NODE_ENV !== "production" ? headerStocktakeUserId : undefined);
+    const debugToken = process.env.Afterten_Debug_Token?.trim();
+    const headerDebug = req.headers.get("x-afterten-debug")?.trim();
+    debugEnabled = Boolean(debugToken && headerDebug && headerDebug === debugToken);
+    debugEnv = debugEnabled
+      ? {
+          hasPurchaseToken: Boolean(envToken),
+          hasSupabaseUrl: Boolean(process.env.SUPABASE_URL?.trim()),
+          hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
+          hasStocktakeUserId: Boolean(rawStocktakeUserId),
+        }
+      : undefined;
     let stocktakeUserId = rawStocktakeUserId && isUuid(rawStocktakeUserId)
       ? rawStocktakeUserId
       : null;
 
+    debugStep = "fetch-api";
     const response = await fetch(`${API_BASE_URL}${API_PATH}`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -367,9 +384,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    debugStep = "parse-api";
     const payload = await response.json().catch(() => ({}));
     const rawItems: ApiMovementRaw[] = Array.isArray(payload?.items) ? payload.items : [];
 
+    debugCounts.movements = rawItems.length;
+
+    debugStep = "normalize-movements";
     const movements = rawItems.map((item) => {
       const qty = cleanNumber(item.qty);
       const unitCost = cleanNumber(item.unitCost);
@@ -411,8 +432,13 @@ export async function POST(req: NextRequest) {
       new Set(movements.map((row) => row.warehouseName).filter((value): value is string => !!value))
     );
 
+    debugCounts.productIds = productIds.length;
+    debugCounts.skuList = skuList.length;
+    debugCounts.warehouseNames = warehouseNames.length;
+
     const supabase = getServiceClient();
 
+    if (debugEnabled) debugStep = "validate-stocktake-user";
     if (stocktakeUserId) {
       const { data, error } = await supabase
         .from("stocktake_app_users")
@@ -424,6 +450,7 @@ export async function POST(req: NextRequest) {
       if (!data?.id) stocktakeUserId = null;
     }
 
+    debugStep = "load-catalog";
     const [variantByIdRes, variantBySkuRes, warehouseByNameRes] = await Promise.all([
       productIds.length
         ? supabase
@@ -703,6 +730,7 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    debugStep = "create-catalog";
     if (!dryRun) {
       if (itemCreationPlans.size) {
         const itemsToCreate = Array.from(itemCreationPlans.values()).map((plan) => ({
@@ -783,6 +811,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    debugCounts.createdItems = createdItemIds.size;
+    debugCounts.createdVariants = createdVariantIds.size;
+
     const matchedItems: MatchedMovement[] = movements.map((row) => matchMovement(row));
 
     const itemIds = Array.from(
@@ -829,6 +860,7 @@ export async function POST(req: NextRequest) {
       new Set(resolvedRows.map((row) => row.storageWarehouseId).filter((value): value is string => !!value))
     );
 
+    debugStep = "load-warehouses";
     const warehouseRowsRes = storageWarehouseIds.length
       ? await supabase.from("warehouses").select("id,name").in("id", storageWarehouseIds)
       : { data: [], error: null };
@@ -837,6 +869,7 @@ export async function POST(req: NextRequest) {
     const warehouseRows = (warehouseRowsRes.data as WarehouseRow[] | null) ?? [];
     const warehouseNameMap = new Map(warehouseRows.map((row) => [row.id, row.name ?? row.id]));
 
+    debugStep = "load-periods";
     const periodRowsRes = storageWarehouseIds.length
       ? await supabase
           .from("warehouse_stock_periods")
@@ -873,6 +906,9 @@ export async function POST(req: NextRequest) {
       return true;
     });
 
+    debugCounts.missingOpenWarehouses = missingOpenWarehouses.length;
+
+    debugStep = "auto-open-periods";
     if (!dryRun && stocktakeUserId && missingOpenWarehouses.length) {
       const newPeriods = missingOpenWarehouses.map((warehouseId) => ({
         warehouse_id: warehouseId,
@@ -895,7 +931,9 @@ export async function POST(req: NextRequest) {
     }
 
     const periodIds = Array.from(new Set(openPeriodByWarehouse.values()));
+    debugCounts.openPeriods = periodIds.length;
 
+    debugStep = "load-openings";
     const openingRowsRes = periodIds.length && itemIds.length
       ? await supabase
           .from("warehouse_stock_counts")
@@ -911,6 +949,7 @@ export async function POST(req: NextRequest) {
       openingRows.map((row) => `${row.period_id}|${row.item_id}|${normalizeVariantKey(row.variant_key ?? "base")}`)
     );
 
+    debugStep = "insert-openings";
     if (!dryRun && stocktakeUserId) {
       const openingInserts: Record<string, unknown>[] = [];
 
@@ -946,6 +985,7 @@ export async function POST(req: NextRequest) {
         });
       });
 
+      debugCounts.openingInserts = openingInserts.length;
       if (openingInserts.length) {
         const { error } = await supabase
           .from("warehouse_stock_counts")
@@ -961,6 +1001,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    debugStep = "load-imports";
     const movementIds = Array.from(
       new Set(resolvedRows.map((row) => row.movementId).filter((value): value is string => !!value))
     );
@@ -985,6 +1026,7 @@ export async function POST(req: NextRequest) {
       )
     );
 
+    debugStep = "load-receipts";
     const receiptRowsRes = referenceCodes.length && storageWarehouseIds.length
       ? await supabase
           .from("warehouse_purchase_receipts")
@@ -1096,6 +1138,7 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    debugStep = "upsert-updates";
     if (!dryRun) {
       const itemUpdates = new Map<string, Record<string, unknown>>();
       const variantUpdates = new Map<string, Record<string, unknown>>();
@@ -1208,6 +1251,7 @@ export async function POST(req: NextRequest) {
       groups.set(key, existing);
     });
 
+    debugStep = "record-receipts";
     if (!dryRun) {
       for (const [groupKey, rows] of groups.entries()) {
         const [warehouseId, referenceCode] = groupKey.split("|");
@@ -1263,6 +1307,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      debugCounts.importRows = importRowsToUpsert.length;
       if (importRowsToUpsert.length) {
         const { error } = await supabase
           .from("warehouse_purchase_imports")
@@ -1275,11 +1320,13 @@ export async function POST(req: NextRequest) {
       ok: true,
       summary: buildSummary(imports),
       items: imports,
+      debug: debugEnabled ? { step: debugStep, env: debugEnv, counts: debugCounts } : undefined,
     });
   } catch (error) {
     console.error("warehouse purchase import failed", error);
     const message = error instanceof Error ? error.message : String(error);
-    const details = process.env.NODE_ENV !== "production" ? message : undefined;
+    const showDetails = process.env.NODE_ENV !== "production" || debugEnabled;
+    const details = showDetails ? { step: debugStep, message } : undefined;
     return NextResponse.json(
       { ok: false, error: "Unable to import purchase movements", details },
       { status: 500 }
