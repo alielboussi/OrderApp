@@ -347,7 +347,7 @@ export async function POST(req: NextRequest) {
     const headerStocktakeUserId = req.headers.get("x-afterten-stocktake-user")?.trim();
     const rawStocktakeUserId =
       envStocktakeUserId || (process.env.NODE_ENV !== "production" ? headerStocktakeUserId : undefined);
-    const stocktakeUserId = rawStocktakeUserId && isUuid(rawStocktakeUserId)
+    let stocktakeUserId = rawStocktakeUserId && isUuid(rawStocktakeUserId)
       ? rawStocktakeUserId
       : null;
 
@@ -412,6 +412,17 @@ export async function POST(req: NextRequest) {
     );
 
     const supabase = getServiceClient();
+
+    if (stocktakeUserId) {
+      const { data, error } = await supabase
+        .from("stocktake_app_users")
+        .select("id")
+        .eq("id", stocktakeUserId)
+        .eq("active", true)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data?.id) stocktakeUserId = null;
+    }
 
     const [variantByIdRes, variantBySkuRes, warehouseByNameRes] = await Promise.all([
       productIds.length
