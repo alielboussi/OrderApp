@@ -954,6 +954,7 @@ export async function POST(req: NextRequest) {
     debugStep = "insert-openings";
     if (!dryRun && stocktakeUserId) {
       const openingInserts: Record<string, unknown>[] = [];
+      const openingInsertSet = new Set<string>();
 
       resolvedRows.forEach((row) => {
         if (!row.storageWarehouseId || !row.itemId || !row.variantKey) return;
@@ -970,7 +971,7 @@ export async function POST(req: NextRequest) {
         if (!effectiveQty || effectiveQty <= 0) return;
 
         const openingKey = `${openPeriodId}|${row.itemId}|${normalizeVariantKey(row.variantKey)}`;
-        if (openingSet.has(openingKey)) return;
+        if (openingSet.has(openingKey) || openingInsertSet.has(openingKey)) return;
 
         openingInserts.push({
           period_id: openPeriodId,
@@ -985,6 +986,7 @@ export async function POST(req: NextRequest) {
             invoice_id: row.invoiceId,
           },
         });
+        openingInsertSet.add(openingKey);
       });
 
       debugCounts.openingInserts = openingInserts.length;
