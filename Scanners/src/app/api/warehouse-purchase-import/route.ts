@@ -210,6 +210,12 @@ function normalizeWarehouseName(value?: string | null): string | null {
   return trimmed.length ? trimmed.toLowerCase() : null;
 }
 
+function normalizeNameKey(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed.toLowerCase() : null;
+}
+
 function normalizePackUnit(value?: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -431,10 +437,14 @@ export async function POST(req: NextRequest) {
     const warehouseNames = Array.from(
       new Set(movements.map((row) => row.warehouseName).filter((value): value is string => !!value))
     );
+    const nameList = Array.from(
+      new Set(movements.map((row) => row.productName).filter((value): value is string => !!value))
+    );
 
     debugCounts.productIds = productIds.length;
     debugCounts.skuList = skuList.length;
     debugCounts.warehouseNames = warehouseNames.length;
+    debugCounts.nameList = nameList.length;
 
     const supabase = getServiceClient();
 
@@ -500,7 +510,7 @@ export async function POST(req: NextRequest) {
     const itemIdsFromVariants = Array.from(new Set(variantRows.map((row) => row.item_id)));
     const itemIdsToFetch = Array.from(new Set([...productIds, ...itemIdsFromVariants]));
 
-    const [itemByIdRes, itemBySkuRes] = await Promise.all([
+    const [itemByIdRes, itemBySkuRes, itemByNameRes] = await Promise.all([
       itemIdsToFetch.length
         ? supabase
             .from("catalog_items")
@@ -517,10 +527,19 @@ export async function POST(req: NextRequest) {
             )
             .in("sku", skuList)
         : Promise.resolve({ data: [], error: null }),
+      nameList.length
+        ? supabase
+            .from("catalog_items")
+            .select(
+              "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
+            )
+            .in("name", nameList)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (itemByIdRes.error) throw itemByIdRes.error;
     if (itemBySkuRes.error) throw itemBySkuRes.error;
+    if (itemByNameRes.error) throw itemByNameRes.error;
 
     const itemRows = [
       ...((itemByIdRes.data as CatalogItemRow[] | null) ?? []),
@@ -529,10 +548,16 @@ export async function POST(req: NextRequest) {
 
     const itemById = new Map<string, CatalogItemRow>();
     const itemBySku = new Map<string, CatalogItemRow>();
+    const existingNameSet = new Set<string>();
     itemRows.forEach((row) => {
       if (row.active === false) return;
       itemById.set(row.id, row);
       if (row.sku) itemBySku.set(row.sku, row);
+    });
+
+    ((itemByNameRes.data as CatalogItemRow[] | null) ?? []).forEach((row) => {
+      const nameKey = normalizeNameKey(row?.name ?? null);
+      if (nameKey) existingNameSet.add(nameKey);
     });
 
     const matchMovement = (row: typeof movements[number]): MatchedMovement => {
@@ -645,7 +670,8 @@ export async function POST(req: NextRequest) {
 
     const resolveItemKey = (row: typeof movements[number], baseSku: string | null): string | null => {
       if (baseSku) return `sku:${baseSku}`;
-      if (row.productName) return `name:${row.productName}`;
+      const nameKey = normalizeNameKey(row.productName ?? null);
+      if (nameKey) return `name:${nameKey}`;
       return null;
     };
 
@@ -675,16 +701,19 @@ export async function POST(req: NextRequest) {
           const itemKey = resolveItemKey(row, baseSku);
           if (!itemMatch && itemKey && !itemCreationPlans.has(itemKey)) {
             const name = row.productName ?? baseSku ?? row.variantSku ?? row.sku ?? "Unnamed product";
-            itemCreationPlans.set(itemKey, {
-              key: itemKey,
-              name,
-              sku: baseSku,
-              defaultWarehouseId: preferredWarehouseId,
-              itemKind: DEFAULT_ITEM_KIND,
-              cost: baseCostPerUnit,
-              purchasePackUnit: apiPurchasePackUnit,
-              unitsPerPurchasePack: apiUnitsPerPurchasePack,
-            });
+            const nameKey = normalizeNameKey(name);
+            if (!nameKey || !existingNameSet.has(nameKey)) {
+              itemCreationPlans.set(itemKey, {
+                key: itemKey,
+                name,
+                sku: baseSku,
+                defaultWarehouseId: preferredWarehouseId,
+                itemKind: DEFAULT_ITEM_KIND,
+                cost: baseCostPerUnit,
+                purchasePackUnit: apiPurchasePackUnit,
+                unitsPerPurchasePack: apiUnitsPerPurchasePack,
+              });
+            }
           }
 
           const variantId = row.variantSku.trim();
@@ -716,16 +745,19 @@ export async function POST(req: NextRequest) {
         const itemKey = resolveItemKey(row, baseSku);
         if (itemKey && !itemCreationPlans.has(itemKey)) {
           const name = row.productName ?? baseSku ?? row.sku ?? "Unnamed product";
-          itemCreationPlans.set(itemKey, {
-            key: itemKey,
-            name,
-            sku: baseSku,
-            defaultWarehouseId: preferredWarehouseId,
-            itemKind: DEFAULT_ITEM_KIND,
-            cost: baseCostPerUnit,
-            purchasePackUnit: apiPurchasePackUnit,
-            unitsPerPurchasePack: apiUnitsPerPurchasePack,
-          });
+          const nameKey = normalizeNameKey(name);
+          if (!nameKey || !existingNameSet.has(nameKey)) {
+            itemCreationPlans.set(itemKey, {
+              key: itemKey,
+              name,
+              sku: baseSku,
+              defaultWarehouseId: preferredWarehouseId,
+              itemKind: DEFAULT_ITEM_KIND,
+              cost: baseCostPerUnit,
+              purchasePackUnit: apiPurchasePackUnit,
+              unitsPerPurchasePack: apiUnitsPerPurchasePack,
+            });
+          }
         }
       }
     });
@@ -763,7 +795,8 @@ export async function POST(req: NextRequest) {
 
         const createdByKey = new Map<string, CatalogItemRow>();
         createdItems.forEach((row) => {
-          const matchKey = row.sku ? `sku:${row.sku}` : row.name ? `name:${row.name}` : null;
+          const nameKey = normalizeNameKey(row.name ?? null);
+          const matchKey = row.sku ? `sku:${row.sku}` : nameKey ? `name:${nameKey}` : null;
           if (matchKey && !createdByKey.has(matchKey)) {
             createdByKey.set(matchKey, row);
           }
