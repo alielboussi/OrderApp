@@ -197,7 +197,7 @@ export default function WarehousePurchaseEntryPage() {
       setImportLoading(false);
       setNextSyncAt(new Date(Date.now() + SYNC_INTERVAL_MS).toISOString());
     }
-  }, []);
+  }, [debugToken, localToken]);
 
   useEffect(() => {
     if (status !== "ok") return;
