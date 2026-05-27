@@ -733,6 +733,7 @@ export async function POST(req: NextRequest) {
     debugStep = "create-catalog";
     if (!dryRun) {
       if (itemCreationPlans.size) {
+        debugStep = "create-catalog-items";
         const itemsToCreate = Array.from(itemCreationPlans.values()).map((plan) => ({
           name: plan.name,
           sku: plan.sku,
@@ -777,6 +778,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (variantCreationPlans.size) {
+        debugStep = "create-catalog-variants";
         const variantsToCreate = Array.from(variantCreationPlans.values())
           .filter((plan) => plan.itemId)
           .map((plan) => ({
@@ -1324,9 +1326,28 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("warehouse purchase import failed", error);
-    const message = error instanceof Error ? error.message : String(error);
+    let message = "Unknown error";
+    if (error instanceof Error) {
+      message = error.message;
+    } else if (error && typeof error === "object") {
+      const candidate = error as Record<string, unknown>;
+      message =
+        (typeof candidate.message === "string" && candidate.message) ||
+        (typeof candidate.details === "string" && candidate.details) ||
+        (typeof candidate.hint === "string" && candidate.hint) ||
+        JSON.stringify(candidate);
+    } else {
+      message = String(error);
+    }
     const showDetails = process.env.NODE_ENV !== "production" || debugEnabled;
-    const details = showDetails ? { step: debugStep, message } : undefined;
+    const details = showDetails
+      ? {
+          step: debugStep,
+          message,
+          env: debugEnv,
+          counts: debugCounts,
+        }
+      : undefined;
     return NextResponse.json(
       { ok: false, error: "Unable to import purchase movements", details },
       { status: 500 }
