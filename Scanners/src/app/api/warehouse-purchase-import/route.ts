@@ -1278,8 +1278,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("warehouse purchase import failed", error);
+    const message = error instanceof Error ? error.message : String(error);
+    const details = process.env.NODE_ENV !== "production" ? message : undefined;
     return NextResponse.json(
-      { ok: false, error: "Unable to import purchase movements" },
+      { ok: false, error: "Unable to import purchase movements", details },
       { status: 500 }
     );
   }
