@@ -139,6 +139,7 @@ export default function WarehousePurchaseEntryPage() {
   const [debugToken, setDebugToken] = useState("");
   const [debugTokenSaved, setDebugTokenSaved] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const [apiEnabled, setApiEnabled] = useState(true);
   const [showMissingStoragePopup, setShowMissingStoragePopup] = useState(false);
   const [lastMissingStorageKey, setLastMissingStorageKey] = useState<string | null>(null);
 
@@ -146,6 +147,7 @@ export default function WarehousePurchaseEntryPage() {
   const handleBackOne = () => router.back();
 
   const runImportSync = useCallback(async (mode: "auto" | "manual") => {
+    if (!apiEnabled) return;
     if (syncInFlight.current) return;
     syncInFlight.current = true;
     setImportLoading(true);
@@ -195,12 +197,21 @@ export default function WarehousePurchaseEntryPage() {
     } finally {
       syncInFlight.current = false;
       setImportLoading(false);
-      setNextSyncAt(new Date(Date.now() + SYNC_INTERVAL_MS).toISOString());
+      setNextSyncAt(apiEnabled ? new Date(Date.now() + SYNC_INTERVAL_MS).toISOString() : null);
     }
-  }, [debugToken, localToken]);
+  }, [apiEnabled, debugToken, localToken]);
 
   useEffect(() => {
     if (status !== "ok") return;
+
+    if (!apiEnabled) {
+      if (syncTimer.current) {
+        clearInterval(syncTimer.current);
+      }
+      syncTimer.current = null;
+      setNextSyncAt(null);
+      return;
+    }
 
     void runImportSync("auto");
     if (syncTimer.current) {
@@ -217,7 +228,7 @@ export default function WarehousePurchaseEntryPage() {
       }
       syncTimer.current = null;
     };
-  }, [status, runImportSync]);
+  }, [status, apiEnabled, runImportSync]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -235,6 +246,14 @@ export default function WarehousePurchaseEntryPage() {
     if (saved) {
       setDebugToken(saved);
       setDebugTokenSaved(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem("afterten_purchase_api_enabled");
+    if (stored !== null) {
+      setApiEnabled(stored === "true");
     }
   }, []);
 
@@ -260,6 +279,18 @@ export default function WarehousePurchaseEntryPage() {
     } else {
       window.sessionStorage.removeItem("afterten_purchase_debug_token");
       setDebugTokenSaved(false);
+    }
+  };
+
+  const handleToggleApi = () => {
+    if (typeof window === "undefined") return;
+    const nextValue = !apiEnabled;
+    setApiEnabled(nextValue);
+    window.sessionStorage.setItem("afterten_purchase_api_enabled", String(nextValue));
+    if (!nextValue) {
+      setNextSyncAt(null);
+    } else {
+      setNextSyncAt(new Date(Date.now() + SYNC_INTERVAL_MS).toISOString());
     }
   };
 
@@ -362,12 +393,27 @@ export default function WarehousePurchaseEntryPage() {
               </div>
             </div>
             <div className={styles.syncActions}>
-              <button type="button" className={styles.primaryButton} onClick={() => runImportSync("manual")} disabled={importLoading}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => runImportSync("manual")}
+                disabled={importLoading || !apiEnabled}
+              >
                 {importLoading ? "Syncing..." : "Sync now"}
               </button>
               <button type="button" className={styles.outlineButton} onClick={() => setImportStatusFilter("ready")}>
                 Show ready
               </button>
+            </div>
+            <div className={styles.apiToggleRow}>
+              <button
+                type="button"
+                className={apiEnabled ? styles.toggleOn : styles.toggleOff}
+                onClick={handleToggleApi}
+              >
+                {apiEnabled ? "API intake: On" : "API intake: Off"}
+              </button>
+              <span className={styles.helperText}>Turn off to stop syncing while you work.</span>
             </div>
             {process.env.NODE_ENV !== "production" && (
               <div className={styles.localTokenCard}>

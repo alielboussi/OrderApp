@@ -1241,18 +1241,26 @@ export async function POST(req: NextRequest) {
 
       if (itemUpdates.size) {
         const updates = Array.from(itemUpdates.values());
-        const { error } = await supabase
-          .from("catalog_items")
-          .upsert(updates, { onConflict: "id" });
-        if (error) throw error;
+        for (const update of updates) {
+          const { id, ...changes } = update;
+          const { error } = await supabase
+            .from("catalog_items")
+            .update(changes)
+            .eq("id", id);
+          if (error) throw error;
+        }
       }
 
       if (variantUpdates.size) {
         const updates = Array.from(variantUpdates.values());
-        const { error } = await supabase
-          .from("catalog_variants")
-          .upsert(updates, { onConflict: "id" });
-        if (error) throw error;
+        for (const update of updates) {
+          const { id, ...changes } = update;
+          const { error } = await supabase
+            .from("catalog_variants")
+            .update(changes)
+            .eq("id", id);
+          if (error) throw error;
+        }
       }
     }
 
