@@ -13,6 +13,7 @@ public sealed class OutletOptions
 public sealed class SupabaseOptions
 {
     public string Url { get; init; } = string.Empty;
+    public string AnonKey { get; init; } = string.Empty;
     public string ServiceKey { get; init; } = string.Empty;
 }
 

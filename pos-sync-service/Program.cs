@@ -1,7 +1,9 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -25,8 +27,17 @@ var runAsService = args.Any(static a => string.Equals(a, "--run-as-service", Str
 var runListener = args.Any(static a => string.Equals(a, "--listener", StringComparison.OrdinalIgnoreCase));
 var runUi = args.Any(static a => string.Equals(a, "--ui", StringComparison.OrdinalIgnoreCase));
 
-var appSettingsPath = AppSettingsFile.Ensure(settings.ContentRootPath ?? AppContext.BaseDirectory);
-builder.Configuration.AddIniFile(appSettingsPath, optional: false, reloadOnChange: true);
+var configRoot = settings.ContentRootPath ?? AppContext.BaseDirectory;
+var legacyIniPath = AppSettingsFile.GetIniPath(configRoot);
+var jsonPath = AppSettingsFile.GetJsonPath(configRoot);
+if (!File.Exists(jsonPath) && !File.Exists(legacyIniPath))
+{
+    AppSettingsFile.EnsureJson(configRoot);
+}
+
+builder.Configuration
+    .AddIniFile(legacyIniPath, optional: true, reloadOnChange: true)
+    .AddJsonFile(jsonPath, optional: true, reloadOnChange: true);
 
 builder.Services.AddOptions<PosDbOptions>()
     .Bind(builder.Configuration.GetSection("PosDb"))
@@ -40,7 +51,10 @@ builder.Services.AddOptions<OutletOptions>()
 builder.Services.AddOptions<SupabaseOptions>()
     .Bind(builder.Configuration.GetSection("Supabase"))
     .Validate(o => !string.IsNullOrWhiteSpace(o.Url), "Supabase:Url is required")
-    .Validate(o => !string.IsNullOrWhiteSpace(o.ServiceKey), "Supabase:ServiceKey is required")
+    .Validate(
+        o => !string.IsNullOrWhiteSpace(o.ServiceKey) || !string.IsNullOrWhiteSpace(o.AnonKey),
+        "Supabase:ServiceKey or Supabase:AnonKey is required"
+    )
     .ValidateOnStart();
 
 builder.Services.AddOptions<SyncOptions>()

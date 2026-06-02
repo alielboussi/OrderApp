@@ -41,7 +41,7 @@ public sealed class ScpgtCoordinator
     {
         if (_outlet.Id == Guid.Empty)
         {
-            return BuildSnapshot("Outlet Id is not configured.", "Update Outlet:Id in appsettings.txt.", null, false, false, false, false);
+            return BuildSnapshot("Outlet Id is not configured.", "Update Outlet:Id in appsettings.json.", null, false, false, false, false);
         }
 
         var linked = await _supabase.GetOutletWarehouseIdsAsync(_outlet.Id, cancellationToken);
@@ -197,7 +197,7 @@ public sealed class ScpgtCoordinator
     private ScpgtUiSnapshot BuildSnapshot(
         string title,
         string detail,
-        WarehousePeriodRow? period,
+        SupabaseClient.WarehousePeriodRow? period,
         bool shouldHideUi,
         bool hasOpening,
         bool hasClosing,

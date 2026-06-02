@@ -37,6 +37,37 @@ type ProductOption = {
   item_kind: string | null;
 };
 
+type PosSalesOrder = {
+  id: string;
+  outlet_id: string;
+  source_event_id: string | null;
+  pos_sale_id: string | null;
+  branch_id: number | null;
+  created_at: string;
+  order_type?: string | null;
+  bill_type?: string | null;
+};
+
+type PosSalesRow = {
+  id: string;
+  outlet_id: string;
+  item_id: string;
+  variant_key: string | null;
+  qty_units: number | null;
+  sold_at: string;
+  sale_price: number | null;
+  vat_exc_price: number | null;
+  flavour_price: number | null;
+  context?: { source_event_id?: string | null } | null;
+};
+
+type PosSalesResponse = {
+  orders: PosSalesOrder[];
+  sales?: PosSalesRow[];
+  order_count: number;
+  sales_count?: number;
+};
+
 function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
   return Array.isArray(value) ? value[0] ?? null : value;
@@ -146,6 +177,17 @@ export default function WarehouseSalesReportsPage() {
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [productOpen, setProductOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+  const [posOutletId, setPosOutletId] = useState<string>("");
+  const [posSourceId, setPosSourceId] = useState("");
+  const [posSourcePrefix, setPosSourcePrefix] = useState("");
+  const [posBranchId, setPosBranchId] = useState("");
+  const [posLimit, setPosLimit] = useState("500");
+  const [posIncludeSales, setPosIncludeSales] = useState(true);
+  const [posOrders, setPosOrders] = useState<PosSalesOrder[]>([]);
+  const [posSales, setPosSales] = useState<PosSalesRow[]>([]);
+  const [posLoading, setPosLoading] = useState(false);
+  const [posError, setPosError] = useState<string | null>(null);
+  const [posLastRun, setPosLastRun] = useState<string | null>(null);
 
   const handleBack = () => router.push("/Warehouse_Backoffice");
   const handleBackOne = () => router.back();
@@ -216,6 +258,7 @@ export default function WarehouseSalesReportsPage() {
       active = false;
     };
   }, [status, supabase, selectedOutletIds.length]);
+
 
   const toggleOutlet = (id: string) => {
     setSelectedOutletIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -324,6 +367,83 @@ export default function WarehouseSalesReportsPage() {
       setTimeout(cleanup, 1000);
     }, 400);
   };
+
+  const runPosSales = useCallback(async () => {
+    if (status !== "ok") return;
+
+    try {
+      setPosLoading(true);
+      setPosError(null);
+
+      const params = new URLSearchParams();
+
+      if (posOutletId) {
+        params.set("outletId", posOutletId);
+      }
+
+      if (startDate) {
+        const sinceIso = new Date(`${startDate}T${startTime || "00:00"}:00`).toISOString();
+        params.set("since", sinceIso);
+      }
+
+      if (endDate) {
+        if (endTime) {
+          const untilIso = new Date(`${endDate}T${endTime}:00`).toISOString();
+          params.set("until", untilIso);
+        } else {
+          const end = new Date(`${endDate}T00:00:00`);
+          end.setDate(end.getDate() + 1);
+          params.set("until", end.toISOString());
+        }
+      }
+
+      const limitValue = posLimit.trim() || "500";
+      params.set("limit", limitValue);
+
+      if (posIncludeSales) {
+        params.set("includeSales", "1");
+      }
+
+      const sourceId = posSourceId.trim();
+      const sourcePrefix = posSourcePrefix.trim();
+      if (sourceId) {
+        params.set("sourceEventId", sourceId);
+      } else if (sourcePrefix) {
+        params.set("sourceEventPrefix", sourcePrefix);
+      }
+
+      const branchValue = posBranchId.trim();
+      if (branchValue) {
+        params.set("branchId", branchValue);
+      }
+
+      const response = await fetch(`/api/pos-sales?${params.toString()}`);
+      const payload = (await response.json()) as PosSalesResponse | { error?: string };
+      if (!response.ok) {
+        throw new Error("error" in payload && payload.error ? payload.error : "Unable to load POS sales");
+      }
+
+      setPosOrders(payload.orders ?? []);
+      setPosSales(payload.sales ?? []);
+      setPosLastRun(new Date().toLocaleString());
+    } catch (err) {
+      setPosError(toErrorMessage(err));
+    } finally {
+      setPosLoading(false);
+    }
+  }, [
+    status,
+    posOutletId,
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    posLimit,
+    posIncludeSales,
+    posSourceId,
+    posSourcePrefix,
+    posBranchId,
+  ]);
 
   const runReport = useCallback(async () => {
     if (status !== "ok") return;
@@ -717,6 +837,144 @@ export default function WarehouseSalesReportsPage() {
           <div className={styles.summaryCard}>
             <p className={styles.summaryLabel}>Items in Report</p>
             <p className={styles.summaryValue}>{aggregated.length}</p>
+          </div>
+        </section>
+
+        <section className={styles.posCard}>
+          <div className={styles.posHeader}>
+            <div>
+              <h2 className={styles.filterTitle}>POS Sync Intake (API)</h2>
+              <p className={styles.smallNote}>Pulls orders from the middleware-backed /api/pos-sales endpoint using the same date range.</p>
+            </div>
+            <div className={styles.posHeaderActions}>
+              <button className={styles.secondaryButton} onClick={runPosSales} disabled={posLoading}>
+                {posLoading ? "Loading..." : "Run POS Check"}
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.posGrid}>
+            <label className={styles.inputLabel}>
+              Outlet
+              <select
+                className={styles.textInput}
+                value={posOutletId}
+                onChange={(event) => setPosOutletId(event.target.value)}
+              >
+                <option value="">All outlets</option>
+                {outlets.map((outlet) => (
+                  <option key={outlet.id} value={outlet.id}>
+                    {outlet.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={styles.inputLabel}>
+              Source event id (exact)
+              <input
+                className={styles.textInput}
+                placeholder="POS-2026-..."
+                value={posSourceId}
+                onChange={(event) => setPosSourceId(event.target.value)}
+              />
+            </label>
+
+            <label className={styles.inputLabel}>
+              Source event prefix
+              <input
+                className={styles.textInput}
+                placeholder="POS-2026-06"
+                value={posSourcePrefix}
+                onChange={(event) => setPosSourcePrefix(event.target.value)}
+              />
+            </label>
+
+            <label className={styles.inputLabel}>
+              Branch id
+              <input
+                className={styles.textInput}
+                placeholder="1"
+                value={posBranchId}
+                onChange={(event) => setPosBranchId(event.target.value)}
+              />
+            </label>
+
+            <label className={styles.inputLabel}>
+              Limit
+              <input
+                className={styles.textInput}
+                type="number"
+                min={1}
+                max={2000}
+                value={posLimit}
+                onChange={(event) => setPosLimit(event.target.value)}
+              />
+            </label>
+
+            <label className={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                checked={posIncludeSales}
+                onChange={(event) => setPosIncludeSales(event.target.checked)}
+              />
+              <span>Include outlet_sales rows</span>
+            </label>
+          </div>
+
+          <p className={styles.smallNote}>Source event id overrides the prefix filter.</p>
+          {posLastRun ? <p className={styles.muted}>Last run: {posLastRun}</p> : null}
+          {posError ? <p className={styles.error}>POS check error: {posError}</p> : null}
+
+          <div className={styles.posSummary}>
+            <div className={styles.posMetric}>
+              <p className={styles.posMetricLabel}>Orders</p>
+              <p className={styles.posMetricValue}>{posOrders.length}</p>
+            </div>
+            <div className={styles.posMetric}>
+              <p className={styles.posMetricLabel}>Sales Rows</p>
+              <p className={styles.posMetricValue}>{posIncludeSales ? posSales.length : 0}</p>
+            </div>
+          </div>
+
+          <div className={styles.posResults}>
+            <div>
+              <p className={styles.posSectionTitle}>Recent Orders</p>
+              {posOrders.length === 0 ? (
+                <p className={styles.muted}>No POS orders returned yet.</p>
+              ) : (
+                <div className={styles.posList}>
+                  {posOrders.slice(0, 5).map((order) => (
+                    <div key={order.id} className={styles.posRow}>
+                      <p className={styles.posRowTitle}>{order.source_event_id ?? "(missing source id)"}</p>
+                      <p className={styles.posRowMeta}>
+                        {order.created_at} · Branch {order.branch_id ?? "-"} · Sale {order.pos_sale_id ?? "-"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {posIncludeSales ? (
+              <div>
+                <p className={styles.posSectionTitle}>Recent Sales</p>
+                {posSales.length === 0 ? (
+                  <p className={styles.muted}>No outlet_sales rows returned yet.</p>
+                ) : (
+                  <div className={styles.posList}>
+                    {posSales.slice(0, 5).map((sale) => (
+                      <div key={sale.id} className={styles.posRow}>
+                        <p className={styles.posRowTitle}>{sale.context?.source_event_id ?? sale.item_id}</p>
+                        <p className={styles.posRowMeta}>
+                          {sale.sold_at} · Qty {formatQty(parseNumber(sale.qty_units))} · Variant {sale.variant_key ?? "base"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </section>
 

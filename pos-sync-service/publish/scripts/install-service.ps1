@@ -1,7 +1,7 @@
 param(
     [string]$PublishOutput = (Resolve-Path (Join-Path $PSScriptRoot "..") -ErrorAction SilentlyContinue).Path,
-    [string]$InstallPath = "C:\Program Files\TimeSettingsLock",
-    [string]$ConfigRoot = (Join-Path $env:ProgramData "TimeSettingsLock"),
+    [string]$InstallPath = "C:\Program Files\SCPGT",
+    [string]$ConfigRoot = (Join-Path $env:ProgramData "SCPGT"),
     [switch]$SkipPublish
 )
 
@@ -46,7 +46,7 @@ if (-not $SkipPublish) {
 }
 
 function Stop-RunningProcesses {
-    $names = @("PosSyncService", "TimeSettingsLock")
+    $names = @("PosSyncService", "TimeSettingsLock", "SCPGT")
     foreach ($name in $names) {
         Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
@@ -56,7 +56,7 @@ function Stop-RunningProcesses {
 Write-Info "Ensuring install path $InstallPath"
 New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
 Write-Info "Stopping service/processes if running"
-$svcName = "TimeSettingsLock"
+$svcName = "SCPGT"
 if (Get-Service -Name $svcName -ErrorAction SilentlyContinue) {
     Stop-Service -Name $svcName -ErrorAction SilentlyContinue
 }
@@ -82,21 +82,47 @@ while ($true) {
 # 3) Ensure config root exists
 Write-Info "Ensuring config root $ConfigRoot"
 New-Item -ItemType Directory -Force -Path $ConfigRoot | Out-Null
-if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
-    $settingsSource = Join-Path $PublishOutput 'appsettings.json'
-    if (Test-Path $settingsSource) {
-        Write-Warn "No appsettings.json at $ConfigRoot. Copying template from publish output. Edit it before starting the service."
-        Copy-Item $settingsSource (Join-Path $ConfigRoot 'appsettings.json')
+$settingsJson = Join-Path $ConfigRoot "appsettings.json"
+$settingsIni = Join-Path $ConfigRoot "appsettings.txt"
+$settingsSource = Join-Path $PublishOutput "appsettings.json"
+
+if (-not (Test-Path $settingsJson)) {
+        if (Test-Path $settingsIni) {
+                Write-Warn "Found legacy appsettings.txt at $ConfigRoot. Using it until appsettings.json is created."
+        } elseif (Test-Path $settingsSource) {
+                Write-Warn "No appsettings.json at $ConfigRoot. Copying template from publish output. Edit it before starting SCPGT."
+                Copy-Item $settingsSource $settingsJson
+        } else {
+                Write-Warn "No appsettings.json at $ConfigRoot. Creating a template; update it before starting SCPGT."
+                @'
+{
+    "PosDb": {
+        "ConnectionString": "Server=localhost;Database=POS;User Id=POSUSER;Password=CHANGE_ME;TrustServerCertificate=True"
+    },
+    "Outlet": {
+        "Id": "00000000-0000-0000-0000-000000000000"
+    },
+    "Supabase": {
+        "Url": "https://YOUR-PROJECT.supabase.co",
+        "AnonKey": "SUPABASE_ANON_KEY",
+        "ServiceKey": "SUPABASE_SERVICE_ROLE_KEY"
+    },
+    "Sync": {
+        "PollSeconds": 60,
+        "BatchSize": 50,
+        "SourceSystem": "afterten-pos"
+    },
+    "Logging": {
+        "LogLevel": {
+            "Default": "Information"
+        }
     }
-    else {
-        Write-Err "No appsettings.json found in publish output. Please add one to $ConfigRoot."
-    }
+}
+'@ | Set-Content -Path $settingsJson -Encoding UTF8
+        }
 }
 
-$svcExe = Join-Path $InstallPath "TimeSettingsLock.exe"
-if (-not (Test-Path $svcExe)) {
-    $svcExe = Join-Path $InstallPath "PosSyncService.exe"
-}
+$svcExe = Join-Path $InstallPath "SCPGT.exe"
 if (-not (Test-Path $svcExe)) {
     throw "Service executable not found in $InstallPath"
 }
@@ -110,7 +136,7 @@ if (Get-Service -Name $svcName -ErrorAction SilentlyContinue) {
     sc.exe config $svcName binPath= $binArgs | Out-Null
 } else {
     Write-Info "Creating service $svcName"
-    New-Service -Name $svcName -BinaryPathName $binArgs -DisplayName "Time Settings Lock" -Description "POS sync and stock update service" -StartupType Automatic
+    New-Service -Name $svcName -BinaryPathName $binArgs -DisplayName "SCPGT" -Description "Background sync service" -StartupType Automatic
 }
 
 # 5) Start service
@@ -118,3 +144,9 @@ Write-Info "Starting service $svcName"
 Start-Service -Name $svcName
 Write-Info "Service status:"
 Get-Service -Name $svcName | Format-Table Name,Status,StartType -AutoSize
+
+# 6) Add hidden hotkey listener to startup (no tray icon)
+$runKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+$listenerArgs = "\"$svcExe\" --listener --contentRoot \"$ConfigRoot\""
+Write-Info "Registering SCPGT listener for startup"
+New-ItemProperty -Path $runKey -Name "SCPGT" -Value $listenerArgs -PropertyType String -Force | Out-Null

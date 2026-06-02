@@ -9,11 +9,12 @@ dotnet publish -c Release -r win-x64 --self-contained true -o publish
 (This produces `SCPGT.exe` in `publish/`.)
 
 ## Configure
-Edit `publish/appsettings.txt` per outlet:
+Edit `publish/appsettings.json` per outlet:
 - `PosDb.ConnectionString`: SQL Server for the POS at that outlet.
 - `Outlet.Id`: Supabase outlet UUID.
 - `Supabase.Url`: Supabase project URL.
-- `Supabase.ServiceKey`: Service role key (or a restricted key for RPC execution).
+- `Supabase.AnonKey`: Anonymous key (preferred if RPCs allow anon access).
+- `Supabase.ServiceKey`: Service role key (optional; used if provided).
 - `Sync.BatchSize`, `Sync.SourceSystem`: sync idempotency settings.
 
 ## Install as Windows Service (PowerShell as Administrator)

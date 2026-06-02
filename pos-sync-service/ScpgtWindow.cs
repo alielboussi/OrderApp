@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -8,18 +9,18 @@ namespace PosSyncService;
 
 public sealed class ScpgtWindow : Window
 {
-    private readonly TextBlock _statusText;
-    private readonly TextBlock _subStatusText;
-    private readonly TextBlock _warehouseText;
-    private readonly TextBlock _periodText;
-    private readonly TextBlock _openingText;
-    private readonly TextBlock _closingText;
-    private readonly TextBlock _closingRequestText;
-    private readonly TextBlock _syncWindowText;
-    private readonly TextBlock _lastSyncText;
-    private readonly Button _openButton;
-    private readonly Button _closeButton;
-    private readonly Button _syncButton;
+    private TextBlock _statusText = null!;
+    private TextBlock _subStatusText = null!;
+    private TextBlock _warehouseText = null!;
+    private TextBlock _periodText = null!;
+    private TextBlock _openingText = null!;
+    private TextBlock _closingText = null!;
+    private TextBlock _closingRequestText = null!;
+    private TextBlock _syncWindowText = null!;
+    private TextBlock _lastSyncText = null!;
+    private Button _openButton = null!;
+    private Button _closeButton = null!;
+    private Button _syncButton = null!;
 
     public event EventHandler? CloseRequested;
     public event EventHandler? StartRequested;

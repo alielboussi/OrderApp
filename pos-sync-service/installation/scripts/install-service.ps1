@@ -82,16 +82,45 @@ while ($true) {
 # 3) Ensure config root exists
 Write-Info "Ensuring config root $ConfigRoot"
 New-Item -ItemType Directory -Force -Path $ConfigRoot | Out-Null
-if (-not (Test-Path "$ConfigRoot\appsettings.json")) {
-    $settingsSource = Join-Path $PublishOutput 'appsettings.json'
-    if (Test-Path $settingsSource) {
-        Write-Warn "No appsettings.json at $ConfigRoot. Copying template from publish output. Edit it before starting the service."
-        Copy-Item $settingsSource (Join-Path $ConfigRoot 'appsettings.json')
-    }
-    else {
-        Write-Err "No appsettings.json found in publish output. Please add one to $ConfigRoot."
+             $settingsJson = Join-Path $ConfigRoot "appsettings.json"
+             $settingsIni = Join-Path $ConfigRoot "appsettings.txt"
+             $settingsSource = Join-Path $PublishOutput "appsettings.json"
+
+             if (-not (Test-Path $settingsJson)) {
+                     if (Test-Path $settingsIni) {
+                             Write-Warn "Found legacy appsettings.txt at $ConfigRoot. Using it until appsettings.json is created."
+                     } elseif (Test-Path $settingsSource) {
+                             Write-Warn "No appsettings.json at $ConfigRoot. Copying template from publish output. Edit it before starting SCPGT."
+                             Copy-Item $settingsSource $settingsJson
+                     } else {
+                             Write-Warn "No appsettings.json at $ConfigRoot. Creating a template; update it before starting SCPGT."
+                             @'
+{
+    "PosDb": {
+        "ConnectionString": "Server=localhost;Database=POS;User Id=POSUSER;Password=CHANGE_ME;TrustServerCertificate=True"
+    },
+    "Outlet": {
+        "Id": "00000000-0000-0000-0000-000000000000"
+    },
+    "Supabase": {
+        "Url": "https://YOUR-PROJECT.supabase.co",
+        "AnonKey": "SUPABASE_ANON_KEY",
+        "ServiceKey": "SUPABASE_SERVICE_ROLE_KEY"
+    },
+    "Sync": {
+        "PollSeconds": 60,
+        "BatchSize": 50,
+        "SourceSystem": "afterten-pos"
+    },
+    "Logging": {
+        "LogLevel": {
+            "Default": "Information"
+        }
     }
 }
+'@ | Set-Content -Path $settingsJson -Encoding UTF8
+                     }
+             }
 
 $svcExe = Join-Path $InstallPath "TimeSettingsLock.exe"
 if (-not (Test-Path $svcExe)) {

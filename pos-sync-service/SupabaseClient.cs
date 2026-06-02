@@ -1,7 +1,9 @@
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PosSyncService.Models;
@@ -14,6 +16,7 @@ public sealed class SupabaseClient
     private readonly OutletOptions _outlet;
     private readonly IHttpClientFactory _clientFactory;
     private readonly ILogger<SupabaseClient> _logger;
+    private bool _warnedAnon;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan[] RetryDelays =
     {
@@ -295,13 +298,35 @@ public sealed class SupabaseClient
     {
         var client = _clientFactory.CreateClient("Supabase");
         client.BaseAddress = new Uri(_options.Url);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ServiceKey);
+        var key = ResolveAuthKey();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
         if (!client.DefaultRequestHeaders.Contains("apikey"))
         {
-            client.DefaultRequestHeaders.Add("apikey", _options.ServiceKey);
+            client.DefaultRequestHeaders.Add("apikey", key);
         }
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return client;
+    }
+
+    private string ResolveAuthKey()
+    {
+        if (!string.IsNullOrWhiteSpace(_options.ServiceKey))
+        {
+            return _options.ServiceKey;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.AnonKey))
+        {
+            if (!_warnedAnon)
+            {
+                _logger.LogWarning("Supabase using AnonKey; ensure RPCs are accessible to anon role.");
+                _warnedAnon = true;
+            }
+
+            return _options.AnonKey;
+        }
+
+        return string.Empty;
     }
 
     private async Task<HttpResponseMessage> SendWithRetryAsync(
