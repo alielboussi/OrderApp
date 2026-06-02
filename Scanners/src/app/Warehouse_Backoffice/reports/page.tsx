@@ -423,8 +423,13 @@ export default function WarehouseSalesReportsPage() {
         throw new Error("error" in payload && payload.error ? payload.error : "Unable to load POS sales");
       }
 
-      setPosOrders(payload.orders ?? []);
-      setPosSales(payload.sales ?? []);
+      if ("orders" in payload) {
+        setPosOrders(payload.orders ?? []);
+        setPosSales(payload.sales ?? []);
+      } else {
+        setPosOrders([]);
+        setPosSales([]);
+      }
       setPosLastRun(new Date().toLocaleString());
     } catch (err) {
       setPosError(toErrorMessage(err));
