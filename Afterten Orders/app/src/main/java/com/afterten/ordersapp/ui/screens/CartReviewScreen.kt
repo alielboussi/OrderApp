@@ -102,8 +102,8 @@ fun CartReviewScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(text = "Items: ${cart.sumOf { it.qty }}", color = Color.White)
-                        Text(text = "Subtotal: ${formatMoney(subtotal)}", fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text(text = "Items: ${cart.sumOf { it.qty }}", color = MaterialTheme.colorScheme.onSurface)
+                        Text(text = "Subtotal: ${formatMoney(subtotal)}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     }
                     Button(
                         onClick = {
@@ -134,7 +134,7 @@ fun CartReviewScreen(
                     Text(
                         text = "Quantities below are in inner-pack units. Each purchase pack deducts the listed inner-pack amount.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                 )
             }
@@ -147,7 +147,7 @@ fun CartReviewScreen(
                         Text(
                             text = header,
                             style = MaterialTheme.typography.titleLarge.copy(fontSize = 48.sp),
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             textDecoration = TextDecoration.Underline,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
@@ -162,7 +162,7 @@ fun CartReviewScreen(
                                             text = item.name,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 3,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -170,13 +170,13 @@ fun CartReviewScreen(
                                         Text(
                                             text = "Cost: ${formatMoney(item.unitPrice)}  •  Amount: ${formatMoney(item.lineTotal)}",
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = Color.White.copy(alpha = 0.9f)
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                                         )
                                         formatPackageUnits(item.unitsPerPurchasePack)?.let { units ->
                                             Text(
                                                 text = "1 ${item.purchasePackUnit.uppercase()} = $units ${item.consumptionUom.uppercase()}",
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = Color.White.copy(alpha = 0.85f)
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                                             )
                                         }
                                     }
@@ -263,7 +263,7 @@ private fun ReviewQtyControls(
                 text = uom,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1,
@@ -281,8 +281,8 @@ private fun ReviewQtyControls(
                 textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
                 keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
                 colors = TextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedIndicatorColor = MaterialTheme.colorScheme.error,
                     unfocusedIndicatorColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
                     focusedContainerColor = Color.Transparent,

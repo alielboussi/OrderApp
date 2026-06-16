@@ -89,25 +89,6 @@ public static class ScpgtUi
             window.Close();
         };
 
-        window.StartRequested += async (_, _) =>
-        {
-            var result = await coordinator.StartPeriodAsync(cts.Token);
-            window.Dispatcher.Invoke(() =>
-            {
-                window.UpdateStatus(result.Message, "Open period started.");
-            });
-            var snapshot = await coordinator.GetStatusAsync(cts.Token);
-            window.Dispatcher.Invoke(() => window.UpdateSnapshot(snapshot));
-        };
-
-        window.ClosePeriodRequested += async (_, _) =>
-        {
-            coordinator.RequestClosing();
-            window.UpdateStatus("Closing enabled.", "Enter closing counts, then wait for sync.");
-            var snapshot = await coordinator.GetStatusAsync(cts.Token);
-            window.Dispatcher.Invoke(() => window.UpdateSnapshot(snapshot));
-        };
-
         window.SyncRequested += async (_, _) =>
         {
             await RunManualSyncAsync();

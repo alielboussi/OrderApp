@@ -13,25 +13,20 @@ public sealed class ScpgtWindow : Window
     private TextBlock _subStatusText = null!;
     private TextBlock _warehouseText = null!;
     private TextBlock _periodText = null!;
-    private TextBlock _openingText = null!;
-    private TextBlock _closingText = null!;
-    private TextBlock _closingRequestText = null!;
+    private TextBlock _cutoffText = null!;
+    private TextBlock _ordersAppText = null!;
     private TextBlock _syncWindowText = null!;
     private TextBlock _lastSyncText = null!;
-    private Button _openButton = null!;
-    private Button _closeButton = null!;
     private Button _syncButton = null!;
 
     public event EventHandler? CloseRequested;
-    public event EventHandler? StartRequested;
-    public event EventHandler? ClosePeriodRequested;
     public event EventHandler? SyncRequested;
 
     public ScpgtWindow()
     {
         Title = "SCPGT";
         Width = 560;
-        Height = 420;
+        Height = 400;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
@@ -137,45 +132,28 @@ public sealed class ScpgtWindow : Window
         infoGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         infoGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         infoGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        infoGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         _warehouseText = BuildMetaText("Warehouse: -");
-        _periodText = BuildMetaText("Period: -");
-        _openingText = BuildMetaText("Opening counts: -");
-        _closingText = BuildMetaText("Closing counts: -");
-        _closingRequestText = BuildMetaText("Closing requested: -");
-        _syncWindowText = BuildMetaText("Sync window: -");
+        _periodText = BuildMetaText("POS sync from: -");
+        _cutoffText = BuildMetaText("Last cutoff: -");
+        _ordersAppText = BuildMetaText("Orders app outlet: -");
+        _syncWindowText = BuildMetaText("Effective window: -");
         _lastSyncText = BuildMetaText("Last sync: -");
 
         AddMeta(infoGrid, _warehouseText, 0, 0);
         AddMeta(infoGrid, _periodText, 0, 1);
-        AddMeta(infoGrid, _openingText, 1, 0);
-        AddMeta(infoGrid, _closingText, 1, 1);
-        AddMeta(infoGrid, _closingRequestText, 2, 0);
-        AddMeta(infoGrid, _syncWindowText, 2, 1);
-        AddMeta(infoGrid, _lastSyncText, 3, 0);
-        Grid.SetColumnSpan(_lastSyncText, 2);
+        AddMeta(infoGrid, _cutoffText, 1, 0);
+        AddMeta(infoGrid, _ordersAppText, 1, 1);
+        AddMeta(infoGrid, _syncWindowText, 2, 0);
+        AddMeta(infoGrid, _lastSyncText, 2, 1);
 
         stack.Children.Add(infoGrid);
 
         var buttonRow = new UniformGrid
         {
             Columns = 2,
-            Rows = 2,
             Margin = new Thickness(0, 6, 0, 0)
         };
-
-        _openButton = BuildActionButton("Open Period", Color.FromRgb(30, 58, 138), (_, _) =>
-        {
-            StartRequested?.Invoke(this, EventArgs.Empty);
-        });
-        buttonRow.Children.Add(_openButton);
-
-        _closeButton = BuildActionButton("Close Period", Color.FromRgb(59, 130, 246), (_, _) =>
-        {
-            ClosePeriodRequested?.Invoke(this, EventArgs.Empty);
-        });
-        buttonRow.Children.Add(_closeButton);
 
         _syncButton = BuildActionButton("Sync Now", Color.FromRgb(2, 132, 199), (_, _) =>
         {
@@ -192,10 +170,11 @@ public sealed class ScpgtWindow : Window
 
         var note = new TextBlock
         {
-            Text = "All actions log to Supabase and lock on success.",
+            Text = "Stocktake periods are opened in Afterten Orders → Outlet Stocktake. This service uploads POS sales within the sync window.",
             FontSize = 12,
             Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105)),
-            Margin = new Thickness(0, 18, 0, 0)
+            Margin = new Thickness(0, 18, 0, 0),
+            TextWrapping = TextWrapping.Wrap
         };
         stack.Children.Add(note);
 
@@ -207,14 +186,10 @@ public sealed class ScpgtWindow : Window
         UpdateStatus(snapshot.Title, snapshot.Detail);
         _warehouseText.Text = snapshot.WarehouseLabel;
         _periodText.Text = snapshot.PeriodLabel;
-        _openingText.Text = snapshot.OpeningLabel;
-        _closingText.Text = snapshot.ClosingLabel;
-        _closingRequestText.Text = snapshot.ClosingRequestedLabel;
+        _cutoffText.Text = snapshot.CutoffLabel;
+        _ordersAppText.Text = snapshot.OrdersAppLabel;
         _syncWindowText.Text = snapshot.SyncWindowLabel;
         _lastSyncText.Text = snapshot.LastSyncLabel;
-
-        _openButton.IsEnabled = snapshot.CanOpenPeriod;
-        _closeButton.IsEnabled = snapshot.CanClosePeriod;
     }
 
     public void SetSyncInProgress(bool isBusy)
@@ -230,7 +205,8 @@ public sealed class ScpgtWindow : Window
             Text = text,
             FontSize = 12,
             Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105)),
-            Margin = new Thickness(0, 4, 12, 0)
+            Margin = new Thickness(0, 4, 12, 0),
+            TextWrapping = TextWrapping.Wrap
         };
     }
 

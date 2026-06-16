@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase-server';
+import { listOutletWarehouseIds } from '@/lib/outletScope';
 import type { WarehouseDamage, DamageItem } from '@/types/damages';
 
 const MAX_LIMIT = 200;
@@ -66,6 +67,8 @@ export async function GET(req: NextRequest) {
     const limit = Number.isFinite(limitParam)
       ? Math.min(Math.max(Math.floor(limitParam), 1), MAX_LIMIT)
       : 100;
+    const scope = url.searchParams.get('scope')?.trim().toLowerCase() || null;
+    const outletId = url.searchParams.get('outlet_id')?.trim() || null;
 
     const toIsoRange = (value: string | null, endOfDay: boolean) => {
       if (!value) return null;
@@ -104,6 +107,14 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
+    let rows = data ?? [];
+    if (scope === 'outlet') {
+      const outletWarehouseIds = new Set(await listOutletWarehouseIds(supabase, outletId));
+      rows = outletWarehouseIds.size
+        ? rows.filter((damage) => damage.warehouse_id && outletWarehouseIds.has(damage.warehouse_id))
+        : [];
+    }
+
     const operatorMap = new Map<string, string>();
     const { data: operators } = await supabase.rpc('console_operator_directory');
     if (Array.isArray(operators)) {
@@ -117,7 +128,7 @@ export async function GET(req: NextRequest) {
     }
 
     const createdByIds = Array.from(
-      new Set((data ?? []).map((damage) => damage.created_by).filter((id): id is string => !!id))
+      new Set(rows.map((damage) => damage.created_by).filter((id): id is string => !!id))
     );
     const operatorFallbackMap = new Map<string, string>();
     if (createdByIds.length > 0) {
@@ -137,7 +148,7 @@ export async function GET(req: NextRequest) {
     const warehouseIds = new Set<string>();
     const itemIds = new Set<string>();
 
-    const parsedDamages = (data ?? []).map((damage) => {
+    const parsedDamages = rows.map((damage) => {
       const lines = Array.isArray(damage.context) ? (damage.context as DamageContextLine[]) : [];
 
       lines.forEach((line) => {

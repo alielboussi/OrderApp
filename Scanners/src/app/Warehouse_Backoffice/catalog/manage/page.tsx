@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { useUomOptions } from "@/lib/use-uom-options";
-import styles from "../product/product.module.css";
+import eb from "../../enterprise.module.css";
+import styles from "./manage.module.css";
 
 type Item = {
   id: string;
@@ -464,30 +465,33 @@ export default function CatalogManagePage() {
     }
   };
 
-  if (status !== "ok") return null;
+  if (status !== "ok") {
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for catalog.</p>
+      </section>
+    );
+  }
 
   return (
-    <div className={styles.page}>
-      <style>{globalStyles}</style>
-      <main className={styles.shell}>
-        <header className={styles.hero}>
-          <div className={styles.grow}>
-            <p className={styles.kicker}>Catalog</p>
-            <h1 className={styles.title}>Create Product & Variant</h1>
-            <p className={styles.subtitle}>
-              Add a new catalog item and variants with the same layout as the edit screen.
-            </p>
-          </div>
-          <div className={styles.headerButtons}>
-            <button className={styles.backButton} onClick={() => router.back()}>
-              Back
-            </button>
-            <button className={styles.backButton} onClick={() => router.push("/Warehouse_Backoffice")}>
-              Back to Dashboard
-            </button>
-          </div>
-        </header>
+    <div>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+            Manage catalog
+          </h3>
+          <p className={eb.pageCardBody}>
+            Add a new product or variant with the same fields as the edit screen.
+          </p>
+        </div>
+        <div className={styles.headerActions}>
+          <button type="button" className={eb.btnSecondary} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu")}>
+            View menu
+          </button>
+        </div>
+      </section>
 
+      <section className={eb.pageCard}>
         <form className={styles.form} onSubmit={isProductMode ? quickCreateProduct : quickCreateVariant}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Add catalog entry</h2>
@@ -661,11 +665,11 @@ export default function CatalogManagePage() {
               )}
 
               <div className={styles.actions}>
-                <button type="button" onClick={() => setProductForm(defaultProductForm)} className={styles.secondaryButton}>
+                <button type="button" onClick={() => setProductForm(defaultProductForm)} className={eb.btnSecondary}>
                   Clear form
                 </button>
-                <button type="submit" className={styles.primaryButton} disabled={productSaving || readOnly}>
-                  {readOnly ? "Read-only" : productSaving ? "Saving..." : "Save product"}
+                <button type="submit" className={eb.btnAdd} disabled={productSaving || readOnly}>
+                  {readOnly ? "Read-only" : productSaving ? "Saving…" : "Save product"}
                 </button>
               </div>
             </>
@@ -763,14 +767,14 @@ export default function CatalogManagePage() {
               )}
 
               <div className={styles.actions}>
-                <button type="submit" className={styles.primaryButton} disabled={variantSaving || readOnly}>
-                  {readOnly ? "Read-only" : variantSaving ? "Saving..." : "Save variant"}
+                <button type="submit" className={eb.btnAdd} disabled={variantSaving || readOnly}>
+                  {readOnly ? "Read-only" : variantSaving ? "Saving…" : "Save variant"}
                 </button>
               </div>
             </>
           )}
         </form>
-      </main>
+      </section>
     </div>
   );
 }
@@ -862,9 +866,3 @@ function Checkbox({ label, hint, checked, onChange }: CheckboxProps) {
   );
 }
 
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-input, select, button { font-family: inherit; }
-input:focus, select:focus { outline: 2px solid #22c55e; }
-button:hover { transform: translateY(-1px); }
-`;

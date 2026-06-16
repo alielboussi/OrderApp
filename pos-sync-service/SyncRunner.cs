@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PosSyncService.Models;
 
@@ -14,20 +13,20 @@ public sealed class SyncRunner
 {
     private readonly IOptionsMonitor<SyncOptions> _syncOptions;
     private readonly PosRepository _repository;
+    private readonly PosCatalogRepository _catalogRepository;
     private readonly SupabaseClient _supabaseClient;
-    private readonly string _contentRoot;
     private readonly ILogger<SyncRunner> _logger;
 
     public SyncRunner(IOptionsMonitor<SyncOptions> syncOptions,
                       PosRepository repository,
+                      PosCatalogRepository catalogRepository,
                       SupabaseClient supabaseClient,
-                      IHostEnvironment hostEnvironment,
                       ILogger<SyncRunner> logger)
     {
         _syncOptions = syncOptions;
         _repository = repository;
+        _catalogRepository = catalogRepository;
         _supabaseClient = supabaseClient;
-        _contentRoot = hostEnvironment.ContentRootPath;
         _logger = logger;
     }
 
@@ -36,9 +35,41 @@ public sealed class SyncRunner
         var failures = new List<SyncFailure>();
         var processed = 0;
 
-        await ApplyRemoteSyncWindowAsync(cancellationToken);
+        await _supabaseClient.SendHeartbeatAsync(cancellationToken);
+        await ApplyCatalogSyncAsync(cancellationToken);
 
-        var pending = await _repository.ReadPendingOrdersAsync(_syncOptions.CurrentValue.BatchSize, cancellationToken);
+        var syncContext = await _supabaseClient.GetOutletSyncContextAsync(cancellationToken);
+        if (syncContext is null)
+        {
+            _logger.LogWarning("Unable to load outlet sync context; skipping POS sales this cycle.");
+            return new SyncRunResult(0, failures);
+        }
+
+        if (!syncContext.HasPosMiddleware)
+        {
+            _logger.LogDebug("Outlet has POS middleware disabled; skipping sales upload.");
+            return new SyncRunResult(0, failures);
+        }
+
+        if (!syncContext.SyncOpeningUtc.HasValue)
+        {
+            _logger.LogInformation(
+                "No pos_sync_opening counter — start an outlet stocktake period in the Afterten Orders app before syncing sales.");
+            return new SyncRunResult(0, failures);
+        }
+
+        var syncOptions = _syncOptions.CurrentValue;
+        var (minUtc, maxUtc) = PosSyncWindow.Compute(
+            syncContext.SyncOpeningUtc,
+            syncContext.SyncCutoffUtc,
+            syncOptions.MinSaleDateUtc,
+            syncOptions.MaxSaleDateUtc);
+
+        var pending = await _repository.ReadPendingOrdersAsync(
+            syncOptions.BatchSize,
+            minUtc,
+            maxUtc,
+            cancellationToken);
         if (pending.Count == 0)
         {
             return new SyncRunResult(0, failures);
@@ -51,18 +82,22 @@ public sealed class SyncRunner
                 var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
                 if (!validation.IsSuccess)
                 {
-                    if (IsIgnorableMappingFailure(validation.ErrorMessage))
+                    if (IsIgnorableValidationFailure(validation.ErrorMessage))
                     {
-                        _logger.LogInformation("Skipping order {OrderId}: no mappable POS items.", order.PosOrderId);
-                        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
-
-                        var inventoryIds = order.Inventory.Select(ic => ic.PosId).ToArray();
-                        if (inventoryIds.Length > 0)
+                        if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
                         {
-                            await _repository.MarkInventoryProcessedAsync(inventoryIds, cancellationToken);
+                            _logger.LogInformation("Skipping order {OrderId}: no mappable POS items.", order.PosOrderId);
+                            await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
+                            processed++;
+                        }
+                        else
+                        {
+                            _logger.LogDebug(
+                                "Deferring order {OrderId}: {Error}",
+                                order.PosOrderId,
+                                validation.ErrorMessage ?? "Outside sync window");
                         }
 
-                        processed++;
                         continue;
                     }
 
@@ -106,73 +141,42 @@ public sealed class SyncRunner
         return new SyncRunResult(processed, failures);
     }
 
-    private static bool IsIgnorableMappingFailure(string? errorMessage)
+    private async Task ApplyCatalogSyncAsync(CancellationToken cancellationToken)
+    {
+        var events = await _supabaseClient.FetchPendingCatalogSyncAsync(cancellationToken);
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        var delivered = new List<Guid>();
+        foreach (var evt in events)
+        {
+            try
+            {
+                await _catalogRepository.ApplyCatalogEventAsync(evt, cancellationToken);
+                delivered.Add(evt.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to apply catalog sync event {EventId}", evt.Id);
+            }
+        }
+
+        if (delivered.Count > 0)
+        {
+            await _supabaseClient.MarkCatalogSyncDeliveredAsync(delivered, cancellationToken);
+        }
+    }
+
+    private static bool IsIgnorableValidationFailure(string? errorMessage)
     {
         if (string.IsNullOrWhiteSpace(errorMessage))
         {
             return false;
         }
 
-        return errorMessage.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task ApplyRemoteSyncWindowAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var remoteOpeningUtc = await _supabaseClient.GetPosSyncOpeningUtcAsync(cancellationToken);
-            var remoteCutoffUtc = await _supabaseClient.GetPosSyncCutoffUtcAsync(cancellationToken);
-
-            var currentMin = _syncOptions.CurrentValue.MinSaleDateUtc?.ToUniversalTime();
-            var currentMax = _syncOptions.CurrentValue.MaxSaleDateUtc?.ToUniversalTime();
-
-            var shouldUpdate = false;
-            var shouldClearMax = false;
-            if (remoteOpeningUtc.HasValue && (!currentMin.HasValue || currentMin.Value != remoteOpeningUtc.Value))
-            {
-                shouldUpdate = true;
-            }
-
-            if (remoteCutoffUtc.HasValue && (!currentMax.HasValue || currentMax.Value != remoteCutoffUtc.Value))
-            {
-                shouldUpdate = true;
-            }
-
-            if (remoteOpeningUtc.HasValue && !remoteCutoffUtc.HasValue && currentMax.HasValue)
-            {
-                shouldClearMax = true;
-                shouldUpdate = true;
-            }
-
-            if (!shouldUpdate)
-            {
-                return;
-            }
-
-            if (shouldClearMax)
-            {
-                ConfigStore.ClearMaxSaleDateUtc(_contentRoot);
-            }
-
-            ConfigStore.SaveSyncWindow(_contentRoot, remoteOpeningUtc, remoteCutoffUtc);
-
-            if (remoteOpeningUtc.HasValue)
-            {
-                _logger.LogInformation("Updated POS sync opening from stocktake to {OpenedUtc:O}", remoteOpeningUtc.Value);
-            }
-
-            if (remoteCutoffUtc.HasValue)
-            {
-                _logger.LogInformation("Updated POS sync cutoff from stocktake to {CutoffUtc:O}", remoteCutoffUtc.Value);
-            }
-            else if (shouldClearMax)
-            {
-                _logger.LogInformation("Cleared POS sync cutoff after new opening period");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to apply remote POS sync window");
-        }
+        return errorMessage.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("outside_sync_window", StringComparison.OrdinalIgnoreCase);
     }
 }

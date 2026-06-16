@@ -358,7 +358,7 @@ private fun ProductCard(
                     text = item.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -371,11 +371,11 @@ private fun ProductCard(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFF1E2A3D),
-                                    contentColor = Color.White
+                                    contentColor = MaterialTheme.colorScheme.onSurface
                                 ),
                                 modifier = Modifier.height(32.dp)
                             ) {
-                                Text("Ingredients", color = Color.White, fontSize = 12.sp)
+                                Text("Ingredients", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
                             }
                         }
                         if (item.hasVariations) {
@@ -384,11 +384,11 @@ private fun ProductCard(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFF1E2A3D),
-                                    contentColor = Color.White
+                                    contentColor = MaterialTheme.colorScheme.onSurface
                                 ),
                                 modifier = Modifier.height(32.dp)
                             ) {
-                                Text("Variations", color = Color.White, fontSize = 12.sp)
+                                Text("Variations", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
                             }
                         }
                     }
@@ -402,7 +402,7 @@ private fun ProductCard(
                                 text = "From ${formatMoney(mc)}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
-                                color = Color.White.copy(alpha = 0.95f)
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f)
                             )
                         }
                     } else {
@@ -410,13 +410,13 @@ private fun ProductCard(
                             text = "Cost: ${formatMoney(item.cost)}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.95f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f)
                         )
                         formatPackageUnits(unitsPerPack)?.let { units ->
                             Text(
                                 text = "1 ${item.purchasePackUnit.uppercase()} = $units ${orderUom.uppercase()}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.85f)
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                             )
                         }
                     }
@@ -492,8 +492,8 @@ fun QuantityStepper(qty: Int, onDec: () -> Unit, onInc: () -> Unit, onChange: (I
             textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
             keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
             colors = TextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                 focusedIndicatorColor = MaterialTheme.colorScheme.error,
                 unfocusedIndicatorColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
                 focusedContainerColor = Color.Transparent,
@@ -549,7 +549,7 @@ private fun RecipeIngredientsDialog(
                 Text(
                     text = "${product.name} ingredients",
                     style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     textDecoration = TextDecoration.Underline
                 )
                 Spacer(Modifier.height(12.dp))
@@ -567,7 +567,7 @@ private fun RecipeIngredientsDialog(
                             if (ingredientItems.isEmpty()) {
                                 Text(
                                     text = "No ingredients available for this recipe.",
-                                    color = Color.White.copy(alpha = 0.85f)
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                                 )
                             }
                             ingredientItems.forEachIndexed { index, item ->
@@ -644,7 +644,7 @@ private fun IngredientRow(
                 text = item.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
@@ -697,7 +697,7 @@ private fun VariationsDialog(
                 Text(
                     text = product.name,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     textDecoration = TextDecoration.Underline
                 )
                 Spacer(Modifier.height(12.dp))
@@ -781,7 +781,7 @@ private fun VariationRow(
                 text = v.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis
             )
@@ -790,13 +790,13 @@ private fun VariationRow(
                 text = "Cost: ${formatMoney(v.cost)}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.95f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f)
             )
             formatPackageUnits(unitsPerPack)?.let { units ->
                 Text(
                     text = "1 ${v.purchasePackUnit.uppercase()} = $units ${orderUom.uppercase()}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                 )
             }
         }
@@ -835,7 +835,7 @@ private fun ImagePreviewDialog(url: String, title: String?, onDismiss: () -> Uni
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(8.dp))
                 }
@@ -897,7 +897,7 @@ private fun VariationQtyControls(
                 text = formatUomLabel(uom, qty),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1,
@@ -916,8 +916,8 @@ private fun VariationQtyControls(
                 textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
                 keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
                 colors = TextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedIndicatorColor = MaterialTheme.colorScheme.error,
                     unfocusedIndicatorColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
                     focusedContainerColor = Color.Transparent,

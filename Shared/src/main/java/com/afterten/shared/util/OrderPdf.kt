@@ -18,6 +18,13 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+private const val PDF_POINTS_PER_MM = 72f / 25.4f
+private const val PDF_BORDER_MM = 2f
+private const val PDF_BORDER_WIDTH_PT = PDF_BORDER_MM * PDF_POINTS_PER_MM
+private const val PDF_PAGE_MARGIN_MM = 10f
+private val PDF_PAGE_MARGIN_PT = PDF_PAGE_MARGIN_MM * PDF_POINTS_PER_MM
+private val PDF_RED = android.graphics.Color.rgb(198, 40, 40)
+
 /**
  * Shared PDF generator used by outlet placement, supervisor approval, driver loading and offloading flows.
  */
@@ -47,17 +54,18 @@ private fun loadAppLogo(context: Context, sizePx: Int): Bitmap? {
     }.getOrNull()
 }
 
-private fun drawBorder(canvas: android.graphics.Canvas, pageWidth: Int, pageHeight: Int, margin: Int) {
+private fun drawBorder(canvas: android.graphics.Canvas, pageWidth: Int, pageHeight: Int) {
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.rgb(185, 28, 28)
+        color = PDF_RED
         style = Paint.Style.STROKE
-        strokeWidth = 2f
+        strokeWidth = PDF_BORDER_WIDTH_PT
     }
+    val inset = PDF_PAGE_MARGIN_PT + PDF_BORDER_WIDTH_PT / 2f
     canvas.drawRect(
-        margin.toFloat(),
-        margin.toFloat(),
-        (pageWidth - margin).toFloat(),
-        (pageHeight - margin).toFloat(),
+        inset,
+        inset,
+        pageWidth - inset,
+        pageHeight - inset,
         borderPaint
     )
 }
@@ -72,16 +80,27 @@ fun generateOrderPdf(
     signerName: String,
     signatureBitmap: Bitmap
 ): File {
+    val pageWidth = 595
+    val pageHeight = 842
+    val contentLeft = PDF_PAGE_MARGIN_PT + 16f
+    val contentRight = pageWidth - PDF_PAGE_MARGIN_PT - 16f
     val doc = PdfDocument()
-    val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 @ 72dpi
+    val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
     var page = doc.startPage(pageInfo)
     var canvas = page.canvas
-    val paint = Paint().apply { textSize = 14f; color = android.graphics.Color.BLACK }
-    val headerPaint = Paint().apply { textSize = 24f; isFakeBoldText = true; color = android.graphics.Color.BLACK }
-    val underlinePaint = Paint().apply { strokeWidth = 2f; color = android.graphics.Color.BLACK }
-    val redPaint = Paint().apply { strokeWidth = 1.5f; color = android.graphics.Color.rgb(220, 20, 60) }
+    drawBorder(canvas, pageWidth, pageHeight)
+
+    val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 20f
+        isFakeBoldText = true
+        color = PDF_RED
+    }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12f; color = android.graphics.Color.BLACK }
+    val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 16f; isFakeBoldText = true; color = android.graphics.Color.BLACK }
+    val underlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1.5f; color = PDF_RED }
+    val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1f; color = PDF_RED }
     val lineSpacing = paint.textSize + 2f
-    val nameColumnWidth = 240f
+    val nameColumnWidth = 220f
 
     fun wrapProductName(text: String, maxWidth: Float): List<String> {
         if (text.isBlank()) return listOf("")
@@ -102,22 +121,31 @@ fun generateOrderPdf(
         return if (lines.isEmpty()) listOf("") else lines
     }
 
-    var y = 40f
-    canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
-    canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-    canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
-    canvas.drawText("Items:", 40f, y, paint); y += 10f
+    fun drawPageHeader() {
+        canvas.drawText("Order Summary", contentLeft, PDF_PAGE_MARGIN_PT + 24f, titlePaint)
+    }
+
+    var y = PDF_PAGE_MARGIN_PT + 44f
+    drawPageHeader()
+    canvas.drawText("Outlet: $outletName", contentLeft, y, paint); y += 18f
+    canvas.drawText("Order #: $orderNo", contentLeft, y, paint); y += 16f
+    canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", contentLeft, y, paint); y += 22f
+    canvas.drawLine(contentLeft, y, contentRight, y, redPaint); y += 14f
+    canvas.drawText("Items:", contentLeft, y, paint); y += 8f
 
     fun newPageIfNeeded(targetY: Float) {
-        if (targetY > 780f) {
+        if (targetY > pageHeight - PDF_PAGE_MARGIN_PT - 48f) {
             doc.finishPage(page)
             page = doc.startPage(pageInfo)
             canvas = page.canvas
-            y = 40f
-            canvas.drawText("Outlet: $outletName", 40f, y, paint); y += 20f
-            canvas.drawText("Order #: $orderNo", 40f, y, paint); y += 18f
-            canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", 40f, y, paint); y += 24f
-            canvas.drawText("Items:", 40f, y, paint); y += 10f
+            drawBorder(canvas, pageWidth, pageHeight)
+            y = PDF_PAGE_MARGIN_PT + 44f
+            drawPageHeader()
+            canvas.drawText("Outlet: $outletName", contentLeft, y, paint); y += 18f
+            canvas.drawText("Order #: $orderNo", contentLeft, y, paint); y += 16f
+            canvas.drawText("Date: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", contentLeft, y, paint); y += 22f
+            canvas.drawLine(contentLeft, y, contentRight, y, redPaint); y += 14f
+            canvas.drawText("Items:", contentLeft, y, paint); y += 8f
         }
     }
 
@@ -125,72 +153,69 @@ fun generateOrderPdf(
     groups.forEachIndexed { idx, group ->
         val header = group.header
         val headerWidth = headerPaint.measureText(header)
-        val centerX = (595 - 40 - 40) / 2f + 40
+        val centerX = (contentLeft + contentRight) / 2f
         newPageIfNeeded(y + 64f)
-        val headerBaseline = y + 28f
+        val headerBaseline = y + 24f
         canvas.drawText(header, centerX - headerWidth / 2f, headerBaseline, headerPaint)
         val ulY = headerBaseline + 4f
         canvas.drawLine(centerX - headerWidth / 2f, ulY, centerX + headerWidth / 2f, ulY, underlinePaint)
         y = ulY + 12f
-        canvas.drawLine(40f, y, 555f, y, redPaint)
-        y += 18f
+        canvas.drawLine(contentLeft, y, contentRight, y, redPaint)
+        y += 16f
         canvas.drawText("Qty", 300f, y, paint)
         canvas.drawText("UOM", 340f, y, paint)
         canvas.drawText("Cost", 400f, y, paint)
         canvas.drawText("Amount", 470f, y, paint)
-        y += 16f
+        y += 14f
         group.lines.forEach { line ->
             val wrappedNameLines = wrapProductName(line.name, nameColumnWidth)
             val extraNameHeight = if (wrappedNameLines.size <= 1) 0f else (wrappedNameLines.size - 1) * lineSpacing
             newPageIfNeeded(y + 26f + extraNameHeight)
-            canvas.drawLine(40f, y, 555f, y, redPaint); y += 14f
+            canvas.drawLine(contentLeft, y, contentRight, y, redPaint); y += 12f
             val amount = line.qty * line.unitPrice
             subtotal += amount
             val nameBaseline = y
             wrappedNameLines.forEachIndexed { index, text ->
-                canvas.drawText(text, 40f, nameBaseline + index * lineSpacing, paint)
+                canvas.drawText(text, contentLeft, nameBaseline + index * lineSpacing, paint)
             }
             canvas.drawText(line.qty.renderQty(), 300f, nameBaseline, paint)
             canvas.drawText(line.uom, 340f, nameBaseline, paint)
             canvas.drawText(formatMoney(line.unitPrice), 400f, nameBaseline, paint)
             canvas.drawText(formatMoney(amount), 470f, nameBaseline, paint)
-            y = nameBaseline + extraNameHeight + 12f
-            canvas.drawLine(40f, y, 555f, y, redPaint)
+            y = nameBaseline + extraNameHeight + 10f
+            canvas.drawLine(contentLeft, y, contentRight, y, redPaint)
             y += 4f
         }
         if (idx < groups.size - 1) {
-            y += 10f
-            canvas.drawLine(40f, y, 555f, y, paint)
+            y += 8f
+            canvas.drawLine(contentLeft, y, contentRight, y, paint)
             y += 6f
         }
     }
 
     y += 10f
-    canvas.drawLine(320f, y, 555f, y, paint); y += 18f
+    canvas.drawLine(320f, y, contentRight, y, paint); y += 16f
     canvas.drawText("Subtotal: ${formatMoney(subtotal)}", 320f, y, paint); y += 24f
-    y += 20f
 
     val sigBmp = signatureBitmap
-    val cm = 72f / 2.54f
-    val boxSize = 6f * cm
-    val innerMax = 5f * cm
-    val boxLeft = 40f
+    val boxSize = 6f * PDF_POINTS_PER_MM * 10f
+    val innerMax = 5f * PDF_POINTS_PER_MM * 10f
     newPageIfNeeded(y + 18f + boxSize + 20f)
-    canvas.drawText("$signerLabel: $signerName", boxLeft, y, paint)
+    canvas.drawText("$signerLabel: $signerName", contentLeft, y, paint)
     y += 18f
-    val rectPaint = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 1.5f; color = android.graphics.Color.BLACK }
-    canvas.drawRect(boxLeft, y, boxLeft + boxSize, y + boxSize, rectPaint)
+    val rectPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = PDF_BORDER_WIDTH_PT / 2f
+        color = PDF_RED
+    }
+    canvas.drawRect(contentLeft, y, contentLeft + boxSize, y + boxSize, rectPaint)
     val pad = max(2f, (boxSize - innerMax) / 2f)
-    val availW = innerMax
-    val availH = innerMax
-    val scale = min(availW / sigBmp.width, availH / sigBmp.height)
+    val scale = min(innerMax / sigBmp.width, innerMax / sigBmp.height)
     val drawW = sigBmp.width * scale
     val drawH = sigBmp.height * scale
-    val dx = boxLeft + pad + (availW - drawW) / 2f
-    val dy = y + pad + (availH - drawH) / 2f
-    val dest = RectF(dx, dy, dx + drawW, dy + drawH)
-    canvas.drawBitmap(sigBmp, null, dest, null)
-    y += boxSize + 20f
+    val dx = contentLeft + pad + (innerMax - drawW) / 2f
+    val dy = y + pad + (innerMax - drawH) / 2f
+    canvas.drawBitmap(sigBmp, null, RectF(dx, dy, dx + drawW, dy + drawH), null)
 
     doc.finishPage(page)
 
@@ -213,36 +238,37 @@ fun generateOrderPdfDetailed(
 ): File {
     val pageWidth = 595
     val pageHeight = 842
-    val margin = 14
+    val contentLeft = PDF_PAGE_MARGIN_PT + 16f
+    val contentRight = pageWidth - PDF_PAGE_MARGIN_PT - 16f
     val doc = PdfDocument()
     val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
     val logo = loadAppLogo(context, 56)
 
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.rgb(17, 24, 39)
-        textSize = 15f
+        color = PDF_RED
+        textSize = 18f
         isFakeBoldText = true
     }
     val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.rgb(55, 65, 81)
-        textSize = 9.5f
+        textSize = 10f
     }
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 11f
         color = android.graphics.Color.BLACK
     }
     val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 18f
+        textSize = 16f
         isFakeBoldText = true
         color = android.graphics.Color.BLACK
     }
     val underlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = 2f
-        color = android.graphics.Color.BLACK
+        strokeWidth = 1.5f
+        color = PDF_RED
     }
     val redPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = 1.2f
-        color = android.graphics.Color.rgb(185, 28, 28)
+        strokeWidth = 1f
+        color = PDF_RED
     }
     val lineSpacing = paint.textSize + 2f
     val nameColumnWidth = 240f
@@ -267,15 +293,15 @@ fun generateOrderPdfDetailed(
     }
 
     fun drawHeader(canvas: android.graphics.Canvas): Float {
-        drawBorder(canvas, pageWidth, pageHeight, margin)
-        var y = margin + 14
+        drawBorder(canvas, pageWidth, pageHeight)
+        var yPos = PDF_PAGE_MARGIN_PT + 20f
         logo?.let {
-            val target = Rect(margin, margin, margin + 48, margin + 48)
+            val target = Rect(contentLeft.toInt(), yPos.toInt(), (contentLeft + 40f).toInt(), (yPos + 40f).toInt())
             canvas.drawBitmap(it, null, target, null)
         }
         val title = "Order Details"
-        canvas.drawText(title, (pageWidth / 2f) - (titlePaint.measureText(title) / 2f), y.toFloat(), titlePaint)
-        y += 12
+        canvas.drawText(title, (pageWidth / 2f) - (titlePaint.measureText(title) / 2f), yPos + 12f, titlePaint)
+        yPos += 28f
         val subLines = listOf(
             "Outlet: $outletName",
             "Order #: $orderNo   Status: ${status.uppercase()}",
@@ -283,10 +309,11 @@ fun generateOrderPdfDetailed(
             "Created: ${createdAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"))}"
         )
         subLines.forEach { line ->
-            canvas.drawText(line, (pageWidth / 2f) - (subPaint.measureText(line) / 2f), y.toFloat(), subPaint)
-            y += 11
+            canvas.drawText(line, (pageWidth / 2f) - (subPaint.measureText(line) / 2f), yPos, subPaint)
+            yPos += 12f
         }
-        return y + 6f
+        canvas.drawLine(contentLeft, yPos + 4f, contentRight, yPos + 4f, redPaint)
+        return yPos + 14f
     }
 
     var page = doc.startPage(pageInfo)
@@ -302,21 +329,21 @@ fun generateOrderPdfDetailed(
         }
     }
 
-    canvas.drawText("Items:", margin + 6f, y, paint)
+    canvas.drawText("Items:", contentLeft, y, paint)
     y += 12f
 
     var subtotal = 0.0
     groups.forEachIndexed { idx, group ->
         val header = group.header
         val headerWidth = headerPaint.measureText(header)
-        val centerX = (pageWidth - margin - margin) / 2f + margin
+        val centerX = (contentLeft + contentRight) / 2f
         newPageIfNeeded(y + 64f)
         val headerBaseline = y + 22f
         canvas.drawText(header, centerX - headerWidth / 2f, headerBaseline, headerPaint)
         val ulY = headerBaseline + 4f
         canvas.drawLine(centerX - headerWidth / 2f, ulY, centerX + headerWidth / 2f, ulY, underlinePaint)
         y = ulY + 12f
-        canvas.drawLine(margin + 6f, y, pageWidth - margin - 6f, y, redPaint)
+        canvas.drawLine(contentLeft, y, contentRight, y, redPaint)
         y += 14f
         canvas.drawText("Qty", 300f, y, paint)
         canvas.drawText("UOM", 340f, y, paint)
@@ -327,31 +354,31 @@ fun generateOrderPdfDetailed(
             val wrappedNameLines = wrapProductName(line.name, nameColumnWidth)
             val extraNameHeight = if (wrappedNameLines.size <= 1) 0f else (wrappedNameLines.size - 1) * lineSpacing
             newPageIfNeeded(y + 26f + extraNameHeight)
-            canvas.drawLine(margin + 6f, y, pageWidth - margin - 6f, y, redPaint)
+            canvas.drawLine(contentLeft, y, contentRight, y, redPaint)
             y += 12f
             val amount = line.qty * line.unitPrice
             subtotal += amount
             val nameBaseline = y
             wrappedNameLines.forEachIndexed { index, text ->
-                canvas.drawText(text, margin + 6f, nameBaseline + index * lineSpacing, paint)
+                canvas.drawText(text, contentLeft, nameBaseline + index * lineSpacing, paint)
             }
             canvas.drawText(line.qty.renderQty(), 300f, nameBaseline, paint)
             canvas.drawText(line.uom, 340f, nameBaseline, paint)
             canvas.drawText(formatMoney(line.unitPrice), 400f, nameBaseline, paint)
             canvas.drawText(formatMoney(amount), 470f, nameBaseline, paint)
             y = nameBaseline + extraNameHeight + 10f
-            canvas.drawLine(margin + 6f, y, pageWidth - margin - 6f, y, redPaint)
+            canvas.drawLine(contentLeft, y, contentRight, y, redPaint)
             y += 4f
         }
         if (idx < groups.size - 1) {
             y += 8f
-            canvas.drawLine(margin + 6f, y, pageWidth - margin - 6f, y, paint)
+            canvas.drawLine(contentLeft, y, contentRight, y, paint)
             y += 6f
         }
     }
 
     y += 8f
-    canvas.drawLine(320f, y, pageWidth - margin - 6f, y, paint)
+    canvas.drawLine(320f, y, contentRight, y, paint)
     y += 16f
     canvas.drawText("Subtotal: ${formatMoney(subtotal)}", 320f, y, paint)
     y += 20f
@@ -361,19 +388,19 @@ fun generateOrderPdfDetailed(
             val nameText = block.name.ifBlank { "—" }
             val signedAt = block.signedAt?.let { it.replace('T', ' ').take(19) }.orEmpty()
             newPageIfNeeded(y + 90f)
-            canvas.drawText("${block.label}: $nameText", margin + 6f, y, paint)
+            canvas.drawText("${block.label}: $nameText", contentLeft, y, paint)
             y += 12f
             if (signedAt.isNotBlank()) {
-                canvas.drawText("Signed at: $signedAt", margin + 6f, y, subPaint)
+                canvas.drawText("Signed at: $signedAt", contentLeft, y, subPaint)
                 y += 12f
             }
             val boxSize = 120f
             val rectPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                strokeWidth = 1.2f
-                color = android.graphics.Color.rgb(185, 28, 28)
+                strokeWidth = PDF_BORDER_WIDTH_PT / 2f
+                color = PDF_RED
             }
-            canvas.drawRect(margin + 6f, y, margin + 6f + boxSize, y + boxSize, rectPaint)
+            canvas.drawRect(contentLeft, y, contentLeft + boxSize, y + boxSize, rectPaint)
             block.bitmap?.let { bmp ->
                 val pad = 6f
                 val availW = boxSize - pad * 2
@@ -381,7 +408,7 @@ fun generateOrderPdfDetailed(
                 val scale = min(availW / bmp.width, availH / bmp.height)
                 val drawW = bmp.width * scale
                 val drawH = bmp.height * scale
-                val dx = margin + 6f + pad + (availW - drawW) / 2f
+                val dx = contentLeft + pad + (availW - drawW) / 2f
                 val dy = y + pad + (availH - drawH) / 2f
                 val dest = RectF(dx, dy, dx + drawW, dy + drawH)
                 canvas.drawBitmap(bmp, null, dest, null)

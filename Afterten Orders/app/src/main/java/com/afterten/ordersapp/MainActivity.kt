@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.afterten.ordersapp.ui.screens.HomeScreen
 import com.afterten.ordersapp.ui.screens.LoginScreen
+import com.afterten.ordersapp.ui.screens.OutletStocktakeScreen
 import com.afterten.shared.ui.theme.AppTheme
 import com.afterten.shared.data.RoleGuards
 import com.afterten.shared.data.hasRole
@@ -42,6 +43,9 @@ sealed class Routes(val route: String) {
     data object CartReview : Routes("cart_review")
     data object Summary : Routes("summary")
     data object ReceiveOrders : Routes("receive_orders")
+    data object OutletTransfers : Routes("outlet_transfers")
+    data object OutletDamages : Routes("outlet_damages")
+    data object OutletStocktake : Routes("outlet_stocktake")
 }
 
 @Composable
@@ -74,6 +78,9 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             HomeScreen(
                 onCreateOrder = { navController.navigate(Routes.ProductList.route) },
                 onReceiveOrders = { navController.navigate(Routes.ReceiveOrders.route) },
+                onOutletTransfers = { navController.navigate(Routes.OutletTransfers.route) },
+                onOutletDamages = { navController.navigate(Routes.OutletDamages.route) },
+                onOutletStocktake = { navController.navigate(Routes.OutletStocktake.route) },
                 onLogout = {
                     appViewModel.setSession(null)
                     navController.navigate(Routes.Login.route) {
@@ -106,6 +113,24 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.ReceiveOrders.route) {
             com.afterten.ordersapp.ui.screens.ReceiveOrdersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.OutletTransfers.route) {
+            com.afterten.ordersapp.ui.screens.OutletTransfersScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.OutletDamages.route) {
+            com.afterten.ordersapp.ui.screens.OutletDamagesScreen(
+                root = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.OutletStocktake.route) {
+            OutletStocktakeScreen(
                 root = appViewModel,
                 onBack = { navController.popBackStack() }
             )

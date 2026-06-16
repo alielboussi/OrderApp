@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase-server';
+import { listOutletWarehouseIds } from '@/lib/outletScope';
 import type { TransferItem, WarehouseTransfer } from '@/types/transfers';
 
 const MAX_LIMIT = 200;
@@ -75,6 +76,8 @@ export async function GET(req: NextRequest) {
     const limit = Number.isFinite(limitParam)
       ? Math.min(Math.max(Math.floor(limitParam), 1), MAX_LIMIT)
       : 100;
+    const scope = url.searchParams.get('scope')?.trim().toLowerCase() || null;
+    const outletId = url.searchParams.get('outlet_id')?.trim() || null;
 
     const toIsoRange = (value: string | null, endOfDay: boolean) => {
       if (!value) return null;
@@ -136,6 +139,20 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
+    let rows = data ?? [];
+    if (scope === 'outlet') {
+      const outletWarehouseIds = new Set(await listOutletWarehouseIds(supabase, outletId));
+      if (outletWarehouseIds.size > 0) {
+        rows = rows.filter(
+          (transfer) =>
+            (transfer.source_warehouse_id && outletWarehouseIds.has(transfer.source_warehouse_id)) ||
+            (transfer.destination_warehouse_id && outletWarehouseIds.has(transfer.destination_warehouse_id))
+        );
+      } else {
+        rows = [];
+      }
+    }
+
     const operatorMap = new Map<string, string>();
     const { data: operators } = await supabase.rpc('console_operator_directory');
     if (Array.isArray(operators)) {
@@ -149,7 +166,7 @@ export async function GET(req: NextRequest) {
     }
 
     const warehouseIds = new Set<string>();
-    (data ?? []).forEach((transfer) => {
+    rows.forEach((transfer) => {
       if (transfer.source_warehouse_id) warehouseIds.add(transfer.source_warehouse_id);
       if (transfer.destination_warehouse_id) warehouseIds.add(transfer.destination_warehouse_id);
     });
@@ -171,7 +188,7 @@ export async function GET(req: NextRequest) {
     }
 
     const createdByIds = Array.from(
-      new Set((data ?? []).map((transfer) => transfer.created_by).filter((id): id is string => !!id))
+      new Set(rows.map((transfer) => transfer.created_by).filter((id): id is string => !!id))
     );
     const operatorFallbackMap = new Map<string, string>();
     if (createdByIds.length > 0) {
@@ -189,7 +206,7 @@ export async function GET(req: NextRequest) {
     }
 
     const variantKeys = new Set<string>();
-    (data ?? []).forEach((transfer) => {
+    rows.forEach((transfer) => {
       (transfer.items ?? []).forEach((item) => {
         const key = (item.variant_key ?? item.variation_key ?? '').toString().trim();
         if (!key) return;
@@ -212,7 +229,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const transfers: WarehouseTransfer[] = (data ?? []).map((transfer) => {
+    const transfers: WarehouseTransfer[] = rows.map((transfer) => {
       const sourceIdValue = transfer.source_warehouse_id;
       const destIdValue = transfer.destination_warehouse_id;
       const sourceName = sourceIdValue ? warehouseMap.get(sourceIdValue) ?? null : null;

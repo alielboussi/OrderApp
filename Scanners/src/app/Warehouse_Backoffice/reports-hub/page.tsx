@@ -2,145 +2,67 @@
 
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
-import styles from "../dashboard.module.css";
-import menuStyles from "../menu.module.css";
+import styles from "../enterprise.module.css";
+
+const REPORT_LINKS = [
+  { label: "Outlet Sales", href: "/Warehouse_Backoffice/reports", tone: "blue" as const, desc: "Filter sales by outlet, date, and product." },
+  { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders", tone: "gold" as const, desc: "Filter orders by outlet and date." },
+  { label: "Scanner Reports", href: "/Warehouse_Backoffice/inventory", tone: "green" as const, desc: "Transfers, purchases, and damages." },
+  { label: "Stock Reports", href: "/Warehouse_Backoffice/stock-reports", tone: "blue" as const, desc: "Stocktake periods for mapped warehouses." },
+  { label: "Warehouse Reports", href: "/Warehouse_Backoffice/warehouse-reports", tone: "gold" as const, desc: "Movement totals by date range." },
+  { label: "Coldroom Reports", href: "/Warehouse_Backoffice/coldroom-reports", tone: "green" as const, desc: "Coldroom accrued units." },
+  { label: "Flow Traces", href: "/Warehouse_Backoffice/flow-traces", tone: "blue" as const, desc: "Audit stock deductions." },
+  { label: "Negative Balances", href: "/Warehouse_Backoffice/negative-balance-reports", tone: "red" as const, desc: "Shortage alerts during deductions." },
+  { label: "POS Sync Failures", href: "/Warehouse_Backoffice/pos-sync-failures", tone: "red" as const, desc: "Failed POS sync events by outlet." },
+  { label: "Stock Period Exceptions", href: "/Warehouse_Backoffice/stock-period-exceptions", tone: "gold" as const, desc: "Missing open or closing counts." },
+  { label: "Outlet Shortages", href: "/Warehouse_Backoffice/outlet-shortage-details", tone: "red" as const, desc: "Outlet shortage detail drill-down." },
+];
+
+const cardBorder: Record<string, string> = {
+  blue: "#bfdbfe",
+  green: "#bbf7d0",
+  gold: "#fde68a",
+  red: "#fecaca",
+};
+
+const cardBg: Record<string, string> = {
+  blue: "#eff6ff",
+  green: "#ecfdf3",
+  gold: "#fffbeb",
+  red: "#fef2f2",
+};
 
 export default function WarehouseBackofficeReportsHub() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
 
-  const handleBack = () => router.push("/Warehouse_Backoffice");
-  const handleBackOne = () => router.back();
-
-  const goToOutletSales = () => router.push("/Warehouse_Backoffice/reports");
-  const goToOutletOrders = () => router.push("/Warehouse_Backoffice/outlet-orders");
-  const goToScannerReports = () => router.push("/Warehouse_Backoffice/inventory");
-  const goToStockReports = () => router.push("/Warehouse_Backoffice/stock-reports");
-  const goToWarehouseReports = () => router.push("/Warehouse_Backoffice/warehouse-reports");
-  const goToColdroomReports = () => router.push("/Warehouse_Backoffice/coldroom-reports");
-  const goToDifferences = () => router.push("/Warehouse_Backoffice/Differences");
-  const goToProductionDifferences = () => router.push("/Warehouse_Backoffice/production-differences");
-  const goToFlowTraces = () => router.push("/Warehouse_Backoffice/flow-traces");
-  const goToNegativeBalances = () => router.push("/Warehouse_Backoffice/negative-balance-reports");
-  const goToPosSyncFailures = () => router.push("/Warehouse_Backoffice/pos-sync-failures");
-  const goToStockPeriodExceptions = () => router.push("/Warehouse_Backoffice/stock-period-exceptions");
-  const goToOutletShortageDetails = () => router.push("/Warehouse_Backoffice/outlet-shortage-details");
-
   if (status !== "ok") return null;
 
   return (
-    <div className={styles.page}>
-      <style>{globalStyles}</style>
-      <main className={styles.shell}>
-        <header className={styles.hero}>
-          <div className={styles.grow}>
-            <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Reports</h1>
-            <p className={styles.subtitle}>Sales, orders, scanner activity, and stock reporting.</p>
-          </div>
-          <div className={menuStyles.headerButtons}>
-            <button onClick={handleBackOne} className={menuStyles.backButton}>
-              Back
-            </button>
-            <button onClick={handleBack} className={menuStyles.backButton}>
-              Back to Dashboard
-            </button>
-          </div>
-        </header>
-
-        <section className={styles.actionsGrid}>
-          <button onClick={goToOutletSales} className={`${styles.actionCard} ${styles.reportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Outlet Sales Reports</p>
-            <p className={styles.cardBody}>Filter sales by outlet, date, and product type with before/after tax totals.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToOutletOrders} className={`${styles.actionCard} ${styles.mappingCard}`}>
-            <p className={`${styles.cardTitle} ${styles.mappingTitle}`}>Outlet Orders Reports</p>
-            <p className={styles.cardBody}>Filter orders by outlet and date, then download offloaded PDFs.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToScannerReports} className={`${styles.actionCard} ${styles.inventoryCard}`}>
-            <p className={`${styles.cardTitle} ${styles.inventoryTitle}`}>Scanner Reports</p>
-            <p className={styles.cardBody}>Process transfers, purchases, and damages with the new warehouse roles.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToStockReports} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Stock Reports</p>
-            <p className={styles.cardBody}>Review stocktake periods for mapped warehouses.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToWarehouseReports} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Warehouse Reports</p>
-            <p className={styles.cardBody}>See assigned products and accrued movement totals by date range.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToColdroomReports} className={`${styles.actionCard} ${styles.coldroomReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.coldroomReportsTitle}`}>Coldroom Reports</p>
-            <p className={styles.cardBody}>Filter coldroom accrued units by date, product, and warehouse.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToDifferences} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Opening Stock Differences</p>
-            <p className={styles.cardBody}>Compare opening ingredient counts with recipe-based servings.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToProductionDifferences} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Production Differences</p>
-            <p className={styles.cardBody}>Compare max producible servings with recorded production entries.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToFlowTraces} className={`${styles.actionCard} ${styles.reportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>Flow Trace Reports</p>
-            <p className={styles.cardBody}>Audit finished, ingredient, and raw deductions with negative stock tracking.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToNegativeBalances} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Negative Balance Alerts</p>
-            <p className={styles.cardBody}>Review order and recipe shortages logged during deductions.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToPosSyncFailures} className={`${styles.actionCard} ${styles.reportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.reportsTitle}`}>POS Sync Failures</p>
-            <p className={styles.cardBody}>Track failed POS sync events by outlet, stage, and error details.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToStockPeriodExceptions} className={`${styles.actionCard} ${styles.warehouseReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.warehouseReportsTitle}`}>Stock Period Exceptions</p>
-            <p className={styles.cardBody}>Flag missing open periods and closed periods without closing counts.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button onClick={goToOutletShortageDetails} className={`${styles.actionCard} ${styles.stockReportsCard}`}>
-            <p className={`${styles.cardTitle} ${styles.stockReportsTitle}`}>Outlet Shortage Details</p>
-            <p className={styles.cardBody}>Summarize shortages by outlet, item, and warehouse.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-        </section>
-      </main>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {REPORT_LINKS.map((link) => (
+        <button
+          key={link.href}
+          type="button"
+          onClick={() => router.push(link.href)}
+          className={styles.pageCard}
+          style={{
+            textAlign: "left",
+            cursor: "pointer",
+            borderColor: cardBorder[link.tone],
+            background: cardBg[link.tone],
+          }}
+        >
+          <p className={styles.pageCardTitle}>{link.label}</p>
+          <p className={styles.pageCardBody}>{link.desc}</p>
+        </button>
+      ))}
     </div>
   );
 }
-
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-
-button {
-  background: none;
-  border: none;
-}
-
-button:hover {
-  transform: translateY(-2px);
-}
-`;

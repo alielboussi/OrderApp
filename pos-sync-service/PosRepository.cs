@@ -25,7 +25,11 @@ public sealed class PosRepository
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<PosOrder>> ReadPendingOrdersAsync(int batchSize, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PosOrder>> ReadPendingOrdersAsync(
+        int batchSize,
+        DateTime? minOccurredAtUtc,
+        DateTime? maxOccurredAtUtc,
+        CancellationToken cancellationToken)
     {
         // Uses actual POS schema: BillType (header/payment), Sale (date/time), Saledetails (lines), MenuItem (names).
         const string headerSql = @"
@@ -56,8 +60,22 @@ WHERE (
     OR bt.uploadStatus = 'Pending'
     OR (@IncludeProcessed = 1 AND bt.uploadStatus = 'Processed')
 )
-    AND (@MinOccurredAt IS NULL OR s.Date >= CAST(@MinOccurredAt AS date))
-    AND (@MaxOccurredAt IS NULL OR s.Date <= CAST(@MaxOccurredAt AS date))
+    AND (
+        @MinOccurredAt IS NULL
+        OR DATEADD(
+            millisecond,
+            DATEDIFF(millisecond, CAST(CAST(s.time AS date) AS datetime), CAST(s.time AS datetime)),
+            CAST(s.Date AS datetime)
+        ) >= @MinOccurredAt
+    )
+    AND (
+        @MaxOccurredAt IS NULL
+        OR DATEADD(
+            millisecond,
+            DATEDIFF(millisecond, CAST(CAST(s.time AS date) AS datetime), CAST(s.time AS datetime)),
+            CAST(s.Date AS datetime)
+        ) <= @MaxOccurredAt
+    )
 ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
@@ -70,10 +88,8 @@ ORDER BY bt.id ASC;";
             CommandType = CommandType.Text
         };
         cmd.Parameters.AddWithValue("@Batch", batchSize);
-        var minOccurredAt = _syncOptions.CurrentValue.MinSaleDateUtc;
-        var maxOccurredAt = _syncOptions.CurrentValue.MaxSaleDateUtc;
-        cmd.Parameters.AddWithValue("@MinOccurredAt", (object?)minOccurredAt ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@MaxOccurredAt", (object?)maxOccurredAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MinOccurredAt", (object?)minOccurredAtUtc ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MaxOccurredAt", (object?)maxOccurredAtUtc ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@IncludeProcessed", _syncOptions.CurrentValue.IncludeProcessed ? 1 : 0);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -261,14 +277,18 @@ ORDER BY bt.id DESC;";
     SELECT sd.saleid AS SaleId,
            sd.MenuItemId AS ItemId,
            mi.Name AS ItemName,
+           mi.Code AS ItemSku,
+           mf.Name AS FlavourName,
+           mf.Name2 AS VariantSku,
            sd.Quantity AS Qty,
            sd.Price AS UnitPrice,
            sd.Itemdiscount AS Discount,
            sd.ItemGst AS Tax,
-            sd.FlavourId AS FlavourId,
-            sd.ModifierId AS ModifierId
+           sd.FlavourId AS FlavourId,
+           sd.ModifierId AS ModifierId
     FROM dbo.Saledetails sd WITH (NOLOCK)
     LEFT JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = sd.MenuItemId
+    LEFT JOIN dbo.ModifierFlavour mf WITH (NOLOCK) ON mf.Id = sd.FlavourId
     WHERE sd.saleid = @SaleId;";
 
         var items = new List<PosLineItem>();
@@ -297,9 +317,22 @@ ORDER BY bt.id DESC;";
                 ? null
                 : reader.GetValue(modifierOrdinal.Value)?.ToString();
 
+            var itemSkuOrdinal = TryGetOrdinal(reader, "ItemSku");
+            var variantSkuOrdinal = TryGetOrdinal(reader, "VariantSku");
+            var flavourNameOrdinal = TryGetOrdinal(reader, "FlavourName");
+
             items.Add(new PosLineItem(
                 PosItemId: reader["ItemId"].ToString() ?? string.Empty,
                 Name: reader["ItemName"].ToString() ?? string.Empty,
+                ItemSku: itemSkuOrdinal is null || reader.IsDBNull(itemSkuOrdinal.Value)
+                    ? null
+                    : reader.GetValue(itemSkuOrdinal.Value)?.ToString(),
+                VariantSku: variantSkuOrdinal is null || reader.IsDBNull(variantSkuOrdinal.Value)
+                    ? null
+                    : reader.GetValue(variantSkuOrdinal.Value)?.ToString(),
+                FlavourName: flavourNameOrdinal is null || reader.IsDBNull(flavourNameOrdinal.Value)
+                    ? null
+                    : reader.GetValue(flavourNameOrdinal.Value)?.ToString(),
                 Quantity: Convert.ToDecimal(reader["Qty"]),
                 UnitPrice: unitPrice,
                 SalePrice: salePrice,

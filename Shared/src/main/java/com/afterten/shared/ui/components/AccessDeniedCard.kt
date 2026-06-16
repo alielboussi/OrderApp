@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import com.afterten.shared.ui.components.PrimaryButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,15 +44,11 @@ fun AccessDeniedCard(
                 Text(message, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(16.dp))
                 if (onPrimary != null) {
-                    Button(onClick = onPrimary, modifier = Modifier.fillMaxWidth()) {
-                        Text(primaryLabel)
-                    }
+                    PrimaryButton(text = primaryLabel, onClick = onPrimary)
                 }
                 if (secondaryLabel != null && onSecondary != null) {
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = onSecondary, modifier = Modifier.fillMaxWidth()) {
-                        Text(secondaryLabel)
-                    }
+                    PrimaryButton(text = secondaryLabel, onClick = onSecondary)
                 }
             }
         }

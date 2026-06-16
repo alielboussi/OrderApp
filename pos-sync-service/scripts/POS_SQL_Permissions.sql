@@ -13,3 +13,5 @@ GO
 GRANT SELECT, UPDATE ON dbo.Sale TO [mint];
 GRANT SELECT, UPDATE ON dbo.Saledetails TO [mint];
 GRANT SELECT, UPDATE ON dbo.BillType TO [mint];
+GRANT SELECT, UPDATE ON dbo.MenuItem TO [mint];
+GRANT SELECT, UPDATE ON dbo.ModifierFlavour TO [mint];

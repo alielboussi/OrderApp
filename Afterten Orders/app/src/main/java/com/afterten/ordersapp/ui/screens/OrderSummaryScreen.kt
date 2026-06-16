@@ -150,10 +150,10 @@ fun OrderSummaryScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text(text = "Order #: ${orderNumber ?: "…"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(text = "Date: ${joburgNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", color = Color.White)
+            Text(text = "Order #: ${orderNumber ?: "…"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(text = "Date: ${joburgNow.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}", color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(12.dp))
-            Text(text = "Items: ${cart.sumOf { it.qty }}  •  Subtotal: ${formatMoney(cart.sumOf { it.lineTotal })}", color = Color.White)
+            Text(text = "Items: ${cart.sumOf { it.qty }}  •  Subtotal: ${formatMoney(cart.sumOf { it.lineTotal })}", color = MaterialTheme.colorScheme.onSurface)
 
             // Grouped items with headers and red dividers
             val productsById = products.associateBy({ it.id }, { it.name })
@@ -168,7 +168,7 @@ fun OrderSummaryScreen(
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = 48.sp),
                     fontWeight = FontWeight.Bold,
                     textDecoration = TextDecoration.Underline,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -190,13 +190,13 @@ fun OrderSummaryScreen(
                             text = item.name,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f)
                         )
-                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
-                        Text(item.purchasePackUnit, modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
-                        Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
-                        Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = Color.White)
+                        Text(item.qty.toString(), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                        Text(item.purchasePackUnit, modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                        Text(formatMoney(item.unitPrice), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                        Text(formatMoney(item.lineTotal), modifier = Modifier.width(colWidth), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
                     }
                     Spacer(Modifier.height(6.dp))
                     // Divider after each variance/item
@@ -209,11 +209,11 @@ fun OrderSummaryScreen(
 
             Spacer(Modifier.height(12.dp))
             // Employee name (required, auto-capitalized on submit)
-            Text(text = "Employee Name", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text(text = "Employee Name", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("First name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = Color.White)
+                    Text("First name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(4.dp))
                     AppOutlinedTextField(
                         value = firstName,
@@ -226,7 +226,7 @@ fun OrderSummaryScreen(
                     )
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Last name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = Color.White)
+                    Text("Last name", style = MaterialTheme.typography.bodyMedium, textDecoration = TextDecoration.Underline, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(4.dp))
                     AppOutlinedTextField(
                         value = lastName,
@@ -241,7 +241,7 @@ fun OrderSummaryScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            Text("Customer Signature", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text("Customer Signature", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(6.dp))
             Box(
                 modifier = Modifier

@@ -61,7 +61,7 @@ export default function CatalogMenu() {
           </button>
 
           <button
-            onClick={() => go("/Warehouse_Backoffice/purchase-entry")}
+            onClick={() => go("/Warehouse_Backoffice/purchases")}
             className={`${styles.actionCard} ${styles.purchaseCard}`}
           >
             <p className={`${styles.cardTitle} ${styles.cardTitlePurchase}`}>Purchase Entry</p>

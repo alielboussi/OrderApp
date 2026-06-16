@@ -1,0 +1,145 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formula {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 280px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+}
+
+.select {
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  padding: 8px 10px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.muted {
+  color: #5c5c5c;
+  font-size: 13px;
+  margin: 0;
+}
+
+.error {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 14px;
+}
+
+.periodGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.periodCard {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.periodCardActive {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.periodHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.periodTitle {
+  margin: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: #111;
+}
+
+.periodMeta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #5c5c5c;
+  line-height: 1.4;
+}
+
+.periodActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pdfBtn {
+  border-radius: 6px;
+  border: 1px solid #bbf7d0;
+  background: #ecfdf3;
+  color: #15803d;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+  min-width: 44px;
+}
+
+.countGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.countBlock {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.countTitle {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #111;
+}
+
+.countList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.45;
+}

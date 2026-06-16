@@ -1,65 +1,87 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import styles from "./purchases.module.css";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import type { Warehouse } from "@/types/warehouse";
 import type { WarehousePurchase } from "@/types/purchases";
+import styles from "../enterprise.module.css";
 
-const AUTO_REFRESH_MS = 120_000; // 2 minutes
-const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/purchases";
-const ALLOWED_FROM_WAREHOUSE_IDS = [
-  "f71a25d0-9ec2-454d-a606-93cfaa3c606b", // Beverages Storeroom
-  "0c9ddd9e-d42c-475f-9232-5e9d649b0916", // Main Warehouse
-];
+type ApiImportStatus =
+  | "ready"
+  | "imported"
+  | "duplicate"
+  | "duplicate_receipt"
+  | "missing_item"
+  | "missing_storage_home"
+  | "missing_open_period"
+  | "missing_opening_stock"
+  | "invalid_qty"
+  | "error";
 
-const fetchJson = async <T,>(url: string): Promise<T> => {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
-  }
-  return res.json();
+type ApiImportRow = {
+  movement_id: string;
+  product_name: string | null;
+  item_name: string | null;
+  item_sku: string | null;
+  variant_sku: string | null;
+  sku: string | null;
+  qty: number | null;
+  unit_cost: number | null;
+  movement_at: string | null;
+  invoice_id: string | null;
+  operator_name: string | null;
+  status: ApiImportStatus;
+  status_message?: string | null;
 };
 
-function formatDateRangeValue(value?: string | null) {
-  return value ?? "";
+type ApiImportSummary = {
+  total: number;
+  imported: number;
+  ready: number;
+};
+
+type ApiImportResponse = {
+  ok: boolean;
+  summary: ApiImportSummary;
+  items: ApiImportRow[];
+  error?: string | null;
+};
+
+const SYNC_INTERVAL_MS = 300_000;
+const ALLOWED_WAREHOUSE_IDS = [
+  "f71a25d0-9ec2-454d-a606-93cfaa3c606b",
+  "0c9ddd9e-d42c-475f-9232-5e9d649b0916",
+];
+
+const STATUS_LABELS: Record<ApiImportStatus, string> = {
+  ready: "Ready",
+  imported: "Imported",
+  duplicate: "Duplicate",
+  duplicate_receipt: "Dup receipt",
+  missing_item: "No match",
+  missing_storage_home: "No storage",
+  missing_open_period: "No period",
+  missing_opening_stock: "No opening",
+  invalid_qty: "Bad qty",
+  error: "Error",
+};
+
+function formatStamp(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString();
 }
 
-function formatTimestamp(value?: string | null) {
-  if (!value) return "-";
-  try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-      timeZoneName: "short",
-    }).format(date);
-  } catch {
-    return value;
-  }
+function formatNumber(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "—";
+  return value.toLocaleString();
 }
 
-function currency(value?: number | null) {
-  if (value == null || Number.isNaN(Number(value))) return "-";
-  const formatted = new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value));
-  return `K ${formatted}`;
-}
-
-function formatQuantity(value: number) {
-  if (!Number.isFinite(value)) return "0";
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2,
-  }).format(value);
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Unknown error";
 }
 
 function normalizeList<T>(value: unknown, keys: string[] = []): T[] {
@@ -74,463 +96,338 @@ function normalizeList<T>(value: unknown, keys: string[] = []): T[] {
   return [];
 }
 
-function normalizeErrorMessage(err: unknown): string {
-  if (!err) return "Unknown error";
-  let raw: string;
-  if (err instanceof Error) {
-    raw = err.message;
-  } else if (typeof err === "string") {
-    raw = err;
-  } else {
-    try {
-      raw = JSON.stringify(err);
-    } catch {
-      raw = String(err);
-    }
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed === "object" && parsed !== null) {
-      const parsedRecord = parsed as Record<string, unknown>;
-      const errorField = parsedRecord.error;
-      if (typeof errorField === "string" && errorField.trim()) return errorField;
-      if (errorField != null) return String(errorField);
-      const messageField = parsedRecord.message;
-      if (typeof messageField === "string" && messageField.trim()) return messageField;
-      if (messageField != null) return String(messageField);
-    }
-  } catch {
-    // ignore JSON parse failure
-  }
-  return raw;
+function matchesTimeFilter(iso: string | null | undefined, timeFrom: string, timeTo: string) {
+  if (!iso || (!timeFrom && !timeTo)) return true;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return true;
+  const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (timeFrom && hhmm < timeFrom) return false;
+  if (timeTo && hhmm > timeTo) return false;
+  return true;
 }
 
-export default function WarehousePurchasesWeb() {
-  const router = useRouter();
+export default function WarehousePurchasesPage() {
   const { status } = useWarehouseAuth();
+  const syncInFlight = useRef(false);
+  const syncTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [importRows, setImportRows] = useState<ApiImportRow[]>([]);
+  const [importSummary, setImportSummary] = useState<ApiImportSummary | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [nextSyncAt, setNextSyncAt] = useState<string | null>(null);
+
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [purchases, setPurchases] = useState<WarehousePurchase[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
   const [warehouseId, setWarehouseId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [manualRefreshTick, setManualRefreshTick] = useState(0);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const lockedPathRef = useRef<string | null>(null);
-  const allowNavRef = useRef(false);
-  const [lockedFromId, setLockedFromId] = useState("");
-  const lockedFromActive = lockedFromId.trim().length > 0;
-  const hasActiveFilters = Boolean(warehouseId || startDate || endDate || searchQuery.trim());
+  const [timeFrom, setTimeFrom] = useState("");
+  const [timeTo, setTimeTo] = useState("");
+  const [productSearch, setProductSearch] = useState("");
 
-  const readLockedFrom = () => {
-    if (typeof window === "undefined") return "";
-    const search = new URLSearchParams(window.location.search);
-    return (
-      search.get("from_locked_id") ||
-      search.get("fromLockedId") ||
-      search.get("locked_from") ||
-      search.get("locked_id") ||
-      search.get("lockedWarehouseId") ||
-      search.get("lockedWarehouse") ||
-      search.get("locked_source_id") ||
-      ""
-    ).trim();
-  };
-
-  const handleBack = () => {
-    allowNavRef.current = true;
-    router.push("/Warehouse_Backoffice");
-  };
-
-  const handleBackOne = () => {
-    allowNavRef.current = true;
-    router.back();
-  };
-
-  useEffect(() => {
-    setLockedFromId(readLockedFrom());
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    if (window.location.pathname !== MAIN_DASHBOARD_PATH) {
-      allowNavRef.current = true;
-      window.history.replaceState({}, "", MAIN_DASHBOARD_PATH);
-      allowNavRef.current = false;
-    }
-
-    const locked = window.location.pathname + window.location.search;
-    lockedPathRef.current = locked;
-    const enforce = () => {
-      if (allowNavRef.current) return;
-      if (window.location.pathname + window.location.search !== lockedPathRef.current) {
-        window.history.pushState({}, "", lockedPathRef.current);
-      }
-    };
-    window.addEventListener("popstate", enforce);
-    window.addEventListener("hashchange", enforce);
-    const id = window.setInterval(enforce, 1500);
-    return () => {
-      window.removeEventListener("popstate", enforce);
-      window.removeEventListener("hashchange", enforce);
-      window.clearInterval(id);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "auto" });
-    }
-  }, []);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setManualRefreshTick((v) => v + 1), AUTO_REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    const loadWarehouses = async () => {
-      try {
-        const fromLocked = lockedFromId.trim();
-        const lockedIds = fromLocked ? [fromLocked] : [];
-        const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
-        const data = await fetchJson<Warehouse[] | { warehouses?: Warehouse[]; data?: Warehouse[] }>(`/api/warehouses${qs}`);
-        const list = normalizeList<Warehouse>(data, ["warehouses", "data"]);
-        const allowed = list.filter((w) => ALLOWED_FROM_WAREHOUSE_IDS.includes(w.id));
-        const filtered = lockedIds.length ? allowed.filter((w) => lockedIds.includes(w.id)) : allowed;
-        if (fromLocked && filtered.some((w) => w.id === fromLocked)) {
-          setWarehouseId(fromLocked);
-        }
-        setWarehouses(filtered);
-      } catch (err) {
-        setError(normalizeErrorMessage(err) || "Unable to load warehouses");
-      }
-    };
-    loadWarehouses();
-  }, [lockedFromId]);
-
-  useEffect(() => {
-    if (lockedFromActive) {
-      setWarehouseId(lockedFromId.trim());
-    }
-  }, [lockedFromActive, lockedFromId]);
-
-  const loadPurchases = async () => {
-    setLoading(true);
-    setError(null);
+  const runImportSync = useCallback(async () => {
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
+    setImportLoading(true);
+    setImportError(null);
     try {
-      const fromLocked = lockedFromId.trim();
-      const lockedIds = fromLocked ? [fromLocked] : [];
+      const response = await fetch("/api/warehouse-purchase-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: false, mode: "auto" }),
+      });
+      const payload = (await response.json()) as ApiImportResponse;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ? String(payload.error) : "Import failed");
+      }
+      setImportRows(payload.items ?? []);
+      setImportSummary(payload.summary ?? null);
+      setLastSyncAt(new Date().toISOString());
+    } catch (err) {
+      setImportError(toErrorMessage(err));
+    } finally {
+      syncInFlight.current = false;
+      setImportLoading(false);
+      setNextSyncAt(new Date(Date.now() + SYNC_INTERVAL_MS).toISOString());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    void runImportSync();
+    syncTimer.current = setInterval(() => void runImportSync(), SYNC_INTERVAL_MS);
+    setNextSyncAt(new Date(Date.now() + SYNC_INTERVAL_MS).toISOString());
+    return () => {
+      if (syncTimer.current) clearInterval(syncTimer.current);
+    };
+  }, [status, runImportSync]);
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    fetch("/api/warehouses")
+      .then((r) => r.json())
+      .then((data) => {
+        const list = normalizeList<Warehouse>(data, ["warehouses", "data"]);
+        setWarehouses(list.filter((w) => ALLOWED_WAREHOUSE_IDS.includes(w.id)));
+      })
+      .catch(() => setWarehouses([]));
+  }, [status]);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
       const params = new URLSearchParams();
       if (warehouseId) params.set("warehouseId", warehouseId);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
-      lockedIds.forEach((id) => params.append("fromLockedId", id));
-      const url = `/api/warehouse-purchases?${params.toString()}`;
-      const data = await fetchJson<WarehousePurchase[] | { purchases?: WarehousePurchase[]; data?: WarehousePurchase[] }>(url);
-      const list = normalizeList<WarehousePurchase>(data, ["purchases", "data"]);
-      setPurchases(list);
+      const res = await fetch(`/api/warehouse-purchases?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setPurchases(normalizeList<WarehousePurchase>(data, ["purchases", "data"]));
     } catch (err) {
-      setError(normalizeErrorMessage(err) || "Unable to load purchases");
+      setHistoryError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      setHistoryLoading(false);
     }
-  };
+  }, [warehouseId, startDate, endDate]);
 
   useEffect(() => {
-    loadPurchases();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [warehouseId, startDate, endDate, manualRefreshTick, lockedFromId]);
+    if (status !== "ok") return;
+    void loadHistory();
+  }, [status, loadHistory, lastSyncAt]);
 
-  const filteredPurchases = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const sorted = [...purchases].sort((a, b) => {
-      const aDate = a.recorded_at ? new Date(a.recorded_at).getTime() : 0;
-      const bDate = b.recorded_at ? new Date(b.recorded_at).getTime() : 0;
-      return bDate - aDate;
-    });
-    const base = q
-      ? sorted.filter((p) => {
-          const haystack = [
-            p.warehouse?.name,
-            p.supplier?.name,
-            p.reference_code,
-            p.note,
-            p.items
-              ?.map((i) => `${i.item?.name ?? ""} ${i.variant?.name ?? ""} ${i.item_id ?? ""} ${i.variant_key ?? ""}`)
-              .join(" ") ?? "",
-          ]
-            .join(" ")
-            .toLowerCase();
-          return haystack.includes(q);
-        })
-      : sorted;
-    return hasActiveFilters ? base : base.slice(0, 3);
-  }, [purchases, searchQuery, hasActiveFilters]);
-
-  const purchaseSummary = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return null;
-    const matches = new Map<string, { qty: number }>();
-    purchases.forEach((purchase) => {
-      (purchase.items ?? []).forEach((item) => {
-        const itemName = item.item?.name ?? "";
-        const variantName = item.variant?.name ?? "";
-        const itemId = item.item_id ?? item.item?.id ?? "";
-        const variantKey = item.variant_key ?? item.variant?.id ?? "";
-        const haystack = `${itemName} ${variantName} ${itemId} ${variantKey}`.toLowerCase();
-        if (!haystack.includes(q)) return;
-        const key = `${itemId || itemName}::${variantKey || variantName}`;
-        const qty = Number(item.qty) || 0;
-        const existing = matches.get(key);
-        if (existing) {
-          existing.qty += qty;
-        } else {
-          matches.set(key, { qty });
-        }
+  const filteredHistory = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    return [...purchases]
+      .filter((p) => matchesTimeFilter(p.recorded_at, timeFrom, timeTo))
+      .filter((p) => {
+        if (!q) return true;
+        const haystack = [
+          p.warehouse?.name,
+          p.supplier?.name,
+          p.reference_code,
+          p.operator_name,
+          ...(p.items ?? []).flatMap((i) => [i.item?.name, i.variant?.name, i.item_id]),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(q);
+      })
+      .sort((a, b) => {
+        const at = a.recorded_at ? new Date(a.recorded_at).getTime() : 0;
+        const bt = b.recorded_at ? new Date(b.recorded_at).getTime() : 0;
+        return bt - at;
       });
-    });
-    if (matches.size !== 1) return null;
-    return Array.from(matches.values())[0];
-  }, [purchases, searchQuery]);
+  }, [purchases, productSearch, timeFrom, timeTo]);
 
-  const warehouseMap = useMemo(() => {
-    const map = new Map<string, string>();
-    (warehouses ?? []).forEach((w) => {
-      if (w?.id) map.set(w.id, w.name ?? "Warehouse");
-    });
-    return map;
-  }, [warehouses]);
-
-  const toggleExpand = (id: string) => {
-    setExpandedId((prev) => (prev === id ? null : id));
-  };
-
-  if (status !== "ok") {
-    return null;
-  }
+  if (status !== "ok") return null;
 
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.header}>
-          <div className={styles.headerButtons}>
-            <button className={styles.primaryBtn} onClick={handleBackOne}>
-              Back
-            </button>
-            <button className={styles.primaryBtn} onClick={handleBack}>
-              Back to Dashboard
-            </button>
-          </div>
-          <div className={styles.grow} />
-          <button
-            className={`${styles.iconBtn} ${loading ? styles.iconBtnSpin : ""}`}
-            onClick={() => setManualRefreshTick((v) => v + 1)}
-            title="Refresh purchases"
-          >
-            Refresh
-          </button>
-          <button
-            className={styles.linkBtn}
-            onClick={() => {
-              allowNavRef.current = true;
-              window.location.href = "/";
-            }}
-          >
-            Log out
-          </button>
-        </header>
+    <div>
+      {importError && (
+        <div className={`${styles.alertBanner} ${styles.alertRed}`}>
+          <span>API import error: {importError}</span>
+        </div>
+      )}
 
-        <section className={styles.stackXs}>
-          <h1 className={styles.h1}>Warehouse Purchases</h1>
-          <p className={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
-          <p className={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
-        </section>
-
-        {loading && (
-          <div className={styles.progressBarWrap}>
-            <div className={styles.progressBar} />
-          </div>
-        )}
-
-        <section className={styles.panel}>
-          <div className={styles.stackLg}>
-            <LabeledSelect
-              label="Warehouse"
-              value={lockedFromActive ? lockedFromId : warehouseId}
-              onChange={setWarehouseId}
-              options={warehouses}
-              placeholder={lockedFromActive ? "Locked to source warehouse" : "Any warehouse"}
-              locked={lockedFromActive}
-            />
-            <div className={styles.gridTwo}>
-              <LabeledDate label="From date" value={formatDateRangeValue(startDate)} onChange={setStartDate} />
-              <LabeledDate label="To date" value={formatDateRangeValue(endDate)} onChange={setEndDate} />
-            </div>
-            <div className={styles.stackSm}>
-              <label className={styles.label}>Search everything</label>
-              <div className={styles.searchBox}>
-                <input
-                  className={styles.searchInput}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Warehouse, supplier, reference, product"
-                />
-              </div>
-              <div className={styles.pillRow}>
-                <button
-                  className={styles.dangerPill}
-                  onClick={() => {
-                  setWarehouseId(lockedFromActive ? lockedFromId : "");
-                    setStartDate("");
-                    setEndDate("");
-                    setSearchQuery("");
-                    setManualRefreshTick((v) => v + 1);
-                  }}
-                >
-                  Reset all filters
-                </button>
-                {purchaseSummary ? (
-                  <div className={styles.badgeRow}>
-                    <span className={styles.summaryBadge}>
-                      Total purchased: {formatQuantity(purchaseSummary.qty)}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            {error && <p className={styles.errorText}>{error}</p>}
-            <div className={styles.listShell}>
-              {loading && purchases.length === 0 ? (
-                <div className={styles.centered}>Loading purchases...</div>
-              ) : filteredPurchases.length === 0 ? (
-                <div className={styles.centered}>No purchases match the current filters.</div>
+      <section className={styles.pageCard}>
+        <div className={styles.sectionHeaderGreen}>
+          <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
+            API intake — auto sync every 5 minutes
+          </h3>
+          <p className={styles.pageCardBody}>
+            Pulls purchase receipts from the Afterten Stock API and posts to warehouse storage homes.
+          </p>
+        </div>
+        <div className={styles.summaryGrid}>
+          <div className={`${styles.summaryCard} ${styles.summaryCardBlue}`}>
+            <p className={styles.summaryLabel}>Status</p>
+            <p className={styles.summaryValue} style={{ fontSize: 14 }}>
+              {importLoading ? (
+                <span className={styles.pillSyncing}>Syncing…</span>
               ) : (
-                <div className={styles.listScroll}>
-                  {filteredPurchases.map((p) => {
-                    const warehouseName = p.warehouse?.name || warehouseMap.get(p.warehouse_id ?? "") || p.warehouse_id || "Warehouse";
-                    const supplierName = p.supplier?.name || "Supplier";
-                    const expanded = expandedId === p.id;
-                    return (
-                      <article key={p.id} className={styles.card}>
-                        <div className={styles.cardHeader}>
-                          <div className={styles.grow}>
-                            <p className={styles.cardTitle}>{warehouseName}</p>
-                            <p className={styles.cardSub}>{formatTimestamp(p.recorded_at)}</p>
-                            <p className={styles.cardSub}>Operator: {p.operator_name ?? "Unknown"}</p>
-                            {p.reference_code ? <p className={styles.cardSub}>Ref: {p.reference_code}</p> : null}
-                            <p className={styles.cardSub}>Supplier: {supplierName}</p>
-                          </div>
-                          <span className={`${styles.statusChip} ${styles.statusChipComplete}`}>
-                            Received
-                          </span>
-                          <button
-                            className={styles.iconBtn}
-                            onClick={() => toggleExpand(p.id)}
-                            aria-label="Toggle expand"
-                          >
-                            {expanded ? "^" : "v"}
-                          </button>
-                        </div>
-
-                        <p className={styles.cardNote}>{p.note || "No note"}</p>
-
-                        <div className={styles.itemsList}>
-                          {(expanded ? p.items : p.items.slice(0, 3)).map((item) => {
-                            const lineTotal = item.unit_cost != null ? item.unit_cost * item.qty : null;
-                            return (
-                              <div key={item.id} className={styles.itemRow}>
-                                <div>
-                                  <p className={styles.itemTitle}>{item.item?.name ?? "Item"}</p>
-                                  {item.variant?.name ? <p className={styles.itemSub}>{item.variant.name}</p> : null}
-                                  <p className={styles.itemSub}>Qty: {item.qty}</p>
-                                  {item.unit_cost != null ? <p className={styles.itemSub}>Unit cost: {currency(item.unit_cost)}</p> : null}
-                                  {lineTotal != null ? <p className={styles.itemSub}>Line total: {currency(lineTotal)}</p> : null}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {p.items.length > 3 && (
-                          <button className={styles.expandBtn} onClick={() => toggleExpand(p.id)}>
-                            {expanded ? "Hide items" : `Show all ${p.items.length} items`}
-                          </button>
-                        )}
-                      </article>
-                    );
-                  })}
-                </div>
+                <span className={styles.pillLive}>Live</span>
               )}
-            </div>
+            </p>
           </div>
-        </section>
-      </main>
-    </div>
-  );
-}
+          <div className={`${styles.summaryCard} ${styles.summaryCardGreen}`}>
+            <p className={styles.summaryLabel}>Last sync</p>
+            <p className={styles.summaryValue} style={{ fontSize: 13 }}>
+              {formatStamp(lastSyncAt)}
+            </p>
+          </div>
+          <div className={`${styles.summaryCard} ${styles.summaryCardGold}`}>
+            <p className={styles.summaryLabel}>Next sync</p>
+            <p className={styles.summaryValue} style={{ fontSize: 13 }}>
+              {formatStamp(nextSyncAt)}
+            </p>
+          </div>
+          {importSummary && (
+            <>
+              <div className={styles.summaryCard}>
+                <p className={styles.summaryLabel}>Batch total</p>
+                <p className={styles.summaryValue}>{formatNumber(importSummary.total)}</p>
+              </div>
+              <div className={`${styles.summaryCard} ${styles.summaryCardGreen}`}>
+                <p className={styles.summaryLabel}>Imported</p>
+                <p className={styles.summaryValue}>{formatNumber(importSummary.imported)}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
 
-function LabeledSelect({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  locked,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Warehouse[];
-  placeholder?: string;
-  locked?: boolean;
-}) {
-  const lockSelection = Boolean(locked && options.length <= 1);
-  const selectId = useId();
-  return (
-    <div className={styles.fieldStack}>
-      <label className={styles.label} htmlFor={selectId}>
-        {label}
-      </label>
-      <select
-        className={styles.select}
-        id={selectId}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={lockSelection}
-        title={label}
-      >
-        {lockSelection ? null : <option value="">{placeholder || "Select"}</option>}
-        {options.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {opt.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
+      <section className={styles.pageCard}>
+        <div className={styles.sectionHeaderBlue}>
+          <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
+            Purchase history (received in warehouse)
+          </h3>
+        </div>
+        <div className={styles.filterBar}>
+          <label className={styles.fieldLabel}>
+            Warehouse
+            <select className={styles.fieldSelect} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              <option value="">All warehouses</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.fieldLabel}>
+            From date
+            <input className={styles.fieldInput} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </label>
+          <label className={styles.fieldLabel}>
+            To date
+            <input className={styles.fieldInput} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </label>
+          <label className={styles.fieldLabel}>
+            From time
+            <input className={styles.fieldInput} type="time" value={timeFrom} onChange={(e) => setTimeFrom(e.target.value)} />
+          </label>
+          <label className={styles.fieldLabel}>
+            To time
+            <input className={styles.fieldInput} type="time" value={timeTo} onChange={(e) => setTimeTo(e.target.value)} />
+          </label>
+          <label className={styles.fieldLabel}>
+            Product search
+            <input
+              className={styles.fieldInput}
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="Item, variant, supplier…"
+            />
+          </label>
+          <button type="button" className={styles.btnSecondary} onClick={() => void loadHistory()} disabled={historyLoading}>
+            {historyLoading ? "Loading…" : "Refresh history"}
+          </button>
+        </div>
+        {historyError && <p style={{ color: "#b91c1c", margin: "0 0 12px" }}>{historyError}</p>}
+        <div className={styles.tableWrap}>
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>Received</th>
+                <th>Warehouse</th>
+                <th>Supplier</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Operator</th>
+                <th>Reference</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyLoading && filteredHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>Loading purchase history…</td>
+                </tr>
+              ) : filteredHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>No purchases match the current filters.</td>
+                </tr>
+              ) : (
+                filteredHistory.flatMap((p) =>
+                  (p.items?.length ? p.items : [{ id: p.id, qty: 0, item: null, variant: null }]).map((item, idx) => (
+                    <tr key={`${p.id}-${item.id}-${idx}`}>
+                      <td>{formatStamp(p.recorded_at)}</td>
+                      <td>{p.warehouse?.name ?? "—"}</td>
+                      <td>{p.supplier?.name ?? "—"}</td>
+                      <td>
+                        {item.item?.name ?? "—"}
+                        {item.variant?.name ? ` · ${item.variant.name}` : ""}
+                      </td>
+                      <td>{formatNumber(item.qty)}</td>
+                      <td>{p.operator_name ?? "—"}</td>
+                      <td>{p.reference_code ?? "—"}</td>
+                    </tr>
+                  ))
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-function LabeledDate({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  const inputId = useId();
-  return (
-    <div className={styles.fieldStack}>
-      <label className={styles.label} htmlFor={inputId}>
-        {label}
-      </label>
-      <input
-        className={styles.dateInput}
-        id={inputId}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        title={label}
-      />
+      <section className={styles.pageCard}>
+        <div className={styles.sectionHeaderGold}>
+          <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
+            Latest API movements (current batch)
+          </h3>
+        </div>
+        <div className={styles.tableWrap}>
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Received</th>
+                <th>SKU</th>
+                <th>Invoice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {importRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>No movements in the latest sync batch.</td>
+                </tr>
+              ) : (
+                importRows.map((row) => (
+                  <tr key={row.movement_id}>
+                    <td>{row.product_name ?? row.item_name ?? "—"}</td>
+                    <td>{formatNumber(row.qty)}</td>
+                    <td>
+                      <span
+                        className={
+                          row.status === "imported"
+                            ? styles.pillLive
+                            : row.status === "ready"
+                              ? styles.pillSyncing
+                              : styles.pillOffline
+                        }
+                      >
+                        {STATUS_LABELS[row.status]}
+                      </span>
+                    </td>
+                    <td>{formatStamp(row.movement_at)}</td>
+                    <td>{row.item_sku ?? row.variant_sku ?? row.sku ?? "—"}</td>
+                    <td>{row.invoice_id ?? "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

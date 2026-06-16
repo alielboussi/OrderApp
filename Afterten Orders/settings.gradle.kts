@@ -26,5 +26,6 @@ plugins {
 
 rootProject.name = "Afterten Orders"
 include(":app")
+include(":supervisor-app")
 include(":shared")
 project(":shared").projectDir = file("../Shared")

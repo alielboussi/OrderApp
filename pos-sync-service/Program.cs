@@ -63,6 +63,7 @@ builder.Services.AddOptions<SyncOptions>()
     .Validate(o => o.BatchSize > 0, "Sync:BatchSize must be > 0")
     .ValidateOnStart();
 builder.Services.AddSingleton<PosRepository>();
+builder.Services.AddSingleton<PosCatalogRepository>();
 builder.Services.AddSingleton<SupabaseClient>();
 builder.Services.AddSingleton<SyncRunner>();
 builder.Services.AddSingleton<ScpgtCoordinator>();

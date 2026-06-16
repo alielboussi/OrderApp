@@ -367,49 +367,13 @@ export async function GET(request: Request) {
 
     const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
 
-    let recipeRows: RecipeRow[] | null = null;
-    let recipeError: SupabaseError = null;
-    while (true) {
-      let recipeQuery = supabase.from("recipes").select("finished_item_id, finished_variant_key");
-      if (itemIds.length) recipeQuery = recipeQuery.in("finished_item_id", itemIds);
-      recipeQuery = recipeQuery.eq("active", true);
-
-      const result = await recipeQuery;
-      recipeRows = (result.data as RecipeRow[] | null) ?? null;
-      recipeError = result.error;
-
-      if (recipeError?.code === "42703") {
-        const minimal = await supabase.from("recipes").select("finished_item_id");
-        recipeRows = (minimal.data as RecipeRow[] | null) ?? null;
-        recipeError = minimal.error;
-      }
-
-      if (recipeError?.code === "42P01") {
-        recipeRows = [];
-        recipeError = null;
-      }
-      break;
-    }
-    if (recipeError) throw recipeError;
-
-    const recipeCountByVariant: Record<string, number> = {};
-    (recipeRows as RecipeRow[] | null)?.forEach((row) => {
-      if (!row.finished_item_id) return;
-      const comboKey = `${row.finished_item_id}::${normalizeVariant(row.finished_variant_key)}`;
-      recipeCountByVariant[comboKey] = (recipeCountByVariant[comboKey] || 0) + 1;
-    });
-
     const variants = (variantRows ?? [])
       .map((row) => normalizeVariantRow(row))
       .filter((variant) => normalizeVariantKey(variant.id) !== "base")
-      .map((variant) => {
-        const normalizedKey = normalizeVariant(variant.id);
-        const hasRecipe = recipeCountByVariant[`${variant.item_id}::${normalizedKey}`] > 0;
-        return {
-          ...variant,
-          has_recipe: hasRecipe,
-        };
-      });
+      .map((variant) => ({
+        ...variant,
+        has_recipe: false,
+      }));
 
     const storageHomeIdsByKey: Record<string, string[]> = {};
     if (itemIds.length) {

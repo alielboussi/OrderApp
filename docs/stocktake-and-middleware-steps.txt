@@ -7,14 +7,18 @@ Middleware install (outlet PC)
 5) Start the service (if not started) from Services or PowerShell.
 6) Confirm it is running and syncing (service status/logs).
 
-Stocktake procedure (outlet warehouse)
-1) Ensure no sales/transfers are syncing during the count (pause/stop service if needed).
-2) In the Stocktake app: select outlet + warehouse.
-3) Start stocktake period (opening counts).
-4) Enter opening counts and save.
-5) Resume sales and transfers.
-6) During the day, transfers/damages/sales update stock.
-7) At closing time, pause/stop service to freeze movements.
-8) Enter closing counts and close the period.
-9) A new period is auto-opened and opening counts carry over from the closing counts.
-10) Resume service and continue selling.
+Outlet warehouse stocktake procedure
+1) In Afterten Orders app: Home → Outlet Stocktake.
+2) Start period (opening counts seed from previous closing when available).
+3) Enter opening counts and save.
+4) During the day: receive orders (Receive Orders), record transfers/damages; POS middleware syncs sales into stock_ledger.
+5) At closing: enter closing counts in the app, then Close period.
+6) Closing auto-calculates variance in backoffice (/Warehouse_Backoffice/stocktakes) and opens the next period with opening = previous closing.
+7) POS sync opening/cutoff counters update automatically on period open/close (migration 20260616210000).
+
+Backoffice monitoring
+- Live balance: /Warehouse_Backoffice/stocktakes (polls ledger every 30s).
+- Closed periods: PDF variance button per period.
+- Formula: Expected = Opening + Transfers + Damages − Sales; Variance = Expected − Closing.
+
+See docs/outlet-stocktake-variance.md for schema and API details.

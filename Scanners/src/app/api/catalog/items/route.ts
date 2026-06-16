@@ -251,26 +251,6 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    // Enrich with recipe counts (active recipes only)
-    const { data: recipeRows, error: recipeError } = await supabase
-      .from("recipes")
-      .select("finished_item_id, finished_variant_key, active")
-      .eq("active", true);
-    if (recipeError) throw recipeError;
-
-    const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
-    const recipeCountByItem: Record<string, number> = {};
-    const recipeCountByItemVariant: Record<string, number> = {};
-
-    (recipeRows as RecipeRow[] | null)?.forEach((row) => {
-      if (!row.finished_item_id) return;
-      const variantKey = normalizeVariant(row.finished_variant_key);
-      const itemKey = row.finished_item_id;
-      const comboKey = `${itemKey}::${variantKey}`;
-      recipeCountByItem[itemKey] = (recipeCountByItem[itemKey] || 0) + 1;
-      recipeCountByItemVariant[comboKey] = (recipeCountByItemVariant[comboKey] || 0) + 1;
-    });
-
     const itemsArray = single ? [data as Record<string, unknown>] : (data as Record<string, unknown>[]);
     const itemIds = itemsArray.map((item) => item.id).filter((id): id is string => typeof id === "string");
 
@@ -299,19 +279,16 @@ export async function GET(request: Request) {
       if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
       const item = data as ItemRecord;
       const itemId = typeof item.id === "string" ? item.id : "";
-      const baseCount = recipeCountByItemVariant[`${itemId}::base`] || 0;
       const defaultWarehouseId = typeof item.default_warehouse_id === "string" ? item.default_warehouse_id : null;
       const storageHomeIds = storageHomeIdsByItem[itemId] ?? [];
       const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, storageHomeIds);
       const storageHomeId = resolvedStorageHomeIds[0] ?? null;
-      const hasRecipe = typeof item.has_recipe === "boolean" ? item.has_recipe : recipeCountByItem[itemId] > 0;
       return NextResponse.json({
         item: {
           ...item,
           storage_home_id: storageHomeId,
           storage_home_ids: resolvedStorageHomeIds,
-          has_recipe: hasRecipe,
-          base_recipe_count: baseCount,
+          has_recipe: Boolean(item.has_recipe),
         },
       });
     }
@@ -319,18 +296,15 @@ export async function GET(request: Request) {
     const enriched = itemsArray.map((item) => {
       const typed = item as ItemRecord;
       const itemId = typeof typed.id === "string" ? typed.id : "";
-      const baseCount = recipeCountByItemVariant[`${itemId}::base`] || 0;
       const defaultWarehouseId = typeof typed.default_warehouse_id === "string" ? typed.default_warehouse_id : null;
       const storageHomeIds = storageHomeIdsByItem[itemId] ?? [];
       const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, storageHomeIds);
       const storageHomeId = resolvedStorageHomeIds[0] ?? null;
-      const hasRecipe = typeof typed.has_recipe === "boolean" ? typed.has_recipe : recipeCountByItem[itemId] > 0;
       return {
         ...item,
         storage_home_id: storageHomeId,
         storage_home_ids: resolvedStorageHomeIds,
-        has_recipe: hasRecipe,
-        base_recipe_count: baseCount,
+        has_recipe: Boolean(typed.has_recipe),
       };
     });
 

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -187,6 +188,54 @@ public sealed class SupabaseClient
         return data?.FirstOrDefault();
     }
 
+    public async Task<OutletSyncContext?> GetOutletSyncContextAsync(CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return null;
+        }
+
+        var warehouseIds = await GetOutletWarehouseIdsAsync(_outlet.Id, cancellationToken);
+        var warehouseId = warehouseIds.FirstOrDefault();
+        SupabaseClient.WarehouseRow? warehouse = null;
+        if (!string.IsNullOrWhiteSpace(warehouseId))
+        {
+            warehouse = await GetWarehouseAsync(warehouseId, cancellationToken);
+        }
+
+        var outlet = await GetOutletRowAsync(_outlet.Id, cancellationToken);
+        if (outlet is null)
+        {
+            return null;
+        }
+
+        var opening = await GetPosSyncOpeningUtcAsync(cancellationToken);
+        var cutoff = await GetPosSyncCutoffUtcAsync(cancellationToken);
+
+        return new OutletSyncContext(
+            HasPosMiddleware: outlet.HasPosMiddleware ?? false,
+            UsesOrdersApp: outlet.UsesOrdersApp ?? false,
+            SyncOpeningUtc: opening,
+            SyncCutoffUtc: cutoff,
+            WarehouseId: warehouseId,
+            WarehouseName: warehouse?.Name
+        );
+    }
+
+    private async Task<OutletRow?> GetOutletRowAsync(Guid outletId, CancellationToken cancellationToken)
+    {
+        var path = $"/rest/v1/outlets?select=id,name,has_pos_middleware,uses_orders_app&id=eq.{outletId}&limit=1";
+        var data = await GetAsync<OutletRow[]>(path, cancellationToken);
+        return data?.FirstOrDefault();
+    }
+
+    private sealed record OutletRow(
+        [property: JsonPropertyName("id")] Guid Id,
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("has_pos_middleware")] bool? HasPosMiddleware,
+        [property: JsonPropertyName("uses_orders_app")] bool? UsesOrdersApp
+    );
+
     public async Task<WarehousePeriodRow?> GetOpenStockPeriodAsync(string warehouseId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(warehouseId))
@@ -241,6 +290,84 @@ public sealed class SupabaseClient
     {
         return await GetCounterUtcAsync("pos_sync_opening", "opening", cancellationToken);
     }
+
+    public async Task SendHeartbeatAsync(CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            outlet_id = _outlet.Id,
+            middleware_version = typeof(SupabaseClient).Assembly.GetName().Version?.ToString() ?? "1.0",
+            host_name = Environment.MachineName
+        };
+
+        try
+        {
+            await PostRpcAsync("/rest/v1/rpc/upsert_outlet_heartbeat", payload, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send outlet heartbeat");
+        }
+    }
+
+    public async Task<IReadOnlyList<CatalogSyncEvent>> FetchPendingCatalogSyncAsync(CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return Array.Empty<CatalogSyncEvent>();
+        }
+
+        try
+        {
+            var client = CreateClient();
+            var response = await client.PostAsync(
+                "/rest/v1/rpc/fetch_outlet_catalog_sync",
+                JsonContent.Create(new { p_outlet_id = _outlet.Id, p_limit = 50 }, options: JsonOptions),
+                cancellationToken
+            );
+            if (!response.IsSuccessStatusCode)
+            {
+                return Array.Empty<CatalogSyncEvent>();
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var rows = JsonSerializer.Deserialize<CatalogSyncRow[]>(json, JsonOptions) ?? Array.Empty<CatalogSyncRow>();
+            return rows.Select(row => new CatalogSyncEvent(
+                row.Id,
+                row.EntityType,
+                row.EntityId,
+                row.Payload ?? new CatalogSyncPayload()
+            )).ToArray();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch catalog sync events");
+            return Array.Empty<CatalogSyncEvent>();
+        }
+    }
+
+    public async Task MarkCatalogSyncDeliveredAsync(IEnumerable<Guid> eventIds, CancellationToken cancellationToken)
+    {
+        var ids = eventIds.ToArray();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        await PostRpcAsync("/rest/v1/rpc/mark_catalog_sync_delivered", new { p_event_ids = ids }, cancellationToken);
+    }
+
+    private sealed record CatalogSyncRow(
+        [property: JsonPropertyName("id")] Guid Id,
+        [property: JsonPropertyName("entity_type")] string? EntityType,
+        [property: JsonPropertyName("entity_id")] string EntityId,
+        [property: JsonPropertyName("payload")] CatalogSyncPayload? Payload
+    );
 
     private async Task<DateTime?> GetCounterUtcAsync(string counterKey, string label, CancellationToken cancellationToken)
     {
@@ -457,6 +584,9 @@ public sealed class SupabaseClient
             {
                 pos_item_id = i.PosItemId,
                 name = i.Name,
+                item_sku = i.ItemSku,
+                variant_sku = i.VariantSku,
+                flavour_name = i.FlavourName,
                 quantity = i.Quantity,
                 sale_price = i.SalePrice,
                 vat_exc_price = i.VatExclusivePrice,

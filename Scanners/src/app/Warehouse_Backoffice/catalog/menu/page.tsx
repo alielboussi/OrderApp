@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
+import eb from "../../enterprise.module.css";
 import styles from "./menu.module.css";
 
 type Item = {
@@ -29,6 +30,92 @@ type Variant = {
 };
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
+
+const SECTION_HEADERS: Record<string, string> = {
+  finished: styles.sectionHeaderFinished,
+  ingredient: styles.sectionHeaderIngredient,
+  raw: styles.sectionHeaderRaw,
+};
+
+function ProductCard({
+  item,
+  itemVariants,
+  readOnly,
+  onDelete,
+  onVariants,
+}: {
+  item: Item;
+  itemVariants: Variant[];
+  readOnly: boolean;
+  onDelete: (id: string) => void;
+  onVariants: (id: string) => void;
+}) {
+  const hasVariants = itemVariants.length > 0;
+
+  return (
+    <article className={styles.card}>
+      <div className={styles.cardHeader}>
+        <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>SKU: {item.sku ?? "—"}</p>
+        <div className={styles.cardTopRow}>
+          <span
+            className={`${styles.statusIcon} ${item.active === false ? styles.statusInactive : styles.statusActive}`}
+            title={item.active === false ? "Inactive" : "Active"}
+          >
+            <span className={styles.statusMark} />
+          </span>
+          <div className={styles.cardCornerActions}>
+            <button
+              className={styles.cornerButton}
+              onClick={() => onVariants(item.id)}
+              type="button"
+              aria-label="View variants"
+              disabled={!hasVariants}
+              title={hasVariants ? "View variants" : "No variants"}
+            >
+              <span className={styles.triangleIcon} />
+            </button>
+          </div>
+        </div>
+        <div className={styles.cardMain}>
+          <div className={styles.cardTitleBlock}>
+            <div className={styles.rowTop}>
+              <p className={styles.itemKind}>{item.item_kind || "product"}</p>
+              <a
+                className={styles.iconButton}
+                href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}
+                aria-label="Edit product"
+                title="Edit product"
+              >
+                <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </a>
+            </div>
+            <h2 className={styles.itemName}>{item.name}</h2>
+          </div>
+        </div>
+        <button
+          className={`${styles.iconButton} ${styles.deleteButton}`}
+          onClick={() => onDelete(item.id)}
+          disabled={readOnly}
+          aria-label="Delete product"
+          title="Delete product"
+          type="button"
+        >
+          <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM6 7h12l-1 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7Z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </div>
+    </article>
+  );
+}
 
 export default function CatalogMenuPage() {
   const router = useRouter();
@@ -93,6 +180,7 @@ export default function CatalogMenuPage() {
   useEffect(() => {
     load();
   }, [load]);
+
   const isReady = status === "ok";
 
   const itemKindOptions = useMemo(() => {
@@ -134,9 +222,9 @@ export default function CatalogMenuPage() {
 
     if (typeFilter === "all") {
       const kindOrder = [
-        { key: "finished", label: "Finished Products" },
+        { key: "finished", label: "Finished products" },
         { key: "ingredient", label: "Ingredients" },
-        { key: "raw", label: "Raws" }
+        { key: "raw", label: "Raws" },
       ];
       const sections = kindOrder.map((kind) => {
         const sectionItems = items.filter((item) => {
@@ -157,266 +245,125 @@ export default function CatalogMenuPage() {
 
   const variantCount = useMemo(() => variants.length, [variants]);
 
+  const openVariants = (itemId: string) => {
+    router.push(`/Warehouse_Backoffice/catalog/variants?item_id=${encodeURIComponent(itemId)}`);
+  };
+
+  if (!isReady) {
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for catalog.</p>
+      </section>
+    );
+  }
+
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.header}>
-          <div>
-            <p className={styles.kicker}>Catalog</p>
-            <h1 className={styles.title}>Menu</h1>
-            <p className={styles.subtitle}>Browse existing products and the variants attached to each one.</p>
-            <p className={styles.metaLine}>
-              Showing {items.length} products and {variantCount} variants.
-            </p>
+    <div>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+            Catalog menu
+          </h3>
+          <p className={eb.pageCardBody}>
+            Browse products and variants. Showing {items.length} products and {variantCount} variants.
+          </p>
+        </div>
+        <div className={styles.headerActions}>
+          <button type="button" className={eb.btnAdd} onClick={() => router.push("/Warehouse_Backoffice/catalog/manage")}>
+            Add product
+          </button>
+          <button type="button" className={eb.btnSecondary} onClick={load} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+        <div className={eb.summaryGrid} style={{ marginTop: 16 }}>
+          <div className={`${eb.summaryCard} ${eb.summaryCardBlue}`}>
+            <p className={eb.summaryLabel}>Products</p>
+            <p className={eb.summaryValue}>{items.length}</p>
           </div>
-          <div className={styles.headerActions}>
-            <button className={styles.secondaryButton} onClick={() => router.back()}>
-              Back
-            </button>
-            <button className={styles.secondaryButton} onClick={() => router.push("/Warehouse_Backoffice")}>
-              Back to Dashboard
-            </button>
-            <button className={styles.secondaryButton} onClick={() => router.push("/Warehouse_Backoffice/catalog/manage")}>
-              Add product
-            </button>
-            <button className={styles.secondaryButton} onClick={() => router.push("/Warehouse_Backoffice/recipes")}>
-              Recipe setup
-            </button>
-            <button className={styles.primaryButton} onClick={load} disabled={loading}>
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
+          <div className={`${eb.summaryCard} ${eb.summaryCardGreen}`}>
+            <p className={eb.summaryLabel}>Variants</p>
+            <p className={eb.summaryValue}>{variantCount}</p>
           </div>
-        </header>
+        </div>
+      </section>
 
-        {!isReady ? (
-          <section className={styles.controls}>
-            <div className={styles.error}>Not authorized for catalog.</div>
-          </section>
-        ) : (
-          <>
-            <section className={styles.controls}>
-              <div className={styles.inputGroup}>
-                <label className={styles.inputLabel} htmlFor="catalog-search">
-                  Search
-                </label>
-                <input
-                  id="catalog-search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by product or variant name / SKU"
-                  className={styles.searchInput}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.inputLabel} htmlFor="product-type-filter">
-                  Product type
-                </label>
-                <select
-                  id="product-type-filter"
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className={styles.selectInput}
-                >
-                  <option value="all">All types</option>
-                  {itemKindOptions.map((kind) => (
-                    <option key={kind} value={kind.toLowerCase()}>
-                      {kind}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {error && <div className={styles.error}>{error}</div>}
-            </section>
+      <section className={eb.pageCard}>
+        <div className={eb.filterBar}>
+          <label className={eb.fieldLabel}>
+            Search
+            <input
+              id="catalog-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Product or variant name / SKU"
+              className={eb.fieldInput}
+            />
+          </label>
+          <label className={eb.fieldLabel}>
+            Product type
+            <select
+              id="product-type-filter"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className={eb.fieldSelect}
+            >
+              <option value="all">All types</option>
+              {itemKindOptions.map((kind) => (
+                <option key={kind} value={kind.toLowerCase()}>
+                  {kind}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {error && <div className={styles.error}>{error}</div>}
+      </section>
 
-            <section className={styles.sections}>
-              {groupedData.mode === "flat" && groupedData.entries.length === 0 && !loading ? (
-                <div className={styles.emptyCard}>No products found.</div>
-              ) : groupedData.mode === "sections" ? (
-                groupedData.sections.every((section) => section.entries.length === 0) && !loading ? (
-                  <div className={styles.emptyCard}>No products found.</div>
-                ) : (
-                  groupedData.sections.map((section) => (
-                    <div key={section.key} className={styles.sectionBlock}>
-                      <p className={styles.sectionHeader}>{section.label}</p>
-                      <div className={styles.sectionGrid}>
-                        {section.entries.map(({ item, variants: itemVariants }) => {
-                          const baseRecipeCount = item.base_recipe_count ?? 0;
-                          const hasRecipe = baseRecipeCount > 0;
-                          const hasVariants = itemVariants.length > 0;
-                          return (
-                            <article key={item.id} className={styles.card} data-card>
-                              <div className={styles.cardHeader}>
-                                <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>
-                                  SKU: {item.sku ?? "-"}
-                                </p>
-                                <div className={styles.cardTopRow}>
-                                  <span
-                                    className={`${styles.statusIcon} ${item.active === false ? styles.statusInactive : styles.statusActive}`}
-                                  >
-                                    <span className={styles.statusMark} />
-                                  </span>
-                                  <div className={styles.cardCornerActions}>
-                                    <button
-                                      className={`${styles.cornerButton} ${styles.triangleButton}`}
-                                      onClick={() =>
-                                        router.push(`/Warehouse_Backoffice/catalog/variants?item_id=${encodeURIComponent(item.id)}`)
-                                      }
-                                      type="button"
-                                      aria-label="View variants"
-                                      disabled={!hasVariants}
-                                    >
-                                      <span className={styles.triangleIcon} />
-                                    </button>
-                                    <button
-                                      className={`${styles.cornerButton} ${styles.squareButton}`}
-                                      onClick={() =>
-                                        router.push(
-                                          `/Warehouse_Backoffice/catalog/recipe-components?item_id=${encodeURIComponent(item.id)}`
-                                        )
-                                      }
-                                      type="button"
-                                      aria-label="View recipe components"
-                                      disabled={!hasRecipe}
-                                    >
-                                      <span className={styles.squareIcon} />
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className={styles.cardMain}>
-                                  <div className={styles.cardTitleBlock}>
-                                  <div className={styles.rowTop}>
-                                    <p className={styles.itemKind}>{item.item_kind || "product"}</p>
-                                    <a
-                                      className={styles.iconButton}
-                                      href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}
-                                      aria-label="Edit product"
-                                      title="Edit product"
-                                    >
-                                      <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
-                                        <path
-                                          d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
-                                          fill="currentColor"
-                                        />
-                                      </svg>
-                                    </a>
-                                  </div>
-                                  <h2 className={styles.itemName}>{item.name}</h2>
-                                  </div>
-                                </div>
-                                <button
-                                  className={`${styles.iconButton} ${styles.deleteButton}`}
-                                  onClick={() => handleDeleteItem(item.id)}
-                                  disabled={readOnly}
-                                  aria-label="Delete product"
-                                  title="Delete product"
-                                >
-                                  <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
-                                    <path
-                                      d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM6 7h12l-1 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7Z"
-                                      fill="currentColor"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))
-                )
-              ) : (
-                <div className={styles.sectionBlock}>
+      <section className={styles.sections}>
+        {groupedData.mode === "flat" && groupedData.entries.length === 0 && !loading ? (
+          <div className={styles.emptyCard}>No products found.</div>
+        ) : groupedData.mode === "sections" ? (
+          groupedData.sections.every((section) => section.entries.length === 0) && !loading ? (
+            <div className={styles.emptyCard}>No products found.</div>
+          ) : (
+            groupedData.sections.map((section) =>
+              section.entries.length === 0 ? null : (
+                <div key={section.key} className={styles.sectionBlock}>
+                  <p className={SECTION_HEADERS[section.key] ?? styles.sectionHeaderFinished}>{section.label}</p>
                   <div className={styles.sectionGrid}>
-                    {groupedData.entries.map(({ item, variants: itemVariants }) => {
-                      const baseRecipeCount = item.base_recipe_count ?? 0;
-                      const hasRecipe = baseRecipeCount > 0;
-                      const hasVariants = itemVariants.length > 0;
-                      return (
-                        <article key={item.id} className={styles.card} data-card>
-                          <div className={styles.cardHeader}>
-                            <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>
-                              SKU: {item.sku ?? "-"}
-                            </p>
-                            <div className={styles.cardTopRow}>
-                              <span
-                                className={`${styles.statusIcon} ${item.active === false ? styles.statusInactive : styles.statusActive}`}
-                              >
-                                <span className={styles.statusMark} />
-                              </span>
-                              <div className={styles.cardCornerActions}>
-                                <button
-                                  className={`${styles.cornerButton} ${styles.triangleButton}`}
-                                  onClick={() =>
-                                    router.push(`/Warehouse_Backoffice/catalog/variants?item_id=${encodeURIComponent(item.id)}`)
-                                  }
-                                  type="button"
-                                  aria-label="View variants"
-                                  disabled={!hasVariants}
-                                >
-                                  <span className={styles.triangleIcon} />
-                                </button>
-                                <button
-                                  className={`${styles.cornerButton} ${styles.squareButton}`}
-                                  onClick={() =>
-                                    router.push(
-                                      `/Warehouse_Backoffice/catalog/recipe-components?item_id=${encodeURIComponent(item.id)}`
-                                    )
-                                  }
-                                  type="button"
-                                  aria-label="View recipe components"
-                                  disabled={!hasRecipe}
-                                >
-                                  <span className={styles.squareIcon} />
-                                </button>
-                              </div>
-                            </div>
-                            <div className={styles.cardMain}>
-                              <div className={styles.cardTitleBlock}>
-                              <div className={styles.rowTop}>
-                                <p className={styles.itemKind}>{item.item_kind || "product"}</p>
-                                <a
-                                  className={styles.iconButton}
-                                  href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}
-                                  aria-label="Edit product"
-                                  title="Edit product"
-                                >
-                                  <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
-                                    <path
-                                      d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
-                                      fill="currentColor"
-                                    />
-                                  </svg>
-                                </a>
-                              </div>
-                              <h2 className={styles.itemName}>{item.name}</h2>
-                              </div>
-                            </div>
-                            <button
-                              className={`${styles.iconButton} ${styles.deleteButton}`}
-                              onClick={() => handleDeleteItem(item.id)}
-                              disabled={readOnly}
-                              aria-label="Delete product"
-                              title="Delete product"
-                            >
-                              <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
-                                <path
-                                  d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM6 7h12l-1 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7Z"
-                                  fill="currentColor"
-                                />
-                              </svg>
-                            </button>
-                          </div>
-                        </article>
-                      );
-                    })}
+                    {section.entries.map(({ item, variants: itemVariants }) => (
+                      <ProductCard
+                        key={item.id}
+                        item={item}
+                        itemVariants={itemVariants}
+                        readOnly={readOnly}
+                        onDelete={handleDeleteItem}
+                        onVariants={openVariants}
+                      />
+                    ))}
                   </div>
                 </div>
-              )}
-            </section>
-          </>
+              )
+            )
+          )
+        ) : (
+          <div className={styles.sectionBlock}>
+            <div className={styles.sectionGrid}>
+              {groupedData.entries.map(({ item, variants: itemVariants }) => (
+                <ProductCard
+                  key={item.id}
+                  item={item}
+                  itemVariants={itemVariants}
+                  readOnly={readOnly}
+                  onDelete={handleDeleteItem}
+                  onVariants={openVariants}
+                />
+              ))}
+            </div>
+          </div>
         )}
-      </main>
+      </section>
     </div>
   );
 }

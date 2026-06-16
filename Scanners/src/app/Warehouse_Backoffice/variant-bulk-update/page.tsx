@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { useUomOptions } from "@/lib/use-uom-options";
+import eb from "../enterprise.module.css";
 import styles from "./variant-bulk-update.module.css";
 
 type Warehouse = { id: string; name: string };
@@ -34,12 +35,6 @@ type VariantSummary = {
   active: boolean;
 };
 
-const itemKinds = [
-  { value: "finished", label: "Finished (ready to sell)" },
-  { value: "ingredient", label: "Ingredient (used in production)" },
-  { value: "raw", label: "Raw (unprocessed material)" },
-];
-
 type FieldType =
   | "text"
   | "text-null"
@@ -56,7 +51,6 @@ type FieldOption = {
   type: FieldType;
   options?: { value: string; label: string }[];
 };
-
 
 function parseFieldValue(field: FieldOption, raw: string) {
   const trimmed = raw.trim();
@@ -111,7 +105,7 @@ export default function VariantBulkUpdatePage() {
   const [selectedField, setSelectedField] = useState<string>("units_per_purchase_pack");
   const [fieldValue, setFieldValue] = useState<string>("");
   const [applying, setApplying] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
   const unitOptions = useUomOptions();
 
   useEffect(() => {
@@ -263,12 +257,12 @@ export default function VariantBulkUpdatePage() {
   const applyBulk = async () => {
     if (!fieldMeta) return;
     if (!selectedVariantIds.length) {
-      setResult("Select at least one variant.");
+      setResult({ text: "Select at least one variant.", ok: false });
       return;
     }
     const parsed = parseFieldValue(fieldMeta, fieldValue);
     if (!parsed.ok) {
-      setResult(parsed.error);
+      setResult({ text: parsed.error, ok: false });
       return;
     }
     setApplying(true);
@@ -303,37 +297,55 @@ export default function VariantBulkUpdatePage() {
         const rows = Array.isArray(json?.variants) ? (json.variants as VariantSummary[]) : [];
         setVariants(rows);
       }
-      setResult("Bulk update applied.");
+      setResult({ text: "Bulk update applied.", ok: true });
     } catch (error) {
       console.error("bulk update failed", error);
-      setResult(error instanceof Error ? error.message : "Bulk update failed");
+      setResult({ text: error instanceof Error ? error.message : "Bulk update failed", ok: false });
     } finally {
       setApplying(false);
     }
   };
 
-  if (status !== "ok") return null;
+  if (status !== "ok") {
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for catalog.</p>
+      </section>
+    );
+  }
 
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.hero}>
-          <div className={styles.grow}>
-            <p className={styles.kicker}>Catalog</p>
-            <h1 className={styles.title}>Bulk Variant Update</h1>
-            <p className={styles.subtitle}>Select a product, pick variants, choose a field, and apply one value.</p>
+    <div>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+            Bulk variant update
+          </h3>
+          <p className={eb.pageCardBody}>
+            Select a product, pick variants, choose a field, and apply one value across all selected rows.
+          </p>
+        </div>
+        <div className={styles.headerActions}>
+          <button type="button" className={eb.btnSecondary} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu")}>
+            View menu
+          </button>
+        </div>
+        {selectedVariantIds.length > 0 && (
+          <div className={eb.summaryGrid} style={{ marginTop: 16 }}>
+            <div className={`${eb.summaryCard} ${eb.summaryCardBlue}`}>
+              <p className={eb.summaryLabel}>Selected</p>
+              <p className={eb.summaryValue}>{selectedVariantIds.length}</p>
+            </div>
+            <div className={`${eb.summaryCard} ${eb.summaryCardGreen}`}>
+              <p className={eb.summaryLabel}>Loaded</p>
+              <p className={eb.summaryValue}>{variants.length}</p>
+            </div>
           </div>
-          <div className={styles.headerButtons}>
-            <button onClick={() => router.back()} className={styles.backButton}>
-              Back
-            </button>
-            <button onClick={() => router.push("/Warehouse_Backoffice")} className={styles.backButton}>
-              Back to Dashboard
-            </button>
-          </div>
-        </header>
+        )}
+      </section>
 
-        <section className={styles.form}>
+      <section className={eb.pageCard}>
+        <div className={styles.form}>
           <div className={styles.fieldGrid}>
             <label className={styles.field}>
               <span className={styles.label}>Parent product</span>
@@ -355,7 +367,7 @@ export default function VariantBulkUpdatePage() {
 
             <label className={styles.field}>
               <span className={styles.label}>Field to update</span>
-              <span className={styles.hint}>Choose which field you want to apply across selected variants.</span>
+              <span className={styles.hint}>Choose which field to apply across selected variants.</span>
               <select
                 className={styles.select}
                 value={selectedField}
@@ -378,41 +390,46 @@ export default function VariantBulkUpdatePage() {
           </div>
 
           <div className={styles.actionRow}>
-            <button type="button" onClick={selectAll} className={styles.secondaryButton}>
+            <button type="button" onClick={selectAll} className={eb.btnSecondary}>
               Select all
             </button>
-            <button type="button" onClick={clearAll} className={styles.secondaryButton}>
+            <button type="button" onClick={clearAll} className={eb.btnSecondary}>
               Clear
             </button>
-            <button type="button" onClick={applyBulk} className={styles.primaryButton} disabled={readOnly || applying}>
-              {applying ? "Applying..." : readOnly ? "Read-only" : "Apply"}
+            <button type="button" onClick={applyBulk} className={eb.btnAdd} disabled={readOnly || applying}>
+              {applying ? "Applying…" : readOnly ? "Read-only" : "Apply update"}
             </button>
           </div>
 
-          {result && <p className={styles.callout}>{result}</p>}
+          {result && (
+            <p className={`${styles.callout} ${result.ok ? styles.calloutSuccess : styles.calloutError}`}>{result.text}</p>
+          )}
 
-          <div className={styles.variantGrid}>
-            {variants.length === 0 ? (
-              <p className={styles.emptyState}>No variants loaded. Select a product to see variants.</p>
-            ) : (
-              variants.map((variant) => (
-                <label key={variant.id} className={styles.variantCard}>
-                  <div>
-                    <p className={styles.variantName}>{variant.name}</p>
-                    <p className={styles.variantMeta}>Current: {formatFieldValue(selectedField, variant)}</p>
-                  </div>
-                  <input
-                    className={styles.checkbox}
-                    type="checkbox"
-                    checked={selectedVariantIds.includes(variant.id)}
-                    onChange={() => toggleVariant(variant.id)}
-                  />
-                </label>
-              ))
-            )}
+          <div>
+            <p className={styles.sectionTitle}>Variants</p>
+            <div className={styles.variantGrid}>
+              {variants.length === 0 ? (
+                <p className={styles.emptyState}>No variants loaded. Select a product to see variants.</p>
+              ) : (
+                variants.map((variant) => (
+                  <label key={variant.id} className={styles.variantCard}>
+                    <div>
+                      <p className={styles.variantName}>{variant.name}</p>
+                      <p className={styles.variantMeta}>Current: {formatFieldValue(selectedField, variant)}</p>
+                    </div>
+                    <input
+                      className={styles.checkbox}
+                      type="checkbox"
+                      checked={selectedVariantIds.includes(variant.id)}
+                      onChange={() => toggleVariant(variant.id)}
+                    />
+                  </label>
+                ))
+              )}
+            </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
     </div>
   );
 }

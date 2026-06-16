@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./outlet-setup.module.css";
+import eb from "../enterprise.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 
 // Types shared across panels
@@ -995,36 +996,32 @@ export default function OutletSetupPage() {
     }
   };
 
-  if (status !== "ok") return null;
+  if (status !== "ok") {
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for outlet setup.</p>
+      </section>
+    );
+  }
 
   return (
-    <div className={styles.page}>
-      <style>{globalStyles}</style>
-      <div className={styles.shell}>
-        <header className={styles.hero}>
-          <div className={styles.grow}>
-            <p className={styles.kicker}>Outlet setup</p>
-            <h1 className={styles.title}>Outlet automation</h1>
-            <p className={styles.subtitle}>
-              One place to set outlet defaults, deductions, storage homes, and POS match for the single source of truth.
-            </p>
-          </div>
-          <div className={styles.headerButtons}>
-            <button className={styles.backButton} onClick={() => router.push("/Warehouse_Backoffice")}>Back to dashboard</button>
-          </div>
-        </header>
+    <div>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+            Outlet warehouse setup
+          </h3>
+          <p className={eb.pageCardBody}>
+            Assign deduction warehouses per outlet for finished products, ingredients, and raws. POS items link automatically via catalog SKU.
+            Program what each sale deducts from outlet warehouses on{" "}
+            <a href="/Warehouse_Backoffice/pos-sale-deductions">POS sale deductions</a>.
+            Live stock per outlet:{" "}
+            <a href="/Warehouse_Backoffice/outlet-live-balances">Outlet live balances</a>.
+          </p>
+        </div>
+      </section>
 
-        <section className={styles.setupBanner}>
-          <div className={styles.setupBannerTitle}>Ingredient stocktake setup sequence</div>
-          <ol className={styles.setupBannerList}>
-            <li>Add the ingredient or raw item in Menu Items & Recipes.</li>
-            <li>Assign the outlet to the warehouse in Outlet → Warehouse Assignments (Show in stocktake = Yes).</li>
-            <li>Map the ingredient/raw to the outlet warehouse on this page (deduct routing). For transfer-only warehouses, skip this.</li>
-            <li>Optional: set the storage home for the finished product, ingredient, or raw in the storage cards below.</li>
-          </ol>
-        </section>
-
-        <div className={styles.panels}>
+      <div className={styles.panels}>
           <section className={styles.panel}>
             <div>
               <h2 className={styles.sectionTitle}>Warehouse assign (deduct)</h2>
@@ -1349,244 +1346,16 @@ export default function OutletSetupPage() {
           </section>
 
           <section className={styles.panel}>
-            <div>
-              <h2 className={styles.sectionTitle}>POS match</h2>
-              <p className={styles.sectionBody}>Map POS items to catalog items and variants per outlet. Deductions use each outlet's default warehouse.</p>
-            </div>
-
-            {posError && (
-              <div className={`${styles.callout} ${posError.ok ? styles.calloutSuccess : styles.calloutError}`}>
-                {posError.text}
-              </div>
-            )}
-
-            <div className={styles.controlsRow}>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>Search</div>
-                <input
-                  className={styles.input}
-                  value={posSearch}
-                  onChange={(e) => setPosSearch(e.target.value)}
-                  placeholder="POS item, catalog, outlet, or warehouse"
-                />
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>Show</div>
-                <select
-                  className={styles.select}
-                  aria-label="POS match rows"
-                  value={posLimit}
-                  onChange={(e) => setPosLimit(e.target.value === "all" ? "all" : Number(e.target.value))}
-                >
-                  {[25, 50, 100].map((limit) => (
-                    <option key={`limit-${limit}`} value={limit}>
-                      {limit} rows
-                    </option>
-                  ))}
-                  <option value="all">All</option>
-                </select>
-              </div>
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  onClick={() => {
-                    setPosSearch("");
-                    setPosLimit(50);
-                  }}
-                >
-                  Clear filters
-                </button>
-              </div>
-            </div>
-
-            <div className={styles.controlGrid}>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>POS item id</div>
-                <input
-                  className={styles.input}
-                  value={posForm.pos_item_id}
-                  onChange={(e) => updatePosForm("pos_item_id", e.target.value)}
-                  placeholder="POS item id"
-                />
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>POS item name (optional)</div>
-                <input
-                  className={styles.input}
-                  value={posForm.pos_item_name}
-                  onChange={(e) => updatePosForm("pos_item_name", e.target.value)}
-                  placeholder="POS item name"
-                />
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>POS flavour id (optional)</div>
-                <input
-                  className={styles.input}
-                  value={posForm.pos_flavour_id}
-                  onChange={(e) => updatePosForm("pos_flavour_id", e.target.value)}
-                  placeholder="POS flavour id"
-                />
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>POS flavour name (optional)</div>
-                <input
-                  className={styles.input}
-                  value={posForm.pos_flavour_name}
-                  onChange={(e) => updatePosForm("pos_flavour_name", e.target.value)}
-                  placeholder="POS flavour name"
-                />
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>Catalog item</div>
-                <select
-                  className={styles.select}
-                  aria-label="Catalog item"
-                  value={posForm.catalog_item_id}
-                  onChange={(e) => updatePosForm("catalog_item_id", e.target.value)}
-                >
-                  {itemOptions.map((item) => (
-                    <option key={`pos-item-${item.id || "placeholder"}`} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>Outlet</div>
-                <select
-                  className={styles.select}
-                  aria-label="Outlet"
-                  value={posForm.outlet_id}
-                  onChange={(e) => updatePosForm("outlet_id", e.target.value)}
-                >
-                  <option value="">Select outlet</option>
-                  {outletSelectOptions.map((outlet) => (
-                    <option key={`pos-outlet-${outlet.value}`} value={outlet.value}>
-                      {outlet.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>Warehouse override (optional)</div>
-                <select
-                  className={styles.select}
-                  aria-label="Warehouse override"
-                  value={posForm.warehouse_id}
-                  onChange={(e) => updatePosForm("warehouse_id", e.target.value)}
-                >
-                  <option value="">Use outlet default</option>
-                  {warehouseSelectOptions.map((wh) => (
-                    <option key={`pos-wh-${wh.value}`} value={wh.value}>
-                      {wh.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.selectGroup}>
-                <div className={styles.smallLabel}>Catalog variants</div>
-                <div className={styles.variantChooser}>
-                  <div className={styles.variantList}>
-                    {posVariantOptions.map((variant) => {
-                      const checked = selectedVariantKeys.includes(variant.value);
-                      return (
-                        <label key={`pos-variant-${variant.value}`} className={styles.variantOption}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              const isChecked = e.target.checked;
-                              setSelectedVariantKeys((prev) => {
-                                if (isChecked) return Array.from(new Set([...prev, variant.value]));
-                                const next = prev.filter((v) => v !== variant.value);
-                                return next.length ? next : ["base"];
-                              });
-                            }}
-                          />
-                          <span>{variant.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.actions}>
-              <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={createPosMapping}
-                disabled={posCreating || readOnly}
-              >
-                {readOnly ? "Read-only" : posCreating ? "Saving..." : "Add mapping"}
-              </button>
-            </div>
-
-            <p className={styles.note}>Showing {filteredPosMappings.list.length} of {filteredPosMappings.total} mappings.</p>
-
-            <div className={styles.tableWrapper}>
-              <table className={styles.routesTable}>
-                <thead>
-                  <tr>
-                    <th>POS item</th>
-                    <th>Flavour</th>
-                    <th>Catalog item</th>
-                    <th>Variant</th>
-                    <th>Outlet</th>
-                    <th>Warehouse</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {posLoading ? (
-                    <tr>
-                      <td colSpan={7}>Loading mappings...</td>
-                    </tr>
-                  ) : filteredPosMappings.list.length === 0 ? (
-                    <tr>
-                      <td colSpan={7}>No mappings found.</td>
-                    </tr>
-                  ) : (
-                    filteredPosMappings.list.map((mapping, index) => {
-                      const posKey = `${mapping.pos_item_id}-${mapping.pos_flavour_id ?? "_"}-${mapping.catalog_item_id}-${mapping.catalog_variant_key ?? "base"}-${mapping.outlet_id}-${mapping.warehouse_id ?? "_"}`;
-                      const rowKey = `${posKey}-${index}`;
-                      const catalogName = itemNameById.get(mapping.catalog_item_id) || mapping.catalog_item_name || mapping.catalog_item_id;
-                      const variantLabel = variantLabels[mapping.catalog_variant_key ?? "base"] || mapping.catalog_variant_key || "base";
-                      const outletName = outletNameById.get(mapping.outlet_id) || mapping.outlet_id;
-                      const warehouseName = mapping.warehouse_id ? warehouseNameById.get(mapping.warehouse_id) || mapping.warehouse_id : "Outlet default";
-                      return (
-                        <tr key={rowKey}>
-                          <td>
-                            <div className={styles.outletName}>{mapping.pos_item_name || mapping.pos_item_id}</div>
-                            <div className={styles.outletCode}>{mapping.pos_item_id}</div>
-                          </td>
-                          <td>{mapping.pos_flavour_name || mapping.pos_flavour_id || "-"}</td>
-                          <td>{catalogName}</td>
-                          <td>{variantLabel}</td>
-                          <td>{outletName}</td>
-                          <td>{warehouseName}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className={styles.minimalButton}
-                              onClick={() => deletePosMapping(mapping)}
-                              disabled={deleteDisabled || posDeletingKey === posKey}
-                            >
-                              {deleteDisabled ? "No delete" : posDeletingKey === posKey ? "Deleting..." : "Delete"}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+            <div className={styles.skuInfoBox}>
+              <strong>POS linking via SKU (automatic)</strong>
+              <ul>
+                <li>Set each catalog item&apos;s <strong>SKU</strong> in Products — middleware writes it to POS <code>MenuItem.Code</code>.</li>
+                <li>Variant SKUs sync to POS <code>ModifierFlavour.Name2</code>; sales match without per-outlet mapping.</li>
+                <li>When you change prices or add items in the backoffice, updates queue to each outlet middleware automatically.</li>
+              </ul>
             </div>
           </section>
         </div>
-      </div>
     </div>
   );
 }
@@ -1605,9 +1374,3 @@ const normalizeWarehouse = (warehouse?: Partial<Warehouse> | null): Warehouse =>
   active: warehouse?.active ?? true,
 });
 
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-button { background: none; border: none; }
-button:hover { transform: translateY(-1px); }
-input, select, button { font-family: inherit; }
-`;

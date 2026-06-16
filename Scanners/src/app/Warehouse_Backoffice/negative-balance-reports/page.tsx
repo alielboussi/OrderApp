@@ -514,10 +514,7 @@ export default function NegativeBalanceReportsPage() {
 
     const targetId = row.recipe_for_id ?? row.item_id;
     if (targetId) {
-      const params = new URLSearchParams();
-      params.set("mode", "finished");
-      params.set("finishedId", targetId);
-      router.push(`/Warehouse_Backoffice/recipes?${params.toString()}`);
+      router.push(`/Warehouse_Backoffice/catalog/product?id=${encodeURIComponent(targetId)}`);
     }
   };
 

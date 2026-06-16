@@ -77,7 +77,6 @@ export default function WarehouseBackofficeLogin() {
 
   return (
     <div className={styles.page}>
-      <style>{globalStyles}</style>
       <main className={styles.shell}>
         <section className={styles.card}>
           <p className={styles.kicker}>AfterTen Logistics</p>
@@ -114,17 +113,3 @@ export default function WarehouseBackofficeLogin() {
     </div>
   );
 }
-
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-
-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-input:focus {
-  border-color: #ff6b6b;
-  box-shadow: 0 0 0 3px rgba(255,107,107,0.25);
-}
-`;

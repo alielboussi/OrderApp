@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -33,9 +34,7 @@ class SignatureState {
     var version by mutableLongStateOf(0L)
     private val paint = Paint().apply {
         style = Paint.Style.STROKE
-        // White looks good on dark UI backgrounds, but is invisible on a white PDF.
-        // We'll keep the UI stroke white and allow color override when exporting.
-        color = Color.WHITE
+        color = Color.BLACK
         strokeWidth = 6f
         isAntiAlias = true
         strokeCap = Paint.Cap.ROUND
@@ -81,7 +80,9 @@ fun SignaturePad(modifier: Modifier = Modifier, state: SignatureState = remember
     val density = LocalDensity.current
     Box(
         modifier = modifier
-            .background(androidx.compose.ui.graphics.Color.Transparent)
+            .background(androidx.compose.ui.graphics.Color(0xFFF5F5F5))
+            .padding(1.dp)
+            .background(androidx.compose.ui.graphics.Color.White)
             // High-frequency pointer pipeline that consumes events early to avoid parent scroll interception
             .pointerInput(Unit) {
                 awaitEachGesture {

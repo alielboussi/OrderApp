@@ -8,13 +8,28 @@
           "view_schema": "public"
         },
         {
-          "view_name": "warehouse_live_items",
-          "definition": " WITH storage_keys AS (\n         SELECT DISTINCT ish.storage_warehouse_id AS warehouse_id,\n            ish.item_id,\n            ish.normalized_variant_key AS variant_key\n           FROM item_storage_homes ish\n        UNION ALL\n         SELECT w.id AS warehouse_id,\n            ish.item_id,\n            ish.normalized_variant_key AS variant_key\n           FROM (item_storage_homes ish\n             JOIN warehouses w ON ((w.parent_warehouse_id = ish.storage_warehouse_id)))\n          WHERE COALESCE(w.active, true)\n        ), ledger_net AS (\n         SELECT sl.warehouse_id,\n            sl.item_id,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) AS net_units\n           FROM stock_ledger sl\n          WHERE (sl.location_type = 'warehouse'::text)\n          GROUP BY sl.warehouse_id, sl.item_id, (normalize_variant_key(sl.variant_key))\n        ), base_items AS (\n         SELECT sk.warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            'base'::text AS variant_key,\n            COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n            ci.item_kind AS base_item_kind,\n            ci.image_url,\n            NULL::item_kind AS variant_item_kind\n           FROM (storage_keys sk\n             JOIN catalog_items ci ON ((ci.id = sk.item_id)))\n          WHERE (sk.variant_key = 'base'::text)\n        ), variant_items AS (\n         SELECT sk.warehouse_id,\n            cv.item_id,\n            ci.name AS item_name,\n            normalize_variant_key(cv.id) AS variant_key,\n            COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n            ci.item_kind AS base_item_kind,\n            COALESCE(cv.image_url, ci.image_url) AS image_url,\n            cv.item_kind AS variant_item_kind\n           FROM ((storage_keys sk\n             JOIN catalog_variants cv ON (((cv.item_id = sk.item_id) AND (normalize_variant_key(cv.id) = sk.variant_key))))\n             JOIN catalog_items ci ON ((ci.id = cv.item_id)))\n          WHERE ((sk.variant_key <> 'base'::text) AND COALESCE(cv.active, true))\n        ), available_items AS (\n         SELECT base_items.warehouse_id,\n            base_items.item_id,\n            base_items.item_name,\n            base_items.variant_key,\n            base_items.unit_cost,\n            base_items.base_item_kind,\n            base_items.image_url,\n            base_items.variant_item_kind\n           FROM base_items\n        UNION ALL\n         SELECT variant_items.warehouse_id,\n            variant_items.item_id,\n            variant_items.item_name,\n            variant_items.variant_key,\n            variant_items.unit_cost,\n            variant_items.base_item_kind,\n            variant_items.image_url,\n            variant_items.variant_item_kind\n           FROM variant_items\n        ), with_meta AS (\n         SELECT ai.warehouse_id,\n            ai.item_id,\n            ai.item_name,\n            ai.variant_key,\n            (0)::numeric AS net_units,\n            ai.unit_cost,\n                CASE\n                    WHEN (ai.variant_item_kind = ANY (ARRAY['finished'::item_kind, 'ingredient'::item_kind, 'raw'::item_kind])) THEN ai.variant_item_kind\n                    ELSE ai.base_item_kind\n                END AS item_kind,\n            ai.image_url,\n            (EXISTS ( SELECT 1\n                   FROM recipes r\n                  WHERE (r.active AND (r.finished_item_id = ai.item_id) AND (normalize_variant_key(COALESCE(r.finished_variant_key, 'base'::text)) = ai.variant_key)))) AS has_recipe\n           FROM available_items ai\n        ), merged AS (\n         SELECT wm.warehouse_id,\n            wm.item_id,\n            wm.item_name,\n            wm.variant_key,\n            COALESCE(ln.net_units, wm.net_units) AS net_units,\n            wm.unit_cost,\n            wm.item_kind,\n            wm.image_url,\n            wm.has_recipe\n           FROM (with_meta wm\n             LEFT JOIN ledger_net ln ON (((ln.warehouse_id = wm.warehouse_id) AND (ln.item_id = wm.item_id) AND (normalize_variant_key(ln.variant_key) = normalize_variant_key(wm.variant_key)))))\n        ), ledger_only AS (\n         SELECT ln.warehouse_id,\n            ci.id AS item_id,\n            ci.name AS item_name,\n            ln.variant_key,\n            ln.net_units,\n            COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n                CASE\n                    WHEN (cv.item_kind = ANY (ARRAY['finished'::item_kind, 'ingredient'::item_kind, 'raw'::item_kind])) THEN cv.item_kind\n                    ELSE ci.item_kind\n                END AS item_kind,\n            COALESCE(cv.image_url, ci.image_url) AS image_url,\n            (EXISTS ( SELECT 1\n                   FROM recipes r\n                  WHERE (r.active AND (r.finished_item_id = ci.id) AND (normalize_variant_key(COALESCE(r.finished_variant_key, 'base'::text)) = normalize_variant_key(ln.variant_key))))) AS has_recipe\n           FROM ((ledger_net ln\n             JOIN catalog_items ci ON ((ci.id = ln.item_id)))\n             LEFT JOIN catalog_variants cv ON (((cv.item_id = ci.id) AND (normalize_variant_key(cv.id) = normalize_variant_key(ln.variant_key)) AND COALESCE(cv.active, true))))\n          WHERE (NOT (EXISTS ( SELECT 1\n                   FROM merged m\n                  WHERE ((m.warehouse_id = ln.warehouse_id) AND (m.item_id = ln.item_id) AND (normalize_variant_key(m.variant_key) = normalize_variant_key(ln.variant_key))))))\n        )\n SELECT merged.warehouse_id,\n    merged.item_id,\n    merged.item_name,\n    merged.variant_key,\n    merged.net_units,\n    merged.unit_cost,\n    merged.item_kind,\n    merged.image_url,\n    merged.has_recipe\n   FROM merged\nUNION ALL\n SELECT ledger_only.warehouse_id,\n    ledger_only.item_id,\n    ledger_only.item_name,\n    ledger_only.variant_key,\n    ledger_only.net_units,\n    ledger_only.unit_cost,\n    ledger_only.item_kind,\n    ledger_only.image_url,\n    ledger_only.has_recipe\n   FROM ledger_only;",
+          "view_name": "v_hub_warehouses",
+          "definition": " SELECT id,\n    name,\n    code,\n    parent_warehouse_id,\n    created_at,\n    updated_at,\n    active,\n    outlet_id,\n    auto_open_stock_period,\n    warehouse_scope\n   FROM warehouses w\n  WHERE ((warehouse_scope = 'hub'::text) AND COALESCE(active, true));",
+          "view_schema": "public"
+        },
+        {
+          "view_name": "v_outlet_live_balances",
+          "definition": " SELECT osb.outlet_id,\n    o.name AS outlet_name,\n    osb.item_id,\n    ci.name AS item_name,\n    ci.sku AS item_sku,\n    osb.variant_key,\n    osb.sent_units,\n    osb.consumed_units,\n    osb.on_hand_units,\n    osb.updated_at\n   FROM ((outlet_stock_balances osb\n     JOIN outlets o ON ((o.id = osb.outlet_id)))\n     JOIN catalog_items ci ON ((ci.id = osb.item_id)))\n  WHERE COALESCE(o.active, true);",
+          "view_schema": "public"
+        },
+        {
+          "view_name": "v_outlet_warehouse_ledger_balances",
+          "definition": " SELECT ow.outlet_id,\n    o.name AS outlet_name,\n    sl.warehouse_id,\n    w.name AS warehouse_name,\n    sl.item_id,\n    ci.name AS item_name,\n    ci.sku AS item_sku,\n    sl.variant_key,\n    sum(sl.delta_units) AS net_units\n   FROM ((((stock_ledger sl\n     JOIN outlet_warehouses ow ON ((ow.warehouse_id = sl.warehouse_id)))\n     JOIN outlets o ON ((o.id = ow.outlet_id)))\n     JOIN warehouses w ON ((w.id = sl.warehouse_id)))\n     JOIN catalog_items ci ON ((ci.id = sl.item_id)))\n  WHERE COALESCE(o.active, true)\n  GROUP BY ow.outlet_id, o.name, sl.warehouse_id, w.name, sl.item_id, ci.name, ci.sku, sl.variant_key\n HAVING (abs(sum(sl.delta_units)) > 0.0001);",
+          "view_schema": "public"
+        },
+        {
+          "view_name": "v_outlet_warehouses",
+          "definition": " SELECT o.id AS outlet_id,\n    o.name AS outlet_name,\n    o.code AS outlet_code,\n    w.id AS warehouse_id,\n    w.name AS warehouse_name,\n    w.warehouse_scope,\n    ow.show_in_stocktake\n   FROM ((outlets o\n     JOIN outlet_warehouses ow ON ((ow.outlet_id = o.id)))\n     JOIN warehouses w ON ((w.id = ow.warehouse_id)))\n  WHERE (COALESCE(o.active, true) AND COALESCE(w.active, true));",
           "view_schema": "public"
         },
         {
           "view_name": "warehouse_stock_variances",
-          "definition": " WITH opening AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS opening_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'opening'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), closing AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS closing_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'closing'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), movement AS (\n         SELECT wsp_1.id AS period_id,\n            sl.item_id,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) AS movement_qty\n           FROM (warehouse_stock_periods wsp_1\n             LEFT JOIN stock_ledger sl ON (((sl.warehouse_id = wsp_1.warehouse_id) AND (sl.location_type = 'warehouse'::text) AND (sl.item_id IS NOT NULL) AND (sl.occurred_at >= wsp_1.opened_at) AND ((wsp_1.closed_at IS NULL) OR (sl.occurred_at <= COALESCE(wsp_1.closed_at, now()))) AND (sl.reason = ANY (ARRAY['warehouse_transfer'::stock_reason, 'outlet_sale'::stock_reason, 'damage'::stock_reason, 'recipe_consumption'::stock_reason, 'production_entry'::stock_reason])))))\n          GROUP BY wsp_1.id, sl.item_id, (normalize_variant_key(sl.variant_key))\n        ), keys AS (\n         SELECT opening.period_id,\n            opening.item_id,\n            opening.variant_key\n           FROM opening\n        UNION\n         SELECT closing.period_id,\n            closing.item_id,\n            closing.variant_key\n           FROM closing\n        UNION\n         SELECT movement.period_id,\n            movement.item_id,\n            movement.variant_key\n           FROM movement\n        )\n SELECT k.period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    k.item_id,\n    k.variant_key,\n    COALESCE(o.opening_qty, (0)::numeric) AS opening_qty,\n    COALESCE(m.movement_qty, (0)::numeric) AS movement_qty,\n    COALESCE(c.closing_qty, (0)::numeric) AS closing_qty,\n    (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric)) AS expected_qty,\n    (COALESCE(c.closing_qty, (0)::numeric) - (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric))) AS variance_qty,\n    ci.name AS item_name,\n    COALESCE(ci.cost, (0)::numeric) AS unit_cost,\n    ((COALESCE(c.closing_qty, (0)::numeric) - (COALESCE(o.opening_qty, (0)::numeric) + COALESCE(m.movement_qty, (0)::numeric))) * COALESCE(ci.cost, (0)::numeric)) AS variance_cost\n   FROM (((((keys k\n     JOIN warehouse_stock_periods wsp ON ((wsp.id = k.period_id)))\n     LEFT JOIN opening o ON (((o.period_id = k.period_id) AND (o.item_id = k.item_id) AND (o.variant_key = k.variant_key))))\n     LEFT JOIN closing c ON (((c.period_id = k.period_id) AND (c.item_id = k.item_id) AND (c.variant_key = k.variant_key))))\n     LEFT JOIN movement m ON (((m.period_id = k.period_id) AND (m.item_id = k.item_id) AND (m.variant_key = k.variant_key))))\n     LEFT JOIN catalog_items ci ON ((ci.id = k.item_id)));",
+          "definition": " WITH opening AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS opening_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'opening'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), closing AS (\n         SELECT warehouse_stock_counts.period_id,\n            warehouse_stock_counts.item_id,\n            normalize_variant_key(warehouse_stock_counts.variant_key) AS variant_key,\n            max(warehouse_stock_counts.counted_qty) AS closing_qty\n           FROM warehouse_stock_counts\n          WHERE (warehouse_stock_counts.kind = 'closing'::text)\n          GROUP BY warehouse_stock_counts.period_id, warehouse_stock_counts.item_id, (normalize_variant_key(warehouse_stock_counts.variant_key))\n        ), movement AS (\n         SELECT wsp_1.id AS period_id,\n            sl.item_id,\n            normalize_variant_key(sl.variant_key) AS variant_key,\n            sum(sl.delta_units) FILTER (WHERE (sl.reason = 'warehouse_transfer'::stock_reason)) AS transfer_qty,\n            sum(sl.delta_units) FILTER (WHERE (sl.reason = 'damage'::stock_reason)) AS damage_qty,\n            sum(sl.delta_units) FILTER (WHERE (sl.reason = 'outlet_sale'::stock_reason)) AS sales_qty,\n            sum(sl.delta_units) AS movement_qty\n           FROM (warehouse_stock_periods wsp_1\n             JOIN stock_ledger sl ON (((sl.warehouse_id = wsp_1.warehouse_id) AND (sl.location_type = 'warehouse'::text) AND (sl.occurred_at >= wsp_1.opened_at) AND (sl.occurred_at <= COALESCE(wsp_1.closed_at, now())))))\n          WHERE (sl.reason = ANY (ARRAY['warehouse_transfer'::stock_reason, 'outlet_sale'::stock_reason, 'damage'::stock_reason, 'recipe_consumption'::stock_reason, 'production_entry'::stock_reason]))\n          GROUP BY wsp_1.id, sl.item_id, (normalize_variant_key(sl.variant_key))\n        )\n SELECT wsp.id AS period_id,\n    wsp.warehouse_id,\n    wsp.outlet_id,\n    o.item_id,\n    ci.name AS item_name,\n    o.variant_key,\n    o.opening_qty,\n    COALESCE(m.transfer_qty, (0)::numeric) AS transfer_qty,\n    COALESCE(m.damage_qty, (0)::numeric) AS damage_qty,\n    COALESCE(m.sales_qty, (0)::numeric) AS sales_qty,\n    COALESCE(m.movement_qty, (0)::numeric) AS movement_qty,\n    c.closing_qty,\n    (o.opening_qty + COALESCE(m.movement_qty, (0)::numeric)) AS expected_qty,\n    ((o.opening_qty + COALESCE(m.movement_qty, (0)::numeric)) - COALESCE(c.closing_qty, (0)::numeric)) AS variance_qty,\n    (COALESCE(ci.cost, (0)::numeric) * ((o.opening_qty + COALESCE(m.movement_qty, (0)::numeric)) - COALESCE(c.closing_qty, (0)::numeric))) AS variance_cost\n   FROM ((((warehouse_stock_periods wsp\n     JOIN opening o ON ((o.period_id = wsp.id)))\n     LEFT JOIN closing c ON (((c.period_id = wsp.id) AND (c.item_id = o.item_id) AND (c.variant_key = o.variant_key))))\n     LEFT JOIN movement m ON (((m.period_id = wsp.id) AND (m.item_id = o.item_id) AND (m.variant_key = o.variant_key))))\n     LEFT JOIN catalog_items ci ON ((ci.id = o.item_id)));",
           "view_schema": "public"
         }
       ],
@@ -64,11 +79,23 @@
           "table_schema": "public"
         },
         {
+          "table_name": "outlet_catalog_sync_events",
+          "table_schema": "public"
+        },
+        {
           "table_name": "outlet_item_routes",
           "table_schema": "public"
         },
         {
           "table_name": "outlet_order_routes",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
           "table_schema": "public"
         },
         {
@@ -113,26 +140,6 @@
         },
         {
           "table_name": "product_supplier_links",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "production_entries",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
           "table_schema": "public"
         },
         {
@@ -1793,6 +1800,177 @@
           "ordinal_position": 48
         },
         {
+          "data_type": "text",
+          "table_name": "orders",
+          "column_name": "handoff_driver_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 49
+        },
+        {
+          "data_type": "text",
+          "table_name": "orders",
+          "column_name": "handoff_driver_signature_path",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 50
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "orders",
+          "column_name": "handoff_driver_signed_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 51
+        },
+        {
+          "data_type": "text",
+          "table_name": "orders",
+          "column_name": "delivery_driver_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 52
+        },
+        {
+          "data_type": "text",
+          "table_name": "orders",
+          "column_name": "delivery_driver_signature_path",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 53
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "orders",
+          "column_name": "delivery_driver_signed_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 54
+        },
+        {
+          "data_type": "text",
+          "table_name": "orders",
+          "column_name": "completed_pdf_path",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 55
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "orders",
+          "column_name": "accepted_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 56
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "orders",
+          "column_name": "accepted_by",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 57
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "orders",
+          "column_name": "completed_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 58
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "gen_random_uuid()",
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "outlet_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "entity_type",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "entity_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "jsonb",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "payload",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'{}'::jsonb",
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "status",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'pending'::text",
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "delivered_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "error_message",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
           "data_type": "uuid",
           "table_name": "outlet_item_routes",
           "column_name": "outlet_id",
@@ -1953,6 +2131,159 @@
           "table_schema": "public",
           "column_default": "now()",
           "ordinal_position": 8
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "gen_random_uuid()",
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'base'::text",
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'base'::text",
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_qty_per_sale",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "active",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "true",
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "notes",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 10
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 11
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 12
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "outlet_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "last_seen_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "middleware_version",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "host_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 5
         },
         {
           "data_type": "uuid",
@@ -2513,6 +2844,24 @@
           "ordinal_position": 12
         },
         {
+          "data_type": "boolean",
+          "table_name": "outlets",
+          "column_name": "has_pos_middleware",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "true",
+          "ordinal_position": 13
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "outlets",
+          "column_name": "uses_orders_app",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "false",
+          "ordinal_position": 14
+        },
+        {
           "data_type": "uuid",
           "table_name": "platform_admins",
           "column_name": "user_id",
@@ -2934,420 +3283,6 @@
           "table_schema": "public",
           "column_default": "'base'::text",
           "ordinal_position": 11
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_entries",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_entries",
-          "column_name": "warehouse_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_entries",
-          "column_name": "item_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "production_entries",
-          "column_name": "variant_key",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'base'::text",
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "production_entries",
-          "column_name": "qty_units",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_entries",
-          "column_name": "period_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "text",
-          "table_name": "production_entries",
-          "column_name": "note",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "production_entries",
-          "column_name": "max_producible",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "production_entries",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 9
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_entries",
-          "column_name": "created_by",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 10
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_item_assignments",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_item_assignments",
-          "column_name": "finished_item_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_item_assignments",
-          "column_name": "warehouse_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "production_item_assignments",
-          "column_name": "variant_key",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'base'::text",
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "boolean",
-          "table_name": "production_item_assignments",
-          "column_name": "active",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "true",
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "production_item_assignments",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "production_item_assignments",
-          "column_name": "updated_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "production_item_assignments",
-          "column_name": "created_by",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "profile_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "integer",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "step_order",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "from_uom",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "text",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "to_uom",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "multiplier",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "updated_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "text",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "variant_key",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'base'::text",
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "source_uom",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "text",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "target_uom",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "boolean",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "active",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "true",
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "recipe_uom_profiles",
-          "column_name": "updated_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipes",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipes",
-          "column_name": "finished_item_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipes",
-          "column_name": "ingredient_item_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "recipes",
-          "column_name": "qty_per_unit",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "USER-DEFINED",
-          "table_name": "recipes",
-          "column_name": "qty_unit",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "boolean",
-          "table_name": "recipes",
-          "column_name": "active",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "true",
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "recipes",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "recipes",
-          "column_name": "updated_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 9
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "recipes",
-          "column_name": "source_warehouse_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 10
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "recipes",
-          "column_name": "yield_qty_units",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "1",
-          "ordinal_position": 11
-        },
-        {
-          "data_type": "text",
-          "table_name": "recipes",
-          "column_name": "finished_variant_key",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": "'base'::text",
-          "ordinal_position": 12
-        },
-        {
-          "data_type": "USER-DEFINED",
-          "table_name": "recipes",
-          "column_name": "recipe_for_kind",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'finished'::item_kind",
-          "ordinal_position": 13
         },
         {
           "data_type": "uuid",
@@ -3990,6 +3925,330 @@
         },
         {
           "data_type": "uuid",
+          "table_name": "v_hub_warehouses",
+          "column_name": "id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_hub_warehouses",
+          "column_name": "name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_hub_warehouses",
+          "column_name": "code",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_hub_warehouses",
+          "column_name": "parent_warehouse_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "v_hub_warehouses",
+          "column_name": "created_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "v_hub_warehouses",
+          "column_name": "updated_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "v_hub_warehouses",
+          "column_name": "active",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_hub_warehouses",
+          "column_name": "outlet_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "v_hub_warehouses",
+          "column_name": "auto_open_stock_period",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_hub_warehouses",
+          "column_name": "warehouse_scope",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 10
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "outlet_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "outlet_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "item_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "item_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "item_sku",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "variant_key",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "sent_units",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "consumed_units",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "on_hand_units",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "v_outlet_live_balances",
+          "column_name": "updated_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 10
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "outlet_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "outlet_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "warehouse_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "warehouse_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "item_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "item_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "item_sku",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "variant_key",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "v_outlet_warehouse_ledger_balances",
+          "column_name": "net_units",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "outlet_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "outlet_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "outlet_code",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "warehouse_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "warehouse_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "text",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "warehouse_scope",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "v_outlet_warehouses",
+          "column_name": "show_in_stocktake",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "uuid",
           "table_name": "warehouse_backoffice_logs",
           "column_name": "id",
           "is_nullable": "NO",
@@ -4131,87 +4390,6 @@
           "table_schema": "public",
           "column_default": null,
           "ordinal_position": 7
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_live_items",
-          "column_name": "warehouse_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_live_items",
-          "column_name": "item_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_live_items",
-          "column_name": "item_name",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_live_items",
-          "column_name": "variant_key",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "warehouse_live_items",
-          "column_name": "net_units",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "warehouse_live_items",
-          "column_name": "unit_cost",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "USER-DEFINED",
-          "table_name": "warehouse_live_items",
-          "column_name": "item_kind",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_live_items",
-          "column_name": "image_url",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "boolean",
-          "table_name": "warehouse_live_items",
-          "column_name": "has_recipe",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 9
         },
         {
           "data_type": "uuid",
@@ -4747,16 +4925,16 @@
         {
           "data_type": "text",
           "table_name": "warehouse_stock_variances",
-          "column_name": "variant_key",
+          "column_name": "item_name",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
           "ordinal_position": 5
         },
         {
-          "data_type": "numeric",
+          "data_type": "text",
           "table_name": "warehouse_stock_variances",
-          "column_name": "opening_qty",
+          "column_name": "variant_key",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
@@ -4765,7 +4943,7 @@
         {
           "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "movement_qty",
+          "column_name": "opening_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
@@ -4774,7 +4952,7 @@
         {
           "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "closing_qty",
+          "column_name": "transfer_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
@@ -4783,7 +4961,7 @@
         {
           "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "expected_qty",
+          "column_name": "damage_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
@@ -4792,16 +4970,16 @@
         {
           "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "variance_qty",
+          "column_name": "sales_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
           "ordinal_position": 10
         },
         {
-          "data_type": "text",
+          "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "item_name",
+          "column_name": "movement_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
@@ -4810,7 +4988,7 @@
         {
           "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "unit_cost",
+          "column_name": "closing_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
@@ -4819,11 +4997,29 @@
         {
           "data_type": "numeric",
           "table_name": "warehouse_stock_variances",
-          "column_name": "variance_cost",
+          "column_name": "expected_qty",
           "is_nullable": "YES",
           "table_schema": "public",
           "column_default": null,
           "ordinal_position": 13
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "warehouse_stock_variances",
+          "column_name": "variance_qty",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 14
+        },
+        {
+          "data_type": "numeric",
+          "table_name": "warehouse_stock_variances",
+          "column_name": "variance_cost",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 15
         },
         {
           "data_type": "uuid",
@@ -5040,6 +5236,15 @@
           "table_schema": "public",
           "column_default": "false",
           "ordinal_position": 12
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouses",
+          "column_name": "warehouse_scope",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'hub'::text",
+          "ordinal_position": 13
         }
       ],
       "indexes": [
@@ -5212,6 +5417,18 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_outlet_catalog_sync_pending ON public.outlet_catalog_sync_events USING btree (outlet_id, status, created_at) WHERE (status = 'pending'::text)",
+          "indexname": "idx_outlet_catalog_sync_pending",
+          "table_name": "outlet_catalog_sync_events",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX outlet_catalog_sync_events_pkey ON public.outlet_catalog_sync_events USING btree (id)",
+          "indexname": "outlet_catalog_sync_events_pkey",
+          "table_name": "outlet_catalog_sync_events",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE UNIQUE INDEX idx_outlet_item_routes_global_unique ON public.outlet_item_routes USING btree (item_id, normalized_variant_key) WHERE (outlet_id IS NULL)",
           "indexname": "idx_outlet_item_routes_global_unique",
           "table_name": "outlet_item_routes",
@@ -5239,6 +5456,30 @@
           "indexdef": "CREATE UNIQUE INDEX outlet_order_routes_unique ON public.outlet_order_routes USING btree (outlet_id, item_id, normalized_variant_key)",
           "indexname": "outlet_order_routes_unique",
           "table_name": "outlet_order_routes",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_outlet_pos_deduction_rules_sold ON public.outlet_pos_deduction_rules USING btree (outlet_id, sold_item_id, sold_variant_key) WHERE active",
+          "indexname": "idx_outlet_pos_deduction_rules_sold",
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key ON public.outlet_pos_deduction_rules USING btree (outlet_id, sold_item_id, sold_variant_key, deduct_item_id, deduct_variant_key, warehouse_id)",
+          "indexname": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX outlet_pos_deduction_rules_pkey ON public.outlet_pos_deduction_rules USING btree (id)",
+          "indexname": "outlet_pos_deduction_rules_pkey",
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX outlet_pos_heartbeats_pkey ON public.outlet_pos_heartbeats USING btree (outlet_id)",
+          "indexname": "outlet_pos_heartbeats_pkey",
+          "table_name": "outlet_pos_heartbeats",
           "table_schema": "public"
         },
         {
@@ -5401,90 +5642,6 @@
           "indexdef": "CREATE UNIQUE INDEX ux_supplier_item_vkey_wh ON public.product_supplier_links USING btree (supplier_id, item_id, variant_key, COALESCE(warehouse_id, '00000000-0000-0000-0000-000000000000'::uuid))",
           "indexname": "ux_supplier_item_vkey_wh",
           "table_name": "product_supplier_links",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_production_entries_period ON public.production_entries USING btree (period_id)",
-          "indexname": "idx_production_entries_period",
-          "table_name": "production_entries",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_production_entries_wh_item ON public.production_entries USING btree (warehouse_id, item_id, created_at DESC)",
-          "indexname": "idx_production_entries_wh_item",
-          "table_name": "production_entries",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX production_entries_pkey ON public.production_entries USING btree (id)",
-          "indexname": "production_entries_pkey",
-          "table_name": "production_entries",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX production_item_assignments_pkey ON public.production_item_assignments USING btree (id)",
-          "indexname": "production_item_assignments_pkey",
-          "table_name": "production_item_assignments",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX ux_production_item_assignment ON public.production_item_assignments USING btree (finished_item_id, warehouse_id, variant_key)",
-          "indexname": "ux_production_item_assignment",
-          "table_name": "production_item_assignments",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_recipe_uom_chain_profile ON public.recipe_uom_chain_steps USING btree (profile_id)",
-          "indexname": "idx_recipe_uom_chain_profile",
-          "table_name": "recipe_uom_chain_steps",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX recipe_uom_chain_steps_pkey ON public.recipe_uom_chain_steps USING btree (id)",
-          "indexname": "recipe_uom_chain_steps_pkey",
-          "table_name": "recipe_uom_chain_steps",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX recipe_uom_chain_steps_profile_id_step_order_key ON public.recipe_uom_chain_steps USING btree (profile_id, step_order)",
-          "indexname": "recipe_uom_chain_steps_profile_id_step_order_key",
-          "table_name": "recipe_uom_chain_steps",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX recipe_uom_profiles_item_id_variant_key_active_key ON public.recipe_uom_profiles USING btree (item_id, variant_key, active)",
-          "indexname": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "table_name": "recipe_uom_profiles",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX recipe_uom_profiles_pkey ON public.recipe_uom_profiles USING btree (id)",
-          "indexname": "recipe_uom_profiles_pkey",
-          "table_name": "recipe_uom_profiles",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_recipes_ingredient ON public.recipes USING btree (ingredient_item_id)",
-          "indexname": "idx_recipes_ingredient",
-          "table_name": "recipes",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_recipes_source_warehouse ON public.recipes USING btree (source_warehouse_id)",
-          "indexname": "idx_recipes_source_warehouse",
-          "table_name": "recipes",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX item_ingredient_recipes_pkey ON public.recipes USING btree (id)",
-          "indexname": "item_ingredient_recipes_pkey",
-          "table_name": "recipes",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX ux_recipes_finished_variant_kind_ing_active ON public.recipes USING btree (finished_item_id, recipe_for_kind, COALESCE(finished_variant_key, 'base'::text), ingredient_item_id) WHERE active",
-          "indexname": "ux_recipes_finished_variant_kind_ing_active",
-          "table_name": "recipes",
           "table_schema": "public"
         },
         {
@@ -6060,6 +6217,30 @@
         },
         {
           "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "order_items",
+          "policy_name": "order_items_supervisor_select",
+          "table_schema": "public",
+          "using_expression": "(is_supervisor(auth.uid()) AND is_warehouse_app_order(order_id))",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "UPDATE",
+          "permissive": "PERMISSIVE",
+          "table_name": "order_items",
+          "policy_name": "order_items_supervisor_update",
+          "table_schema": "public",
+          "using_expression": "(is_supervisor(auth.uid()) AND is_warehouse_app_order(order_id) AND (EXISTS ( SELECT 1\n   FROM orders o\n  WHERE ((o.id = order_items.order_id) AND (lower(o.status) = 'placed'::text)))))",
+          "with_check_expression": "(is_supervisor(auth.uid()) AND is_warehouse_app_order(order_id) AND (EXISTS ( SELECT 1\n   FROM orders o\n  WHERE ((o.id = order_items.order_id) AND (lower(o.status) = 'placed'::text)))))"
+        },
+        {
+          "roles": [
             "public"
           ],
           "command": "SELECT",
@@ -6117,6 +6298,42 @@
           "table_schema": "public",
           "using_expression": "is_admin(( SELECT auth.uid() AS uid))",
           "with_check_expression": "is_admin(( SELECT auth.uid() AS uid))"
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "orders",
+          "policy_name": "orders_supervisor_select",
+          "table_schema": "public",
+          "using_expression": "(is_supervisor(auth.uid()) AND (source_event_id IS NULL))",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "public"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_catalog_sync_events",
+          "policy_name": "outlet_catalog_sync_backoffice",
+          "table_schema": "public",
+          "using_expression": "((EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))) OR is_admin(auth.uid()))",
+          "with_check_expression": "((EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))) OR is_admin(auth.uid()))"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_catalog_sync_events",
+          "policy_name": "outlet_catalog_sync_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
         },
         {
           "roles": [
@@ -6225,6 +6442,54 @@
           "table_schema": "public",
           "using_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))",
           "with_check_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))"
+        },
+        {
+          "roles": [
+            "public"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_pos_deduction_rules",
+          "policy_name": "outlet_pos_deduction_rules_backoffice",
+          "table_schema": "public",
+          "using_expression": "((EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))) OR is_admin(auth.uid()))",
+          "with_check_expression": "((EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))) OR is_admin(auth.uid()))"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_pos_deduction_rules",
+          "policy_name": "outlet_pos_deduction_rules_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
+            "public"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_pos_heartbeats",
+          "policy_name": "outlet_pos_heartbeats_backoffice_select",
+          "table_schema": "public",
+          "using_expression": "((EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))) OR is_admin(auth.uid()))",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlet_pos_heartbeats",
+          "policy_name": "outlet_pos_heartbeats_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
         },
         {
           "roles": [
@@ -6585,186 +6850,6 @@
           "table_schema": "public",
           "using_expression": "true",
           "with_check_expression": "true"
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "INSERT",
-          "permissive": "PERMISSIVE",
-          "table_name": "production_entries",
-          "policy_name": "production_entries_insert",
-          "table_schema": "public",
-          "using_expression": null,
-          "with_check_expression": "(is_admin(auth.uid()) OR is_stocktake_user(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))"
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "production_entries",
-          "policy_name": "production_entries_select",
-          "table_schema": "public",
-          "using_expression": "(is_admin(auth.uid()) OR is_stocktake_user(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "production_item_assignments",
-          "policy_name": "production_item_assignments_select",
-          "table_schema": "public",
-          "using_expression": "(is_admin(auth.uid()) OR is_stocktake_user(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "ALL",
-          "permissive": "PERMISSIVE",
-          "table_name": "production_item_assignments",
-          "policy_name": "production_item_assignments_write",
-          "table_schema": "public",
-          "using_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))",
-          "with_check_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid)))))"
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "ALL",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_admin_rw",
-          "table_schema": "public",
-          "using_expression": "is_admin(auth.uid())",
-          "with_check_expression": "is_admin(auth.uid())"
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "INSERT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_backoffice_insert",
-          "table_schema": "public",
-          "using_expression": null,
-          "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_backoffice_select",
-          "table_schema": "public",
-          "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "UPDATE",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_backoffice_update",
-          "table_schema": "public",
-          "using_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))",
-          "with_check_expression": "(EXISTS ( SELECT 1\n   FROM user_roles ur\n  WHERE ((ur.user_id = auth.uid()) AND (ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid))))"
-        },
-        {
-          "roles": [
-            "public"
-          ],
-          "command": "INSERT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_edit_admin_or_transfer_mgr",
-          "table_schema": "public",
-          "using_expression": null,
-          "with_check_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (user_roles ur\n     JOIN roles r ON ((r.id = ur.role_id)))\n  WHERE ((ur.user_id = auth.uid()) AND (lower(COALESCE(r.normalized_slug, r.slug)) = 'transfer_manager'::text)))))"
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_read_admin_or_transfer_mgr",
-          "table_schema": "public",
-          "using_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (user_roles ur\n     JOIN roles r ON ((r.id = ur.role_id)))\n  WHERE ((ur.user_id = auth.uid()) AND (lower(COALESCE(r.normalized_slug, r.slug)) = 'transfer_manager'::text)))))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_read_kiosk",
-          "table_schema": "public",
-          "using_expression": "(active = true)",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "anon"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_read_kiosk_anon",
-          "table_schema": "public",
-          "using_expression": "(active = true)",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "anon"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_read_kiosk_anon_wh",
-          "table_schema": "public",
-          "using_expression": "((active = true) AND ((source_warehouse_id IS NULL) OR (source_warehouse_id = '587fcdb9-c998-42d6-b88e-bbcd1a66b088'::uuid)))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_read_kiosk_wh",
-          "table_schema": "public",
-          "using_expression": "((active = true) AND ((source_warehouse_id IS NULL) OR (source_warehouse_id = '587fcdb9-c998-42d6-b88e-bbcd1a66b088'::uuid)))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "UPDATE",
-          "permissive": "PERMISSIVE",
-          "table_name": "recipes",
-          "policy_name": "recipes_update_admin_or_transfer_mgr",
-          "table_schema": "public",
-          "using_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (user_roles ur\n     JOIN roles r ON ((r.id = ur.role_id)))\n  WHERE ((ur.user_id = auth.uid()) AND (lower(COALESCE(r.normalized_slug, r.slug)) = 'transfer_manager'::text)))))",
-          "with_check_expression": "(is_admin(auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (user_roles ur\n     JOIN roles r ON ((r.id = ur.role_id)))\n  WHERE ((ur.user_id = auth.uid()) AND (lower(COALESCE(r.normalized_slug, r.slug)) = 'transfer_manager'::text)))))"
         },
         {
           "roles": [
@@ -7438,7 +7523,7 @@
         },
         {
           "table_name": "orders",
-          "trigger_def": "CREATE TRIGGER trg_orders_lock_allocate AFTER UPDATE OF status ON orders FOR EACH ROW WHEN ((new.status = ANY (ARRAY['ordered'::text, 'loaded'::text, 'offloaded'::text, 'delivered'::text])) AND NOT COALESCE(new.locked, false)) EXECUTE FUNCTION ensure_order_locked_and_allocated()",
+          "trigger_def": "CREATE TRIGGER trg_orders_lock_allocate AFTER UPDATE OF status ON orders FOR EACH ROW WHEN ((new.status = ANY (ARRAY['accepted'::text, 'ordered'::text, 'offloaded'::text, 'delivered'::text, 'completed'::text])) AND NOT COALESCE(new.locked, false)) EXECUTE FUNCTION ensure_order_locked_and_allocated()",
           "table_schema": "public",
           "trigger_name": "trg_orders_lock_allocate"
         },
@@ -7465,18 +7550,6 @@
           "trigger_def": "CREATE TRIGGER trg_seed_outlet_routes_on_outlet AFTER INSERT OR UPDATE OF default_sales_warehouse_id ON outlets FOR EACH ROW EXECUTE FUNCTION seed_outlet_routes_on_outlet()",
           "table_schema": "public",
           "trigger_name": "trg_seed_outlet_routes_on_outlet"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "trigger_def": "CREATE TRIGGER trg_production_assignment_updated_at BEFORE UPDATE ON production_item_assignments FOR EACH ROW EXECUTE FUNCTION set_production_assignment_updated_at()",
-          "table_schema": "public",
-          "trigger_name": "trg_production_assignment_updated_at"
-        },
-        {
-          "table_name": "recipes",
-          "trigger_def": "CREATE TRIGGER trg_sync_recipe_ingredient_outlet_products AFTER INSERT OR UPDATE OF ingredient_item_id, finished_item_id, active, recipe_for_kind ON recipes FOR EACH ROW EXECUTE FUNCTION sync_recipe_ingredient_outlet_products()",
-          "table_schema": "public",
-          "trigger_name": "trg_sync_recipe_ingredient_outlet_products"
         },
         {
           "table_name": "stock_ledger",
@@ -7521,6 +7594,12 @@
           "trigger_name": "trg_opening_stock_to_ledger"
         },
         {
+          "table_name": "warehouse_stock_periods",
+          "trigger_def": "CREATE TRIGGER set_stock_period_outlet_id BEFORE INSERT ON warehouse_stock_periods FOR EACH ROW EXECUTE FUNCTION trg_set_stock_period_outlet_id()",
+          "table_schema": "public",
+          "trigger_name": "set_stock_period_outlet_id"
+        },
+        {
           "table_name": "warehouse_transfers",
           "trigger_def": "CREATE TRIGGER trg_set_transfer_operator_name BEFORE INSERT ON warehouse_transfers FOR EACH ROW EXECUTE FUNCTION set_transfer_operator_name()",
           "table_schema": "public",
@@ -7529,9 +7608,15 @@
       ],
       "functions": [
         {
-          "arguments": "p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[]",
-          "definition": "CREATE OR REPLACE FUNCTION public.apply_recipe_deductions(p_item_id uuid, p_qty_units numeric, p_warehouse_id uuid, p_variant_key text DEFAULT 'base'::text, p_context jsonb DEFAULT '{}'::jsonb, p_depth integer DEFAULT 0, p_seen uuid[] DEFAULT '{}'::uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  comp record;\r\n  v_yield numeric := 1;\r\n  v_has_recipe boolean := false;\r\n  v_use_kind_filter boolean := true;\r\n  v_effective_qty numeric;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_item_kind item_kind;\r\n  v_comp_qty numeric;\r\n  v_candidate_ids uuid[];\r\n  v_candidate uuid;\r\n  v_remaining numeric;\r\n  v_deduct_qty numeric;\r\n  v_available numeric;\r\n  v_fallback uuid;\r\n  v_outlet_id uuid := nullif(p_context->>'outlet_id', '')::uuid;\r\n  v_flow_batch_id uuid := nullif(p_context->>'flow_batch_id', '')::uuid;\r\nbegin\r\n  if p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'item + qty required for recipe deductions';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required for recipe deductions';\r\n  end if;\r\n\r\n  if p_depth > 8 or p_item_id = any(p_seen) then\r\n    raise exception 'recipe recursion detected for item %', p_item_id;\r\n  end if;\r\n\r\n  select ci.item_kind\r\n  into v_item_kind\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  if v_item_kind is null then\r\n    raise exception 'catalog item % not found for recipe deductions', p_item_id;\r\n  end if;\r\n\r\n  select true, coalesce(min(r.yield_qty_units), 1)\r\n  into v_has_recipe, v_yield\r\n  from public.recipes r\r\n  where r.active\r\n    and r.finished_item_id = p_item_id\r\n    and r.recipe_for_kind = v_item_kind\r\n    and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = v_variant_key;\r\n\r\n  if not v_has_recipe then\r\n    select true, coalesce(min(r.yield_qty_units), 1)\r\n    into v_has_recipe, v_yield\r\n    from public.recipes r\r\n    where r.active\r\n      and r.finished_item_id = p_item_id\r\n      and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = v_variant_key;\r\n\r\n    if v_has_recipe then\r\n      v_use_kind_filter := false;\r\n    end if;\r\n  end if;\r\n\r\n  if not v_has_recipe then\r\n    if v_item_kind in ('ingredient', 'raw') then\r\n      select array_agg(distinct iwhp.warehouse_id)\r\n      into v_candidate_ids\r\n      from public.item_warehouse_handling_policies iwhp\r\n      where iwhp.item_id = p_item_id\r\n        and coalesce(iwhp.recipe_source, false);\r\n\r\n      if v_candidate_ids is null or array_length(v_candidate_ids, 1) is null then\r\n        v_candidate_ids := array[p_warehouse_id];\r\n      end if;\r\n\r\n      v_remaining := p_qty_units;\r\n      v_fallback := v_candidate_ids[1];\r\n\r\n      foreach v_candidate in array v_candidate_ids loop\r\n        exit when v_remaining <= 0;\r\n\r\n        select coalesce(wli.net_units, 0)\r\n        into v_available\r\n        from public.warehouse_live_items wli\r\n        where wli.warehouse_id = v_candidate\r\n          and wli.item_id = p_item_id\r\n          and public.normalize_variant_key(wli.variant_key) = 'base'\r\n        limit 1;\r\n\r\n        v_deduct_qty := least(v_remaining, greatest(v_available, 0));\r\n        if v_deduct_qty <= 0 then\r\n          continue;\r\n        end if;\r\n\r\n        insert into public.stock_ledger(\r\n          location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, flow_batch_id\r\n        ) values (\r\n          'warehouse', v_candidate, p_item_id, v_variant_key,\r\n          -1 * v_deduct_qty, 'recipe_consumption',\r\n          jsonb_build_object('recipe_leaf', true, 'qty_units', v_deduct_qty) || coalesce(p_context, '{}'),\r\n          v_flow_batch_id\r\n        );\r\n\r\n        v_remaining := v_remaining - v_deduct_qty;\r\n      end loop;\r\n\r\n      if v_remaining > 0 then\r\n        insert into public.stock_ledger(\r\n          location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, flow_batch_id\r\n        ) values (\r\n          'warehouse', coalesce(v_fallback, p_warehouse_id), p_item_id, v_variant_key,\r\n          -1 * v_remaining, 'recipe_consumption',\r\n          jsonb_build_object('recipe_leaf', true, 'qty_units', v_remaining) || coalesce(p_context, '{}'),\r\n          v_flow_batch_id\r\n        );\r\n\r\n        insert into public.warehouse_backoffice_logs(\r\n          user_id,\r\n          user_email,\r\n          action,\r\n          page,\r\n          method,\r\n          status,\r\n          details\r\n        ) values (\r\n          auth.uid(),\r\n          current_setting('request.jwt.claim.email', true),\r\n          'recipe_negative_balance',\r\n          '/Warehouse_Backoffice',\r\n          'rpc',\r\n          200,\r\n          jsonb_build_object(\r\n            'outlet_id', v_outlet_id,\r\n            'recipe_for', p_item_id,\r\n            'component_id', p_item_id,\r\n            'warehouse_id', coalesce(v_fallback, p_warehouse_id),\r\n            'requested_qty', p_qty_units,\r\n            'remaining_qty', v_remaining\r\n          )\r\n        );\r\n      end if;\r\n    end if;\r\n    return;\r\n  end if;\r\n\r\n  -- 1) Ingredients first (recursively resolves to raw when ingredient has its own recipe)\r\n  for comp in\r\n    select r.ingredient_item_id as item_id,\r\n           r.qty_per_unit as qty_units,\r\n           r.qty_unit::text as qty_unit,\r\n           ci.item_kind as component_kind,\r\n           ci.consumption_unit as consumption_unit,\r\n           ci.purchase_unit_mass as purchase_unit_mass,\r\n           ci.purchase_unit_mass_uom as purchase_unit_mass_uom,\r\n           r.source_warehouse_id as source_warehouse_id\r\n    from public.recipes r\r\n    join public.catalog_items ci on ci.id = r.ingredient_item_id\r\n    where r.active\r\n      and r.finished_item_id = p_item_id\r\n      and (not v_use_kind_filter or r.recipe_for_kind = v_item_kind)\r\n      and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = v_variant_key\r\n      and ci.item_kind = 'ingredient'\r\n  loop\r\n    v_comp_qty := public.convert_uom_qty(comp.qty_units, comp.qty_unit, comp.consumption_unit);\r\n\r\n    if comp.purchase_unit_mass is not null\r\n      and comp.purchase_unit_mass > 0\r\n      and comp.purchase_unit_mass_uom is not null\r\n      and (comp.consumption_unit is null or lower(comp.consumption_unit) in ('each', 'pc', 'piece', 'pieces')) then\r\n      v_comp_qty := public.convert_uom_qty(comp.qty_units, comp.qty_unit, comp.purchase_unit_mass_uom);\r\n      v_comp_qty := v_comp_qty / comp.purchase_unit_mass;\r\n    end if;\r\n\r\n    v_effective_qty := (p_qty_units / v_yield) * v_comp_qty;\r\n\r\n    if comp.source_warehouse_id is not null then\r\n      v_candidate_ids := array[comp.source_warehouse_id];\r\n    else\r\n      select array_agg(distinct iwhp.warehouse_id)\r\n      into v_candidate_ids\r\n      from public.item_warehouse_handling_policies iwhp\r\n      where iwhp.item_id = comp.item_id\r\n        and coalesce(iwhp.recipe_source, false);\r\n\r\n      if v_candidate_ids is null or array_length(v_candidate_ids, 1) is null then\r\n        v_candidate_ids := array[p_warehouse_id];\r\n      end if;\r\n    end if;\r\n\r\n    v_remaining := v_effective_qty;\r\n    v_fallback := v_candidate_ids[1];\r\n\r\n    foreach v_candidate in array v_candidate_ids loop\r\n      exit when v_remaining <= 0;\r\n\r\n      select coalesce(wli.net_units, 0)\r\n      into v_available\r\n      from public.warehouse_live_items wli\r\n      where wli.warehouse_id = v_candidate\r\n        and wli.item_id = comp.item_id\r\n        and public.normalize_variant_key(wli.variant_key) = 'base'\r\n      limit 1;\r\n\r\n      v_deduct_qty := least(v_remaining, greatest(v_available, 0));\r\n      if v_deduct_qty <= 0 then\r\n        continue;\r\n      end if;\r\n\r\n      insert into public.stock_ledger(\r\n        location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, flow_batch_id\r\n      ) values (\r\n        'warehouse', v_candidate, comp.item_id, 'base',\r\n        -1 * v_deduct_qty, 'recipe_consumption',\r\n        jsonb_build_object(\r\n          'recipe_for', p_item_id,\r\n          'qty_units', p_qty_units,\r\n          'component_qty', v_comp_qty,\r\n          'qty_unit', comp.qty_unit,\r\n          'consumption_unit', comp.consumption_unit,\r\n          'component_kind', comp.component_kind\r\n        ) || coalesce(p_context, '{}'),\r\n        v_flow_batch_id\r\n      );\r\n\r\n      perform public.apply_recipe_deductions(\r\n        comp.item_id,\r\n        v_deduct_qty,\r\n        v_candidate,\r\n        'base',\r\n        coalesce(p_context, '{}') || jsonb_build_object('via', p_item_id, 'qty_unit', comp.qty_unit, 'consumption_unit', comp.consumption_unit),\r\n        p_depth + 1,\r\n        array_append(p_seen, p_item_id)\r\n      );\r\n\r\n      v_remaining := v_remaining - v_deduct_qty;\r\n    end loop;\r\n\r\n    if v_remaining > 0 then\r\n      insert into public.stock_ledger(\r\n        location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, flow_batch_id\r\n      ) values (\r\n        'warehouse', coalesce(v_fallback, p_warehouse_id), comp.item_id, 'base',\r\n        -1 * v_remaining, 'recipe_consumption',\r\n        jsonb_build_object(\r\n          'recipe_for', p_item_id,\r\n          'qty_units', p_qty_units,\r\n          'component_qty', v_comp_qty,\r\n          'qty_unit', comp.qty_unit,\r\n          'consumption_unit', comp.consumption_unit,\r\n          'component_kind', comp.component_kind\r\n        ) || coalesce(p_context, '{}'),\r\n        v_flow_batch_id\r\n      );\r\n\r\n      perform public.apply_recipe_deductions(\r\n        comp.item_id,\r\n        v_remaining,\r\n        coalesce(v_fallback, p_warehouse_id),\r\n        'base',\r\n        coalesce(p_context, '{}') || jsonb_build_object('via', p_item_id, 'qty_unit', comp.qty_unit, 'consumption_unit', comp.consumption_unit),\r\n        p_depth + 1,\r\n        array_append(p_seen, p_item_id)\r\n      );\r\n\r\n      insert into public.warehouse_backoffice_logs(\r\n        user_id,\r\n        user_email,\r\n        action,\r\n        page,\r\n        method,\r\n        status,\r\n        details\r\n      ) values (\r\n        auth.uid(),\r\n        current_setting('request.jwt.claim.email', true),\r\n        'recipe_negative_balance',\r\n        '/Warehouse_Backoffice',\r\n        'rpc',\r\n        200,\r\n        jsonb_build_object(\r\n          'outlet_id', v_outlet_id,\r\n          'recipe_for', p_item_id,\r\n          'component_id', comp.item_id,\r\n          'warehouse_id', coalesce(v_fallback, p_warehouse_id),\r\n          'requested_qty', v_effective_qty,\r\n          'remaining_qty', v_remaining\r\n        )\r\n      );\r\n    end if;\r\n  end loop;\r\n\r\n  -- 2) Raw (or non-ingredient) components last\r\n  for comp in\r\n    select r.ingredient_item_id as item_id,\r\n           r.qty_per_unit as qty_units,\r\n           r.qty_unit::text as qty_unit,\r\n           ci.item_kind as component_kind,\r\n           ci.consumption_unit as consumption_unit,\r\n           ci.purchase_unit_mass as purchase_unit_mass,\r\n           ci.purchase_unit_mass_uom as purchase_unit_mass_uom,\r\n           r.source_warehouse_id as source_warehouse_id\r\n    from public.recipes r\r\n    join public.catalog_items ci on ci.id = r.ingredient_item_id\r\n    where r.active\r\n      and r.finished_item_id = p_item_id\r\n      and (not v_use_kind_filter or r.recipe_for_kind = v_item_kind)\r\n      and public.normalize_variant_key(coalesce(r.finished_variant_key, 'base')) = v_variant_key\r\n      and ci.item_kind <> 'ingredient'\r\n  loop\r\n    v_comp_qty := public.convert_uom_qty(comp.qty_units, comp.qty_unit, comp.consumption_unit);\r\n\r\n    if comp.purchase_unit_mass is not null\r\n      and comp.purchase_unit_mass > 0\r\n      and comp.purchase_unit_mass_uom is not null\r\n      and (comp.consumption_unit is null or lower(comp.consumption_unit) in ('each', 'pc', 'piece', 'pieces')) then\r\n      v_comp_qty := public.convert_uom_qty(comp.qty_units, comp.qty_unit, comp.purchase_unit_mass_uom);\r\n      v_comp_qty := v_comp_qty / comp.purchase_unit_mass;\r\n    end if;\r\n\r\n    v_effective_qty := (p_qty_units / v_yield) * v_comp_qty;\r\n\r\n    if comp.source_warehouse_id is not null then\r\n      v_candidate_ids := array[comp.source_warehouse_id];\r\n    else\r\n      select array_agg(distinct iwhp.warehouse_id)\r\n      into v_candidate_ids\r\n      from public.item_warehouse_handling_policies iwhp\r\n      where iwhp.item_id = comp.item_id\r\n        and coalesce(iwhp.recipe_source, false);\r\n\r\n      if v_candidate_ids is null or array_length(v_candidate_ids, 1) is null then\r\n        v_candidate_ids := array[p_warehouse_id];\r\n      end if;\r\n    end if;\r\n\r\n    v_remaining := v_effective_qty;\r\n    v_fallback := v_candidate_ids[1];\r\n\r\n    foreach v_candidate in array v_candidate_ids loop\r\n      exit when v_remaining <= 0;\r\n\r\n      select coalesce(wli.net_units, 0)\r\n      into v_available\r\n      from public.warehouse_live_items wli\r\n      where wli.warehouse_id = v_candidate\r\n        and wli.item_id = comp.item_id\r\n        and public.normalize_variant_key(wli.variant_key) = 'base'\r\n      limit 1;\r\n\r\n      v_deduct_qty := least(v_remaining, greatest(v_available, 0));\r\n      if v_deduct_qty <= 0 then\r\n        continue;\r\n      end if;\r\n\r\n      insert into public.stock_ledger(\r\n        location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, flow_batch_id\r\n      ) values (\r\n        'warehouse', v_candidate, comp.item_id, 'base',\r\n        -1 * v_deduct_qty, 'recipe_consumption',\r\n        jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units, 'component_qty', v_comp_qty, 'qty_unit', comp.qty_unit, 'consumption_unit', comp.consumption_unit) || coalesce(p_context, '{}'),\r\n        v_flow_batch_id\r\n      );\r\n\r\n      v_remaining := v_remaining - v_deduct_qty;\r\n    end loop;\r\n\r\n    if v_remaining > 0 then\r\n      insert into public.stock_ledger(\r\n        location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, flow_batch_id\r\n      ) values (\r\n        'warehouse', coalesce(v_fallback, p_warehouse_id), comp.item_id, 'base',\r\n        -1 * v_remaining, 'recipe_consumption',\r\n        jsonb_build_object('recipe_for', p_item_id, 'qty_units', p_qty_units, 'component_qty', v_comp_qty, 'qty_unit', comp.qty_unit, 'consumption_unit', comp.consumption_unit) || coalesce(p_context, '{}'),\r\n        v_flow_batch_id\r\n      );\r\n\r\n      insert into public.warehouse_backoffice_logs(\r\n        user_id,\r\n        user_email,\r\n        action,\r\n        page,\r\n        method,\r\n        status,\r\n        details\r\n      ) values (\r\n        auth.uid(),\r\n        current_setting('request.jwt.claim.email', true),\r\n        'recipe_negative_balance',\r\n        '/Warehouse_Backoffice',\r\n        'rpc',\r\n        200,\r\n        jsonb_build_object(\r\n          'outlet_id', v_outlet_id,\r\n          'recipe_for', p_item_id,\r\n          'component_id', comp.item_id,\r\n          'warehouse_id', coalesce(v_fallback, p_warehouse_id),\r\n          'requested_qty', v_effective_qty,\r\n          'remaining_qty', v_remaining\r\n        )\r\n      );\r\n    end if;\r\n  end loop;\r\nend;\r\n$function$\n",
-          "function_name": "apply_recipe_deductions",
+          "arguments": "p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
+          "definition": "CREATE OR REPLACE FUNCTION public.accept_order(p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_order public.orders%rowtype;\r\nBEGIN\r\n  IF NOT (public.is_admin(v_uid) OR public.is_supervisor(v_uid)) THEN\r\n    RAISE EXCEPTION 'not authorized to accept orders';\r\n  END IF;\r\n\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  IF v_order.source_event_id IS NOT NULL THEN\r\n    RAISE EXCEPTION 'not a warehouse app order';\r\n  END IF;\r\n\r\n  IF lower(COALESCE(v_order.status, '')) <> 'placed' THEN\r\n    RAISE EXCEPTION 'order must be placed before accept (current: %)', v_order.status;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'accepted',\r\n      accepted_at = now(),\r\n      accepted_by = v_uid,\r\n      approved_at = now(),\r\n      approved_by = v_uid,\r\n      modified_by_supervisor = true,\r\n      modified_by_supervisor_name = COALESCE(NULLIF(p_supervisor_name, ''), modified_by_supervisor_name),\r\n      supervisor_signed_name = COALESCE(NULLIF(p_supervisor_name, ''), supervisor_signed_name),\r\n      supervisor_signature_path = COALESCE(NULLIF(p_signature_path, ''), supervisor_signature_path),\r\n      supervisor_signed_at = CASE WHEN NULLIF(p_signature_path, '') IS NOT NULL THEN now() ELSE supervisor_signed_at END,\r\n      approved_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), approved_pdf_path),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\n\r\n  -- ensure_order_locked_and_allocated trigger runs record_order_fulfillment when locked=false\r\nEND;\r\n$function$\n",
+          "function_name": "accept_order",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_outlet_id uuid, p_sold_item_id uuid, p_sold_variant_key text, p_sale_qty numeric, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.apply_pos_sale_deduction_rules(p_outlet_id uuid, p_sold_item_id uuid, p_sold_variant_key text, p_sale_qty numeric, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_rule record;\r\n  v_deduct_qty numeric;\r\n  v_variant_sold text := public.normalize_variant_key(COALESCE(p_sold_variant_key, 'base'));\r\n  v_uses_app boolean := false;\r\nBEGIN\r\n  IF p_outlet_id IS NULL OR p_sold_item_id IS NULL OR p_sale_qty IS NULL OR p_sale_qty <= 0 THEN\r\n    RETURN;\r\n  END IF;\r\n\r\n  SELECT COALESCE(o.uses_orders_app, false)\r\n  INTO v_uses_app\r\n  FROM public.outlets o\r\n  WHERE o.id = p_outlet_id;\r\n\r\n  IF NOT v_uses_app THEN\r\n    RETURN;\r\n  END IF;\r\n\r\n  IF NOT public.outlet_pos_sale_in_sync_window(p_outlet_id, p_sold_at) THEN\r\n    RETURN;\r\n  END IF;\r\n\r\n  FOR v_rule IN\r\n    SELECT *\r\n    FROM public.outlet_pos_deduction_rules r\r\n    WHERE r.outlet_id = p_outlet_id\r\n      AND r.sold_item_id = p_sold_item_id\r\n      AND public.normalize_variant_key(r.sold_variant_key) = v_variant_sold\r\n      AND r.active\r\n      AND EXISTS (\r\n        SELECT 1 FROM public.outlet_warehouses ow\r\n        WHERE ow.outlet_id = p_outlet_id AND ow.warehouse_id = r.warehouse_id\r\n      )\r\n  LOOP\r\n    v_deduct_qty := v_rule.deduct_qty_per_sale * p_sale_qty;\r\n\r\n    INSERT INTO public.stock_ledger(\r\n      warehouse_id, item_id, variant_key, delta_units, reason,\r\n      location_type, occurred_at, context\r\n    )\r\n    VALUES (\r\n      v_rule.warehouse_id,\r\n      v_rule.deduct_item_id,\r\n      public.normalize_variant_key(v_rule.deduct_variant_key),\r\n      -v_deduct_qty,\r\n      'outlet_sale',\r\n      'warehouse',\r\n      COALESCE(p_sold_at, now()),\r\n      p_context || jsonb_build_object(\r\n        'deduction_rule_id', v_rule.id,\r\n        'sold_item_id', p_sold_item_id,\r\n        'sold_variant_key', v_variant_sold\r\n      )\r\n    );\r\n\r\n    UPDATE public.outlet_stock_balances osb\r\n    SET\r\n      consumed_units = osb.consumed_units + v_deduct_qty,\r\n      on_hand_units = GREATEST(osb.sent_units - (osb.consumed_units + v_deduct_qty), 0),\r\n      updated_at = now()\r\n    WHERE osb.outlet_id = p_outlet_id\r\n      AND osb.item_id = v_rule.deduct_item_id\r\n      AND osb.variant_key = public.normalize_variant_key(v_rule.deduct_variant_key);\r\n\r\n    IF NOT FOUND THEN\r\n      INSERT INTO public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units, on_hand_units)\r\n      VALUES (\r\n        p_outlet_id,\r\n        v_rule.deduct_item_id,\r\n        public.normalize_variant_key(v_rule.deduct_variant_key),\r\n        0,\r\n        v_deduct_qty,\r\n        0\r\n      )\r\n      ON CONFLICT (outlet_id, item_id, variant_key) DO UPDATE SET\r\n        consumed_units = public.outlet_stock_balances.consumed_units + EXCLUDED.consumed_units,\r\n        on_hand_units = GREATEST(public.outlet_stock_balances.sent_units - (public.outlet_stock_balances.consumed_units + EXCLUDED.consumed_units), 0),\r\n        updated_at = now();\r\n    END IF;\r\n  END LOOP;\r\nEND;\r\n$function$\n",
+          "function_name": "apply_pos_sale_deduction_rules",
           "function_schema": "public"
         },
         {
@@ -7542,7 +7627,7 @@
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.assert_order_item_editable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_order public.orders%rowtype;\r\n  v_uid uuid := auth.uid();\r\n  v_is_admin boolean := false;\r\n  v_is_supervisor boolean := false;\r\nbegin\r\n  select * into v_order from public.orders where id = coalesce(new.order_id, old.order_id);\r\n  if not found then\r\n    raise exception 'order not found for item';\r\n  end if;\r\n\r\n  v_is_admin := public.is_admin(v_uid);\r\n  v_is_supervisor := exists (\r\n    select 1\r\n    from public.user_roles ur\r\n    join public.roles r on r.id = ur.role_id\r\n    where ur.user_id = v_uid\r\n      and lower(coalesce(r.normalized_slug, r.slug)) = 'supervisor'\r\n  );\r\n\r\n  if not v_is_admin and v_is_supervisor then\r\n    if tg_op in ('INSERT', 'DELETE') then\r\n      raise exception 'supervisors cannot add or remove order items';\r\n    end if;\r\n    if tg_op = 'UPDATE' and new.product_id is distinct from old.product_id then\r\n      raise exception 'supervisors can only change variants of the same product';\r\n    end if;\r\n  end if;\r\n\r\n  if coalesce(v_order.locked, false)\r\n     or lower(coalesce(v_order.status, '')) in ('ordered', 'loaded', 'offloaded', 'delivered') then\r\n    raise exception 'order % is locked; items cannot be modified', v_order.id;\r\n  end if;\r\n\r\n  return new;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.assert_order_item_editable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_order public.orders%rowtype;\r\n  v_uid uuid := auth.uid();\r\n  v_is_admin boolean := false;\r\n  v_is_supervisor boolean := false;\r\n  v_status text;\r\n  v_merge text;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = COALESCE(NEW.order_id, OLD.order_id);\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order not found for item';\r\n  END IF;\r\n\r\n  v_is_admin := public.is_admin(v_uid);\r\n  v_is_supervisor := public.is_supervisor(v_uid);\r\n  v_status := lower(COALESCE(v_order.status, ''));\r\n\r\n  IF NOT v_is_admin AND v_is_supervisor THEN\r\n    IF TG_OP IN ('INSERT', 'DELETE') THEN\r\n      v_merge := current_setting('order_items.supervisor_merge', true);\r\n      IF TG_OP = 'DELETE' AND v_merge = 'on' AND v_status = 'placed' THEN\r\n        RETURN OLD;\r\n      END IF;\r\n      RAISE EXCEPTION 'supervisors cannot add or remove order items';\r\n    END IF;\r\n\r\n    IF v_status <> 'placed' THEN\r\n      RAISE EXCEPTION 'supervisors can only edit items while order status is placed';\r\n    END IF;\r\n\r\n    IF TG_OP = 'UPDATE' THEN\r\n      IF NEW.product_id IS DISTINCT FROM OLD.product_id THEN\r\n        RAISE EXCEPTION 'supervisors cannot change product on an order line';\r\n      END IF;\r\n    END IF;\r\n\r\n    RETURN NEW;\r\n  END IF;\r\n\r\n  IF NOT v_is_admin THEN\r\n    IF COALESCE(v_order.locked, false) THEN\r\n      RAISE EXCEPTION 'order is locked';\r\n    END IF;\r\n    IF v_status NOT IN ('placed', 'draft') THEN\r\n      RAISE EXCEPTION 'order items cannot be modified when status is %', v_order.status;\r\n    END IF;\r\n  END IF;\r\n\r\n  RETURN COALESCE(NEW, OLD);\r\nEND;\r\n$function$\n",
           "function_name": "assert_order_item_editable",
           "function_schema": "public"
         },
@@ -7553,9 +7638,21 @@
           "function_schema": "public"
         },
         {
+          "arguments": "p_user uuid, p_warehouse_id uuid",
+          "definition": "CREATE OR REPLACE FUNCTION public.can_operate_outlet_warehouse_stocktake(p_user uuid, p_warehouse_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT public.is_admin(p_user)\r\n      OR public.is_stocktake_user(p_user)\r\n      OR EXISTS (\r\n        SELECT 1\r\n        FROM public.outlet_warehouses ow\r\n        WHERE ow.warehouse_id = p_warehouse_id\r\n          AND ow.outlet_id = ANY(COALESCE(public.member_outlet_ids(p_user), ARRAY[]::uuid[]))\r\n      );\r\n$function$\n",
+          "function_name": "can_operate_outlet_warehouse_stocktake",
+          "function_schema": "public"
+        },
+        {
           "arguments": "p_period_id uuid",
-          "definition": "CREATE OR REPLACE FUNCTION public.close_stock_period(p_period_id uuid)\n RETURNS warehouse_stock_periods\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_row public.warehouse_stock_periods%rowtype;\r\n  v_prev_id uuid;\r\n  v_snapshot jsonb;\r\n  v_has_closing boolean := false;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  select * into v_row from public.warehouse_stock_periods where id = p_period_id for update;\r\n  if not found then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n  if v_row.status <> 'open' then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n\r\n  select exists (\r\n    select 1 from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.kind = 'closing'\r\n  ) into v_has_closing;\r\n\r\n  if not v_has_closing then\r\n    raise exception 'closing counts required before closing period';\r\n  end if;\r\n\r\n  select wsp.id\r\n  into v_prev_id\r\n  from public.warehouse_stock_periods wsp\r\n  where wsp.warehouse_id = v_row.warehouse_id\r\n    and wsp.status = 'closed'\r\n    and wsp.id <> p_period_id\r\n  order by wsp.closed_at desc nulls last, wsp.opened_at desc nulls last\r\n  limit 1;\r\n\r\n  -- Ensure every warehouse item has a closing count; missing items become zero.\r\n  with keys as (\r\n    select distinct\r\n      wli.item_id,\r\n      public.normalize_variant_key(wli.variant_key) as variant_key\r\n    from public.warehouse_live_items wli\r\n    where wli.warehouse_id = v_row.warehouse_id\r\n    union\r\n    select wsc.item_id, public.normalize_variant_key(wsc.variant_key)\r\n    from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.kind in ('opening', 'closing')\r\n    union\r\n    select wsc.item_id, public.normalize_variant_key(wsc.variant_key)\r\n    from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = v_prev_id\r\n      and wsc.kind = 'closing'\r\n  )\r\n  insert into public.warehouse_stock_counts(\r\n    period_id, item_id, variant_key, counted_qty, kind, counted_by, context\r\n  )\r\n  select\r\n    p_period_id,\r\n    k.item_id,\r\n    k.variant_key,\r\n    0,\r\n    'closing',\r\n    auth.uid(),\r\n    jsonb_build_object('auto_zero', true, 'reason', 'close_period')\r\n  from keys k\r\n  left join public.warehouse_stock_counts c\r\n    on c.period_id = p_period_id\r\n   and c.kind = 'closing'\r\n   and c.item_id = k.item_id\r\n   and public.normalize_variant_key(c.variant_key) = k.variant_key\r\n  where c.id is null;\r\n\r\n  select coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)\r\n  into v_snapshot\r\n  from (\r\n    select wsc.item_id,\r\n           wsc.variant_key,\r\n           wsc.counted_qty as closing_qty\r\n    from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.kind = 'closing'\r\n    order by wsc.item_id, wsc.variant_key\r\n  ) t;\r\n\r\n  if coalesce(jsonb_array_length(v_snapshot), 0) = 0 then\r\n    raise exception 'closing counts required before closing period';\r\n  end if;\r\n\r\n  update public.warehouse_stock_periods\r\n  set status = 'closed',\r\n      closed_at = now(),\r\n      closed_by = auth.uid(),\r\n      closing_snapshot = v_snapshot\r\n  where id = p_period_id and status = 'open'\r\n  returning * into v_row;\r\n\r\n  if not found then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n\r\n  perform public.start_stock_period(v_row.warehouse_id, 'Auto-open after close');\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.close_stock_period(p_period_id uuid)\n RETURNS warehouse_stock_periods\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_row public.warehouse_stock_periods%rowtype;\r\n  v_prev_id uuid;\r\n  v_snapshot jsonb;\r\n  v_has_closing boolean := false;\r\nbegin\r\n  select * into v_row from public.warehouse_stock_periods where id = p_period_id for update;\r\n  if not found then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n\r\n  if not public.can_operate_outlet_warehouse_stocktake(auth.uid(), v_row.warehouse_id) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if v_row.status <> 'open' then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n\r\n  select exists (\r\n    select 1 from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.kind = 'closing'\r\n  ) into v_has_closing;\r\n\r\n  if not v_has_closing then\r\n    raise exception 'closing counts required before closing period';\r\n  end if;\r\n\r\n  select wsp.id\r\n  into v_prev_id\r\n  from public.warehouse_stock_periods wsp\r\n  where wsp.warehouse_id = v_row.warehouse_id\r\n    and wsp.status = 'closed'\r\n    and wsp.id <> p_period_id\r\n  order by wsp.closed_at desc nulls last, wsp.opened_at desc nulls last\r\n  limit 1;\r\n\r\n  with keys as (\r\n    select distinct\r\n      wli.item_id,\r\n      public.normalize_variant_key(wli.variant_key) as variant_key\r\n    from public.warehouse_live_items wli\r\n    where wli.warehouse_id = v_row.warehouse_id\r\n    union\r\n    select wsc.item_id, public.normalize_variant_key(wsc.variant_key)\r\n    from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.kind in ('opening', 'closing')\r\n    union\r\n    select wsc.item_id, public.normalize_variant_key(wsc.variant_key)\r\n    from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = v_prev_id\r\n      and wsc.kind = 'closing'\r\n  )\r\n  insert into public.warehouse_stock_counts(\r\n    period_id, item_id, variant_key, counted_qty, kind, counted_by, context\r\n  )\r\n  select\r\n    p_period_id,\r\n    k.item_id,\r\n    k.variant_key,\r\n    0,\r\n    'closing',\r\n    auth.uid(),\r\n    jsonb_build_object('auto_zero', true, 'reason', 'close_period')\r\n  from keys k\r\n  left join public.warehouse_stock_counts c\r\n    on c.period_id = p_period_id\r\n   and c.kind = 'closing'\r\n   and c.item_id = k.item_id\r\n   and public.normalize_variant_key(c.variant_key) = k.variant_key\r\n  where c.id is null;\r\n\r\n  select coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)\r\n  into v_snapshot\r\n  from (\r\n    select wsc.item_id,\r\n           wsc.variant_key,\r\n           wsc.counted_qty as closing_qty\r\n    from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.kind = 'closing'\r\n    order by wsc.item_id, wsc.variant_key\r\n  ) t;\r\n\r\n  if coalesce(jsonb_array_length(v_snapshot), 0) = 0 then\r\n    raise exception 'closing counts required before closing period';\r\n  end if;\r\n\r\n  update public.warehouse_stock_periods\r\n  set status = 'closed',\r\n      closed_at = now(),\r\n      closed_by = auth.uid(),\r\n      closing_snapshot = v_snapshot\r\n  where id = p_period_id and status = 'open'\r\n  returning * into v_row;\r\n\r\n  if not found then\r\n    raise exception 'period not found or already closed';\r\n  end if;\r\n\r\n  perform public.set_pos_sync_cutoff_for_warehouse(v_row.warehouse_id, v_row.closed_at);\r\n  perform public.start_stock_period(v_row.warehouse_id, 'Auto-open after close');\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
           "function_name": "close_stock_period",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
+          "definition": "CREATE OR REPLACE FUNCTION public.complete_order(p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_order public.orders%rowtype;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized to complete order %', p_order_id;\r\n  END IF;\r\n\r\n  IF v_order.source_event_id IS NOT NULL THEN\r\n    RAISE EXCEPTION 'not a warehouse app order';\r\n  END IF;\r\n\r\n  IF lower(COALESCE(v_order.status, '')) <> 'loaded' THEN\r\n    RAISE EXCEPTION 'order must be loaded before complete (current: %)', v_order.status;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'completed',\r\n      locked = true,\r\n      delivery_driver_name = COALESCE(NULLIF(p_driver_name, ''), delivery_driver_name),\r\n      delivery_driver_signature_path = NULLIF(p_signature_path, ''),\r\n      delivery_driver_signed_at = now(),\r\n      offloader_signed_name = COALESCE(NULLIF(p_driver_name, ''), offloader_signed_name),\r\n      offloader_signature_path = COALESCE(NULLIF(p_signature_path, ''), offloader_signature_path),\r\n      offloader_signed_at = now(),\r\n      completed_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), completed_pdf_path),\r\n      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),\r\n      offloaded_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), offloaded_pdf_path),\r\n      completed_at = now(),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\nEND;\r\n$function$\n",
+          "function_name": "complete_order",
           "function_schema": "public"
         },
         {
@@ -7589,9 +7686,21 @@
           "function_schema": "public"
         },
         {
+          "arguments": "p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text",
+          "definition": "CREATE OR REPLACE FUNCTION public.dispatch_order(p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_order public.orders%rowtype;\r\nBEGIN\r\n  IF NOT (public.is_admin(v_uid) OR public.is_supervisor(v_uid)) THEN\r\n    RAISE EXCEPTION 'not authorized to dispatch orders';\r\n  END IF;\r\n\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  IF v_order.source_event_id IS NOT NULL THEN\r\n    RAISE EXCEPTION 'not a warehouse app order';\r\n  END IF;\r\n\r\n  IF lower(COALESCE(v_order.status, '')) <> 'accepted' THEN\r\n    RAISE EXCEPTION 'order must be accepted before dispatch (current: %)', v_order.status;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'loaded',\r\n      locked = true,\r\n      handoff_driver_name = COALESCE(NULLIF(p_driver_name, ''), handoff_driver_name),\r\n      handoff_driver_signature_path = NULLIF(p_signature_path, ''),\r\n      handoff_driver_signed_at = now(),\r\n      driver_signed_name = COALESCE(NULLIF(p_driver_name, ''), driver_signed_name),\r\n      driver_signature_path = COALESCE(NULLIF(p_signature_path, ''), driver_signature_path),\r\n      driver_signed_at = now(),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\nEND;\r\n$function$\n",
+          "function_name": "dispatch_order",
+          "function_schema": "public"
+        },
+        {
           "arguments": "",
           "definition": "CREATE OR REPLACE FUNCTION public.enforce_outlet_single_warehouse()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if new.default_sales_warehouse_id is not null then\r\n    new.default_receiving_warehouse_id := new.default_sales_warehouse_id;\r\n  end if;\r\n  return new;\r\nend;\r\n$function$\n",
           "function_name": "enforce_outlet_single_warehouse",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_entity_type text, p_entity_id text, p_payload jsonb DEFAULT '{}'::jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.enqueue_catalog_sync_for_outlets(p_entity_type text, p_entity_id text, p_payload jsonb DEFAULT '{}'::jsonb)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_count integer := 0;\r\nBEGIN\r\n  INSERT INTO public.outlet_catalog_sync_events(outlet_id, entity_type, entity_id, payload)\r\n  SELECT o.id, p_entity_type, p_entity_id, p_payload\r\n  FROM public.outlets o\r\n  WHERE COALESCE(o.active, true);\r\n\r\n  GET DIAGNOSTICS v_count = ROW_COUNT;\r\n  RETURN v_count;\r\nEND;\r\n$function$\n",
+          "function_name": "enqueue_catalog_sync_for_outlets",
           "function_schema": "public"
         },
         {
@@ -7602,8 +7711,26 @@
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.ensure_order_locked_and_allocated()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if new.status in ('ordered', 'loaded', 'offloaded', 'delivered') and not coalesce(new.locked, false) then\r\n    perform public.record_order_fulfillment(new.id);\r\n    update public.orders\r\n    set locked = true,\r\n        updated_at = now()\r\n    where id = new.id and locked = false;\r\n  end if;\r\n  return new;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.ensure_order_locked_and_allocated()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  IF NEW.source_event_id IS NOT NULL THEN\r\n    RETURN NEW;\r\n  END IF;\r\n\r\n  IF NEW.status IN ('accepted', 'ordered', 'offloaded', 'delivered', 'completed')\r\n     AND NOT COALESCE(NEW.locked, false) THEN\r\n    PERFORM public.record_order_fulfillment(NEW.id);\r\n    UPDATE public.orders\r\n    SET locked = true,\r\n        updated_at = now()\r\n    WHERE id = NEW.id\r\n      AND locked = false;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
           "function_name": "ensure_order_locked_and_allocated",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_outlet_id uuid, p_limit integer DEFAULT 100",
+          "definition": "CREATE OR REPLACE FUNCTION public.fetch_outlet_catalog_sync(p_outlet_id uuid, p_limit integer DEFAULT 100)\n RETURNS SETOF outlet_catalog_sync_events\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT *\r\n  FROM public.outlet_catalog_sync_events\r\n  WHERE outlet_id = p_outlet_id\r\n    AND status = 'pending'\r\n  ORDER BY created_at ASC\r\n  LIMIT GREATEST(COALESCE(p_limit, 100), 1);\r\n$function$\n",
+          "function_name": "fetch_outlet_catalog_sync",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_outlet_id uuid",
+          "definition": "CREATE OR REPLACE FUNCTION public.get_outlet_pos_sync_cutoff(p_outlet_id uuid)\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT to_timestamp(cv.last_value)\r\n  FROM public.counter_values cv\r\n  WHERE cv.counter_key = 'pos_sync_cutoff'\r\n    AND cv.scope_id = p_outlet_id\r\n  ORDER BY cv.updated_at DESC NULLS LAST\r\n  LIMIT 1;\r\n$function$\n",
+          "function_name": "get_outlet_pos_sync_cutoff",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_outlet_id uuid",
+          "definition": "CREATE OR REPLACE FUNCTION public.get_outlet_pos_sync_opening(p_outlet_id uuid)\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT to_timestamp(cv.last_value)\r\n  FROM public.counter_values cv\r\n  WHERE cv.counter_key = 'pos_sync_opening'\r\n    AND cv.scope_id = p_outlet_id\r\n  ORDER BY cv.updated_at DESC NULLS LAST\r\n  LIMIT 1;\r\n$function$\n",
+          "function_name": "get_outlet_pos_sync_opening",
           "function_schema": "public"
         },
         {
@@ -7626,8 +7753,26 @@
         },
         {
           "arguments": "p_user uuid",
-          "definition": "CREATE OR REPLACE FUNCTION public.is_stocktake_user(p_user uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\r\n  select exists (\r\n    select 1 from public.user_roles ur\r\n    where ur.user_id = p_user\r\n      and ur.role_id = '95b6a75d-bd46-4764-b5ea-981b1608f1ca'\r\n  )\r\n  OR exists (\r\n    select 1\r\n    from public.stocktake_app_users su\r\n    where su.id = p_user\r\n      and su.active\r\n  );\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.is_stocktake_user(p_user uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\r\n  SELECT EXISTS (\r\n    SELECT 1 FROM public.user_roles ur\r\n    WHERE ur.user_id = p_user\r\n      AND ur.role_id = '95b6a75d-bd46-4764-b5ea-981b1608f1ca'\r\n  )\r\n  OR EXISTS (\r\n    SELECT 1 FROM public.stocktake_app_users su\r\n    WHERE su.id = p_user AND su.active\r\n  )\r\n  OR EXISTS (\r\n    SELECT 1\r\n    FROM public.outlets o\r\n    JOIN public.outlet_warehouses ow ON ow.outlet_id = o.id AND COALESCE(ow.show_in_stocktake, true)\r\n    WHERE o.auth_user_id = p_user AND COALESCE(o.active, true)\r\n  );\r\n$function$\n",
           "function_name": "is_stocktake_user",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_user uuid DEFAULT auth.uid()",
+          "definition": "CREATE OR REPLACE FUNCTION public.is_supervisor(p_user uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.user_roles ur\r\n    JOIN public.roles r ON r.id = ur.role_id\r\n    WHERE ur.user_id = p_user\r\n      AND lower(coalesce(r.normalized_slug, r.slug)) = 'supervisor'\r\n  );\r\n$function$\n",
+          "function_name": "is_supervisor",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_order_id uuid",
+          "definition": "CREATE OR REPLACE FUNCTION public.is_warehouse_app_order(p_order_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.orders o\r\n    WHERE o.id = p_order_id\r\n      AND o.source_event_id IS NULL\r\n  );\r\n$function$\n",
+          "function_name": "is_warehouse_app_order",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.list_middleware_outlets()\n RETURNS SETOF outlets\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT *\r\n  FROM public.outlets o\r\n  WHERE COALESCE(o.active, true)\r\n    AND COALESCE(o.has_pos_middleware, false)\r\n    AND COALESCE(o.channel, 'selling') = 'selling'\r\n    AND o.name !~* '\\mstorerooms?\\M'\r\n  ORDER BY o.name;\r\n$function$\n",
+          "function_name": "list_middleware_outlets",
           "function_schema": "public"
         },
         {
@@ -7643,8 +7788,14 @@
           "function_schema": "public"
         },
         {
+          "arguments": "p_event_ids uuid[]",
+          "definition": "CREATE OR REPLACE FUNCTION public.mark_catalog_sync_delivered(p_event_ids uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  UPDATE public.outlet_catalog_sync_events\r\n  SET status = 'delivered', delivered_at = now(), error_message = NULL\r\n  WHERE id = ANY(p_event_ids);\r\nEND;\r\n$function$\n",
+          "function_name": "mark_catalog_sync_delivered",
+          "function_schema": "public"
+        },
+        {
           "arguments": "p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.mark_order_loaded(p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_order public.orders%ROWTYPE;\r\nBEGIN\r\n  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order % not found', p_order_id;\r\n  END IF;\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR v_order.outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized to mark order % as loaded', p_order_id;\r\n  END IF;\r\n\r\n  UPDATE public.orders\r\n  SET status = 'loaded',\r\n      locked = true,\r\n      driver_signed_name = COALESCE(NULLIF(p_driver_name, ''), driver_signed_name),\r\n      driver_signature_path = COALESCE(NULLIF(p_signature_path, ''), driver_signature_path),\r\n      driver_signed_at = now(),\r\n      loaded_pdf_path = COALESCE(NULLIF(p_pdf_path, ''), loaded_pdf_path),\r\n      pdf_path = COALESCE(NULLIF(p_pdf_path, ''), pdf_path),\r\n      updated_at = now()\r\n  WHERE id = p_order_id;\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.mark_order_loaded(p_order_id uuid, p_driver_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\nBEGIN\r\n  IF public.is_supervisor(v_uid) OR public.is_admin(v_uid) THEN\r\n    PERFORM public.dispatch_order(p_order_id, p_driver_name, p_signature_path);\r\n    IF NULLIF(p_pdf_path, '') IS NOT NULL THEN\r\n      UPDATE public.orders SET loaded_pdf_path = p_pdf_path, updated_at = now() WHERE id = p_order_id;\r\n    END IF;\r\n    RETURN;\r\n  END IF;\r\n\r\n  RAISE EXCEPTION 'use dispatch_order from supervisor app; outlet completes via complete_order';\r\nEND;\r\n$function$\n",
           "function_name": "mark_order_loaded",
           "function_schema": "public"
         },
@@ -7656,7 +7807,7 @@
         },
         {
           "arguments": "p_order_id uuid, p_offloader_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.mark_order_offloaded(p_order_id uuid, p_offloader_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_uid uuid := (select auth.uid());\r\n  v_order public.orders%rowtype;\r\n  v_was_locked boolean;\r\nbegin\r\n  select * into v_order from public.orders where id = p_order_id for update;\r\n  if not found then\r\n    raise exception 'order % not found', p_order_id;\r\n  end if;\r\n\r\n  v_was_locked := coalesce(v_order.locked, false);\r\n\r\n  if not (\r\n    public.is_admin(v_uid)\r\n    or v_order.outlet_id = any(coalesce(public.member_outlet_ids(v_uid), array[]::uuid[]))\r\n  ) then\r\n    raise exception 'not authorized to complete order %', p_order_id;\r\n  end if;\r\n\r\n  update public.orders\r\n  set status = 'offloaded',\r\n      locked = true,\r\n      offloader_signed_name = coalesce(nullif(p_offloader_name, ''), offloader_signed_name),\r\n      offloader_signature_path = coalesce(nullif(p_signature_path, ''), offloader_signature_path),\r\n      offloader_signed_at = now(),\r\n      offloaded_pdf_path = coalesce(nullif(p_pdf_path, ''), offloaded_pdf_path),\r\n      pdf_path = coalesce(nullif(p_pdf_path, ''), pdf_path),\r\n      updated_at = now()\r\n  where id = p_order_id;\r\n\r\n  -- If stock was not allocated earlier, do it once here\r\n  if not v_was_locked then\r\n    perform public.record_order_fulfillment(p_order_id);\r\n  end if;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.mark_order_offloaded(p_order_id uuid, p_offloader_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  PERFORM public.complete_order(p_order_id, p_offloader_name, p_signature_path, p_pdf_path);\r\nEND;\r\n$function$\n",
           "function_name": "mark_order_offloaded",
           "function_schema": "public"
         },
@@ -7704,7 +7855,7 @@
         },
         {
           "arguments": "p_order_id uuid, p_user_id uuid",
-          "definition": "CREATE OR REPLACE FUNCTION public.order_is_accessible(p_order_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  target_outlet uuid;\r\nBEGIN\r\n  IF p_order_id IS NULL OR p_user_id IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  SELECT outlet_id INTO target_outlet FROM public.orders WHERE id = p_order_id;\r\n  IF target_outlet IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  IF public.is_admin(p_user_id) THEN\r\n    RETURN true;\r\n  END IF;\r\n\r\n  RETURN (\r\n    target_outlet = ANY(COALESCE(public.member_outlet_ids(p_user_id), ARRAY[]::uuid[]))\r\n    OR public.outlet_auth_user_matches(target_outlet, p_user_id)\r\n  );\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.order_is_accessible(p_order_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  target_outlet uuid;\r\nBEGIN\r\n  IF p_order_id IS NULL OR p_user_id IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  SELECT outlet_id INTO target_outlet FROM public.orders WHERE id = p_order_id;\r\n  IF target_outlet IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  IF public.is_admin(p_user_id) THEN\r\n    RETURN true;\r\n  END IF;\r\n\r\n  IF public.is_supervisor(p_user_id) AND public.is_warehouse_app_order(p_order_id) THEN\r\n    RETURN true;\r\n  END IF;\r\n\r\n  RETURN (\r\n    target_outlet = ANY(COALESCE(public.member_outlet_ids(p_user_id), ARRAY[]::uuid[]))\r\n    OR public.outlet_auth_user_matches(target_outlet, p_user_id)\r\n  );\r\nEND;\r\n$function$\n",
           "function_name": "order_is_accessible",
           "function_schema": "public"
         },
@@ -7721,8 +7872,14 @@
           "function_schema": "public"
         },
         {
+          "arguments": "p_outlet_id uuid, p_sold_at timestamp with time zone DEFAULT now()",
+          "definition": "CREATE OR REPLACE FUNCTION public.outlet_pos_sale_in_sync_window(p_outlet_id uuid, p_sold_at timestamp with time zone DEFAULT now())\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_opening timestamptz;\r\n  v_cutoff timestamptz;\r\n  v_sold timestamptz := COALESCE(p_sold_at, now());\r\nBEGIN\r\n  IF p_outlet_id IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  v_opening := public.get_outlet_pos_sync_opening(p_outlet_id);\r\n  IF v_opening IS NULL THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  IF v_sold < v_opening THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  v_cutoff := public.get_outlet_pos_sync_cutoff(p_outlet_id);\r\n  IF v_cutoff IS NOT NULL AND v_cutoff < v_opening AND v_sold > v_cutoff THEN\r\n    RETURN false;\r\n  END IF;\r\n\r\n  RETURN true;\r\nEND;\r\n$function$\n",
+          "function_name": "outlet_pos_sale_in_sync_window",
+          "function_schema": "public"
+        },
+        {
           "arguments": "p_outlet_id uuid, p_items jsonb, p_employee_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.place_order(p_outlet_id uuid, p_items jsonb, p_employee_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS TABLE(order_id uuid, order_number text, created_at timestamp with time zone)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_uid uuid := (select auth.uid());\r\n  v_now timestamptz := now();\r\n  v_order public.orders%rowtype;\r\n  v_item jsonb;\r\n  v_qty numeric;\r\n  v_qty_cases numeric;\r\n  v_receiving_contains numeric;\r\n  v_default_sales_wh uuid;\r\n  v_variant_key text;\r\n  v_route_wh uuid;\r\nbegin\r\n  if p_outlet_id is null then\r\n    raise exception 'outlet id required';\r\n  end if;\r\n\r\n  if not (\r\n    public.is_admin(v_uid)\r\n    or p_outlet_id = any(coalesce(public.member_outlet_ids(v_uid), array[]::uuid[]))\r\n  ) then\r\n    raise exception 'not authorized for outlet %', p_outlet_id;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id\r\n    into v_default_sales_wh\r\n  from public.outlet_default_warehouses(p_outlet_id);\r\n\r\n  insert into public.orders(\r\n    outlet_id,\r\n    order_number,\r\n    status,\r\n    locked,\r\n    created_by,\r\n    tz,\r\n    pdf_path,\r\n    employee_signed_name,\r\n    employee_signature_path,\r\n    employee_signed_at,\r\n    updated_at,\r\n    created_at\r\n  ) values (\r\n    p_outlet_id,\r\n    public.next_order_number(p_outlet_id),\r\n    'placed',\r\n    false,\r\n    v_uid,\r\n    coalesce(current_setting('TIMEZONE', true), 'UTC'),\r\n    p_pdf_path,\r\n    coalesce(nullif(p_employee_name, ''), p_employee_name),\r\n    nullif(p_signature_path, ''),\r\n    v_now,\r\n    v_now,\r\n    v_now\r\n  ) returning * into v_order;\r\n\r\n  for v_item in select * from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) loop\r\n    if (v_item ->> 'product_id') is null then\r\n      raise exception 'product_id is required for each line item';\r\n    end if;\r\n\r\n    v_receiving_contains := nullif(v_item ->> 'receiving_contains', '')::numeric;\r\n    v_qty := coalesce((v_item ->> 'qty')::numeric, 0);\r\n    v_qty_cases := coalesce((v_item ->> 'qty_cases')::numeric, null);\r\n    if v_qty_cases is null and v_receiving_contains is not null and v_receiving_contains > 0 then\r\n      v_qty_cases := v_qty / v_receiving_contains;\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(\r\n      coalesce(nullif(v_item ->> 'variation_key', ''), nullif(v_item ->> 'variation_id', ''), 'base')\r\n    );\r\n\r\n    v_route_wh := v_default_sales_wh;\r\n\r\n    insert into public.order_items(\r\n      order_id,\r\n      product_id,\r\n      variation_id,\r\n      variation_key,\r\n      warehouse_id,\r\n      name,\r\n      receiving_uom,\r\n      consumption_uom,\r\n      cost,\r\n      qty,\r\n      qty_cases,\r\n      receiving_contains,\r\n      amount\r\n    ) values (\r\n      v_order.id,\r\n      (v_item ->> 'product_id')::uuid,\r\n      nullif(v_item ->> 'variation_id', '')::uuid,\r\n      v_variant_key,\r\n      v_route_wh,\r\n      coalesce(nullif(v_item ->> 'name', ''), 'Item'),\r\n      coalesce(nullif(v_item ->> 'receiving_uom', ''), 'each'),\r\n      coalesce(nullif(v_item ->> 'consumption_uom', ''), 'each'),\r\n      coalesce((v_item ->> 'cost')::numeric, 0),\r\n      v_qty,\r\n      v_qty_cases,\r\n      v_receiving_contains,\r\n      coalesce((v_item ->> 'cost')::numeric, 0) * v_qty\r\n    );\r\n  end loop;\r\n\r\n  order_id := v_order.id;\r\n  order_number := v_order.order_number;\r\n  created_at := v_order.created_at;\r\n  return next;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.place_order(p_outlet_id uuid, p_items jsonb, p_employee_name text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS TABLE(order_id uuid, order_number text, created_at timestamp with time zone)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := (SELECT auth.uid());\r\n  v_now timestamptz := now();\r\n  v_row public.orders%rowtype;\r\n  v_item jsonb;\r\n  v_qty numeric;\r\n  v_qty_cases numeric;\r\n  v_receiving_contains numeric;\r\n  v_default_sales_wh uuid;\r\n  v_variant_key text;\r\n  v_route_wh uuid;\r\nBEGIN\r\n  IF p_outlet_id IS NULL THEN\r\n    RAISE EXCEPTION 'outlet id required';\r\n  END IF;\r\n\r\n  IF NOT (\r\n    public.is_admin(v_uid)\r\n    OR p_outlet_id = ANY(COALESCE(public.member_outlet_ids(v_uid), ARRAY[]::uuid[]))\r\n  ) THEN\r\n    RAISE EXCEPTION 'not authorized for outlet %', p_outlet_id;\r\n  END IF;\r\n\r\n  SELECT default_sales_warehouse_id\r\n    INTO v_default_sales_wh\r\n  FROM public.outlet_default_warehouses(p_outlet_id);\r\n\r\n  INSERT INTO public.orders(\r\n    outlet_id,\r\n    order_number,\r\n    status,\r\n    locked,\r\n    created_by,\r\n    tz,\r\n    pdf_path,\r\n    employee_signed_name,\r\n    employee_signature_path,\r\n    employee_signed_at,\r\n    source_event_id,\r\n    updated_at,\r\n    created_at\r\n  ) VALUES (\r\n    p_outlet_id,\r\n    public.next_order_number(p_outlet_id),\r\n    'placed',\r\n    false,\r\n    v_uid,\r\n    COALESCE(current_setting('TIMEZONE', true), 'UTC'),\r\n    p_pdf_path,\r\n    COALESCE(NULLIF(p_employee_name, ''), p_employee_name),\r\n    NULLIF(p_signature_path, ''),\r\n    v_now,\r\n    NULL,\r\n    v_now,\r\n    v_now\r\n  )\r\n  RETURNING * INTO v_row;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(p_items, '[]'::jsonb)) LOOP\r\n    IF (v_item ->> 'product_id') IS NULL THEN\r\n      RAISE EXCEPTION 'product_id is required for each line item';\r\n    END IF;\r\n\r\n    v_receiving_contains := NULLIF(v_item ->> 'receiving_contains', '')::numeric;\r\n    v_qty := COALESCE((v_item ->> 'qty')::numeric, 0);\r\n    v_qty_cases := COALESCE((v_item ->> 'qty_cases')::numeric, NULL);\r\n    IF v_qty_cases IS NULL AND v_receiving_contains IS NOT NULL AND v_receiving_contains > 0 THEN\r\n      v_qty_cases := v_qty / v_receiving_contains;\r\n    END IF;\r\n\r\n    v_variant_key := public.normalize_variant_key(\r\n      COALESCE(NULLIF(v_item ->> 'variation_key', ''), NULLIF(v_item ->> 'variation_id', ''), 'base')\r\n    );\r\n\r\n    v_route_wh := v_default_sales_wh;\r\n\r\n    INSERT INTO public.order_items(\r\n      order_id,\r\n      product_id,\r\n      variation_id,\r\n      variation_key,\r\n      warehouse_id,\r\n      name,\r\n      receiving_uom,\r\n      consumption_uom,\r\n      cost,\r\n      qty,\r\n      qty_cases,\r\n      receiving_contains,\r\n      amount\r\n    ) VALUES (\r\n      v_row.id,\r\n      (v_item ->> 'product_id')::uuid,\r\n      NULLIF(v_item ->> 'variation_id', '')::uuid,\r\n      v_variant_key,\r\n      v_route_wh,\r\n      COALESCE(NULLIF(v_item ->> 'name', ''), 'Item'),\r\n      COALESCE(NULLIF(v_item ->> 'receiving_uom', ''), 'each'),\r\n      COALESCE(NULLIF(v_item ->> 'consumption_uom', ''), 'each'),\r\n      COALESCE((v_item ->> 'cost')::numeric, 0),\r\n      v_qty,\r\n      v_qty_cases,\r\n      v_receiving_contains,\r\n      COALESCE((v_item ->> 'cost')::numeric, 0) * v_qty\r\n    );\r\n  END LOOP;\r\n\r\n  order_id := v_row.id;\r\n  order_number := v_row.order_number;\r\n  created_at := v_row.created_at;\r\n  RETURN NEXT;\r\nEND;\r\n$function$\n",
           "function_name": "place_order",
           "function_schema": "public"
         },
@@ -7757,12 +7914,6 @@
           "function_schema": "public"
         },
         {
-          "arguments": "p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_warehouse_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.record_production_entry(p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_warehouse_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)\n RETURNS production_entries\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET row_security TO 'off'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_variant text := public.normalize_variant_key(p_variant_key);\r\n  v_period_id uuid;\r\n  v_row public.production_entries%rowtype;\r\n  v_allowed boolean := false;\r\n  v_flow_batch_id uuid;\r\nBEGIN\r\n  IF v_uid IS NULL THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n\r\n  SELECT (public.is_stocktake_user(v_uid)\r\n          OR public.is_admin(v_uid)\r\n          OR EXISTS (\r\n            SELECT 1 FROM public.user_roles ur\r\n            WHERE ur.user_id = v_uid\r\n              AND ur.role_id = 'de9f2075-9c97-4da1-a2a0-59ed162947e7'::uuid\r\n          ))\r\n  INTO v_allowed;\r\n\r\n  IF NOT v_allowed THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n\r\n  IF p_item_id IS NULL OR p_qty_units IS NULL OR p_qty_units <= 0 THEN\r\n    RAISE EXCEPTION 'item + qty required for production entry';\r\n  END IF;\r\n\r\n  IF p_warehouse_id IS NULL THEN\r\n    RAISE EXCEPTION 'warehouse required for production entry';\r\n  END IF;\r\n\r\n  IF NOT EXISTS (\r\n    SELECT 1\r\n    FROM public.production_item_assignments pia\r\n    WHERE pia.finished_item_id = p_item_id\r\n      AND pia.warehouse_id = p_warehouse_id\r\n      AND public.normalize_variant_key(pia.variant_key) = v_variant\r\n      AND pia.active\r\n  ) THEN\r\n    RAISE EXCEPTION 'production assignment missing for item %', p_item_id;\r\n  END IF;\r\n\r\n  SELECT wsp.id\r\n  INTO v_period_id\r\n  FROM public.warehouse_stock_periods wsp\r\n  WHERE wsp.warehouse_id = p_warehouse_id\r\n    AND wsp.status = 'open'\r\n  ORDER BY wsp.opened_at DESC NULLS LAST\r\n  LIMIT 1;\r\n\r\n  INSERT INTO public.production_entries(\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    qty_units,\r\n    period_id,\r\n    note,\r\n    created_by\r\n  ) VALUES (\r\n    p_warehouse_id,\r\n    p_item_id,\r\n    v_variant,\r\n    p_qty_units,\r\n    v_period_id,\r\n    p_note,\r\n    v_uid\r\n  ) RETURNING * INTO v_row;\r\n\r\n  insert into public.stock_flow_batches(\r\n    source_type,\r\n    source_id,\r\n    outlet_id,\r\n    warehouse_id,\r\n    occurred_at,\r\n    status,\r\n    context\r\n  ) values (\r\n    'production_entry',\r\n    v_row.id,\r\n    null,\r\n    p_warehouse_id,\r\n    now(),\r\n    'open',\r\n    jsonb_build_object('note', p_note)\r\n  ) returning id into v_flow_batch_id;\r\n\r\n  INSERT INTO public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    flow_batch_id\r\n  ) VALUES (\r\n    'warehouse',\r\n    p_warehouse_id,\r\n    p_item_id,\r\n    v_variant,\r\n    p_qty_units,\r\n    'production_entry',\r\n    jsonb_build_object(\r\n      'production_entry_id', v_row.id::text,\r\n      'note', p_note,\r\n      'period_id', v_period_id::text,\r\n      'source', 'production_entry',\r\n      'flow_batch_id', v_flow_batch_id\r\n    ),\r\n    v_flow_batch_id\r\n  );\r\n\r\n  PERFORM public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    p_warehouse_id,\r\n    v_variant,\r\n    jsonb_build_object(\r\n      'source', 'production_entry',\r\n      'production_entry_id', v_row.id::text,\r\n      'period_id', v_period_id::text,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  RETURN v_row;\r\nEND;\r\n$function$\n",
-          "function_name": "record_production_entry",
-          "function_schema": "public"
-        },
-        {
           "arguments": "p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false",
           "definition": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false)\n RETURNS warehouse_purchase_receipts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_receipt public.warehouse_purchase_receipts%rowtype;\r\n  v_reference text;\r\n  v_variant_key text;\r\n  v_occurred_at timestamptz;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one purchase item is required';\r\n  end if;\r\n\r\n  v_reference := coalesce(nullif(p_reference_code, ''), public.next_purchase_receipt_reference());\r\n\r\n  insert into public.warehouse_purchase_receipts(\r\n    warehouse_id,\r\n    supplier_id,\r\n    reference_code,\r\n    note,\r\n    auto_whatsapp,\r\n    context,\r\n    recorded_by\r\n  ) values (\r\n    p_warehouse_id,\r\n    p_supplier_id,\r\n    v_reference,\r\n    p_note,\r\n    coalesce(p_auto_whatsapp, false),\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  ) returning * into v_receipt;\r\n\r\n  -- FIX: use recorded_at/received_at instead of non-existent created_at\r\n  v_occurred_at := coalesce(v_receipt.received_at, v_receipt.recorded_at, now());\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      coalesce(nullif(elem->>'qty_input_mode', ''), 'units') as qty_input_mode,\r\n      nullif(elem->>'unit_cost', '')::numeric as unit_cost\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each purchase item requires a valid product_id and qty';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(coalesce(rec.variant_key, 'base'));\r\n\r\n    insert into public.warehouse_purchase_items(\r\n      receipt_id,\r\n      item_id,\r\n      variant_key,\r\n      qty_units,\r\n      qty_input_mode,\r\n      unit_cost\r\n    ) values (\r\n      v_receipt.id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      rec.qty_input_mode,\r\n      rec.unit_cost\r\n    );\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context, occurred_at)\r\n    values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      'purchase_receipt',\r\n      jsonb_build_object('receipt_id', v_receipt.id, 'reference_code', v_receipt.reference_code, 'supplier_id', p_supplier_id, 'receipt_created_at', v_occurred_at),\r\n      v_occurred_at\r\n    );\r\n  end loop;\r\n\r\n  return v_receipt;\r\nend;\r\n$function$\n",
           "function_name": "record_purchase_receipt",
@@ -7770,7 +7921,7 @@
         },
         {
           "arguments": "p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb",
-          "definition": "CREATE OR REPLACE FUNCTION public.record_stock_count(p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS warehouse_stock_counts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_period public.warehouse_stock_periods%rowtype;\r\n  v_row public.warehouse_stock_counts%rowtype;\r\n  v_item_kind item_kind;\r\n  v_has_recipe boolean := false;\r\n  v_variant text := public.normalize_variant_key(p_variant_key);\r\n  v_has_opening boolean := false;\r\n  v_kind text := lower(coalesce(p_kind, ''));\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_qty is null or p_qty < 0 then\r\n    raise exception 'qty must be >= 0';\r\n  end if;\r\n\r\n  select ci.item_kind,\r\n         exists (\r\n           select 1 from public.recipes r\r\n           where r.active and r.finished_item_id = p_item_id\r\n         )\r\n  into v_item_kind, v_has_recipe\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  if v_item_kind is null then\r\n    raise exception 'catalog item % not found for stock count', p_item_id;\r\n  end if;\r\n\r\n  if v_item_kind <> 'ingredient' and v_has_recipe then\r\n    raise exception 'stock counts are restricted to ingredient items or non-recipe items';\r\n  end if;\r\n\r\n  select * into v_period from public.warehouse_stock_periods where id = p_period_id;\r\n  if not found then\r\n    raise exception 'stock period not found';\r\n  end if;\r\n  if v_period.status <> 'open' then\r\n    raise exception 'stock period is not open';\r\n  end if;\r\n\r\n  select exists (\r\n    select 1 from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.item_id = p_item_id\r\n      and public.normalize_variant_key(wsc.variant_key) = v_variant\r\n      and wsc.kind = 'opening'\r\n  ) into v_has_opening;\r\n\r\n  if v_kind not in ('opening', 'closing') then\r\n    v_kind := 'auto';\r\n  end if;\r\n\r\n  if v_kind = 'closing' and not v_has_opening then\r\n    v_kind := 'opening';\r\n  end if;\r\n\r\n  if v_kind = 'auto' then\r\n    v_kind := case when v_has_opening then 'closing' else 'opening' end;\r\n  end if;\r\n\r\n  if v_kind = 'opening' then\r\n    insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n    values (p_period_id, p_item_id, v_variant, p_qty, 'opening', auth.uid(), coalesce(p_context, '{}'))\r\n    on conflict (period_id, item_id, variant_key, kind)\r\n    do update set\r\n      counted_qty = excluded.counted_qty,\r\n      counted_by = excluded.counted_by,\r\n      counted_at = now(),\r\n      context = excluded.context\r\n    returning * into v_row;\r\n\r\n    insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n    select\r\n      ow.outlet_id,\r\n      p_item_id,\r\n      v_variant,\r\n      p_qty + coalesce(osb.consumed_units, 0),\r\n      coalesce(osb.consumed_units, 0)\r\n    from public.outlet_warehouses ow\r\n    left join public.outlet_stock_balances osb\r\n      on osb.outlet_id = ow.outlet_id\r\n     and osb.item_id = p_item_id\r\n     and osb.variant_key = v_variant\r\n    where ow.warehouse_id = v_period.warehouse_id\r\n      and coalesce(ow.show_in_stocktake, true)\r\n    on conflict (outlet_id, item_id, variant_key)\r\n    do update set\r\n      sent_units = excluded.sent_units,\r\n      updated_at = now();\r\n\r\n    return v_row;\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n  values (p_period_id, p_item_id, v_variant, p_qty, v_kind, auth.uid(), coalesce(p_context, '{}'))\r\n  on conflict (period_id, item_id, variant_key, kind)\r\n  do update set\r\n    counted_qty = excluded.counted_qty,\r\n    counted_by = excluded.counted_by,\r\n    counted_at = now(),\r\n    context = excluded.context\r\n  returning * into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.record_stock_count(p_period_id uuid, p_item_id uuid, p_qty numeric, p_variant_key text DEFAULT 'base'::text, p_kind text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS warehouse_stock_counts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_period public.warehouse_stock_periods%rowtype;\r\n  v_row public.warehouse_stock_counts%rowtype;\r\n  v_item_kind item_kind;\r\n  v_has_recipe boolean := false;\r\n  v_variant text := public.normalize_variant_key(p_variant_key);\r\n  v_has_opening boolean := false;\r\n  v_kind text := lower(coalesce(p_kind, ''));\r\nbegin\r\n  select * into v_period from public.warehouse_stock_periods where id = p_period_id;\r\n  if not found then\r\n    raise exception 'stock period not found';\r\n  end if;\r\n\r\n  if not public.can_operate_outlet_warehouse_stocktake(auth.uid(), v_period.warehouse_id) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_qty is null or p_qty < 0 then\r\n    raise exception 'qty must be >= 0';\r\n  end if;\r\n\r\n  select ci.item_kind,\r\n         exists (\r\n           select 1 from public.recipes r\r\n           where r.active and r.finished_item_id = p_item_id\r\n         )\r\n  into v_item_kind, v_has_recipe\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  if v_item_kind is null then\r\n    raise exception 'catalog item % not found for stock count', p_item_id;\r\n  end if;\r\n\r\n  if v_item_kind <> 'ingredient' and v_has_recipe then\r\n    raise exception 'stock counts are restricted to ingredient items or non-recipe items';\r\n  end if;\r\n\r\n  if v_period.status <> 'open' then\r\n    raise exception 'stock period is not open';\r\n  end if;\r\n\r\n  select exists (\r\n    select 1 from public.warehouse_stock_counts wsc\r\n    where wsc.period_id = p_period_id\r\n      and wsc.item_id = p_item_id\r\n      and public.normalize_variant_key(wsc.variant_key) = v_variant\r\n      and wsc.kind = 'opening'\r\n  ) into v_has_opening;\r\n\r\n  if v_kind not in ('opening', 'closing') then\r\n    v_kind := 'auto';\r\n  end if;\r\n\r\n  if v_kind = 'closing' and not v_has_opening then\r\n    v_kind := 'opening';\r\n  end if;\r\n\r\n  if v_kind = 'auto' then\r\n    v_kind := case when v_has_opening then 'closing' else 'opening' end;\r\n  end if;\r\n\r\n  if v_kind = 'opening' then\r\n    insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n    values (p_period_id, p_item_id, v_variant, p_qty, 'opening', auth.uid(), coalesce(p_context, '{}'))\r\n    on conflict (period_id, item_id, variant_key, kind)\r\n    do update set\r\n      counted_qty = excluded.counted_qty,\r\n      counted_by = excluded.counted_by,\r\n      counted_at = now(),\r\n      context = excluded.context\r\n    returning * into v_row;\r\n\r\n    insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n    select\r\n      ow.outlet_id,\r\n      p_item_id,\r\n      v_variant,\r\n      p_qty + coalesce(osb.consumed_units, 0),\r\n      coalesce(osb.consumed_units, 0)\r\n    from public.outlet_warehouses ow\r\n    left join public.outlet_stock_balances osb\r\n      on osb.outlet_id = ow.outlet_id\r\n     and osb.item_id = p_item_id\r\n     and osb.variant_key = v_variant\r\n    where ow.warehouse_id = v_period.warehouse_id\r\n      and coalesce(ow.show_in_stocktake, true)\r\n    on conflict (outlet_id, item_id, variant_key)\r\n    do update set\r\n      sent_units = excluded.sent_units,\r\n      updated_at = now();\r\n\r\n    return v_row;\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_counts(period_id, item_id, variant_key, counted_qty, kind, counted_by, context)\r\n  values (p_period_id, p_item_id, v_variant, p_qty, v_kind, auth.uid(), coalesce(p_context, '{}'))\r\n  on conflict (period_id, item_id, variant_key, kind)\r\n  do update set\r\n    counted_qty = excluded.counted_qty,\r\n    counted_by = excluded.counted_by,\r\n    counted_at = now(),\r\n    context = excluded.context\r\n  returning * into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
           "function_name": "record_stock_count",
           "function_schema": "public"
         },
@@ -7796,6 +7947,12 @@
           "arguments": "p_warehouse_id uuid",
           "definition": "CREATE OR REPLACE FUNCTION public.require_open_stock_period_for_outlet_warehouse(p_warehouse_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if p_warehouse_id is null then\r\n    return;\r\n  end if;\r\n\r\n  -- Allow transfers without an open stock period for specific home warehouses.\r\n  if p_warehouse_id = any (array[\r\n    '21e1b353-9f6a-4cea-8998-128f4328b79d'::uuid,\r\n    '251a87ae-3ff6-4d26-918a-0f7c1fc45d4d'::uuid,\r\n    '29f617c5-9c76-4131-aebf-4be4544924db'::uuid,\r\n    '38bfcdb0-fec1-4b91-be05-d8990bf357a8'::uuid,\r\n    '4631b410-fc81-4f16-a74c-7e4de3c1f576'::uuid,\r\n    '732d83ba-48f6-481a-bedf-291b5f158552'::uuid,\r\n    'ac0bb46a-879b-4166-a10e-b31b688ee7c7'::uuid,\r\n    'd4252cfd-03c0-4187-9267-18ec79a00814'::uuid\r\n  ]) then\r\n    return;\r\n  end if;\r\n\r\n  if exists (\r\n    select 1\r\n    from public.outlet_warehouses ow\r\n    where ow.warehouse_id = p_warehouse_id\r\n  ) or exists (\r\n    select 1\r\n    from public.outlets o\r\n    where o.default_sales_warehouse_id = p_warehouse_id\r\n       or o.default_receiving_warehouse_id = p_warehouse_id\r\n  ) then\r\n    if not exists (\r\n      select 1\r\n      from public.warehouse_stock_periods wsp\r\n      where wsp.warehouse_id = p_warehouse_id\r\n        and wsp.status = 'open'\r\n    ) then\r\n      raise exception 'open stock period required for warehouse %', p_warehouse_id;\r\n    end if;\r\n  end if;\r\nend;\r\n$function$\n",
           "function_name": "require_open_stock_period_for_outlet_warehouse",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_item_sku text, p_variant_sku text DEFAULT NULL::text",
+          "definition": "CREATE OR REPLACE FUNCTION public.resolve_catalog_by_sku(p_item_sku text, p_variant_sku text DEFAULT NULL::text)\n RETURNS TABLE(catalog_item_id uuid, catalog_item_name text, catalog_item_sku text, variant_key text, variant_name text, variant_sku text)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_item_sku text := nullif(trim(p_item_sku), '');\r\n  v_variant_sku text := nullif(trim(p_variant_sku), '');\r\n  v_item_id uuid;\r\nBEGIN\r\n  IF v_item_sku IS NULL THEN\r\n    RETURN;\r\n  END IF;\r\n\r\n  -- Match by SKU (case-insensitive) or by catalog item UUID in Code field\r\n  SELECT ci.id INTO v_item_id\r\n  FROM public.catalog_items ci\r\n  WHERE lower(ci.sku) = lower(v_item_sku)\r\n     OR ci.id::text = v_item_sku\r\n  LIMIT 1;\r\n\r\n  IF v_item_id IS NULL THEN\r\n    RETURN;\r\n  END IF;\r\n\r\n  IF v_variant_sku IS NOT NULL THEN\r\n    RETURN QUERY\r\n    SELECT\r\n      ci.id,\r\n      ci.name,\r\n      ci.sku,\r\n      public.normalize_variant_key(cv.id),\r\n      cv.name,\r\n      cv.sku\r\n    FROM public.catalog_items ci\r\n    JOIN public.catalog_variants cv ON cv.item_id = ci.id\r\n    WHERE ci.id = v_item_id\r\n      AND (lower(cv.sku) = lower(v_variant_sku) OR cv.id = v_variant_sku)\r\n      AND COALESCE(cv.active, true)\r\n    LIMIT 1;\r\n    RETURN;\r\n  END IF;\r\n\r\n  RETURN QUERY\r\n  SELECT ci.id, ci.name, ci.sku, 'base'::text, NULL::text, NULL::text\r\n  FROM public.catalog_items ci\r\n  WHERE ci.id = v_item_id\r\n  LIMIT 1;\r\nEND;\r\n$function$\n",
+          "function_name": "resolve_catalog_by_sku",
           "function_schema": "public"
         },
         {
@@ -7872,7 +8029,7 @@
         },
         {
           "arguments": "p_warehouse_id uuid, p_note text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.start_stock_period(p_warehouse_id uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stock_periods\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_row public.warehouse_stock_periods%rowtype;\r\n  v_prev public.warehouse_stock_periods%rowtype;\r\n  v_opening_snapshot jsonb := '[]'::jsonb;\r\nbegin\r\n  if not public.is_stocktake_user(auth.uid()) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required';\r\n  end if;\r\n\r\n  if not exists (\r\n    select 1\r\n    from public.warehouses w\r\n    where w.id = p_warehouse_id\r\n      and coalesce(w.active, true)\r\n  ) then\r\n    raise exception 'warehouse not found or inactive';\r\n  end if;\r\n\r\n  if exists (\r\n    select 1\r\n    from public.warehouse_stock_periods wsp\r\n    where wsp.warehouse_id = p_warehouse_id\r\n      and wsp.status = 'open'\r\n  ) then\r\n    raise exception 'open stock period already exists for this warehouse';\r\n  end if;\r\n\r\n  select * into v_prev\r\n  from public.warehouse_stock_periods wsp\r\n  where wsp.warehouse_id = p_warehouse_id\r\n    and wsp.status = 'closed'\r\n  order by wsp.closed_at desc nulls last, wsp.opened_at desc nulls last\r\n  limit 1;\r\n\r\n  if v_prev.id is not null then\r\n    v_opening_snapshot := coalesce(\r\n      v_prev.closing_snapshot,\r\n      (\r\n        select coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)\r\n        from (\r\n          select wsc.item_id, wsc.variant_key, wsc.counted_qty as closing_qty\r\n          from public.warehouse_stock_counts wsc\r\n          where wsc.period_id = v_prev.id\r\n            and wsc.kind = 'closing'\r\n          order by wsc.item_id, wsc.variant_key\r\n        ) t\r\n      )\r\n    );\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_periods(\r\n    warehouse_id, outlet_id, status, opened_by, note, opening_snapshot, stocktake_number\r\n  )\r\n  values (\r\n    p_warehouse_id,\r\n    null,\r\n    'open',\r\n    auth.uid(),\r\n    p_note,\r\n    v_opening_snapshot,\r\n    public.next_stocktake_number()\r\n  )\r\n  returning * into v_row;\r\n\r\n  if coalesce(jsonb_array_length(v_row.opening_snapshot), 0) > 0 then\r\n    insert into public.warehouse_stock_counts(\r\n      period_id, item_id, variant_key, counted_qty, kind, counted_by, context\r\n    )\r\n    select v_row.id, s.item_id, s.variant_key, s.closing_qty, 'opening', auth.uid(),\r\n           jsonb_build_object('snapshot', true, 'seeded_from', 'previous_closing')\r\n    from jsonb_to_recordset(coalesce(v_row.opening_snapshot, '[]'::jsonb))\r\n      as s(item_id uuid, variant_key text, closing_qty numeric);\r\n  end if;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.start_stock_period(p_warehouse_id uuid, p_note text DEFAULT NULL::text)\n RETURNS warehouse_stock_periods\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_row public.warehouse_stock_periods%rowtype;\r\n  v_prev public.warehouse_stock_periods%rowtype;\r\n  v_opening_snapshot jsonb := '[]'::jsonb;\r\nbegin\r\n  if not public.can_operate_outlet_warehouse_stocktake(auth.uid(), p_warehouse_id) then\r\n    raise exception 'not authorized';\r\n  end if;\r\n\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse required';\r\n  end if;\r\n\r\n  if not exists (\r\n    select 1\r\n    from public.warehouses w\r\n    where w.id = p_warehouse_id\r\n      and coalesce(w.active, true)\r\n  ) then\r\n    raise exception 'warehouse not found or inactive';\r\n  end if;\r\n\r\n  if exists (\r\n    select 1\r\n    from public.warehouse_stock_periods wsp\r\n    where wsp.warehouse_id = p_warehouse_id\r\n      and wsp.status = 'open'\r\n  ) then\r\n    raise exception 'open stock period already exists for this warehouse';\r\n  end if;\r\n\r\n  select * into v_prev\r\n  from public.warehouse_stock_periods wsp\r\n  where wsp.warehouse_id = p_warehouse_id\r\n    and wsp.status = 'closed'\r\n  order by wsp.closed_at desc nulls last, wsp.opened_at desc nulls last\r\n  limit 1;\r\n\r\n  if v_prev.id is not null then\r\n    v_opening_snapshot := coalesce(\r\n      v_prev.closing_snapshot,\r\n      (\r\n        select coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)\r\n        from (\r\n          select wsc.item_id, wsc.variant_key, wsc.counted_qty as closing_qty\r\n          from public.warehouse_stock_counts wsc\r\n          where wsc.period_id = v_prev.id\r\n            and wsc.kind = 'closing'\r\n          order by wsc.item_id, wsc.variant_key\r\n        ) t\r\n      )\r\n    );\r\n  end if;\r\n\r\n  insert into public.warehouse_stock_periods(\r\n    warehouse_id, outlet_id, status, opened_by, note, opening_snapshot, stocktake_number\r\n  )\r\n  values (\r\n    p_warehouse_id,\r\n    null,\r\n    'open',\r\n    auth.uid(),\r\n    p_note,\r\n    v_opening_snapshot,\r\n    public.next_stocktake_number()\r\n  )\r\n  returning * into v_row;\r\n\r\n  if coalesce(jsonb_array_length(v_row.opening_snapshot), 0) > 0 then\r\n    insert into public.warehouse_stock_counts(\r\n      period_id, item_id, variant_key, counted_qty, kind, counted_by, context\r\n    )\r\n    select v_row.id, s.item_id, s.variant_key, s.closing_qty, 'opening', auth.uid(),\r\n           jsonb_build_object('snapshot', true, 'seeded_from', 'previous_closing')\r\n    from jsonb_to_recordset(coalesce(v_row.opening_snapshot, '[]'::jsonb))\r\n      as s(item_id uuid, variant_key text, closing_qty numeric);\r\n  end if;\r\n\r\n  perform public.set_pos_sync_opening_for_warehouse(v_row.warehouse_id, v_row.opened_at);\r\n\r\n  return v_row;\r\nend;\r\n$function$\n",
           "function_name": "start_stock_period",
           "function_schema": "public"
         },
@@ -7902,8 +8059,14 @@
         },
         {
           "arguments": "p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text",
-          "definition": "CREATE OR REPLACE FUNCTION public.supervisor_approve_order(p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  -- existing approval/lock/allocation (also performs allocation/transfer)\r\n  perform public.approve_lock_and_allocate_order(p_order_id, true);\r\n\r\n  -- preserve any signature/pdf updates you already store\r\n  update public.orders\r\n     set modified_by_supervisor = true,\r\n         modified_by_supervisor_name = coalesce(nullif(p_supervisor_name, ''), modified_by_supervisor_name),\r\n         pdf_path = coalesce(nullif(p_pdf_path, ''), pdf_path),\r\n         updated_at = now()\r\n   where id = p_order_id;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.supervisor_approve_order(p_order_id uuid, p_supervisor_name text DEFAULT NULL::text, p_signature_path text DEFAULT NULL::text, p_pdf_path text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  PERFORM public.accept_order(p_order_id, p_supervisor_name, p_signature_path, p_pdf_path);\r\nEND;\r\n$function$\n",
           "function_name": "supervisor_approve_order",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_order_item_id uuid, p_new_variant_key text, p_new_name text DEFAULT NULL::text, p_receiving_uom text DEFAULT NULL::text, p_consumption_uom text DEFAULT NULL::text, p_cost numeric DEFAULT NULL::numeric",
+          "definition": "CREATE OR REPLACE FUNCTION public.supervisor_merge_order_item_variant(p_order_item_id uuid, p_new_variant_key text, p_new_name text DEFAULT NULL::text, p_receiving_uom text DEFAULT NULL::text, p_consumption_uom text DEFAULT NULL::text, p_cost numeric DEFAULT NULL::numeric)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_uid uuid := auth.uid();\r\n  v_src public.order_items%rowtype;\r\n  v_order public.orders%rowtype;\r\n  v_new_key text;\r\n  v_target_id uuid;\r\n  v_target_qty numeric;\r\n  v_merged_qty numeric;\r\nBEGIN\r\n  IF NOT (public.is_admin(v_uid) OR public.is_supervisor(v_uid)) THEN\r\n    RAISE EXCEPTION 'not authorized';\r\n  END IF;\r\n\r\n  SELECT * INTO v_src FROM public.order_items WHERE id = p_order_item_id FOR UPDATE;\r\n  IF NOT FOUND THEN\r\n    RAISE EXCEPTION 'order item not found';\r\n  END IF;\r\n\r\n  SELECT * INTO v_order FROM public.orders WHERE id = v_src.order_id FOR UPDATE;\r\n  IF lower(COALESCE(v_order.status, '')) <> 'placed' THEN\r\n    RAISE EXCEPTION 'order must be placed to merge variants';\r\n  END IF;\r\n\r\n  v_new_key := public.normalize_variant_key(COALESCE(p_new_variant_key, 'base'));\r\n\r\n  SELECT oi.id, oi.qty\r\n    INTO v_target_id, v_target_qty\r\n  FROM public.order_items oi\r\n  WHERE oi.order_id = v_src.order_id\r\n    AND oi.product_id = v_src.product_id\r\n    AND public.normalize_variant_key(oi.variation_key) = v_new_key\r\n    AND oi.id <> v_src.id\r\n  LIMIT 1;\r\n\r\n  IF v_target_id IS NOT NULL THEN\r\n    v_merged_qty := COALESCE(v_target_qty, 0) + COALESCE(v_src.qty, 0);\r\n    UPDATE public.order_items\r\n    SET qty = v_merged_qty,\r\n        amount = COALESCE(cost, 0) * v_merged_qty\r\n    WHERE id = v_target_id;\r\n\r\n    PERFORM set_config('order_items.supervisor_merge', 'on', true);\r\n    DELETE FROM public.order_items WHERE id = v_src.id;\r\n    PERFORM set_config('order_items.supervisor_merge', 'off', true);\r\n  ELSE\r\n    UPDATE public.order_items\r\n    SET variation_key = v_new_key,\r\n        name = COALESCE(NULLIF(p_new_name, ''), name),\r\n        receiving_uom = COALESCE(NULLIF(p_receiving_uom, ''), receiving_uom),\r\n        consumption_uom = COALESCE(NULLIF(p_consumption_uom, ''), consumption_uom),\r\n        cost = COALESCE(p_cost, cost),\r\n        amount = COALESCE(COALESCE(p_cost, cost), 0) * COALESCE(qty, 0)\r\n    WHERE id = v_src.id;\r\n  END IF;\r\nEND;\r\n$function$\n",
+          "function_name": "supervisor_merge_order_item_variant",
           "function_schema": "public"
         },
         {
@@ -7932,7 +8095,7 @@
         },
         {
           "arguments": "payload jsonb",
-          "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_order(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_outlet   uuid := (payload->>'outlet_id')::uuid;\r\n  v_source   text := payload->>'source_event_id';\r\n  v_order_id uuid;\r\n  v_now      timestamptz := now();\r\n  v_item     jsonb;\r\n  v_map      record;\r\n  v_qty      numeric;\r\n  v_qty_text text;\r\n  v_branch   integer := nullif(payload->>'branch_id','')::integer;\r\n  v_sale     public.outlet_sales%rowtype;\r\nBEGIN\r\n  IF v_outlet IS NULL OR v_source IS NULL THEN\r\n    RAISE EXCEPTION 'outlet_id and source_event_id are required';\r\n  END IF;\r\n\r\n  SELECT id INTO v_order_id FROM public.orders WHERE source_event_id = v_source;\r\n  IF FOUND THEN RETURN; END IF;\r\n\r\n  INSERT INTO public.orders(\r\n    outlet_id, source_event_id, pos_sale_id, status, locked, branch_id, pos_branch_id,\r\n    order_type, bill_type, total_discount, total_discount_amount, total_gst,\r\n    service_charges, delivery_charges, tip, pos_fee, price_type,\r\n    customer_name, customer_phone, customer_email, payments, raw_payload, created_at, updated_at\r\n  ) VALUES (\r\n    v_outlet, v_source, nullif(payload->>'sale_id',''), 'placed', false, v_branch, v_branch,\r\n    payload->>'order_type', payload->>'bill_type',\r\n    (payload->>'total_discount')::numeric, (payload->>'total_discount_amount')::numeric,\r\n    (payload->>'total_gst')::numeric, (payload->>'service_charges')::numeric,\r\n    (payload->>'delivery_charges')::numeric, (payload->>'tip')::numeric,\r\n    (payload->>'pos_fee')::numeric, payload->>'price_type',\r\n    payload#>>'{customer,name}', payload#>>'{customer,phone}', payload#>>'{customer,email}',\r\n    payload->'payments', payload, v_now, v_now\r\n  ) RETURNING id INTO v_order_id;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) LOOP\r\n    SELECT catalog_item_id, catalog_variant_key, warehouse_id\r\n      INTO v_map\r\n    FROM public.pos_item_map\r\n    WHERE outlet_id = v_outlet\r\n      AND pos_item_id = v_item->>'pos_item_id'\r\n      AND (pos_flavour_id IS NULL OR pos_flavour_id = nullif(v_item->>'flavour_id',''))\r\n    ORDER BY CASE WHEN pos_flavour_id IS NULL THEN 1 ELSE 0 END\r\n    LIMIT 1;\r\n\r\n    IF NOT FOUND THEN\r\n      CONTINUE; -- skip unmapped items\r\n    END IF;\r\n\r\n    v_qty_text := nullif(v_item->>'quantity','');\r\n    IF v_qty_text IS NULL OR v_qty_text !~* '^[0-9]+(\\.[0-9]+)?$' THEN\r\n      CONTINUE; -- skip bad quantity\r\n    END IF;\r\n\r\n    v_qty := v_qty_text::numeric;\r\n    IF v_qty IS NULL OR v_qty <= 0 THEN\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    BEGIN\r\n      SELECT * INTO v_sale FROM public.record_outlet_sale(\r\n        v_outlet,\r\n        v_map.catalog_item_id,\r\n        v_qty,\r\n        v_map.catalog_variant_key,\r\n        false,\r\n        v_map.warehouse_id,\r\n        (payload->>'occurred_at')::timestamptz,\r\n        nullif(v_item->>'sale_price','')::numeric,\r\n        nullif(v_item->>'vat_exc_price','')::numeric,\r\n        coalesce(nullif(v_item->>'flavour_price','')::numeric, nullif(v_item->>'vat_exc_price','')::numeric),\r\n        nullif(v_item->>'flavour_id',''),\r\n        jsonb_build_object(\r\n          'pos_item_id', v_item->>'pos_item_id',\r\n          'source_event_id', v_source,\r\n          'order_id', v_order_id,\r\n          'sale_price', nullif(v_item->>'sale_price','')::numeric,\r\n          'vat_exc_price', nullif(v_item->>'vat_exc_price','')::numeric,\r\n          'flavour_id', nullif(v_item->>'flavour_id',''),\r\n          'flavour_price', coalesce(nullif(v_item->>'flavour_price','')::numeric, nullif(v_item->>'vat_exc_price','')::numeric),\r\n          'modifier_id', nullif(v_item->>'modifier_id','')\r\n        )\r\n      );\r\n\r\n      IF v_sale.id IS NOT NULL THEN\r\n        UPDATE public.outlet_sales\r\n        SET modifier_id = nullif(v_item->>'modifier_id','')\r\n        WHERE id = v_sale.id;\r\n      END IF;\r\n    EXCEPTION WHEN OTHERS THEN\r\n      CONTINUE; -- do not block other mapped items\r\n    END;\r\n  END LOOP;\r\n\r\n  INSERT INTO public.pos_inventory_consumed(\r\n    source_event_id, outlet_id, order_id, raw_item_id, quantity_consumed, remaining_quantity,\r\n    occurred_at, pos_date, kdsid, typec, context, unassigned_branch_note\r\n  )\r\n  SELECT\r\n    v_source || '-ic-' || coalesce(nullif(ic->>'pos_id',''), md5(ic::text)),\r\n    v_outlet,\r\n    v_order_id,\r\n    ic->>'raw_item_id',\r\n    (ic->>'quantity_consumed')::numeric,\r\n    nullif(ic->>'remaining_quantity','')::numeric,\r\n    coalesce((ic->>'occurred_at')::timestamptz, (ic->>'pos_date')::timestamptz, v_now),\r\n    coalesce((ic->>'pos_date')::date, v_now::date),\r\n    ic->>'kdsid',\r\n    ic->>'typec',\r\n    ic,\r\n    CASE\r\n      WHEN ic ? 'branch_missing_note' THEN ic->>'branch_missing_note'\r\n      WHEN coalesce(nullif(ic->>'branch_id',''),'') = '' THEN 'Branch missing on POS inventory row'\r\n      ELSE NULL\r\n    END\r\n  FROM jsonb_array_elements(coalesce(payload->'inventory_consumed','[]'::jsonb)) ic\r\n  ON CONFLICT (source_event_id) DO NOTHING;\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_order(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_outlet uuid := (payload->>'outlet_id')::uuid;\r\n  v_source text := payload->>'source_event_id';\r\n  v_order_id uuid;\r\n  v_item jsonb;\r\n  v_resolved record;\r\n  v_qty numeric;\r\n  v_qty_text text;\r\n  v_branch integer := nullif(payload->>'branch_id', '')::integer;\r\n  v_outlet_name text;\r\n  v_item_sku text;\r\n  v_variant_sku text;\r\n  v_ctx jsonb;\r\n  v_sold_at timestamptz;\r\nBEGIN\r\n  IF v_outlet IS NULL OR v_source IS NULL THEN\r\n    RAISE EXCEPTION 'outlet_id and source_event_id are required';\r\n  END IF;\r\n\r\n  SELECT id INTO v_order_id FROM public.orders WHERE source_event_id = v_source;\r\n  IF FOUND THEN RETURN; END IF;\r\n\r\n  v_sold_at := COALESCE(nullif(payload->>'occurred_at','')::timestamptz, now());\r\n  SELECT name INTO v_outlet_name FROM public.outlets WHERE id = v_outlet;\r\n\r\n  INSERT INTO public.orders(\r\n    outlet_id, source_event_id, pos_sale_id, status, locked, branch_id, pos_branch_id,\r\n    order_type, bill_type, total_discount, total_discount_amount, total_gst,\r\n    service_charges, delivery_charges, tip, pos_fee, price_type,\r\n    customer_name, customer_phone, customer_email, raw_payload\r\n  )\r\n  VALUES (\r\n    v_outlet, v_source, nullif(payload->>'sale_id',''),\r\n    'synced', true, v_branch, v_branch,\r\n    payload->>'order_type', payload->>'bill_type',\r\n    nullif(payload->>'total_discount','')::numeric,\r\n    nullif(payload->>'total_discount_amount','')::numeric,\r\n    nullif(payload->>'total_gst','')::numeric,\r\n    nullif(payload->>'service_charges','')::numeric,\r\n    nullif(payload->>'delivery_charges','')::numeric,\r\n    nullif(payload->>'tip','')::numeric,\r\n    nullif(payload->>'pos_fee','')::numeric,\r\n    payload->>'price_type',\r\n    payload->'customer'->>'name',\r\n    payload->'customer'->>'phone',\r\n    payload->'customer'->>'email',\r\n    payload\r\n  )\r\n  RETURNING id INTO v_order_id;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(payload->'items', '[]'::jsonb))\r\n  LOOP\r\n    v_item_sku := nullif(trim(COALESCE(v_item->>'item_sku', v_item->>'catalog_item_sku', '')), '');\r\n    v_variant_sku := nullif(trim(COALESCE(v_item->>'variant_sku', v_item->>'flavour_sku', '')), '');\r\n    IF v_item_sku IS NULL THEN CONTINUE; END IF;\r\n\r\n    SELECT * INTO v_resolved FROM public.resolve_catalog_by_sku(v_item_sku, v_variant_sku) LIMIT 1;\r\n    IF NOT FOUND THEN CONTINUE; END IF;\r\n\r\n    v_qty_text := nullif(v_item->>'quantity', '');\r\n    v_qty := COALESCE(v_qty_text::numeric, 0);\r\n    IF v_qty <= 0 THEN CONTINUE; END IF;\r\n\r\n    v_ctx := jsonb_build_object(\r\n      'outlet_name', v_outlet_name,\r\n      'outlet_id', v_outlet,\r\n      'catalog_item_id', v_resolved.catalog_item_id,\r\n      'catalog_item_name', v_resolved.catalog_item_name,\r\n      'catalog_item_sku', v_resolved.catalog_item_sku,\r\n      'variant_key', v_resolved.variant_key,\r\n      'variant_name', v_resolved.variant_name,\r\n      'variant_sku', v_resolved.variant_sku,\r\n      'pos_item_id', v_item->>'pos_item_id',\r\n      'source_event_id', v_source,\r\n      'order_id', v_order_id\r\n    );\r\n\r\n    INSERT INTO public.outlet_sales(\r\n      outlet_id, item_id, qty_units, variant_key, sold_at, sale_price,\r\n      vat_exc_price, flavour_price, flavour_id, context\r\n    )\r\n    VALUES (\r\n      v_outlet, v_resolved.catalog_item_id, v_qty, v_resolved.variant_key, v_sold_at,\r\n      nullif(v_item->>'sale_price','')::numeric,\r\n      nullif(v_item->>'vat_exc_price','')::numeric,\r\n      nullif(v_item->>'flavour_price','')::numeric,\r\n      v_item->>'flavour_id',\r\n      v_ctx\r\n    );\r\n\r\n    PERFORM public.apply_pos_sale_deduction_rules(\r\n      p_outlet_id := v_outlet,\r\n      p_sold_item_id := v_resolved.catalog_item_id,\r\n      p_sold_variant_key := v_resolved.variant_key,\r\n      p_sale_qty := v_qty,\r\n      p_sold_at := v_sold_at,\r\n      p_context := v_ctx\r\n    );\r\n  END LOOP;\r\nEND;\r\n$function$\n",
           "function_name": "sync_pos_order",
           "function_schema": "public"
         },
@@ -7967,6 +8130,18 @@
           "function_schema": "public"
         },
         {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.trg_set_stock_period_outlet_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n  IF NEW.outlet_id IS NULL THEN\r\n    SELECT ow.outlet_id INTO NEW.outlet_id\r\n    FROM public.outlet_warehouses ow\r\n    WHERE ow.warehouse_id = NEW.warehouse_id\r\n    ORDER BY ow.outlet_id\r\n    LIMIT 1;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+          "function_name": "trg_set_stock_period_outlet_id",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "payload jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.upsert_outlet_heartbeat(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_outlet uuid := nullif(payload->>'outlet_id', '')::uuid;\r\nBEGIN\r\n  IF v_outlet IS NULL THEN\r\n    RAISE EXCEPTION 'outlet_id is required';\r\n  END IF;\r\n\r\n  INSERT INTO public.outlet_pos_heartbeats(outlet_id, last_seen_at, middleware_version, host_name, updated_at)\r\n  VALUES (\r\n    v_outlet,\r\n    now(),\r\n    nullif(payload->>'middleware_version', ''),\r\n    nullif(payload->>'host_name', ''),\r\n    now()\r\n  )\r\n  ON CONFLICT (outlet_id) DO UPDATE SET\r\n    last_seen_at = EXCLUDED.last_seen_at,\r\n    middleware_version = COALESCE(EXCLUDED.middleware_version, public.outlet_pos_heartbeats.middleware_version),\r\n    host_name = COALESCE(EXCLUDED.host_name, public.outlet_pos_heartbeats.host_name),\r\n    updated_at = now();\r\nEND;\r\n$function$\n",
+          "function_name": "upsert_outlet_heartbeat",
+          "function_schema": "public"
+        },
+        {
           "arguments": "p_item_id uuid, p_variant_key text, p_source_uom text, p_target_uom text",
           "definition": "CREATE OR REPLACE FUNCTION public.upsert_recipe_uom_profile(p_item_id uuid, p_variant_key text, p_source_uom text, p_target_uom text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_id uuid;\r\nbegin\r\n  insert into public.recipe_uom_profiles (item_id, variant_key, source_uom, target_uom, active)\r\n  values (p_item_id, coalesce(p_variant_key, 'base'), p_source_uom, p_target_uom, true)\r\n  on conflict (item_id, variant_key, active)\r\n  do update set\r\n    source_uom = excluded.source_uom,\r\n    target_uom = excluded.target_uom,\r\n    updated_at = now()\r\n  returning id into v_id;\r\n\r\n  return v_id;\r\nend;\r\n$function$\n",
           "function_name": "upsert_recipe_uom_profile",
@@ -7974,7 +8149,7 @@
         },
         {
           "arguments": "payload jsonb",
-          "definition": "CREATE OR REPLACE FUNCTION public.validate_pos_order(payload jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_outlet uuid;\r\n  v_outlet_text text := nullif(payload->>'outlet_id','');\r\n  v_source text := nullif(payload->>'source_event_id','');\r\n  v_item jsonb;\r\n  v_map record;\r\n  v_qty numeric;\r\n  v_qty_text text;\r\n  v_errors jsonb := '[]'::jsonb;\r\n  v_variant_key text;\r\n  v_route record;\r\n  v_deduct_outlet uuid;\r\n  v_default_wh uuid;\r\n  v_deduct_wh uuid;\r\n  v_requires_open boolean;\r\n  v_has_open boolean;\r\n  v_fatal boolean := false;\r\n  v_has_mapped boolean := false;\r\nBEGIN\r\n  IF v_outlet_text IS NULL THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','missing_outlet','message','outlet_id is required'));\r\n    v_fatal := true;\r\n  ELSIF v_outlet_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','invalid_outlet','message','outlet_id is invalid','outlet_id', v_outlet_text));\r\n    v_fatal := true;\r\n  ELSE\r\n    v_outlet := v_outlet_text::uuid;\r\n  END IF;\r\n\r\n  IF v_source IS NULL THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','missing_source','message','source_event_id is required'));\r\n    v_fatal := true;\r\n  END IF;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(coalesce(payload->'items','[]'::jsonb)) LOOP\r\n    v_qty_text := nullif(v_item->>'quantity','');\r\n    IF v_qty_text IS NULL OR v_qty_text !~* '^[0-9]+(\\.[0-9]+)?$' THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code','bad_quantity',\r\n        'message','quantity must be numeric > 0',\r\n        'pos_item_id', v_item->>'pos_item_id',\r\n        'flavour_id', v_item->>'flavour_id'\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    v_qty := v_qty_text::numeric;\r\n    IF v_qty <= 0 THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code','bad_quantity',\r\n        'message','quantity must be > 0',\r\n        'pos_item_id', v_item->>'pos_item_id',\r\n        'flavour_id', v_item->>'flavour_id'\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    IF v_outlet IS NULL THEN\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    SELECT catalog_item_id, catalog_variant_key, warehouse_id\r\n      INTO v_map\r\n    FROM public.pos_item_map\r\n    WHERE outlet_id = v_outlet\r\n      AND pos_item_id = v_item->>'pos_item_id'\r\n      AND (pos_flavour_id IS NULL OR pos_flavour_id = nullif(v_item->>'flavour_id',''))\r\n    ORDER BY CASE WHEN pos_flavour_id IS NULL THEN 1 ELSE 0 END\r\n    LIMIT 1;\r\n\r\n    IF NOT FOUND THEN\r\n      CONTINUE; -- non-fatal\r\n    END IF;\r\n\r\n    v_has_mapped := true;\r\n\r\n    v_variant_key := public.normalize_variant_key(v_map.catalog_variant_key);\r\n\r\n    SELECT warehouse_id, target_outlet_id, coalesce(deduct_enabled, true) AS deduct_enabled\r\n      INTO v_route\r\n    FROM public.outlet_item_routes\r\n    WHERE outlet_id = v_outlet\r\n      AND item_id = v_map.catalog_item_id\r\n      AND normalized_variant_key IN (v_variant_key, 'base')\r\n    ORDER BY (normalized_variant_key = v_variant_key) DESC\r\n    LIMIT 1;\r\n\r\n    v_deduct_outlet := coalesce(v_route.target_outlet_id, v_outlet);\r\n\r\n    SELECT w.id\r\n      INTO v_default_wh\r\n    FROM public.outlets o\r\n    JOIN public.warehouses w ON w.outlet_id = o.id\r\n    WHERE o.id = v_deduct_outlet\r\n      AND coalesce(w.active, true)\r\n    ORDER BY coalesce(w.name, ''), w.id\r\n    LIMIT 1;\r\n\r\n    v_deduct_wh := coalesce(v_map.warehouse_id, v_route.warehouse_id, v_default_wh);\r\n\r\n    IF v_deduct_wh IS NULL THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code','missing_warehouse',\r\n        'message','no warehouse mapping for item/variant',\r\n        'pos_item_id', v_item->>'pos_item_id',\r\n        'catalog_item_id', v_map.catalog_item_id::text,\r\n        'variant_key', v_variant_key\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    SELECT EXISTS (\r\n      SELECT 1 FROM public.outlet_warehouses ow WHERE ow.warehouse_id = v_deduct_wh\r\n    ) INTO v_requires_open;\r\n\r\n    IF v_requires_open THEN\r\n      SELECT EXISTS (\r\n        SELECT 1 FROM public.warehouse_stock_periods wsp\r\n        WHERE wsp.warehouse_id = v_deduct_wh\r\n          AND wsp.status = 'open'\r\n      ) INTO v_has_open;\r\n\r\n      IF NOT v_has_open THEN\r\n        v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n          'code','missing_open_stock_period',\r\n          'message','open stock period required for warehouse',\r\n          'warehouse_id', v_deduct_wh::text,\r\n          'pos_item_id', v_item->>'pos_item_id'\r\n        ));\r\n      END IF;\r\n    END IF;\r\n  END LOOP;\r\n\r\n  IF NOT v_has_mapped THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n      'code','no_mappable_items',\r\n      'message','no items had a valid pos_item_map'\r\n    ));\r\n    v_fatal := true;\r\n  END IF;\r\n\r\n  RETURN jsonb_build_object(\r\n    'ok', NOT v_fatal,\r\n    'errors', v_errors\r\n  );\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.validate_pos_order(payload jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_outlet uuid := nullif(payload->>'outlet_id', '')::uuid;\r\n  v_source text := nullif(payload->>'source_event_id', '');\r\n  v_item jsonb;\r\n  v_resolved record;\r\n  v_qty numeric;\r\n  v_qty_text text;\r\n  v_errors jsonb := '[]'::jsonb;\r\n  v_has_mapped boolean := false;\r\n  v_item_sku text;\r\n  v_variant_sku text;\r\n  v_sold_at timestamptz;\r\n  v_has_middleware boolean := false;\r\nBEGIN\r\n  IF v_outlet IS NULL THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','missing_outlet','message','outlet_id is required'));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  IF v_source IS NULL THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','missing_source','message','source_event_id is required'));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  SELECT COALESCE(o.has_pos_middleware, false)\r\n  INTO v_has_middleware\r\n  FROM public.outlets o\r\n  WHERE o.id = v_outlet;\r\n\r\n  IF NOT v_has_middleware THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n      'code', 'middleware_disabled',\r\n      'message', 'POS middleware is not enabled for this outlet'\r\n    ));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  IF EXISTS (SELECT 1 FROM public.orders WHERE source_event_id = v_source) THEN\r\n    RETURN jsonb_build_object('ok', true, 'errors', '[]'::jsonb, 'duplicate', true);\r\n  END IF;\r\n\r\n  v_sold_at := COALESCE(nullif(payload->>'occurred_at', '')::timestamptz, now());\r\n  IF NOT public.outlet_pos_sale_in_sync_window(v_outlet, v_sold_at) THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n      'code', 'outside_sync_window',\r\n      'message', 'Sale is outside the current POS sync window — open a stocktake period in the Afterten Orders app'\r\n    ));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(payload->'items', '[]'::jsonb))\r\n  LOOP\r\n    v_item_sku := nullif(trim(COALESCE(v_item->>'item_sku', v_item->>'catalog_item_sku', '')), '');\r\n    v_variant_sku := nullif(trim(COALESCE(v_item->>'variant_sku', v_item->>'flavour_sku', '')), '');\r\n\r\n    IF v_item_sku IS NULL THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code', 'missing_item_sku',\r\n        'message', format('Line \"%s\" has no item SKU — set MenuItem.Code to catalog SKU on POS', COALESCE(v_item->>'name', v_item->>'pos_item_id'))\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    SELECT * INTO v_resolved FROM public.resolve_catalog_by_sku(v_item_sku, v_variant_sku) LIMIT 1;\r\n    IF NOT FOUND THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code', 'unknown_sku',\r\n        'message', format('No catalog match for SKU %s%s', v_item_sku, CASE WHEN v_variant_sku IS NOT NULL THEN ' / ' || v_variant_sku ELSE '' END)\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    v_qty_text := nullif(v_item->>'quantity', '');\r\n    v_qty := COALESCE(v_qty_text::numeric, 0);\r\n    IF v_qty <= 0 THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','invalid_qty','message','quantity must be > 0'));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    v_has_mapped := true;\r\n  END LOOP;\r\n\r\n  IF NOT v_has_mapped AND jsonb_array_length(COALESCE(payload->'items', '[]'::jsonb)) > 0 THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','no_mappable_items','message','No line items matched catalog SKUs'));\r\n  END IF;\r\n\r\n  RETURN jsonb_build_object('ok', jsonb_array_length(v_errors) = 0 OR v_has_mapped, 'errors', v_errors);\r\nEND;\r\n$function$\n",
           "function_name": "validate_pos_order",
           "function_schema": "public"
         },
@@ -8489,7 +8664,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -8499,16 +8674,6 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "catalog_variants",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "catalog_variants_item_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "catalog_variants",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -8520,6 +8685,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
           "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_variants",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "catalog_variants_item_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "catalog_variants",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8569,7 +8744,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8579,16 +8754,6 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "counter_values",
-          "column_name": "scope_id",
-          "table_schema": "public",
-          "constraint_name": "counter_values_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "counter_values",
           "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
@@ -8600,6 +8765,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
           "foreign_column_name": "counter_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "counter_values",
+          "column_name": "scope_id",
+          "table_schema": "public",
+          "constraint_name": "counter_values_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "counter_values",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8859,7 +9034,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8869,7 +9044,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -8929,6 +9104,16 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "normalized_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
@@ -8940,16 +9125,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9483,6 +9658,116 @@
           "foreign_table_schema": "public"
         },
         {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_6_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155528_7_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "outlet_catalog_sync_events_entity_type_check",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "outlet_catalog_sync_events",
+          "foreign_column_name": "entity_type",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "outlet_catalog_sync_events_status_check",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "outlet_catalog_sync_events",
+          "foreign_column_name": "status",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_catalog_sync_events_outlet_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "outlets",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_catalog_sync_events",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "outlet_catalog_sync_events_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_catalog_sync_events",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
           "table_name": "outlet_item_routes",
           "column_name": null,
           "table_schema": "public",
@@ -9609,16 +9894,6 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -9629,6 +9904,16 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "normalized_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -9679,7 +9964,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9689,7 +9974,7 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9793,6 +10078,586 @@
           "foreign_table_schema": "public"
         },
         {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_11_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_12_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_6_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_7_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_8_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155586_9_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_deduct_qty_per_sale_check",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_qty_per_sale",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_deduct_item_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "catalog_items",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "outlets",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_sold_item_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "catalog_items",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_warehouse_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "warehouses",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155511_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155511_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155511_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_heartbeats_outlet_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "outlets",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_heartbeats_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_pos_heartbeats",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
           "table_name": "outlet_products",
           "column_name": null,
           "table_schema": "public",
@@ -9859,7 +10724,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9879,7 +10744,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10219,7 +11084,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10229,27 +11094,17 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10260,6 +11115,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10496,6 +11361,26 @@
           "table_name": "outlets",
           "column_name": null,
           "table_schema": "public",
+          "constraint_name": "2200_18562_13_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlets",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_18562_14_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "outlets",
+          "column_name": null,
+          "table_schema": "public",
           "constraint_name": "2200_18562_1_not_null",
           "constraint_type": "CHECK",
           "foreign_table_name": null,
@@ -10579,7 +11464,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "deduct_on_pos_sale",
+          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10589,7 +11474,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_sales_warehouse_id",
+          "foreign_column_name": "deduct_on_pos_sale",
           "foreign_table_schema": "public"
         },
         {
@@ -10979,726 +11864,6 @@
           "constraint_name": "product_supplier_links_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "product_supplier_links",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154604_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154604_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154604_3_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154604_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154604_5_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154604_9_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "production_entries_qty_units_check",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "production_entries",
-          "foreign_column_name": "qty_units",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "production_entries_item_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "catalog_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": "period_id",
-          "table_schema": "public",
-          "constraint_name": "production_entries_period_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "warehouse_stock_periods",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "production_entries_warehouse_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "warehouses",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_entries",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "production_entries_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "production_entries",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_3_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_5_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_6_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_154581_7_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": "finished_item_id",
-          "table_schema": "public",
-          "constraint_name": "production_item_assignments_finished_item_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "catalog_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "production_item_assignments_warehouse_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "warehouses",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "production_item_assignments_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "production_item_assignments",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_3_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_5_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_6_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_7_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155085_8_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_multiplier_check",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "multiplier",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "profile_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_profile_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "profile_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "profile_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "profile_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "step_order",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "step_order",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "profile_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "column_name": "step_order",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_chain_steps_profile_id_step_order_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_chain_steps",
-          "foreign_column_name": "step_order",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_3_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_5_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_6_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_7_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_155066_8_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "catalog_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "active",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "active",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "variant_key",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "active",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "active",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "active",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "column_name": "active",
-          "table_schema": "public",
-          "constraint_name": "recipe_uom_profiles_item_id_variant_key_active_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "recipe_uom_profiles",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_11_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_13_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_5_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_6_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_7_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_8_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_18665_9_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "item_ingredient_recipes_qty_per_unit_check",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "recipes",
-          "foreign_column_name": "qty_per_unit",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "item_ingredient_recipes_yield_qty_units_check",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "recipes",
-          "foreign_column_name": "yield_qty_units",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "recipes_recipe_for_kind_chk",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "recipes",
-          "foreign_column_name": "recipe_for_kind",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": "finished_item_id",
-          "table_schema": "public",
-          "constraint_name": "item_ingredient_recipes_finished_item_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "catalog_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": "ingredient_item_id",
-          "table_schema": "public",
-          "constraint_name": "item_ingredient_recipes_ingredient_item_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "catalog_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": "source_warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "item_ingredient_recipes_source_warehouse_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "warehouses",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "recipes",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "item_ingredient_recipes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "recipes",
           "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
@@ -12529,16 +12694,6 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "user_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
@@ -12554,6 +12709,16 @@
         },
         {
           "table_name": "user_roles",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "user_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
           "column_name": "role_id",
           "table_schema": "public",
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
@@ -12589,7 +12754,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12609,7 +12774,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
         {
@@ -13466,6 +13631,16 @@
           "table_name": "warehouses",
           "column_name": null,
           "table_schema": "public",
+          "constraint_name": "2200_18545_13_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouses",
+          "column_name": null,
+          "table_schema": "public",
           "constraint_name": "2200_18545_1_not_null",
           "constraint_type": "CHECK",
           "foreign_table_name": null,
@@ -13511,6 +13686,16 @@
           "foreign_table_name": null,
           "foreign_column_name": null,
           "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouses",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "warehouses_warehouse_scope_check",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "warehouses",
+          "foreign_column_name": "warehouse_scope",
+          "foreign_table_schema": "public"
         },
         {
           "table_name": "warehouses",
@@ -13667,6 +13852,12 @@
           "constraint_name": "orders_outlet_id_fkey"
         },
         {
+          "table_name": "outlet_catalog_sync_events",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
+          "constraint_name": "outlet_catalog_sync_events_outlet_id_fkey"
+        },
+        {
           "table_name": "outlet_item_routes",
           "table_schema": "public",
           "constraint_def": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
@@ -13707,6 +13898,36 @@
           "table_schema": "public",
           "constraint_def": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
           "constraint_name": "outlet_order_routes_warehouse_id_fkey"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (deduct_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
+          "constraint_name": "outlet_pos_deduction_rules_deduct_item_id_fkey"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_fkey"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (sold_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
+          "constraint_name": "outlet_pos_deduction_rules_sold_item_id_fkey"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
+          "constraint_name": "outlet_pos_deduction_rules_warehouse_id_fkey"
+        },
+        {
+          "table_name": "outlet_pos_heartbeats",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
+          "constraint_name": "outlet_pos_heartbeats_outlet_id_fkey"
         },
         {
           "table_name": "outlet_products",
@@ -13845,66 +14066,6 @@
           "table_schema": "public",
           "constraint_def": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
           "constraint_name": "product_supplier_links_warehouse_id_fkey"
-        },
-        {
-          "table_name": "production_entries",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-          "constraint_name": "production_entries_item_id_fkey"
-        },
-        {
-          "table_name": "production_entries",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (period_id) REFERENCES warehouse_stock_periods(id) ON DELETE SET NULL",
-          "constraint_name": "production_entries_period_id_fkey"
-        },
-        {
-          "table_name": "production_entries",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
-          "constraint_name": "production_entries_warehouse_id_fkey"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (finished_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-          "constraint_name": "production_item_assignments_finished_item_id_fkey"
-        },
-        {
-          "table_name": "production_item_assignments",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE",
-          "constraint_name": "production_item_assignments_warehouse_id_fkey"
-        },
-        {
-          "table_name": "recipe_uom_chain_steps",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (profile_id) REFERENCES recipe_uom_profiles(id) ON DELETE CASCADE",
-          "constraint_name": "recipe_uom_chain_steps_profile_id_fkey"
-        },
-        {
-          "table_name": "recipe_uom_profiles",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-          "constraint_name": "recipe_uom_profiles_item_id_fkey"
-        },
-        {
-          "table_name": "recipes",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (finished_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-          "constraint_name": "item_ingredient_recipes_finished_item_id_fkey"
-        },
-        {
-          "table_name": "recipes",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (ingredient_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-          "constraint_name": "item_ingredient_recipes_ingredient_item_id_fkey"
-        },
-        {
-          "table_name": "recipes",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (source_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
-          "constraint_name": "item_ingredient_recipes_source_warehouse_id_fkey"
         },
         {
           "table_name": "stock_ledger",

@@ -244,8 +244,10 @@ export async function GET(request: Request) {
       const transferQty = transferMap.get(key) ?? 0;
       const damageQty = damageMap.get(key) ?? 0;
       const salesQty = includeSales ? (salesMap.get(key) ?? 0) : 0;
+      // Expected = Opening + transfers (orders in) + damages + sales (ledger-signed)
       const expectedQty = openingQty + transferQty + damageQty + salesQty;
-      const varianceQty = closingQty - expectedQty;
+      // Variance = Expected - Closing (positive = short vs book)
+      const varianceQty = expectedQty - closingQty;
       const itemName = itemMap.get(itemId)?.name ?? itemId;
       const itemKind = itemMap.get(itemId)?.item_kind ?? null;
       const variantKey = normalizeVariantKey(variantKeyRaw);

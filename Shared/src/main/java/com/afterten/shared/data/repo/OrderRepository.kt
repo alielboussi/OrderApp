@@ -66,6 +66,7 @@ class OrderRepository(private val supabase: SupabaseProvider) {
         val path = "/rest/v1/orders" +
             "?select=id,order_number,created_at,status,locked,modified_by_supervisor,modified_by_supervisor_name" +
             "&outlet_id=eq." + outletId +
+            "&source_event_id=is.null" +
             "&order=created_at.desc" +
             "&limit=" + limit
         val text = supabase.getWithJwt(path, jwt)
@@ -74,7 +75,40 @@ class OrderRepository(private val supabase: SupabaseProvider) {
 
     suspend fun listOrdersForSupervisor(jwt: String, limit: Int = 200): List<OrderRow> {
         val select = "id,order_number,created_at,status,locked,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name"
-        val path = "/rest/v1/orders?select=" + encode(select) + "&order=created_at.desc&limit=" + limit
+        val path = "/rest/v1/orders?select=" + encode(select) +
+            "&source_event_id=is.null" +
+            "&order=created_at.desc&limit=" + limit
+        val text = supabase.getWithJwt(path, jwt)
+        return relaxedJson.decodeFromString(ListSerializer(OrderRow.serializer()), text)
+    }
+
+    suspend fun listWarehouseOrdersByStatus(jwt: String, statuses: Collection<String>, limit: Int = 100): List<OrderRow> {
+        if (statuses.isEmpty()) return emptyList()
+        val statusFilter = statuses.joinToString(",") { it.trim().lowercase() }
+        val select = "id,order_number,created_at,status,locked,outlet_id,outlets(name),modified_by_supervisor,modified_by_supervisor_name"
+        val path = "/rest/v1/orders?select=" + encode(select) +
+            "&source_event_id=is.null" +
+            "&status=in.($statusFilter)" +
+            "&order=created_at.desc&limit=" + limit
+        val text = supabase.getWithJwt(path, jwt)
+        return relaxedJson.decodeFromString(ListSerializer(OrderRow.serializer()), text)
+    }
+
+    suspend fun listOutletOrdersByStatus(
+        jwt: String,
+        outletId: String,
+        statuses: Collection<String>,
+        limit: Int = 100
+    ): List<OrderRow> {
+        if (statuses.isEmpty()) return emptyList()
+        val statusFilter = statuses.joinToString(",") { it.trim().lowercase() }
+        val path = "/rest/v1/orders" +
+            "?select=id,order_number,created_at,status,locked,modified_by_supervisor,modified_by_supervisor_name" +
+            "&outlet_id=eq." + outletId +
+            "&source_event_id=is.null" +
+            "&status=in.($statusFilter)" +
+            "&order=created_at.desc" +
+            "&limit=" + limit
         val text = supabase.getWithJwt(path, jwt)
         return relaxedJson.decodeFromString(ListSerializer(OrderRow.serializer()), text)
     }

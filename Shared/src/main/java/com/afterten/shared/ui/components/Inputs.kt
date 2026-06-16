@@ -1,36 +1,37 @@
 package com.afterten.shared.ui.components
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.foundation.shape.RoundedCornerShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun appTextFieldColors(): TextFieldColors = TextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White,
-    disabledTextColor = Color.White.copy(alpha = 0.6f),
-    cursorColor = Color.White,
-    focusedLabelColor = Color.White,
-    unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
-    focusedIndicatorColor = Color.White,
-    unfocusedIndicatorColor = Color.White.copy(alpha = 0.5f),
-    disabledIndicatorColor = Color.White.copy(alpha = 0.3f),
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    cursorColor = MaterialTheme.colorScheme.primary,
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
+    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+    disabledIndicatorColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
     focusedContainerColor = Color.Transparent,
     unfocusedContainerColor = Color.Transparent,
     disabledContainerColor = Color.Transparent
@@ -51,15 +52,15 @@ fun AppOutlinedTextField(
     borderThickness: androidx.compose.ui.unit.Dp = 0.dp,
     shape: Shape = RoundedCornerShape(12.dp),
 ) {
+    val accent = borderColor ?: MaterialTheme.colorScheme.primary
     val colors = if (borderColor != null) {
-        // Hide the component's own outline so the outer border is the only one visible
         TextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            disabledTextColor = Color.White.copy(alpha = 0.6f),
-            cursorColor = Color.White,
-            focusedLabelColor = Color.White,
-            unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
+            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+            disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            cursorColor = accent,
+            focusedLabelColor = accent,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
@@ -67,14 +68,18 @@ fun AppOutlinedTextField(
             unfocusedContainerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent
         )
-    } else appTextFieldColors()
+    } else {
+        appTextFieldColors()
+    }
 
-    val base = if (borderColor != null && borderThickness > 0.dp) {
+    val base = if (borderThickness > 0.dp) {
         modifier
-            .shadow(elevation = 4.dp, shape = shape, clip = false)
-            .border(borderThickness, borderColor, shape)
+            .shadow(elevation = 1.dp, shape = shape, clip = false)
+            .border(borderThickness, accent, shape)
             .padding(2.dp)
-    } else modifier
+    } else {
+        modifier
+    }
 
     Box(modifier = base) {
         OutlinedTextField(

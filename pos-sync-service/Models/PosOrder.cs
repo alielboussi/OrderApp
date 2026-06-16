@@ -26,6 +26,9 @@ public sealed record PosOrder(
 public sealed record PosLineItem(
     string PosItemId,
     string Name,
+    string? ItemSku,
+    string? VariantSku,
+    string? FlavourName,
     decimal Quantity,
     decimal UnitPrice,
     decimal SalePrice,

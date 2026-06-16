@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import eb from "../enterprise.module.css";
 import styles from "./outlet-orders.module.css";
 
 type OutletOption = {
@@ -17,7 +18,7 @@ type OrderRow = {
   created_at: string | null;
   status: string | null;
   outlet_id: string | null;
-  outlets?: Array<{ name: string | null }> | null;
+  outlets?: { name?: string | null } | Array<{ name?: string | null }> | null;
   employee_signed_name?: string | null;
   employee_signature_path?: string | null;
   employee_signed_at?: string | null;
@@ -78,9 +79,21 @@ function formatQty(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-function getOutletName(order: OrderRow): string | null {
-  if (Array.isArray(order.outlets)) return order.outlets[0]?.name ?? null;
-  return null;
+function getOutletName(order: OrderRow, nameById?: ReadonlyMap<string, string>): string {
+  const embedded = order.outlets;
+  if (embedded) {
+    if (Array.isArray(embedded)) {
+      const name = embedded[0]?.name?.trim();
+      if (name) return name;
+    } else {
+      const name = embedded.name?.trim();
+      if (name) return name;
+    }
+  }
+  if (order.outlet_id && nameById?.has(order.outlet_id)) {
+    return nameById.get(order.outlet_id)!;
+  }
+  return order.outlet_id ?? "-";
 }
 
 function escapeHtml(value: string): string {
@@ -305,7 +318,6 @@ function buildOutletOrderPdfHtml(options: {
 }
 
 function OutletOrdersPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
@@ -324,8 +336,13 @@ function OutletOrdersPage() {
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleBack = () => router.push("/Warehouse_Backoffice");
-  const handleBackOne = () => router.back();
+  const outletNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    outlets.forEach((outlet) => {
+      if (outlet.id && outlet.name) map.set(outlet.id, outlet.name);
+    });
+    return map;
+  }, [outlets]);
 
   useEffect(() => {
     if (initialQueryApplied) return;
@@ -349,20 +366,37 @@ function OutletOrdersPage() {
     const loadOutlets = async () => {
       try {
         setError(null);
-        const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-        if (whoamiError) throw whoamiError;
-        const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-        const outletList = record?.outlets ?? [];
-        const mapped = outletList
-          .filter((outlet) => outlet?.outlet_id)
-          .map((outlet) => ({ id: outlet.outlet_id, name: outlet.outlet_name }));
+        const mapped: OutletOption[] = [];
+
+        try {
+          const res = await fetch("/api/outlets", { cache: "no-store" });
+          if (res.ok) {
+            const json = await res.json();
+            const list = Array.isArray(json?.outlets) ? json.outlets : [];
+            list.forEach((outlet: { id?: string; name?: string | null }) => {
+              if (outlet?.id) mapped.push({ id: outlet.id, name: (outlet.name ?? "Outlet").trim() });
+            });
+          }
+        } catch {
+          // fall through to whoami
+        }
 
         if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
+          const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
+          if (whoamiError) throw whoamiError;
+          const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
+          const outletList = record?.outlets ?? [];
+          outletList
+            .filter((outlet) => outlet?.outlet_id)
+            .forEach((outlet) => mapped.push({ id: outlet.outlet_id, name: outlet.outlet_name }));
+
+          if (mapped.length === 0) {
+            const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
+            if (fallbackError) throw fallbackError;
+            const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
+            if (fallbackOutlet?.outlet_id) {
+              mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
+            }
           }
         }
 
@@ -400,6 +434,7 @@ function OutletOrdersPage() {
           .select(
             "id,order_number,created_at,status,outlet_id,outlets(name),employee_signed_name,employee_signature_path,employee_signed_at,supervisor_signed_name,supervisor_signature_path,supervisor_signed_at,driver_signed_name,driver_signature_path,driver_signed_at,offloader_signed_name,offloader_signature_path,offloader_signed_at,created_by"
           )
+          .is("source_event_id", null)
           .gte("created_at", start.toISOString())
           .lt("created_at", end.toISOString())
           .order("created_at", { ascending: false });
@@ -454,7 +489,8 @@ function OutletOrdersPage() {
       setError(null);
 
       const orderId = order.id;
-      const outletName = getOutletName(order) ?? "Outlet";
+      const outletNameRaw = getOutletName(order, outletNameById);
+      const outletName = outletNameRaw === "-" ? "Outlet" : outletNameRaw;
       const orderNumber = order.order_number ?? order.id.slice(0, 8);
       const createdAt = formatStamp(order.created_at);
       const placedBy = order.employee_signed_name || order.created_by || "-";
@@ -587,24 +623,29 @@ function OutletOrdersPage() {
     });
   }, [orders, orderQuery]);
 
-  if (status !== "ok") return null;
+  if (status !== "ok") {
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for outlet orders.</p>
+      </section>
+    );
+  }
 
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.hero}>
-          <div className={styles.grow}>
-            <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Outlet Orders Reports</h1>
-            <p className={styles.subtitle}>Filter outlet orders by date and outlet. Download PDFs after offload.</p>
-          </div>
-          <div className={styles.headerButtons}>
-            <button onClick={handleBackOne} className={styles.backButton}>Back</button>
-            <button onClick={handleBack} className={styles.backButton}>Back to Dashboard</button>
-          </div>
-        </header>
+    <div className={styles.shell}>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+            Outlet orders
+          </h3>
+          <p className={eb.pageCardBody}>
+            Warehouse orders placed from the Afterten Orders Android app (excludes POS sync bills).
+          </p>
+        </div>
+      </section>
 
-        <section className={styles.filtersCard}>
+      <section className={eb.pageCard}>
+        <div className={styles.filtersCard}>
           <label className={styles.filterLabel}>
             Date
             <input
@@ -639,11 +680,17 @@ function OutletOrdersPage() {
             />
           </label>
           {loading && <span className={styles.loadingTag}>Loading…</span>}
+        </div>
+      </section>
+
+      {error && (
+        <section className={eb.pageCard}>
+          <p className={styles.errorBanner}>{error}</p>
         </section>
+      )}
 
-        {error && <p className={styles.errorBanner}>{error}</p>}
-
-        <section className={styles.tableCard}>
+      <section className={eb.pageCard}>
+        <div className={styles.tableCard}>
           <div className={styles.tableHeader}>
             <div>
               <p className={styles.tableTitle}>Orders</p>
@@ -671,7 +718,7 @@ function OutletOrdersPage() {
               return (
                 <div key={order.id} className={`${styles.tableRow} ${isMatch ? styles.highlightRow : ""}`}>
                   <span>{order.order_number ?? order.id.slice(0, 8)}</span>
-                  <span>{getOutletName(order) ?? order.outlet_id ?? "-"}</span>
+                  <span>{getOutletName(order, outletNameById)}</span>
                   <span>{order.employee_signed_name ?? order.created_by ?? "-"}</span>
                   <span>{formatStamp(order.created_at)}</span>
                   <span className={styles.statusTag}>{statusText}</span>
@@ -694,15 +741,15 @@ function OutletOrdersPage() {
               <div className={styles.emptyState}>No orders found for the current filters.</div>
             )}
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
     </div>
   );
 }
 
 export default function OutletOrdersPageWrapper() {
   return (
-    <Suspense fallback={<div className={styles.page}><main className={styles.shell}>Loading...</main></div>}>
+    <Suspense fallback={<section className={eb.pageCard}><p className={eb.pageCardBody}>Loading…</p></section>}>
       <OutletOrdersPage />
     </Suspense>
   );

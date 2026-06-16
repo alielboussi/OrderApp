@@ -1,44 +1,45 @@
 .page {
   min-height: 100vh;
+  background: #ffffff;
   display: flex;
-  justify-content: center;
   align-items: center;
-  background: radial-gradient(circle at 20% 20%, #182647, #060b16 70%);
+  justify-content: center;
   padding: 24px;
-  color: #f4f6ff;
-  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color: #111111;
 }
 
 .shell {
   width: 100%;
-  max-width: 520px;
+  max-width: 420px;
 }
 
 .card {
-  background: rgba(6, 11, 22, 0.85);
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 28px;
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 28px 24px;
+  background: #ffffff;
 }
 
 .kicker {
-  margin: 0;
-  font-size: 13px;
-  letter-spacing: 4px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #8da2ff;
+  color: #5c5c5c;
 }
 
 .title {
-  margin: 10px 0 6px;
-  font-size: 32px;
+  margin: 0 0 8px;
+  font-size: 20px;
   font-weight: 700;
 }
 
 .subtitle {
-  margin: 0 0 18px;
-  color: #c6d2ff;
+  margin: 0 0 20px;
+  color: #5c5c5c;
+  line-height: 1.45;
 }
 
 .form {
@@ -48,37 +49,51 @@
 }
 
 .label {
-  font-size: 14px;
-  color: #cdd6f4;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  font-size: 13px;
+  color: #5c5c5c;
 }
 
 .input {
   width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.04);
-  color: #f8fafc;
-  outline: none;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
 }
 
-.submit {
-  margin-top: 6px;
-  padding: 14px 18px;
-  border-radius: 14px;
-  border: 1px solid #ff1b2d;
-  background: linear-gradient(120deg, #ff1b2d, #ff6b6b);
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  cursor: pointer;
+.input:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15);
 }
 
 .error {
-  color: #ff8b99;
   margin: 0;
-  font-size: 14px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.submit {
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  background: #1d4ed8;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.submit:hover:not(:disabled) {
+  background: #1e40af;
+}
+
+.submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }

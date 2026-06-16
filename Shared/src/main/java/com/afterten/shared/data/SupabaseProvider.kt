@@ -687,6 +687,34 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
     )
 
     @Serializable
+    data class OutletTransferItemDto(
+        val id: String,
+        @SerialName("item_id") val itemId: String? = null,
+        @SerialName("variant_key") val variantKey: String? = null,
+        @SerialName("qty_units") val qtyUnits: Double = 0.0,
+        val item: StockMovementReferenceName? = null
+    )
+
+    @Serializable
+    data class OutletWarehouseTransferDto(
+        val id: String,
+        val note: String? = null,
+        @SerialName("created_at") val createdAt: String? = null,
+        @SerialName("source_warehouse_id") val sourceWarehouseId: String? = null,
+        @SerialName("destination_warehouse_id") val destinationWarehouseId: String? = null,
+        val items: List<OutletTransferItemDto> = emptyList()
+    )
+
+    @Serializable
+    data class OutletWarehouseDamageDto(
+        val id: String,
+        @SerialName("warehouse_id") val warehouseId: String? = null,
+        val note: String? = null,
+        @SerialName("created_at") val createdAt: String? = null,
+        val context: kotlinx.serialization.json.JsonElement? = null
+    )
+
+    @Serializable
     data class PackConsumptionRow(
         val id: String,
         @SerialName("order_id") val orderId: String,
@@ -1467,6 +1495,60 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
         }
     }
 
+    suspend fun fetchOutletWarehouseTransfers(
+        jwt: String,
+        warehouseIds: Collection<String>,
+        limit: Int = 50
+    ): List<OutletWarehouseTransferDto> {
+        val ids = warehouseIds.mapNotNull { it.trim().takeIf(String::isNotEmpty) }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        val encodedIds = ids.joinToString(",")
+        val filter = java.net.URLEncoder.encode("($encodedIds)", Charsets.UTF_8.name())
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/warehouse_transfers")
+            append("?select=id,note,created_at,source_warehouse_id,destination_warehouse_id,")
+            append("items:warehouse_transfer_items(id,item_id,variant_key,qty_units,item:catalog_items(name))")
+            append("&or=(source_warehouse_id.in.$filter,destination_warehouse_id.in.$filter)")
+            append("&order=created_at.desc")
+            append("&limit=").append(limit.coerceAtMost(200))
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("fetchOutletWarehouseTransfers failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(OutletWarehouseTransferDto.serializer()), txt)
+    }
+
+    suspend fun fetchOutletWarehouseDamages(
+        jwt: String,
+        warehouseIds: Collection<String>,
+        limit: Int = 50
+    ): List<OutletWarehouseDamageDto> {
+        val ids = warehouseIds.mapNotNull { it.trim().takeIf(String::isNotEmpty) }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        val filter = java.net.URLEncoder.encode("(${ids.joinToString(",")})", Charsets.UTF_8.name())
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/warehouse_damages")
+            append("?select=id,warehouse_id,note,created_at,context")
+            append("&warehouse_id=in.$filter")
+            append("&order=created_at.desc")
+            append("&limit=").append(limit.coerceAtMost(200))
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("fetchOutletWarehouseDamages failed: HTTP $code $txt")
+        return relaxedJson.decodeFromString(ListSerializer(OutletWarehouseDamageDto.serializer()), txt)
+    }
+
     suspend fun createWarehouse(
         jwt: String,
         name: String,
@@ -1886,6 +1968,96 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("list_warehouse_items failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(WarehouseStockItem.serializer()), txt)
+    }
+
+    @Serializable
+    data class StockPeriodDto(
+        val id: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        val status: String,
+        @SerialName("opened_at") val openedAt: String? = null,
+        @SerialName("closed_at") val closedAt: String? = null,
+        @SerialName("stocktake_number") val stocktakeNumber: String? = null
+    )
+
+    suspend fun fetchOpenStockPeriod(jwt: String, warehouseId: String): StockPeriodDto? {
+        val url = buildString {
+            append(supabaseUrl)
+            append("/rest/v1/warehouse_stock_periods")
+            append("?select=id,warehouse_id,status,opened_at,closed_at,stocktake_number")
+            append("&warehouse_id=eq.").append(warehouseId)
+            append("&status=eq.open")
+            append("&order=opened_at.desc")
+            append("&limit=1")
+        }
+        val resp = http.get(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+        }
+        if (resp.status.value !in 200..299) {
+            throw IllegalStateException("fetchOpenStockPeriod failed: HTTP ${resp.status.value}")
+        }
+        val rows = relaxedJson.decodeFromString(ListSerializer(StockPeriodDto.serializer()), resp.bodyAsText())
+        return rows.firstOrNull()
+    }
+
+    suspend fun startStockPeriod(jwt: String, warehouseId: String, note: String? = null): StockPeriodDto {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/start_stock_period"
+        val payload = buildMap {
+            put("p_warehouse_id", warehouseId)
+            note?.takeIf { it.isNotBlank() }?.let { put("p_note", it) }
+        }
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        if (resp.status.value !in 200..299) {
+            throw IllegalStateException("start_stock_period failed: HTTP ${resp.status.value} ${resp.bodyAsText()}")
+        }
+        return relaxedJson.decodeFromString(StockPeriodDto.serializer(), resp.bodyAsText())
+    }
+
+    suspend fun recordStockCount(
+        jwt: String,
+        periodId: String,
+        itemId: String,
+        qty: Double,
+        variantKey: String = "base",
+        kind: String = "auto"
+    ) {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/record_stock_count"
+        val payload = mapOf(
+            "p_period_id" to periodId,
+            "p_item_id" to itemId,
+            "p_qty" to qty,
+            "p_variant_key" to variantKey,
+            "p_kind" to kind
+        )
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        if (resp.status.value !in 200..299) {
+            throw IllegalStateException("record_stock_count failed: HTTP ${resp.status.value} ${resp.bodyAsText()}")
+        }
+    }
+
+    suspend fun closeStockPeriod(jwt: String, periodId: String): StockPeriodDto {
+        val endpoint = "$supabaseUrl/rest/v1/rpc/close_stock_period"
+        val resp = http.post(endpoint) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("p_period_id" to periodId))
+        }
+        if (resp.status.value !in 200..299) {
+            throw IllegalStateException("close_stock_period failed: HTTP ${resp.status.value} ${resp.bodyAsText()}")
+        }
+        return relaxedJson.decodeFromString(StockPeriodDto.serializer(), resp.bodyAsText())
     }
 
     suspend fun listWarehouseIngredientsDirect(

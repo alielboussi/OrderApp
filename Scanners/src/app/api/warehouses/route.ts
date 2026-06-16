@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase-server';
+import { filterOutletScopedWarehouses, listOutletWarehouseIds } from '@/lib/outletScope';
 import type { Warehouse } from '@/types/warehouse';
 
 type WarehouseRecord = {
@@ -55,6 +56,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const includeInactiveParam = url.searchParams.get('include_inactive');
     const includeInactive = includeInactiveParam === '1' || includeInactiveParam === 'true';
+    const scope = url.searchParams.get('scope')?.trim().toLowerCase() || null;
+    const outletId = url.searchParams.get('outlet_id')?.trim() || null;
     const lockedIdCandidates = [
       ...url.searchParams.getAll('locked_id'),
       url.searchParams.get('fromLockedId'),
@@ -81,10 +84,17 @@ export async function GET(request: Request) {
       warehouseRecords = await fetchWarehousesViaTable(supabase, lockedIds);
     }
 
-    const normalized: Warehouse[] = warehouseRecords
+    let normalized: Warehouse[] = warehouseRecords
       .map(mapWarehouse)
       .filter((warehouse, index, list) => warehouse.id && index === list.findIndex((entry) => entry.id === warehouse.id))
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }));
+
+    if (scope === 'outlet') {
+      normalized = await filterOutletScopedWarehouses(supabase, normalized, outletId);
+    } else if (scope === 'hub') {
+      const outletIds = new Set(await listOutletWarehouseIds(supabase));
+      normalized = normalized.filter((w) => !outletIds.has(w.id));
+    }
 
     return NextResponse.json({ warehouses: normalized });
   } catch (error) {

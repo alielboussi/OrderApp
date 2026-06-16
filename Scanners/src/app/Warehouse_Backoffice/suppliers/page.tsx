@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import eb from "../enterprise.module.css";
 import styles from "./suppliers.module.css";
 
 type Supplier = {
@@ -40,7 +40,6 @@ function toErrorMessage(error: unknown): string {
 
 export default function SuppliersPage() {
   const { status } = useWarehouseAuth();
-  const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -91,9 +90,22 @@ export default function SuppliersPage() {
     setForm((prev) => ({ ...prev, active: event.target.checked }));
   };
 
+  const resetForm = () => {
+    setForm({
+      name: "",
+      contact_name: "",
+      contact_phone: "",
+      contact_email: "",
+      whatsapp_number: "",
+      notes: "",
+      active: true,
+    });
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
+    const wasEditing = !!editingId;
     try {
       setSaving(true);
       setError(null);
@@ -106,35 +118,23 @@ export default function SuppliersPage() {
       });
       if (!response.ok) {
         const info = await response.json().catch(() => ({}));
-        throw new Error(info.error || (editingId ? "Unable to update supplier" : "Unable to create supplier"));
+        throw new Error(info.error || (wasEditing ? "Unable to update supplier" : "Unable to create supplier"));
       }
       const responsePayload = await response.json();
       const created = responsePayload?.supplier as Supplier | undefined;
       if (created) {
         setSuppliers((prev) => {
-          if (editingId) {
-            return prev.map((supplier) =>
-              supplier.id === created.id
-                ? { ...created }
-                : supplier
-            );
+          if (wasEditing) {
+            return prev.map((supplier) => (supplier.id === created.id ? { ...created } : supplier));
           }
           return [{ ...created }, ...prev];
         });
       } else {
         await loadSuppliers();
       }
-      setForm({
-        name: "",
-        contact_name: "",
-        contact_phone: "",
-        contact_email: "",
-        whatsapp_number: "",
-        notes: "",
-        active: true,
-      });
+      resetForm();
       setEditingId(null);
-      setSuccess(editingId ? "Supplier updated." : "Supplier saved.");
+      setSuccess(wasEditing ? "Supplier updated." : "Supplier saved.");
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -161,103 +161,152 @@ export default function SuppliersPage() {
 
   const cancelEdit = () => {
     setEditingId(null);
-    setForm({
-      name: "",
-      contact_name: "",
-      contact_phone: "",
-      contact_email: "",
-      whatsapp_number: "",
-      notes: "",
-      active: true,
-    });
+    resetForm();
   };
 
-  if (status !== "ok") return null;
+  if (status !== "ok") {
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for suppliers.</p>
+      </section>
+    );
+  }
 
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.hero}>
-          <div>
-            <p className={styles.kicker}>Warehouse Backoffice</p>
-            <h1 className={styles.title}>Suppliers</h1>
-            <p className={styles.subtitle}>Create suppliers so scanners can attach purchases and inventory to the right partner.</p>
+    <div>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+            Suppliers
+          </h3>
+          <p className={eb.pageCardBody}>
+            Create suppliers so scanners can attach purchases and inventory to the right partner.
+          </p>
+        </div>
+        <div className={eb.summaryGrid} style={{ marginTop: 16 }}>
+          <div className={`${eb.summaryCard} ${eb.summaryCardBlue}`}>
+            <p className={eb.summaryLabel}>Total</p>
+            <p className={eb.summaryValue}>{suppliers.length}</p>
           </div>
-          <div className={styles.heroActions}>
-            <button className={styles.backButton} onClick={() => router.back()}>Back</button>
-            <button className={styles.backButton} onClick={() => router.push("/Warehouse_Backoffice")}>Dashboard</button>
+          <div className={`${eb.summaryCard} ${eb.summaryCardGreen}`}>
+            <p className={eb.summaryLabel}>Active</p>
+            <p className={eb.summaryValue}>{activeCount}</p>
           </div>
-        </header>
+          <div className={`${eb.summaryCard} ${eb.summaryCardGold}`}>
+            <p className={eb.summaryLabel}>Inactive</p>
+            <p className={eb.summaryValue}>{suppliers.length - activeCount}</p>
+          </div>
+        </div>
+      </section>
 
-        <section className={styles.contentGrid}>
-          <div className={styles.card}>
-            <h2 className={styles.cardTitle}>{editingId ? "Edit supplier" : "Add supplier"}</h2>
-            <p className={styles.cardHint}>Required fields are marked. Supplier names must be unique.</p>
-            <form onSubmit={handleSubmit} className={styles.formGrid}>
-              <label className={styles.label}
-                >Supplier name *
-                <input className={styles.input} value={form.name} onChange={handleChange("name")} placeholder="Supplier name" required />
-              </label>
-              <label className={styles.label}
-                >Contact name
-                <input className={styles.input} value={form.contact_name} onChange={handleChange("contact_name")} placeholder="Primary contact" />
-              </label>
-              <label className={styles.label}
-                >Contact phone
-                <input className={styles.input} value={form.contact_phone} onChange={handleChange("contact_phone")} placeholder="+61 ..." />
-              </label>
-              <label className={styles.label}
-                >Contact email
-                <input className={styles.input} type="email" value={form.contact_email} onChange={handleChange("contact_email")} placeholder="email@example.com" />
-              </label>
-              <label className={styles.label}
-                >WhatsApp number
-                <input className={styles.input} value={form.whatsapp_number} onChange={handleChange("whatsapp_number")} placeholder="+61 ..." />
-              </label>
-              <label className={styles.label}
-                >Notes
-                <textarea className={styles.textarea} value={form.notes} onChange={handleChange("notes")} placeholder="Delivery days, account terms, etc." />
-              </label>
-              <label className={styles.checkboxLabel}>
-                <input type="checkbox" checked={form.active} onChange={handleActiveChange} />
-                Active supplier
-              </label>
-              <div className={styles.formActions}>
-                <button type="submit" className={styles.primaryButton} disabled={!canSubmit}>
-                  {saving ? "Saving..." : editingId ? "Update supplier" : "Save supplier"}
+      <div className={styles.contentGrid}>
+        <section className={eb.pageCard}>
+          <div className={eb.sectionHeaderGreen}>
+            <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+              {editingId ? "Edit supplier" : "Add supplier"}
+            </h3>
+            <p className={eb.pageCardBody}>Required fields are marked. Supplier names must be unique.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className={styles.formGrid}>
+            <label className={styles.field}>
+              <span className={styles.label}>Supplier name *</span>
+              <input
+                className={styles.input}
+                value={form.name}
+                onChange={handleChange("name")}
+                placeholder="Supplier name"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Contact name</span>
+              <input
+                className={styles.input}
+                value={form.contact_name}
+                onChange={handleChange("contact_name")}
+                placeholder="Primary contact"
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Contact phone</span>
+              <input
+                className={styles.input}
+                value={form.contact_phone}
+                onChange={handleChange("contact_phone")}
+                placeholder="+61 …"
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Contact email</span>
+              <input
+                className={styles.input}
+                type="email"
+                value={form.contact_email}
+                onChange={handleChange("contact_email")}
+                placeholder="email@example.com"
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>WhatsApp number</span>
+              <input
+                className={styles.input}
+                value={form.whatsapp_number}
+                onChange={handleChange("whatsapp_number")}
+                placeholder="+61 …"
+              />
+            </label>
+            <label className={`${styles.field} ${styles.fieldFull}`}>
+              <span className={styles.label}>Notes</span>
+              <textarea
+                className={styles.textarea}
+                value={form.notes}
+                onChange={handleChange("notes")}
+                placeholder="Delivery days, account terms, etc."
+              />
+            </label>
+            <label className={styles.checkboxRow}>
+              <input className={styles.checkboxInput} type="checkbox" checked={form.active} onChange={handleActiveChange} />
+              Active supplier
+            </label>
+            <div className={styles.formActions}>
+              <button type="submit" className={eb.btnAdd} disabled={!canSubmit}>
+                {saving ? "Saving…" : editingId ? "Update supplier" : "Save supplier"}
+              </button>
+              {editingId ? (
+                <button type="button" className={eb.btnSecondary} onClick={cancelEdit}>
+                  Cancel
                 </button>
-                {editingId ? (
-                  <button type="button" className={styles.secondaryButton} onClick={cancelEdit}>
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-              {error ? <p className={styles.error}>Error: {error}</p> : null}
-              {success ? <p className={styles.success}>{success}</p> : null}
-            </form>
+              ) : null}
+            </div>
+            {error ? <p className={`${styles.callout} ${styles.calloutError}`}>{error}</p> : null}
+            {success ? <p className={`${styles.callout} ${styles.calloutSuccess}`}>{success}</p> : null}
+          </form>
+        </section>
+
+        <section className={eb.pageCard}>
+          <div className={styles.listHeader}>
+            <div className={eb.sectionHeaderGold}>
+              <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+                Supplier directory
+              </h3>
+              <p className={eb.pageCardBody}>{loading ? "Loading suppliers…" : `${activeCount} active suppliers`}</p>
+            </div>
+            <button className={eb.btnSecondary} onClick={loadSuppliers} disabled={loading}>
+              Refresh
+            </button>
           </div>
 
-          <div className={styles.card}>
-            <div className={styles.listHeader}>
-              <div>
-                <h2 className={styles.cardTitle}>Supplier directory</h2>
-                <p className={styles.cardHint}>{loading ? "Loading suppliers..." : `${activeCount} active suppliers`}</p>
+          {suppliers.length === 0 ? (
+            <p className={styles.empty}>No suppliers found. Add your first supplier on the left.</p>
+          ) : (
+            <>
+              <div className={styles.listHeaderRow}>
+                <span>Supplier</span>
+                <span>Status</span>
               </div>
-              <button className={styles.secondaryButton} onClick={loadSuppliers} disabled={loading}>Refresh</button>
-            </div>
-            <div className={styles.list}>
-              {suppliers.length === 0 ? (
-                <p className={styles.empty}>No suppliers found. Add your first supplier on the left.</p>
-              ) : (
-                <div className={styles.listHeaderRow}>
-                  <span>Supplier</span>
-                  <span>Status</span>
-                </div>
-              )}
-            </div>
-            <div className={styles.list}>
-              {suppliers.length === 0 ? null : (
-                suppliers.map((supplier) => (
+              <div className={`${styles.list} ${styles.listWithHeader}`}>
+                {suppliers.map((supplier) => (
                   <div key={supplier.id} className={styles.listItem}>
                     <div>
                       <h3 className={styles.listTitle}>{supplier.name}</h3>
@@ -267,21 +316,23 @@ export default function SuppliersPage() {
                         {supplier.contact_email ? ` · ${supplier.contact_email}` : ""}
                         {supplier.whatsapp_number ? ` · WhatsApp: ${supplier.whatsapp_number}` : ""}
                       </p>
-                      <button type="button" className={styles.secondaryButton} onClick={() => startEdit(supplier)}>
-                        Edit
-                      </button>
                       {supplier.notes ? <p className={styles.listNotes}>{supplier.notes}</p> : null}
+                      <div className={styles.listActions}>
+                        <button type="button" className={eb.btnSecondary} onClick={() => startEdit(supplier)}>
+                          Edit
+                        </button>
+                      </div>
                     </div>
-                    <span className={supplier.active ? styles.activePill : styles.inactivePill}>
+                    <span className={supplier.active ? eb.pillLive : eb.pillOffline}>
                       {supplier.active ? "Active" : "Inactive"}
                     </span>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
+                ))}
+              </div>
+            </>
+          )}
         </section>
-      </main>
+      </div>
     </div>
   );
 }

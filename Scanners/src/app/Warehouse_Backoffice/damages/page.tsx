@@ -3,16 +3,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./damages.module.css";
+import eb from "../enterprise.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { OutletContextBanner } from "../OutletContextBanner";
 import type { Warehouse } from "@/types/warehouse";
 import type { WarehouseDamage } from "@/types/damages";
 
 const AUTO_REFRESH_MS = 120_000; // 2 minutes
 const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/damages";
-const ALLOWED_FROM_WAREHOUSE_IDS = [
-  "f71a25d0-9ec2-454d-a606-93cfaa3c606b", // Beverages Storeroom
-  "0c9ddd9e-d42c-475f-9232-5e9d649b0916", // Main Warehouse
-];
+const OUTLET_SCOPE = "outlet";
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url, { cache: "no-store" });
@@ -193,11 +192,12 @@ export default function WarehouseDamagesWeb() {
       try {
         const fromLocked = lockedFromId.trim();
         const lockedIds = fromLocked ? [fromLocked] : [];
-        const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
+        const qsParts = [`scope=${OUTLET_SCOPE}`];
+        lockedIds.forEach((id) => qsParts.push(`locked_id=${encodeURIComponent(id)}`));
+        const qs = `?${qsParts.join("&")}`;
         const data = await fetchJson<Warehouse[] | { warehouses?: Warehouse[]; data?: Warehouse[] }>(`/api/warehouses${qs}`);
         const list = normalizeList<Warehouse>(data, ["warehouses", "data"]);
-        const allowed = list.filter((w) => ALLOWED_FROM_WAREHOUSE_IDS.includes(w.id));
-        const filtered = lockedIds.length ? allowed.filter((w) => lockedIds.includes(w.id)) : allowed;
+        const filtered = lockedIds.length ? list.filter((w) => lockedIds.includes(w.id)) : list;
         if (fromLocked && filtered.some((w) => w.id === fromLocked)) {
           setWarehouseId(fromLocked);
         }
@@ -222,6 +222,7 @@ export default function WarehouseDamagesWeb() {
       const fromLocked = lockedFromId.trim();
       const lockedIds = fromLocked ? [fromLocked] : [];
       const params = new URLSearchParams();
+      params.set("scope", OUTLET_SCOPE);
       if (warehouseId) params.set("warehouseId", warehouseId);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
@@ -304,53 +305,50 @@ export default function WarehouseDamagesWeb() {
   };
 
   if (status !== "ok") {
-    return null;
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for damages.</p>
+      </section>
+    );
   }
 
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.header}>
-          <div className={styles.headerButtons}>
-            <button className={styles.primaryBtn} onClick={handleBackOne}>
-              Back
-            </button>
-            <button className={styles.primaryBtn} onClick={handleBack}>
-              Back to Dashboard
+    <div className={styles.shell}>
+      <section className={eb.pageCard}>
+        <div className={styles.pageHeader}>
+          <div className={eb.sectionHeaderBlue} style={{ flex: 1, marginBottom: 0 }}>
+            <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+              Outlet warehouse damages
+            </h3>
+            <p className={eb.pageCardBody}>
+              Outlet warehouse damages only — same stock as the Afterten Orders Android app and POS middleware deductions.
+              Hub storerooms are under Inventory → Purchases.
+            </p>
+          </div>
+          <div className={styles.pageHeaderActions}>
+            <button
+              type="button"
+              className={`${eb.btnSecondary} ${loading ? styles.iconBtnSpin : ""}`}
+              onClick={() => setManualRefreshTick((v) => v + 1)}
+              title="Refresh damages"
+            >
+              Refresh
             </button>
           </div>
-          <div className={styles.grow} />
-          <button
-            className={`${styles.iconBtn} ${loading ? styles.iconBtnSpin : ""}`}
-            onClick={() => setManualRefreshTick((v) => v + 1)}
-            title="Refresh damages"
-          >
-            Refresh
-          </button>
-          <button
-            className={styles.linkBtn}
-            onClick={() => {
-              allowNavRef.current = true;
-              window.location.href = "/";
-            }}
-          >
-            Log out
-          </button>
-        </header>
+        </div>
+        <OutletContextBanner>
+          Times shown in Zambia Standard Time — CAT (UTC+02). Syncs automatically every 5 minutes.
+        </OutletContextBanner>
+      </section>
 
-        <section className={styles.stackXs}>
-          <h1 className={styles.h1}>Warehouse Damages</h1>
-          <p className={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
-          <p className={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
-        </section>
+      {loading && (
+        <div className={styles.progressBarWrap}>
+          <div className={styles.progressBar} />
+        </div>
+      )}
 
-        {loading && (
-          <div className={styles.progressBarWrap}>
-            <div className={styles.progressBar} />
-          </div>
-        )}
-
-        <section className={styles.panel}>
+      <section className={eb.pageCard}>
+        <div className={styles.panel}>
           <div className={styles.stackLg}>
             <LabeledSelect
               label="Warehouse"
@@ -377,7 +375,8 @@ export default function WarehouseDamagesWeb() {
               </div>
               <div className={styles.pillRow}>
                 <button
-                  className={styles.dangerPill}
+                  type="button"
+                  className={eb.btnSecondary}
                   onClick={() => {
                     setWarehouseId(lockedFromActive ? lockedFromId : "");
                     setStartDate("");
@@ -420,11 +419,7 @@ export default function WarehouseDamagesWeb() {
                           <span className={`${styles.statusChip} ${styles.statusChipLogged}`}>
                             {titleCase("logged")}
                           </span>
-                          <button
-                            className={styles.iconBtn}
-                            onClick={() => toggleExpand(d.id)}
-                            aria-label="Toggle expand"
-                          >
+                          <button type="button" className={eb.btnSecondary} onClick={() => toggleExpand(d.id)} aria-label="Toggle expand">
                             {expanded ? "^" : "v"}
                           </button>
                         </div>
@@ -456,8 +451,8 @@ export default function WarehouseDamagesWeb() {
               )}
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
     </div>
   );
 }

@@ -3,16 +3,19 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { logWarehouseAction } from "./logging";
+import BackofficeShell from "./BackofficeShell";
+import "./backoffice-globals.css";
 
 export default function WarehouseBackofficeLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const comboArmedAt = useRef<number | null>(null);
+  const isLogin = pathname === "/Warehouse_Backoffice/login";
 
   useEffect(() => {
-    if (!pathname) return;
+    if (!pathname || isLogin) return;
     logWarehouseAction({ action: "view", page: pathname });
-  }, [pathname]);
+  }, [pathname, isLogin]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -58,5 +61,9 @@ export default function WarehouseBackofficeLayout({ children }: { children: Reac
     return () => window.removeEventListener("keydown", handleKey);
   }, [router]);
 
-  return <>{children}</>;
+  if (isLogin) {
+    return <>{children}</>;
+  }
+
+  return <BackofficeShell>{children}</BackofficeShell>;
 }

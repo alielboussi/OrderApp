@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./transfers.module.css";
+import eb from "../enterprise.module.css";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { OutletContextBanner } from "../OutletContextBanner";
 
 // Types approximated from the Android WarehousesAdminScreen
 interface Warehouse {
@@ -46,6 +48,7 @@ interface StockPeriod {
 
 const AUTO_REFRESH_MS = 120_000; // 2 minutes
 const MAIN_DASHBOARD_PATH = "/Warehouse_Backoffice/transfers";
+const OUTLET_SCOPE = "outlet";
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url, { cache: "no-store" });
@@ -250,7 +253,9 @@ export default function WarehouseTransfersWeb() {
       try {
         const fromLocked = lockedFromId.trim();
         const lockedIds = fromLocked ? [fromLocked] : [];
-        const qs = lockedIds.length ? `?${lockedIds.map((id) => `locked_id=${encodeURIComponent(id)}`).join("&")}` : "";
+        const qsParts = [`scope=${OUTLET_SCOPE}`];
+        lockedIds.forEach((id) => qsParts.push(`locked_id=${encodeURIComponent(id)}`));
+        const qs = `?${qsParts.join("&")}`;
         const data = await fetchJson<
           Warehouse[] | { warehouses?: Warehouse[]; data?: Warehouse[] }
         >(`/api/warehouses${qs}`);
@@ -302,6 +307,7 @@ export default function WarehouseTransfersWeb() {
       const fromLocked = lockedFromId.trim();
       const lockedIds = fromLocked ? [fromLocked] : [];
       const params = new URLSearchParams();
+      params.set("scope", OUTLET_SCOPE);
       if (sourceId) params.set("sourceId", sourceId);
       if (destId) params.set("destId", destId);
       if (startDate) params.set("startDate", startDate);
@@ -392,53 +398,50 @@ export default function WarehouseTransfersWeb() {
   };
 
   if (status !== "ok") {
-    return null;
+    return (
+      <section className={eb.pageCard}>
+        <p className={eb.pageCardBody}>Not authorized for transfers.</p>
+      </section>
+    );
   }
 
   return (
-    <div className={styles.page}>
-      <main className={styles.shell}>
-        <header className={styles.header}>
-          <div className={styles.headerButtons}>
-            <button className={styles.primaryBtn} onClick={handleBackOne}>
-              Back
-            </button>
-            <button className={styles.primaryBtn} onClick={handleBack}>
-              Back to Dashboard
+    <div className={styles.shell}>
+      <section className={eb.pageCard}>
+        <div className={styles.pageHeader}>
+          <div className={eb.sectionHeaderBlue} style={{ flex: 1, marginBottom: 0 }}>
+            <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+              Outlet warehouse transfers
+            </h3>
+            <p className={eb.pageCardBody}>
+              Transfers between outlet warehouses — stock received via Afterten Orders approvals and consumed by POS sales.
+              Hub storerooms are under Inventory → Purchases.
+            </p>
+          </div>
+          <div className={styles.pageHeaderActions}>
+            <button
+              type="button"
+              className={`${eb.btnSecondary} ${loading ? styles.iconBtnSpin : ""}`}
+              onClick={() => setManualRefreshTick((v) => v + 1)}
+              title="Refresh transfers"
+            >
+              Refresh
             </button>
           </div>
-          <div className={styles.grow} />
-          <button
-            className={`${styles.iconBtn} ${loading ? styles.iconBtnSpin : ""}`}
-            onClick={() => setManualRefreshTick((v) => v + 1)}
-            title="Refresh transfers"
-          >
-            Refresh
-          </button>
-          <button
-            className={styles.linkBtn}
-            onClick={() => {
-              allowNavRef.current = true;
-              window.location.href = "/";
-            }}
-          >
-            Log out
-          </button>
-        </header>
+        </div>
+        <OutletContextBanner>
+          Times shown in Zambia Standard Time — CAT (UTC+02). Syncs automatically every 5 minutes.
+        </OutletContextBanner>
+      </section>
 
-        <section className={styles.stackXs}>
-          <h1 className={styles.h1}>Warehouse Transfers</h1>
-          <p className={styles.subtle}>Times shown in Zambia Standard Time - CAT (UTC+02)</p>
-          <p className={styles.subtle}>Syncs automatically every 5 minutes - Tap refresh for now</p>
-        </section>
+      {loading && (
+        <div className={styles.progressBarWrap}>
+          <div className={styles.progressBar} />
+        </div>
+      )}
 
-        {loading && (
-          <div className={styles.progressBarWrap}>
-            <div className={styles.progressBar} />
-          </div>
-        )}
-
-        <section className={styles.panel}>
+      <section className={eb.pageCard}>
+        <div className={styles.panel}>
           <div className={styles.stackLg}>
             <div className={styles.gridTwo}>
               <LabeledSelect
@@ -510,14 +513,12 @@ export default function WarehouseTransfersWeb() {
                 />
               </div>
               <div className={styles.pillRow}>
-                <button
-                  className={styles.primaryBtn}
-                  onClick={() => setManualRefreshTick((v) => v + 1)}
-                >
+                <button type="button" className={eb.btnAdd} onClick={() => setManualRefreshTick((v) => v + 1)}>
                   Search
                 </button>
                 <button
-                  className={styles.dangerPill}
+                  type="button"
+                  className={eb.btnSecondary}
                   onClick={() => {
                     setSourceId(lockedFromActive ? lockedFromId : "");
                     setDestId("");
@@ -577,11 +578,7 @@ export default function WarehouseTransfersWeb() {
                           <span className={`${styles.statusChip} ${isCompleted ? styles.statusChipComplete : ""}`}>
                             {titleCase(t.status)}
                           </span>
-                          <button
-                            className={styles.iconBtn}
-                            onClick={() => toggleExpand(t.id)}
-                            aria-label="Toggle expand"
-                          >
+                          <button type="button" className={eb.btnSecondary} onClick={() => toggleExpand(t.id)} aria-label="Toggle expand">
                             {expanded ? "^" : "v"}
                           </button>
                         </div>
@@ -613,10 +610,10 @@ export default function WarehouseTransfersWeb() {
                 </div>
               )}
             </div>
-            <p className={styles.footerText}>Syncs automatically every 5 minutes - Use refresh to pull now</p>
+            <p className={styles.footerText}>Syncs automatically every 5 minutes — use Refresh to pull now.</p>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
     </div>
   );
 }
