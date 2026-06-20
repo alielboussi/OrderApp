@@ -12,7 +12,7 @@ type HeartbeatRow = {
   last_seen_at: string;
   middleware_version: string | null;
   host_name: string | null;
-  outlets: { id: string; name: string; code?: string | null } | null;
+  outlets: Array<{ id: string; name: string; code?: string | null }> | null;
 };
 
 type OutletRow = {

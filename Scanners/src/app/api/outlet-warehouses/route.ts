@@ -11,26 +11,27 @@ type LinkRow = {
   outlet_id: string;
   warehouse_id: string;
   show_in_stocktake?: boolean | null;
-  outlets: {
+  outlets: Array<{
     id: string;
     name: string | null;
     code?: string | null;
     active?: boolean | null;
     channel?: string | null;
     has_pos_middleware?: boolean | null;
-  } | null;
-  warehouses: { id: string; name: string | null; warehouse_scope?: string | null } | null;
+  }> | null;
+  warehouses: Array<{ id: string; name: string | null; warehouse_scope?: string | null }> | null;
 };
 
 /** Canonical filter for POS deductions, stocktakes, and live balances. */
 function isSellingOutletWarehouseLink(row: {
   outlet_id: string;
+  warehouse_id: string;
   outlet_name: string;
   warehouse_name: string;
   warehouse_scope: string | null;
   show_in_stocktake?: boolean | null;
-  outlet: LinkRow["outlets"];
-  warehouse: LinkRow["warehouses"];
+  outlet: LinkRow["outlets"] extends Array<infer T> | null ? T | null : null;
+  warehouse: LinkRow["warehouses"] extends Array<infer T> | null ? T | null : null;
   requireStocktakeFlag?: boolean;
 }): boolean {
   if (row.requireStocktakeFlag && row.show_in_stocktake === false) return false;
@@ -63,16 +64,20 @@ export async function GET(request: Request) {
     if (error) throw error;
 
     let links = ((data as LinkRow[]) ?? [])
-      .map((row) => ({
-        outlet_id: row.outlet_id,
-        outlet_name: row.outlets?.name ?? "Outlet",
+      .map((row) => {
+        const outlet = row.outlets?.[0] ?? null;
+        const warehouse = row.warehouses?.[0] ?? null;
+        return {
+          outlet_id: row.outlet_id,
+          outlet_name: outlet?.name ?? "Outlet",
         warehouse_id: row.warehouse_id,
-        warehouse_name: row.warehouses?.name ?? "Warehouse",
-        warehouse_scope: row.warehouses?.warehouse_scope ?? null,
-        show_in_stocktake: row.show_in_stocktake,
-        outlet: row.outlets,
-        warehouse: row.warehouses,
-      }))
+          warehouse_name: warehouse?.name ?? "Warehouse",
+          warehouse_scope: warehouse?.warehouse_scope ?? null,
+          show_in_stocktake: row.show_in_stocktake,
+          outlet,
+          warehouse,
+        };
+      })
       .filter((row) => row.outlet_id && row.warehouse_id);
 
     if (scope === "outlet") {

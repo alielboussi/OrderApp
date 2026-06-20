@@ -41,7 +41,7 @@ export function groupSellingOutletWarehouses(
     rows.sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, undefined, { sensitivity: "base" }));
     const preferredId = defaultWarehouseByOutlet?.get(rows[0].outlet_id);
     const pick =
-      (preferredId && rows.find((row) => row.warehouse_id === preferredId)) ??
+      (preferredId ? rows.find((row) => row.warehouse_id === preferredId) : undefined) ??
       rows.find((row) => row.warehouse_name.trim().toLowerCase() === rows[0].outlet_name.trim().toLowerCase()) ??
       rows[0];
     options.push({
