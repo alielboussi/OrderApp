@@ -12,8 +12,19 @@ Standalone Android app for **outlet operations** — ordering, receiving, transf
 | POS sale deduct | — | POS sale deductions | `sync_pos_order` → `apply_pos_sale_deduction_rules` |
 | Transfers | Outlet Transfers | Transfers | `warehouse_transfers` |
 | Damages | Outlet Damages | Damages | `warehouse_damages` / `record_damage` |
+| Stocktake | Outlet Stocktake (in-app screen) | Stocktakes | `warehouse_stock_counts` / `warehouse_stock_periods` |
 
 Hub purchases and central storerooms are **not** in this app — use Inventory → Purchases in the backoffice.
+
+## Android modules in this repo
+
+| App | Path | APK variant |
+|-----|------|-------------|
+| **Afterten Orders** (outlet) | `Afterten Orders/app/` | `app-orders-debug.apk` |
+| **Afterten Supervisor** | `Afterten Orders/supervisor-app/` | `supervisor-app-debug.apk` |
+| **Shared library** | `Shared/` | (included by both apps) |
+
+Outlet stocktake is **not** a separate APK — it is `OutletStocktakeScreen.kt` inside the outlet app (`Afterten Orders/app/src/main/java/com/afterten/ordersapp/ui/screens/`).
 
 ## Setup
 
