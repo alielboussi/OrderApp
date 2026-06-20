@@ -1,21 +1,23 @@
 @echo off
 setlocal EnableExtensions
 
-rem Base folder is the parent of this scripts folder
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "BASE_DIR=%%~fI"
 
 set "INSTALL_PATH=C:\Program Files\SCPGT"
 set "CONFIG_ROOT=%ProgramData%\SCPGT"
+set "EXE=%BASE_DIR%\SCPGT.exe"
 
-set "PS_ARGS=-NoProfile -ExecutionPolicy Bypass -File "%BASE_DIR%\scripts\install-service.ps1" -PublishOutput "%BASE_DIR%" -InstallPath "%INSTALL_PATH%" -ConfigRoot "%CONFIG_ROOT%""
-
-rem Elevate to admin if needed
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-  powershell -NoProfile -Command "Start-Process -FilePath 'powershell' -ArgumentList '%PS_ARGS%' -Verb RunAs"
-  exit /b
+if not exist "%EXE%" (
+  echo [ERROR] "%EXE%" not found.
+  echo Run this from the publish folder where SCPGT.exe exists.
+  exit /b 1
 )
 
-powershell %PS_ARGS%
+"%EXE%" --install-service --installPath "%INSTALL_PATH%" --configRoot "%CONFIG_ROOT%"
+if %errorlevel% neq 0 (
+  echo [ERROR] Installation failed.
+  exit /b %errorlevel%
+)
+echo [OK] SCPGT installed and started.
 endlocal

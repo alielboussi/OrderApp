@@ -26,6 +26,27 @@ var builder = Host.CreateApplicationBuilder(settings);
 var runAsService = args.Any(static a => string.Equals(a, "--run-as-service", StringComparison.OrdinalIgnoreCase));
 var runListener = args.Any(static a => string.Equals(a, "--listener", StringComparison.OrdinalIgnoreCase));
 var runUi = args.Any(static a => string.Equals(a, "--ui", StringComparison.OrdinalIgnoreCase));
+var installService = args.Any(static a => string.Equals(a, "--install-service", StringComparison.OrdinalIgnoreCase));
+var uninstallService = args.Any(static a => string.Equals(a, "--uninstall-service", StringComparison.OrdinalIgnoreCase));
+var hasExplicitMode = runAsService || runListener || runUi || installService || uninstallService;
+
+if (!hasExplicitMode && Environment.UserInteractive)
+{
+    Environment.ExitCode = ServiceInstaller.InteractiveSetup(settings.ContentRootPath ?? AppContext.BaseDirectory);
+    return;
+}
+
+if (installService)
+{
+    Environment.ExitCode = ServiceInstaller.InstallFromArgs(args, settings.ContentRootPath ?? AppContext.BaseDirectory);
+    return;
+}
+
+if (uninstallService)
+{
+    Environment.ExitCode = ServiceInstaller.Uninstall();
+    return;
+}
 
 var configRoot = settings.ContentRootPath ?? AppContext.BaseDirectory;
 var legacyIniPath = AppSettingsFile.GetIniPath(configRoot);
@@ -41,6 +62,10 @@ builder.Configuration
 
 builder.Services.AddOptions<PosDbOptions>()
     .Bind(builder.Configuration.GetSection("PosDb"))
+    .Validate(
+        o => !string.IsNullOrWhiteSpace(o.GetEffectiveConnectionString()),
+        "PosDb requires ConnectionString, or Server + Database (+ Username/Password when not IntegratedSecurity)"
+    )
     .ValidateOnStart();
 
 builder.Services.AddOptions<OutletOptions>()

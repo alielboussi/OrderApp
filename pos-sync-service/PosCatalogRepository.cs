@@ -1,4 +1,6 @@
 using System.Data;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -18,6 +20,8 @@ public sealed class PosCatalogRepository
         _logger = logger;
     }
 
+    private string ConnectionString => _options.GetEffectiveConnectionString();
+
     public async Task ApplyCatalogEventAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
     {
         switch (evt.EntityType?.ToLowerInvariant())
@@ -31,9 +35,121 @@ public sealed class PosCatalogRepository
             case "price":
                 await UpdatePriceAsync(evt, cancellationToken);
                 break;
+            case "delete":
+                await DeleteCatalogEntityAsync(evt, cancellationToken);
+                break;
             default:
                 _logger.LogWarning("Unknown catalog sync entity type: {Type}", evt.EntityType);
                 break;
+        }
+    }
+
+    private Task DeleteCatalogEntityAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
+    {
+        return DeleteCatalogEntityCoreAsync(evt, cancellationToken);
+    }
+
+    private async Task DeleteCatalogEntityCoreAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
+    {
+        var deleteType = (evt.Payload.DeleteType ?? string.Empty).Trim().ToLowerInvariant();
+        var itemSkus = NormalizeSkus(evt.Payload.ItemSkus, null, evt.Payload.ItemSku, evt.Payload.Sku);
+        var variantSkus = NormalizeSkus(evt.Payload.VariantSkus, evt.Payload.AllVariantSkus, evt.Payload.VariantSku);
+
+        if (deleteType != "variant" && deleteType != "item")
+        {
+            deleteType = variantSkus.Count > 0 && itemSkus.Count == 0 ? "variant" : "item";
+        }
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            if (deleteType == "variant")
+            {
+                if (variantSkus.Count == 0)
+                {
+                    _logger.LogWarning("Delete variant event {EventId} has no variant SKUs.", evt.Id);
+                    await tx.CommitAsync(cancellationToken);
+                    return;
+                }
+
+                await ExecuteDeleteBySkusAsync(
+                    conn,
+                    tx,
+                    "DELETE FROM dbo.SaleDetails WHERE FlavourId IN ({0});",
+                    "@flavourSku",
+                    variantSkus,
+                    cancellationToken
+                );
+
+                await ExecuteDeleteBySkusAsync(
+                    conn,
+                    tx,
+                    "DELETE FROM dbo.ModifierFlavour WHERE Id IN ({0});",
+                    "@variantSku",
+                    variantSkus,
+                    cancellationToken
+                );
+            }
+            else
+            {
+                if (itemSkus.Count == 0)
+                {
+                    _logger.LogWarning("Delete item event {EventId} has no item SKUs.", evt.Id);
+                    await tx.CommitAsync(cancellationToken);
+                    return;
+                }
+
+                if (variantSkus.Count > 0)
+                {
+                    await ExecuteDeleteBySkusAsync(
+                        conn,
+                        tx,
+                        "DELETE FROM dbo.SaleDetails WHERE FlavourId IN ({0});",
+                        "@flavourSku",
+                        variantSkus,
+                        cancellationToken
+                    );
+
+                    await ExecuteDeleteBySkusAsync(
+                        conn,
+                        tx,
+                        "DELETE FROM dbo.ModifierFlavour WHERE Id IN ({0});",
+                        "@variantSku",
+                        variantSkus,
+                        cancellationToken
+                    );
+                }
+                else
+                {
+                    await ExecuteDeleteBySkusAsync(
+                        conn,
+                        tx,
+                        "DELETE FROM dbo.SaleDetails WHERE MenuItemId IN ({0});",
+                        "@itemSku",
+                        itemSkus,
+                        cancellationToken
+                    );
+                }
+
+                await ExecuteDeleteBySkusAsync(
+                    conn,
+                    tx,
+                    "DELETE FROM dbo.MenuItem WHERE Id IN ({0});",
+                    "@menuItemSku",
+                    itemSkus,
+                    cancellationToken
+                );
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
         }
     }
 
@@ -57,7 +173,7 @@ WHERE Code = @Sku OR Id = TRY_CAST(@PosItemId AS int);";
 INSERT INTO dbo.MenuItem (Code, Name, Price, Status, uploadstatus)
 VALUES (@Sku, @Name, @Price, 'Active', 'Pending');";
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var updateCmd = new SqlCommand(updateSql, conn);
@@ -91,7 +207,7 @@ FROM dbo.ModifierFlavour mf
 JOIN dbo.MenuItem mi ON mi.Id = mf.MenuItemId
 WHERE mi.Code = @ItemSku AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int));";
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(sql, conn);
@@ -127,6 +243,56 @@ WHERE mi.Code = @ItemSku AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFla
         cmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@PosItemId", (object?)evt.Payload.PosItemId ?? DBNull.Value);
     }
+
+    private static List<string> NormalizeSkus(IEnumerable<string?>? first, IEnumerable<string?>? second, params string?[] singletons)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        static void AddRange(HashSet<string> target, IEnumerable<string?>? source)
+        {
+            if (source is null) return;
+            foreach (var entry in source)
+            {
+                if (string.IsNullOrWhiteSpace(entry)) continue;
+                target.Add(entry.Trim());
+            }
+        }
+
+        AddRange(set, first);
+        AddRange(set, second);
+        foreach (var single in singletons)
+        {
+            if (string.IsNullOrWhiteSpace(single)) continue;
+            set.Add(single.Trim());
+        }
+
+        return set.ToList();
+    }
+
+    private static async Task ExecuteDeleteBySkusAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string sqlTemplate,
+        string parameterPrefix,
+        IReadOnlyList<string> skus,
+        CancellationToken cancellationToken)
+    {
+        if (skus.Count == 0)
+        {
+            return;
+        }
+
+        var parameterNames = new string[skus.Count];
+        await using var cmd = new SqlCommand(string.Empty, connection, transaction);
+        for (var i = 0; i < skus.Count; i++)
+        {
+            var parameterName = $"{parameterPrefix}{i}";
+            parameterNames[i] = parameterName;
+            cmd.Parameters.Add(parameterName, SqlDbType.NVarChar, 128).Value = skus[i];
+        }
+
+        cmd.CommandText = string.Format(sqlTemplate, string.Join(", ", parameterNames));
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 }
 
 public sealed record CatalogSyncEvent(
@@ -161,4 +327,19 @@ public sealed class CatalogSyncPayload
 
     [JsonPropertyName("pos_flavour_id")]
     public string? PosFlavourId { get; init; }
+
+    [JsonPropertyName("scheduled_at")]
+    public DateTimeOffset? ScheduledAt { get; init; }
+
+    [JsonPropertyName("delete_type")]
+    public string? DeleteType { get; init; }
+
+    [JsonPropertyName("item_skus")]
+    public string[]? ItemSkus { get; init; }
+
+    [JsonPropertyName("variant_skus")]
+    public string[]? VariantSkus { get; init; }
+
+    [JsonPropertyName("all_variant_skus")]
+    public string[]? AllVariantSkus { get; init; }
 }

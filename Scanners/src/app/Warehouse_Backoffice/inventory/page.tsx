@@ -45,7 +45,7 @@ export default function InventoryMenu() {
         <header className={styles.hero}>
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Scanner History</h1>
+            <h1 className={styles.title}>Warehouse History</h1>
             <p className={styles.subtitle}>Choose a workspace for transfers, purchases, and damages against warehouses.</p>
           </div>
           <div className={styles.headerButtons}>

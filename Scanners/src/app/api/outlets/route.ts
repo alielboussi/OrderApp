@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { isPosMiddlewareOutlet } from "@/lib/outletScope";
 
 type OutletRow = {
   id: string;
   name?: string | null;
   code?: string | null;
   active?: boolean | null;
+  channel?: string | null;
+  has_pos_middleware?: boolean | null;
   default_sales_warehouse_id?: string | null;
 };
 
@@ -14,6 +17,8 @@ type Outlet = {
   name: string;
   code: string | null;
   active: boolean;
+  channel: string | null;
+  has_pos_middleware: boolean | null;
   default_sales_warehouse_id: string | null;
 };
 
@@ -23,21 +28,33 @@ function mapOutlet(row: OutletRow): Outlet {
     name: (row.name ?? "Outlet").trim(),
     code: row.code ?? null,
     active: Boolean(row.active ?? false),
+    channel: row.channel ?? null,
+    has_pos_middleware: row.has_pos_middleware ?? null,
     default_sales_warehouse_id: row.default_sales_warehouse_id ?? null,
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const scope = url.searchParams.get("scope")?.trim().toLowerCase() || null;
+
     const supabase = getServiceClient();
-    const { data, error } = await supabase.from("outlets").select("id,name,code,active,default_sales_warehouse_id").order("name");
+    const { data, error } = await supabase
+      .from("outlets")
+      .select("id,name,code,active,channel,has_pos_middleware,default_sales_warehouse_id")
+      .order("name");
     if (error) throw error;
 
-    const outlets = Array.isArray(data)
+    let outlets = Array.isArray(data)
       ? data
           .map(mapOutlet)
           .filter((outlet, index, list) => outlet.id && index === list.findIndex((entry) => entry.id === outlet.id))
       : [];
+
+    if (scope === "selling") {
+      outlets = outlets.filter((outlet) => isPosMiddlewareOutlet(outlet));
+    }
 
     return NextResponse.json({ outlets });
   } catch (error) {

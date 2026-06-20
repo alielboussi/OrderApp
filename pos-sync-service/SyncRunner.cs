@@ -152,6 +152,11 @@ public sealed class SyncRunner
         var delivered = new List<Guid>();
         foreach (var evt in events)
         {
+            if (evt.Payload.ScheduledAt.HasValue && evt.Payload.ScheduledAt.Value > DateTimeOffset.UtcNow)
+            {
+                continue;
+            }
+
             try
             {
                 await _catalogRepository.ApplyCatalogEventAsync(evt, cancellationToken);

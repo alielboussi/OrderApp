@@ -12,7 +12,9 @@ export type NavGroup = {
 export const BACKOFFICE_NAV: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ label: "Dashboard", href: "/Warehouse_Backoffice" }],
+    items: [
+      { label: "Dashboard", href: "/Warehouse_Backoffice" },
+    ],
     tone: "system",
   },
   {
@@ -36,7 +38,6 @@ export const BACKOFFICE_NAV: NavGroup[] = [
       { label: "Outlet orders", href: "/Warehouse_Backoffice/outlet-orders" },
       { label: "Outlet setup", href: "/Warehouse_Backoffice/outlet-setup" },
       { label: "POS sale deductions", href: "/Warehouse_Backoffice/pos-sale-deductions" },
-      { label: "Outlet live balances", href: "/Warehouse_Backoffice/outlet-live-balances" },
       { label: "Transfers", href: "/Warehouse_Backoffice/transfers" },
       { label: "Damages", href: "/Warehouse_Backoffice/damages" },
       { label: "Stocktakes", href: "/Warehouse_Backoffice/stocktakes" },
@@ -50,10 +51,19 @@ export const BACKOFFICE_NAV: NavGroup[] = [
   },
 ];
 
-export function pageTitleForPath(pathname: string): string {
+export function pageTitleForPath(pathname: string, hash?: string): string {
+  const normalizedHash = hash?.replace(/^#/, "") ?? "";
+  if (pathname === "/Warehouse_Backoffice" && normalizedHash === "outlet-live-balances") {
+    return "Live balances";
+  }
   for (const group of BACKOFFICE_NAV) {
     for (const item of group.items) {
-      if (pathname === item.href || (item.href !== "/Warehouse_Backoffice" && pathname.startsWith(item.href))) {
+      const itemPath = item.href.split("#")[0];
+      const itemHash = item.href.includes("#") ? item.href.split("#")[1] : "";
+      if (pathname === itemPath && (!itemHash || itemHash === normalizedHash)) {
+        return item.label;
+      }
+      if (pathname === item.href || (itemPath !== "/Warehouse_Backoffice" && pathname.startsWith(itemPath))) {
         return item.label;
       }
     }

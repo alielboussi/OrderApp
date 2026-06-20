@@ -30,6 +30,18 @@ type Variant = {
 };
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
+type DispatchMode = "send_now" | "schedule" | "delete";
+type DispatchStep = 1 | 2 | 3;
+type DispatchCandidate = {
+  key: string;
+  entity_type: "item" | "variant";
+  entity_id: string;
+  title: string;
+  sku: string | null;
+  change_type: string;
+  updated_at: string | null;
+  payload: Record<string, unknown>;
+};
 
 const SECTION_HEADERS: Record<string, string> = {
   finished: styles.sectionHeaderFinished,
@@ -37,17 +49,39 @@ const SECTION_HEADERS: Record<string, string> = {
   raw: styles.sectionHeaderRaw,
 };
 
+function formatCandidateKind(changeType: string) {
+  switch (changeType) {
+    case "upsert_item":
+      return "Product update";
+    case "upsert_variant":
+      return "Variant update";
+    case "delete_item":
+      return "Delete product in middleware POS";
+    case "delete_variant":
+      return "Delete variant in middleware POS";
+    default:
+      return changeType;
+  }
+}
+
+function toScheduledIso(dateValue: string, hour12: number, minute: number, amPm: "AM" | "PM") {
+  if (!dateValue) return null;
+  const [year, month, day] = dateValue.split("-").map((v) => Number(v));
+  if (!year || !month || !day) return null;
+  let hour24 = hour12 % 12;
+  if (amPm === "PM") hour24 += 12;
+  const dt = new Date(year, month - 1, day, hour24, minute, 0, 0);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toISOString();
+}
+
 function ProductCard({
   item,
   itemVariants,
-  readOnly,
-  onDelete,
   onVariants,
 }: {
   item: Item;
   itemVariants: Variant[];
-  readOnly: boolean;
-  onDelete: (id: string) => void;
   onVariants: (id: string) => void;
 }) {
   const hasVariants = itemVariants.length > 0;
@@ -97,21 +131,6 @@ function ProductCard({
             <h2 className={styles.itemName}>{item.name}</h2>
           </div>
         </div>
-        <button
-          className={`${styles.iconButton} ${styles.deleteButton}`}
-          onClick={() => onDelete(item.id)}
-          disabled={readOnly}
-          aria-label="Delete product"
-          title="Delete product"
-          type="button"
-        >
-          <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM6 7h12l-1 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7Z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
       </div>
     </article>
   );
@@ -119,13 +138,23 @@ function ProductCard({
 
 export default function CatalogMenuPage() {
   const router = useRouter();
-  const { status, readOnly, deleteDisabled } = useWarehouseAuth();
+  const { status } = useWarehouseAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [dispatchStep, setDispatchStep] = useState<DispatchStep>(1);
+  const [dispatchMode, setDispatchMode] = useState<DispatchMode>("send_now");
+  const [dispatchCandidates, setDispatchCandidates] = useState<DispatchCandidate[]>([]);
+  const [selectedDispatchKeys, setSelectedDispatchKeys] = useState<string[]>([]);
+  const [dispatchBusy, setDispatchBusy] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleHour, setScheduleHour] = useState(9);
+  const [scheduleMinute, setScheduleMinute] = useState(0);
+  const [scheduleAmPm, setScheduleAmPm] = useState<"AM" | "PM">("AM");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,35 +176,83 @@ export default function CatalogMenuPage() {
     }
   }, []);
 
-  const handleDeleteItem = useCallback(
-    async (itemId: string) => {
-      if (!itemId) return;
-      if (deleteDisabled) {
-        setError("Delete access is disabled for this user.");
-        return;
+  const loadDispatchCandidates = useCallback(async (mode: DispatchMode) => {
+    const res = await fetch(`/api/catalog/update-dispatch?mode=${encodeURIComponent(mode)}`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.error || "Unable to load updates to send");
+    }
+    const candidates = Array.isArray(json.candidates) ? (json.candidates as DispatchCandidate[]) : [];
+    setDispatchCandidates(candidates);
+    setSelectedDispatchKeys(candidates.map((candidate) => candidate.key));
+  }, []);
+
+  const openDispatchDialog = () => {
+    setDispatchOpen(true);
+    setDispatchStep(1);
+    setDispatchMode("send_now");
+    setDispatchCandidates([]);
+    setSelectedDispatchKeys([]);
+    setScheduleDate("");
+    setScheduleHour(9);
+    setScheduleMinute(0);
+    setScheduleAmPm("AM");
+    setError(null);
+  };
+
+  const chooseDispatchMode = async (mode: DispatchMode) => {
+    setDispatchMode(mode);
+    setDispatchBusy(true);
+    setError(null);
+    try {
+      await loadDispatchCandidates(mode);
+      setDispatchStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load updates");
+    } finally {
+      setDispatchBusy(false);
+    }
+  };
+
+  const submitDispatch = async () => {
+    if (!selectedDispatchKeys.length) {
+      setError("Select at least one entry.");
+      return;
+    }
+
+    const scheduledAt =
+      dispatchMode === "schedule"
+        ? toScheduledIso(scheduleDate, scheduleHour, scheduleMinute, scheduleAmPm)
+        : null;
+    if (dispatchMode === "schedule" && !scheduledAt) {
+      setError("Select a valid schedule date and time.");
+      return;
+    }
+
+    setDispatchBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/catalog/update-dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: dispatchMode,
+          selected_keys: selectedDispatchKeys,
+          scheduled_at: scheduledAt,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "Unable to send updates");
       }
-      const confirmation = window.prompt("Type YES to confirm deleting this product.");
-      if (!confirmation || confirmation.trim().toLowerCase() !== "yes") {
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/catalog/items?id=${encodeURIComponent(itemId)}`, { method: "DELETE" });
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Failed to delete product");
-        }
-        await load();
-      } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : "Failed to delete product");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [load, deleteDisabled]
-  );
+      setDispatchOpen(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send updates");
+    } finally {
+      setDispatchBusy(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -244,6 +321,9 @@ export default function CatalogMenuPage() {
   }, [items, variants, search, typeFilter]);
 
   const variantCount = useMemo(() => variants.length, [variants]);
+  const selectedCount = selectedDispatchKeys.length;
+  const hourAngle = ((scheduleHour % 12) + scheduleMinute / 60) * 30;
+  const minuteAngle = scheduleMinute * 6;
 
   const openVariants = (itemId: string) => {
     router.push(`/Warehouse_Backoffice/catalog/variants?item_id=${encodeURIComponent(itemId)}`);
@@ -274,6 +354,9 @@ export default function CatalogMenuPage() {
           </button>
           <button type="button" className={eb.btnSecondary} onClick={load} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button type="button" className={eb.btnPrimary} onClick={openDispatchDialog} disabled={loading}>
+            Send updates
           </button>
         </div>
         <div className={eb.summaryGrid} style={{ marginTop: 16 }}>
@@ -337,8 +420,6 @@ export default function CatalogMenuPage() {
                         key={item.id}
                         item={item}
                         itemVariants={itemVariants}
-                        readOnly={readOnly}
-                        onDelete={handleDeleteItem}
                         onVariants={openVariants}
                       />
                     ))}
@@ -355,8 +436,6 @@ export default function CatalogMenuPage() {
                   key={item.id}
                   item={item}
                   itemVariants={itemVariants}
-                  readOnly={readOnly}
-                  onDelete={handleDeleteItem}
                   onVariants={openVariants}
                 />
               ))}
@@ -364,6 +443,157 @@ export default function CatalogMenuPage() {
           </div>
         )}
       </section>
+
+      {dispatchOpen ? (
+        <div className={styles.dialogOverlay} role="dialog" aria-modal="true">
+          <div className={styles.dialogCard}>
+            {dispatchStep === 1 ? (
+              <>
+                <h3 className={styles.dialogTitle}>Choose dispatch mode</h3>
+                <div className={styles.dialogActions}>
+                  <button type="button" className={eb.btnPrimary} onClick={() => chooseDispatchMode("send_now")} disabled={dispatchBusy}>
+                    Send now
+                  </button>
+                  <button type="button" className={eb.btnGold} onClick={() => chooseDispatchMode("schedule")} disabled={dispatchBusy}>
+                    Schedule
+                  </button>
+                  <button type="button" className={eb.btnDeduct} onClick={() => chooseDispatchMode("delete")} disabled={dispatchBusy}>
+                    Delete
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {dispatchStep === 2 ? (
+              <>
+                <h3 className={styles.dialogTitle}>
+                  {dispatchMode === "delete" ? "Select products/variants to delete in middleware POS" : "Select updates to dispatch"}
+                </h3>
+                <div className={styles.dialogList}>
+                  {dispatchCandidates.length === 0 ? (
+                    <p className={styles.dialogEmpty}>No entries found.</p>
+                  ) : (
+                    dispatchCandidates.map((candidate) => (
+                      <label key={candidate.key} className={styles.dialogRow}>
+                        <input
+                          type="checkbox"
+                          checked={selectedDispatchKeys.includes(candidate.key)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedDispatchKeys((prev) =>
+                              checked ? Array.from(new Set([...prev, candidate.key])) : prev.filter((key) => key !== candidate.key)
+                            );
+                          }}
+                        />
+                        <span className={styles.dialogRowText}>
+                          <strong>{candidate.title}</strong>
+                          <span>{formatCandidateKind(candidate.change_type)}</span>
+                          <span>{candidate.sku ? `SKU: ${candidate.sku}` : "SKU: —"}</span>
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <div className={styles.dialogFooter}>
+                  <span className={styles.dialogMeta}>{selectedCount} selected</span>
+                  <div className={styles.dialogActions}>
+                    <button type="button" className={eb.btnSecondary} onClick={() => setDispatchOpen(false)} disabled={dispatchBusy}>
+                      Cancel
+                    </button>
+                    {dispatchMode === "schedule" ? (
+                      <button
+                        type="button"
+                        className={eb.btnGold}
+                        onClick={() => setDispatchStep(3)}
+                        disabled={dispatchBusy || selectedCount === 0}
+                      >
+                        Continue
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={dispatchMode === "delete" ? eb.btnDeduct : eb.btnPrimary}
+                        onClick={submitDispatch}
+                        disabled={dispatchBusy || selectedCount === 0}
+                      >
+                        {dispatchMode === "delete" ? "Delete" : "Send"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {dispatchStep === 3 ? (
+              <>
+                <h3 className={styles.dialogTitle}>Schedule send</h3>
+                <div className={styles.scheduleGrid}>
+                  <label className={eb.fieldLabel}>
+                    Date
+                    <input
+                      type="date"
+                      className={eb.fieldInput}
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                    />
+                  </label>
+
+                  <div className={styles.clockPanel}>
+                    <div className={styles.clockFace}>
+                      <div className={styles.clockCenter} />
+                      <div className={styles.clockHandHour} style={{ transform: `translateX(-50%) rotate(${hourAngle}deg)` }} />
+                      <div className={styles.clockHandMinute} style={{ transform: `translateX(-50%) rotate(${minuteAngle}deg)` }} />
+                    </div>
+                    <div className={styles.clockInputs}>
+                      <label className={eb.fieldLabel}>
+                        Hour
+                        <input
+                          type="range"
+                          min={1}
+                          max={12}
+                          value={scheduleHour}
+                          onChange={(e) => setScheduleHour(Number(e.target.value))}
+                        />
+                      </label>
+                      <label className={eb.fieldLabel}>
+                        Minute
+                        <input
+                          type="range"
+                          min={0}
+                          max={59}
+                          value={scheduleMinute}
+                          onChange={(e) => setScheduleMinute(Number(e.target.value))}
+                        />
+                      </label>
+                      <label className={eb.fieldLabel}>
+                        AM / PM
+                        <select
+                          className={eb.fieldSelect}
+                          value={scheduleAmPm}
+                          onChange={(e) => setScheduleAmPm(e.target.value === "PM" ? "PM" : "AM")}
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.dialogFooter}>
+                  <div className={styles.dialogActions}>
+                    <button type="button" className={eb.btnSecondary} onClick={() => setDispatchStep(2)} disabled={dispatchBusy}>
+                      Back
+                    </button>
+                    <button type="button" className={eb.btnGold} onClick={submitDispatch} disabled={dispatchBusy || selectedCount === 0}>
+                      Schedule send
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

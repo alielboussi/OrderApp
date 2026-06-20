@@ -12,13 +12,39 @@ type BackofficeShellProps = {
   children: React.ReactNode;
 };
 
+function navItemActive(pathname: string, hash: string, href: string): boolean {
+  const [itemPath, itemHash = ""] = href.split("#");
+  if (pathname !== itemPath) {
+    return itemPath !== "/Warehouse_Backoffice" && pathname.startsWith(itemPath);
+  }
+  if (itemHash) return hash === itemHash;
+  if (hash === "outlet-live-balances") return false;
+  return href === pathname;
+}
+
+function usernameForEmail(email: string | null): string {
+  if (!email) return "user";
+  const normalized = email.trim().toLowerCase();
+  if (normalized === "alielboussi00@gmail.com") return "Ali";
+  if (normalized === "husseinelboussizam@gmail.com") return "Hussein";
+  if (normalized === "mohammadalboussi@gmail.com") return "Mohammad";
+  return email.split("@")[0] || "user";
+}
+
 export default function BackofficeShell({ children }: BackofficeShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { status } = useWarehouseAuth();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [email, setEmail] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [hash, setHash] = useState("");
+
+  useEffect(() => {
+    const syncHash = () => setHash(window.location.hash.replace(/^#/, ""));
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -27,8 +53,6 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
       if (!active) return;
       const user = data.user;
       setEmail(user?.email ?? null);
-      const meta = user?.user_metadata as { full_name?: string; name?: string; username?: string } | undefined;
-      setDisplayName(meta?.full_name ?? meta?.name ?? meta?.username ?? null);
     });
     return () => {
       active = false;
@@ -44,7 +68,8 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
     return null;
   }
 
-  const pageTitle = pageTitleForPath(pathname ?? "");
+  const pageTitle = pageTitleForPath(pathname ?? "", hash);
+  const emailUsername = usernameForEmail(email);
 
   return (
     <div className={styles.shell}>
@@ -60,9 +85,7 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
                 {group.label}
               </p>
               {group.items.map((item) => {
-                const active =
-                  pathname === item.href ||
-                  (item.href !== "/Warehouse_Backoffice" && pathname?.startsWith(item.href));
+                const active = navItemActive(pathname ?? "", hash, item.href);
                 return (
                   <Link
                     key={item.href}
@@ -86,14 +109,11 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
         <header className={styles.header}>
           <div>
             <h2 className={styles.headerTitle}>{pageTitle}</h2>
-            {email ? (
-              <p className={styles.headerMeta}>
-                {displayName ? `${displayName} · ` : ""}
-                {email}
-              </p>
-            ) : null}
           </div>
         </header>
+        <div className={styles.welcomeBanner}>
+          Welcome to the Afterten Portal, {emailUsername}
+        </div>
         <div className={styles.content}>{children}</div>
       </div>
     </div>

@@ -209,6 +209,33 @@ async function syncBaseStorageHomes(
   }
 }
 
+async function upsertItemUpdateDraft(
+  supabase: ReturnType<typeof getServiceClient>,
+  params: { itemId: string; sku: string | null; name: string; price: number | null }
+) {
+  const payload: Record<string, unknown> = {
+    change_type: "upsert_item",
+    sku: params.sku,
+    name: params.name,
+    price: params.price,
+  };
+  const { error } = await supabase
+    .from("middleware_update_drafts")
+    .upsert(
+      {
+        entity_type: "item",
+        entity_id: params.itemId,
+        payload,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "entity_type,entity_id" }
+    );
+
+  if (error) {
+    throw new Error(error.message || "Failed to save item update draft");
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -459,6 +486,17 @@ export async function POST(request: Request) {
       console.error("[catalog/items] storage home upsert failed", storageError);
     }
 
+    try {
+      await upsertItemUpdateDraft(supabase, {
+        itemId: data.id,
+        sku: cleanText(payload.sku) ?? null,
+        name: payload.name,
+        price: payload.selling_price ?? null,
+      });
+    } catch (queueError) {
+      console.error("[catalog/items] save draft failed", queueError);
+    }
+
     return NextResponse.json({ item: { ...data, storage_home_id: storageHomeId, storage_home_ids: resolvedStorageHomeIds } });
   } catch (error) {
     console.error("[catalog/items] POST failed", error);
@@ -610,6 +648,17 @@ export async function PUT(request: Request) {
       await syncBaseStorageHomes(supabase, data.id as string, resolvedStorageHomeIds);
     } catch (storageError) {
       console.error("[catalog/items] storage home upsert failed", storageError);
+    }
+
+    try {
+      await upsertItemUpdateDraft(supabase, {
+        itemId: data.id,
+        sku: cleanText(payload.sku) ?? null,
+        name: payload.name,
+        price: payload.selling_price ?? null,
+      });
+    } catch (queueError) {
+      console.error("[catalog/items] save draft failed", queueError);
     }
 
     return NextResponse.json({ item: { ...data, storage_home_id: storageHomeId, storage_home_ids: resolvedStorageHomeIds } });

@@ -151,7 +151,7 @@
   padding: 14px 24px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 16px;
   flex-wrap: wrap;
 }
@@ -161,6 +161,7 @@
   font-size: 18px;
   font-weight: 700;
   color: var(--eb-black);
+  text-align: center;
 }
 
 .headerMeta {
@@ -169,10 +170,40 @@
   color: var(--eb-muted);
 }
 
+.headerLink {
+  color: var(--eb-blue, #1a5fb4);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.headerLink:hover {
+  text-decoration: underline;
+}
+
 .content {
   flex: 1;
   padding: 20px 24px 32px;
   overflow-x: auto;
+}
+
+.welcomeBanner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 0;
+  min-height: 5cm;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 0;
+  background: var(--eb-blue);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.2;
+  text-align: center;
 }
 
 /* Reusable page primitives */

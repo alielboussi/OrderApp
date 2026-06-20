@@ -17,9 +17,70 @@ export function isPosMiddlewareOutlet(outlet: MiddlewareOutletCandidate): boolea
   if (channel !== "selling") return false;
 
   const label = `${outlet.name ?? ""} ${outlet.code ?? ""}`.toLowerCase();
-  if (/\bstorerooms?\b/.test(label)) return false;
+  if (isStoreroomLabel(label)) return false;
 
   return true;
+}
+
+export function isStoreroomLabel(label: string): boolean {
+  return /\bstorerooms?\b/i.test(label);
+}
+
+/** Outlet deduction warehouses — scope outlet, not hub storerooms. */
+export function isOutletDeductionWarehouse(warehouse: {
+  name?: string | null;
+  warehouse_scope?: string | null;
+}): boolean {
+  const scope = (warehouse.warehouse_scope ?? "").trim().toLowerCase();
+  if (scope === "hub") return false;
+  if (isStoreroomLabel(warehouse.name ?? "")) return false;
+  return scope === "outlet" || scope === "";
+}
+
+export type OutletWarehouseLink = {
+  outlet_id: string;
+  outlet_name?: string | null;
+  warehouse_id: string;
+  warehouse_name?: string | null;
+  warehouse_scope?: string | null;
+};
+
+export function outletCandidateFromLink<T extends OutletWarehouseLink>(
+  row: T,
+  outletsById?: Map<string, MiddlewareOutletCandidate>
+): MiddlewareOutletCandidate {
+  const meta = outletsById?.get(row.outlet_id);
+  return {
+    name: meta?.name ?? row.outlet_name,
+    code: meta?.code ?? null,
+    active: meta?.active ?? true,
+    channel: meta?.channel ?? "selling",
+    has_pos_middleware: meta?.has_pos_middleware ?? null,
+  };
+}
+
+export function filterSellingOutletWarehouseLinks<T extends OutletWarehouseLink>(
+  links: T[],
+  outletsById: Map<string, MiddlewareOutletCandidate>
+): T[] {
+  return links.filter((row) => {
+    const outlet = outletCandidateFromLink(row, outletsById);
+    if (!outletsById.has(row.outlet_id) && !row.outlet_name) return false;
+    if (!isPosMiddlewareOutlet(outlet)) return false;
+    return isOutletDeductionWarehouse({
+      name: row.warehouse_name,
+      warehouse_scope: row.warehouse_scope,
+    });
+  });
+}
+
+export function outletWarehouseLabel<T extends OutletWarehouseLink>(
+  row: T,
+  links: T[]
+): string {
+  const warehousesForOutlet = links.filter((entry) => entry.outlet_id === row.outlet_id);
+  if (warehousesForOutlet.length <= 1) return row.outlet_name?.trim() || "Outlet";
+  return `${row.outlet_name ?? "Outlet"} — ${row.warehouse_name ?? "Warehouse"}`;
 }
 
 /** Warehouse IDs linked to selling outlets (outlet_warehouses + default outlet warehouses). */

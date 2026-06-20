@@ -188,6 +188,42 @@ function toErrorDetails(error: unknown) {
   };
 }
 
+async function upsertVariantUpdateDraft(
+  supabase: ReturnType<typeof getServiceClient>,
+  params: {
+    variantId: string;
+    itemSku: string | null;
+    variantSku: string | null;
+    variantName: string;
+    price: number | null;
+    posFlavourId: string | null;
+  }
+) {
+  const payload = {
+    change_type: "upsert_variant",
+    item_sku: params.itemSku,
+    variant_sku: params.variantSku,
+    variant_name: params.variantName,
+    price: params.price,
+    pos_flavour_id: params.posFlavourId,
+  };
+  const { error } = await supabase
+    .from("middleware_update_drafts")
+    .upsert(
+      {
+        entity_type: "variant",
+        entity_id: params.variantId,
+        payload,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "entity_type,entity_id" }
+    );
+
+  if (error) {
+    throw new Error(error.message || "Failed to save variant update draft");
+  }
+}
+
 async function refreshHasVariations(supabase: ReturnType<typeof getServiceClient>, itemId: string) {
   const { count, error } = await supabase
     .from("catalog_variants")
@@ -500,9 +536,9 @@ export async function POST(request: Request) {
     const supabase = getServiceClient();
     const { data: itemRow, error: itemError } = (await supabase
       .from("catalog_items")
-      .select("id,item_kind")
+      .select("id,item_kind,sku")
       .eq("id", itemId)
-      .maybeSingle()) as { data: { id: string; item_kind?: ItemKind | null } | null; error: Error | null };
+      .maybeSingle()) as { data: { id: string; item_kind?: ItemKind | null; sku?: string | null } | null; error: Error | null };
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
@@ -560,6 +596,19 @@ export async function POST(request: Request) {
       console.error("[catalog/variants] storage home upsert failed", storageError);
     }
 
+    try {
+      await upsertVariantUpdateDraft(supabase, {
+        variantId: responseVariant.id,
+        itemSku: itemRow?.sku ?? null,
+        variantSku: responseVariant.sku ?? null,
+        variantName: responseVariant.name,
+        price: responseVariant.selling_price ?? null,
+        posFlavourId: responseVariant.id,
+      });
+    } catch (queueError) {
+      console.error("[catalog/variants] save draft failed", queueError);
+    }
+
     return NextResponse.json({
       variant: {
         ...responseVariant,
@@ -599,9 +648,9 @@ export async function PUT(request: Request) {
 
     const { data: itemRow, error: itemError } = (await supabase
       .from("catalog_items")
-      .select("id,item_kind")
+      .select("id,item_kind,sku")
       .eq("id", effectiveItemId)
-      .maybeSingle()) as { data: { id: string; item_kind?: ItemKind | null } | null; error: Error | null };
+      .maybeSingle()) as { data: { id: string; item_kind?: ItemKind | null; sku?: string | null } | null; error: Error | null };
     if (itemError) throw itemError;
     if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
@@ -767,6 +816,19 @@ export async function PUT(request: Request) {
       } catch (storageError) {
         console.error("[catalog/variants] storage home upsert failed", storageError);
       }
+    }
+
+    try {
+      await upsertVariantUpdateDraft(supabase, {
+        variantId: responseVariant.id,
+        itemSku: itemRow?.sku ?? null,
+        variantSku: responseVariant.sku ?? null,
+        variantName: responseVariant.name,
+        price: responseVariant.selling_price ?? null,
+        posFlavourId: responseVariant.id,
+      });
+    } catch (queueError) {
+      console.error("[catalog/variants] save draft failed", queueError);
     }
 
     return NextResponse.json({

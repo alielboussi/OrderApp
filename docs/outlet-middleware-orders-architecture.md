@@ -6,7 +6,7 @@
 |-------|------------|----------|---------------|
 | **Outlet** | A selling location (21 total) | Quick Corner, Remote Branch 5 | **Yes** — one SCPGT service per outlet |
 | **Outlet warehouse** | Stock held *at* that outlet after orders are approved | "QC Dry Store", "QC Cold" | **No** — inventory only |
-| **Hub warehouse** | Central production/storage (main branch) | Beverages storeroom, Cold room 3, Prep kitchen | **No** — scanners & purchases |
+| **Hub warehouse** | Central production/storage (main branch) | Prep kitchen, central cold storage | **No** — backoffice purchases & transfers |
 
 ### How to tell them apart in Supabase
 

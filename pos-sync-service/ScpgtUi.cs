@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -26,7 +25,6 @@ public static class ScpgtUi
         window.UpdateStatus("Starting...", "Loading outlet settings.");
 
         var coordinator = host.Services.GetRequiredService<ScpgtCoordinator>();
-        var syncLock = new SemaphoreSlim(1, 1);
 
         var cts = new CancellationTokenSource();
         var signalThread = new Thread(() =>
@@ -56,49 +54,13 @@ public static class ScpgtUi
         };
         signalThread.Start();
 
-        async Task RunManualSyncAsync()
+        window.Closing += (sender, e) =>
         {
-            if (!await syncLock.WaitAsync(0))
+            if (sender is Window w)
             {
-                return;
+                e.Cancel = true;
+                w.Hide();
             }
-
-            try
-            {
-                window.Dispatcher.Invoke(() => window.SetSyncInProgress(true));
-                var snapshot = await coordinator.RunManualSyncAsync(cts.Token);
-                window.Dispatcher.Invoke(() =>
-                {
-                    window.UpdateSnapshot(snapshot);
-                    if (snapshot.ShouldHideUi)
-                    {
-                        window.Hide();
-                    }
-                });
-            }
-            finally
-            {
-                window.Dispatcher.Invoke(() => window.SetSyncInProgress(false));
-                syncLock.Release();
-            }
-        }
-
-        window.CloseRequested += (_, _) =>
-        {
-            cts.Cancel();
-            window.Close();
-        };
-
-        window.SyncRequested += async (_, _) =>
-        {
-            await RunManualSyncAsync();
-        };
-
-        window.Closed += async (_, _) =>
-        {
-            cts.Cancel();
-            await host.StopAsync();
-            app.Shutdown();
         };
 
         _ = Task.Run(async () =>

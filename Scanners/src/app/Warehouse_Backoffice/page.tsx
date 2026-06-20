@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { isPosMiddlewareOutlet } from "@/lib/outletScope";
+import OutletLiveBalancesPanel from "./OutletLiveBalancesPanel";
 import styles from "./enterprise.module.css";
 
 type HeartbeatRow = {
@@ -23,6 +24,12 @@ type OutletRow = {
   channel?: string | null;
 };
 
+type MiddlewareScheduleRow = {
+  id: string;
+  scheduled_at: string | null;
+  updated_at?: string | null;
+};
+
 const OFFLINE_MS = 10 * 60 * 1000;
 const POLL_MS = 60_000;
 
@@ -40,15 +47,47 @@ function minutesAgo(value?: string | null) {
   return Math.floor((Date.now() - d.getTime()) / 60_000);
 }
 
+function formatCountdown(targetIso: string | null, nowMs: number) {
+  if (!targetIso) return "Immediate";
+  const target = new Date(targetIso);
+  if (Number.isNaN(target.getTime())) return "Immediate";
+  const diffMs = target.getTime() - nowMs;
+  if (diffMs <= 0) return "Due now";
+
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 export default function WarehouseBackofficeDashboard() {
   const { status } = useWarehouseAuth();
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
-  const [email, setEmail] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
   const [rows, setRows] = useState<HeartbeatRow[]>([]);
   const [allOutlets, setAllOutlets] = useState<OutletRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
+  const [schedule, setSchedule] = useState<MiddlewareScheduleRow | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#outlet-live-balances") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("outlet-live-balances")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (status !== "ok") return;
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [status]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -57,19 +96,13 @@ export default function WarehouseBackofficeDashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const { data: userData } = await supabase.auth.getUser();
-        if (!active) return;
-        const user = userData.user;
-        setEmail(user?.email ?? null);
-        const meta = user?.user_metadata as { full_name?: string; name?: string; username?: string } | undefined;
-        setDisplayName(meta?.full_name ?? meta?.name ?? meta?.username ?? null);
-
-        const [hbRes, outRes] = await Promise.all([
+        const [hbRes, outRes, scheduleRes] = await Promise.all([
           supabase
             .from("outlet_pos_heartbeats")
             .select("outlet_id,last_seen_at,middleware_version,host_name,outlets(id,name,code)")
             .order("last_seen_at", { ascending: false }),
           supabase.from("outlets").select("id,name,code,active,has_pos_middleware,channel").order("name"),
+          fetch("/api/middleware-catalog-schedule"),
         ]);
 
         if (!active) return;
@@ -78,11 +111,18 @@ export default function WarehouseBackofficeDashboard() {
 
         setRows((hbRes.data as HeartbeatRow[]) ?? []);
         setAllOutlets((outRes.data as OutletRow[]) ?? []);
+        if (scheduleRes.ok) {
+          const json = await scheduleRes.json();
+          setSchedule((json.schedule ?? null) as MiddlewareScheduleRow | null);
+        } else {
+          setSchedule(null);
+        }
         setLastChecked(new Date().toISOString());
       } catch {
         if (active) {
           setRows([]);
           setAllOutlets([]);
+          setSchedule(null);
         }
       } finally {
         if (active) setLoading(false);
@@ -116,6 +156,7 @@ export default function WarehouseBackofficeDashboard() {
 
   const offlineCount = merged.filter((m) => m.offline).length;
   const onlineCount = merged.length - offlineCount;
+  const countdown = formatCountdown(schedule?.scheduled_at ?? null, nowMs);
 
   if (status !== "ok") {
     return null;
@@ -127,40 +168,21 @@ export default function WarehouseBackofficeDashboard() {
         <div className={`${styles.alertBanner} ${styles.alertRed}`}>
           <div>
             <strong>{offlineCount} outlet{offlineCount > 1 ? "s" : ""} offline</strong>
-            <p style={{ margin: "6px 0 0", fontSize: 13 }}>
-              No middleware pulse for more than 10 minutes:{" "}
+            <div style={{ marginTop: 6, fontSize: 13 }}>
               {merged
                 .filter((m) => m.offline)
                 .map((m) => m.outlet.name)
                 .join(", ")}
-              .
-            </p>
+            </div>
           </div>
         </div>
       )}
-
-      <section className={styles.pageCard}>
-        <h3 className={styles.pageCardTitle}>Signed in</h3>
-        <div className={styles.statGrid}>
-          <div className={styles.statCard}>
-            <p className={styles.statLabel}>Email</p>
-            <p className={styles.statValue}>{email ?? "—"}</p>
-          </div>
-          <div className={styles.statCard}>
-            <p className={styles.statLabel}>Username</p>
-            <p className={styles.statValue}>{displayName ?? "—"}</p>
-          </div>
-        </div>
-      </section>
 
       <section className={styles.pageCard}>
         <div className={styles.sectionHeaderBlue}>
           <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
             Middleware connection monitor
           </h3>
-          <p className={styles.pageCardBody}>
-            Refreshes every 60 seconds. Selling outlets with POS middleware only — storerooms and hub locations are excluded.
-          </p>
         </div>
         <div className={styles.summaryGrid}>
           <div className={`${styles.summaryCard} ${styles.summaryCardGreen}`}>
@@ -175,6 +197,15 @@ export default function WarehouseBackofficeDashboard() {
             <p className={styles.summaryLabel}>Last checked</p>
             <p className={styles.summaryValue} style={{ fontSize: 13 }}>
               {formatStamp(lastChecked)}
+            </p>
+          </div>
+          <div className={`${styles.summaryCard} ${styles.summaryCardBlue}`}>
+            <p className={styles.summaryLabel}>Scheduled release</p>
+            <p className={styles.summaryValue} style={{ fontSize: 13 }}>
+              {countdown}
+            </p>
+            <p className={styles.pageCardBody} style={{ margin: "6px 0 0", fontSize: 12 }}>
+              {schedule?.scheduled_at ? formatStamp(schedule.scheduled_at) : "No schedule set"}
             </p>
           </div>
         </div>
@@ -226,6 +257,8 @@ export default function WarehouseBackofficeDashboard() {
           </div>
         )}
       </section>
+
+      <OutletLiveBalancesPanel />
     </div>
   );
 }

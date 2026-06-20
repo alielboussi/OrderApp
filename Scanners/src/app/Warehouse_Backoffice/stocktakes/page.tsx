@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { fetchSellingOutlets, fetchSellingOutletWarehouses, groupSellingOutletWarehouses } from "@/lib/sellingOutlets";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import eb from "../enterprise.module.css";
 import styles from "./outlet-stocktake.module.css";
@@ -14,6 +15,7 @@ type OutletWarehouse = {
   outlet_name: string;
   warehouse_id: string;
   warehouse_name: string;
+  display_name: string;
 };
 
 type LiveBalanceRow = {
@@ -106,16 +108,15 @@ export default function StocktakesPage() {
   const closedPeriods = useMemo(() => periods.filter((p) => p.status === "closed"), [periods]);
 
   const loadOutletWarehouses = useCallback(async () => {
-    const { data, error: loadError } = await supabase
-      .from("v_outlet_warehouses")
-      .select("outlet_id,outlet_name,warehouse_id,warehouse_name")
-      .eq("show_in_stocktake", true)
-      .order("outlet_name");
-    if (loadError) throw loadError;
-    const rows = (data as OutletWarehouse[]) ?? [];
+    const [outlets, links] = await Promise.all([fetchSellingOutlets(), fetchSellingOutletWarehouses()]);
+    const defaults = new Map(outlets.map((outlet) => [outlet.id, outlet.default_sales_warehouse_id ?? null]));
+    const rows = groupSellingOutletWarehouses(links, defaults);
     setOutletWarehouses(rows);
-    setSelectedWarehouseId((current) => current || rows[0]?.warehouse_id || "");
-  }, [supabase]);
+    setSelectedWarehouseId((current) => {
+      if (current && rows.some((row) => row.warehouse_id === current)) return current;
+      return rows[0]?.warehouse_id || "";
+    });
+  }, []);
 
   const loadLiveBalances = useCallback(
     async (warehouseId: string, outletId: string) => {
@@ -281,7 +282,7 @@ export default function StocktakesPage() {
       setPdfBusyId(period.id);
       await downloadVariancePdf({
         periodId: period.id,
-        warehouseLabel: `${selectedOutlet?.outlet_name ?? "Outlet"} — ${selectedOutlet?.warehouse_name ?? "Warehouse"}`,
+        warehouseLabel: selectedOutlet?.display_name ?? `${selectedOutlet?.outlet_name ?? "Outlet"} — ${selectedOutlet?.warehouse_name ?? "Warehouse"}`,
         periodLabel: period.stocktake_number || period.id.slice(0, 8),
       });
     } catch (err) {
@@ -320,17 +321,21 @@ export default function StocktakesPage() {
       <section className={eb.pageCard}>
         <div className={styles.toolbar}>
           <label className={styles.field}>
-            <span className={styles.label}>Outlet warehouse</span>
+            <span className={styles.label}>Outlet</span>
             <select
               className={styles.select}
               value={selectedWarehouseId}
               onChange={(e) => setSelectedWarehouseId(e.target.value)}
             >
-              {outletWarehouses.map((row) => (
-                <option key={row.warehouse_id} value={row.warehouse_id}>
-                  {row.outlet_name} — {row.warehouse_name}
-                </option>
-              ))}
+              {outletWarehouses.length === 0 ? (
+                <option value="">No selling outlets configured</option>
+              ) : (
+                outletWarehouses.map((row) => (
+                  <option key={row.warehouse_id} value={row.warehouse_id}>
+                    {row.display_name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
           {lastRefreshed && (

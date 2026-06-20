@@ -1,13 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchSellingOutlets, fetchSellingOutletWarehouses, groupSellingOutletWarehouses } from "@/lib/sellingOutlets";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "../enterprise.module.css";
 
 type Outlet = { id: string; name: string };
 type CatalogItem = { id: string; name: string; sku?: string | null; item_kind?: string | null };
 type Variant = { id: string; item_id: string; name: string; sku?: string | null };
-type OutletWarehouse = { outlet_id: string; warehouse_id: string; warehouse_name: string };
+type OutletWarehouse = {
+  outlet_id: string;
+  outlet_name: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  display_name: string;
+};
 
 type DeductionLine = {
   deduct_item_id: string;
@@ -26,12 +33,21 @@ const emptyLine = (): DeductionLine => ({
   warehouse_id: "",
 });
 
+function variantKeyFor(variant: Variant): string {
+  return variant.sku?.trim() || variant.name.toLowerCase().replace(/\s+/g, "_");
+}
+
+function variantsForItem(variants: Variant[], itemId: string): Variant[] {
+  return variants.filter((v) => v.item_id === itemId);
+}
+
 export default function PosSaleDeductionsPage() {
   const { status, readOnly } = useWarehouseAuth();
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [outletWarehouses, setOutletWarehouses] = useState<OutletWarehouse[]>([]);
+  const [outletDefaults, setOutletDefaults] = useState<Map<string, string | null>>(new Map());
 
   const [outletId, setOutletId] = useState("");
   const [soldItemId, setSoldItemId] = useState("");
@@ -45,19 +61,20 @@ export default function PosSaleDeductionsPage() {
 
   useEffect(() => {
     if (status !== "ok") return;
+    let cancelled = false;
     const load = async () => {
-      const [outRes, itemRes, varRes, owRes] = await Promise.all([
-        fetch("/api/outlets"),
+      const [outletList, itemRes, varRes, warehouseList] = await Promise.all([
+        fetchSellingOutlets(),
         fetch("/api/catalog/items"),
         fetch("/api/catalog/variants"),
-        fetch("/api/outlet-warehouses"),
+        fetchSellingOutletWarehouses(),
       ]);
-      if (outRes.ok) {
-        const json = await outRes.json();
-        const list = (json.outlets as Outlet[]) ?? [];
-        setOutlets(list);
-        if (list.length && !outletId) setOutletId(list[0].id);
-      }
+      if (cancelled) return;
+      setOutlets(outletList);
+      setOutletId((current) => current || outletList[0]?.id || "");
+      setOutletDefaults(
+        new Map(outletList.map((outlet) => [outlet.id, outlet.default_sales_warehouse_id ?? null]))
+      );
       if (itemRes.ok) {
         const json = await itemRes.json();
         setItems((json.items as CatalogItem[]) ?? []);
@@ -66,22 +83,40 @@ export default function PosSaleDeductionsPage() {
         const json = await varRes.json();
         setVariants((json.variants as Variant[]) ?? []);
       }
-      if (owRes.ok) {
-        const json = await owRes.json();
-        setOutletWarehouses((json.links as OutletWarehouse[]) ?? []);
-      }
+      setOutletWarehouses(warehouseList);
     };
     load();
-  }, [status, outletId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
-  const soldVariants = useMemo(
-    () => variants.filter((v) => v.item_id === soldItemId),
-    [variants, soldItemId]
-  );
+  const soldVariants = useMemo(() => variantsForItem(variants, soldItemId), [variants, soldItemId]);
 
   const warehousesForOutlet = useMemo(
-    () => outletWarehouses.filter((ow) => ow.outlet_id === outletId),
-    [outletWarehouses, outletId]
+    () =>
+      groupSellingOutletWarehouses(
+        outletWarehouses.filter((ow) => ow.outlet_id === outletId),
+        outletDefaults
+      ),
+    [outletWarehouses, outletId, outletDefaults]
+  );
+
+  useEffect(() => {
+    const primary = warehousesForOutlet[0]?.warehouse_id;
+    if (!primary) return;
+    setLines((prev) =>
+      prev.map((line) => (line.warehouse_id ? line : { ...line, warehouse_id: primary }))
+    );
+  }, [outletId, warehousesForOutlet]);
+
+  const variantLabel = useCallback(
+    (itemId: string, key: string) => {
+      if (key === "base") return "base";
+      const match = variantsForItem(variants, itemId).find((v) => variantKeyFor(v) === key);
+      return match ? `${match.name}${match.sku ? ` (${match.sku})` : ""}` : key;
+    },
+    [variants]
   );
 
   const loadRules = useCallback(async () => {
@@ -233,7 +268,7 @@ export default function PosSaleDeductionsPage() {
             >
               <option value="base">base</option>
               {soldVariants.map((v) => (
-                <option key={v.id} value={v.sku?.trim() || v.name.toLowerCase().replace(/\s+/g, "_")}>
+                <option key={v.id} value={variantKeyFor(v)}>
                   {v.name} {v.sku ? `(${v.sku})` : ""}
                 </option>
               ))}
@@ -260,7 +295,9 @@ export default function PosSaleDeductionsPage() {
           <p className={styles.pageCardBody}>Loading existing rules…</p>
         ) : (
           <>
-            {lines.map((line, index) => (
+            {lines.map((line, index) => {
+              const deductVariants = variantsForItem(variants, line.deduct_item_id);
+              return (
               <div
                 key={`line-${index}`}
                 style={{
@@ -277,7 +314,9 @@ export default function PosSaleDeductionsPage() {
                   <select
                     className={styles.fieldSelect}
                     value={line.deduct_item_id}
-                    onChange={(e) => updateLine(index, { deduct_item_id: e.target.value })}
+                    onChange={(e) =>
+                      updateLine(index, { deduct_item_id: e.target.value, deduct_variant_key: "base" })
+                    }
                     style={{ display: "block", width: "100%", marginTop: 4 }}
                   >
                     <option value="">Select…</option>
@@ -289,13 +328,21 @@ export default function PosSaleDeductionsPage() {
                   </select>
                 </label>
                 <label>
-                  Variant key
-                  <input
-                    className={styles.fieldInput}
+                  Deduct variant
+                  <select
+                    className={styles.fieldSelect}
                     value={line.deduct_variant_key}
                     onChange={(e) => updateLine(index, { deduct_variant_key: e.target.value })}
+                    disabled={!line.deduct_item_id}
                     style={{ display: "block", width: "100%", marginTop: 4 }}
-                  />
+                  >
+                    <option value="base">base</option>
+                    {deductVariants.map((v) => (
+                      <option key={v.id} value={variantKeyFor(v)}>
+                        {v.name} {v.sku ? `(${v.sku})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Qty per sale
@@ -320,7 +367,7 @@ export default function PosSaleDeductionsPage() {
                     <option value="">Select…</option>
                     {warehousesForOutlet.map((ow) => (
                       <option key={ow.warehouse_id} value={ow.warehouse_id}>
-                        {ow.warehouse_name}
+                        {ow.display_name}
                       </option>
                     ))}
                   </select>
@@ -337,7 +384,8 @@ export default function PosSaleDeductionsPage() {
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button type="button" className={styles.btnGold} onClick={() => setLines((prev) => [...prev, emptyLine()])}>
@@ -381,9 +429,9 @@ export default function PosSaleDeductionsPage() {
                   return (
                     <tr key={rule.id}>
                       <td>{item?.name ?? rule.deduct_item_id}</td>
-                      <td>{rule.deduct_variant_key}</td>
+                      <td>{variantLabel(rule.deduct_item_id, rule.deduct_variant_key)}</td>
                       <td>{rule.deduct_qty_per_sale}</td>
-                      <td>{wh?.warehouse_name ?? rule.warehouse_id}</td>
+                      <td>{wh?.display_name ?? wh?.outlet_name ?? rule.warehouse_id}</td>
                     </tr>
                   );
                 })}

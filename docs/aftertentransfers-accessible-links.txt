@@ -1,14 +1,11 @@
 Accessible URLs for https://aftertentransfers.app/
-(updated 2025-12-04)
+(updated 2026-06-17)
 
 https://aftertentransfers.app/
-  └─ Stock Snapshot dashboard (public landing experience rendered by Next.js root route)
+  └─ Landing page (Inventory Management System)
 
-https://aftertentransfers.app/Main_Warehouse_Scanner
-  └─ Main Warehouse Transfer Console UI served by custom HTML route (locks source/destination warehouses)
-
-https://aftertentransfers.app/Beverages_Storeroom_Scanner
-  └─ Beverages Storeroom Transfer Console UI served by custom HTML route (locks source/destination warehouses)
+https://aftertentransfers.app/Warehouse_Backoffice
+  └─ Warehouse backoffice dashboard (outlets, catalog, purchases, stocktakes, live balances)
 
 https://aftertentransfers.app/api/warehouses   [GET]
   └─ Returns normalized warehouse metadata; accepts query params `include_inactive` and `locked_id`
@@ -18,6 +15,3 @@ https://aftertentransfers.app/api/warehouse-transfers   [GET]
 
 https://aftertentransfers.app/api/stock   [POST]
   └─ Aggregates stock rows for a warehouse subtree; body requires `warehouseId` and optional `search`
-
-https://aftertentransfers.app/api/notify-whatsapp   [POST]
-  └─ Twilio WhatsApp webhook to broadcast transfer summaries; expects JSON payload with transfer metadata

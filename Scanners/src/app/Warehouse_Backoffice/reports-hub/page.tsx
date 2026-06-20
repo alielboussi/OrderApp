@@ -7,10 +7,9 @@ import styles from "../enterprise.module.css";
 const REPORT_LINKS = [
   { label: "Outlet Sales", href: "/Warehouse_Backoffice/reports", tone: "blue" as const, desc: "Filter sales by outlet, date, and product." },
   { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders", tone: "gold" as const, desc: "Filter orders by outlet and date." },
-  { label: "Scanner Reports", href: "/Warehouse_Backoffice/inventory", tone: "green" as const, desc: "Transfers, purchases, and damages." },
+  { label: "Warehouse History", href: "/Warehouse_Backoffice/inventory", tone: "green" as const, desc: "Transfers, purchases, and damages." },
   { label: "Stock Reports", href: "/Warehouse_Backoffice/stock-reports", tone: "blue" as const, desc: "Stocktake periods for mapped warehouses." },
-  { label: "Warehouse Reports", href: "/Warehouse_Backoffice/warehouse-reports", tone: "gold" as const, desc: "Movement totals by date range." },
-  { label: "Coldroom Reports", href: "/Warehouse_Backoffice/coldroom-reports", tone: "green" as const, desc: "Coldroom accrued units." },
+  { label: "Movement Reports", href: "/Warehouse_Backoffice/warehouse-reports", tone: "gold" as const, desc: "Movement totals by date range." },
   { label: "Flow Traces", href: "/Warehouse_Backoffice/flow-traces", tone: "blue" as const, desc: "Audit stock deductions." },
   { label: "Negative Balances", href: "/Warehouse_Backoffice/negative-balance-reports", tone: "red" as const, desc: "Shortage alerts during deductions." },
   { label: "POS Sync Failures", href: "/Warehouse_Backoffice/pos-sync-failures", tone: "red" as const, desc: "Failed POS sync events by outlet." },

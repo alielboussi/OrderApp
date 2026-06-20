@@ -291,6 +291,57 @@ public sealed class SupabaseClient
         return await GetCounterUtcAsync("pos_sync_opening", "opening", cancellationToken);
     }
 
+    public async Task<DateTime?> GetLastHeartbeatUtcAsync(CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return null;
+        }
+
+        var client = CreateClient();
+        try
+        {
+            var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/rest/v1/outlet_pos_heartbeats?select=last_seen_at&outlet_id=eq.{_outlet.Id}&limit=1"
+            );
+            var response = await client.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            var root = doc.RootElement[0];
+            if (!root.TryGetProperty("last_seen_at", out var seenProp))
+            {
+                return null;
+            }
+
+            if (seenProp.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            if (DateTimeOffset.TryParse(seenProp.GetString(), out var parsed))
+            {
+                return parsed.UtcDateTime;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task SendHeartbeatAsync(CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)

@@ -56,7 +56,7 @@ export default function CatalogMenu() {
             className={`${styles.actionCard} ${styles.suppliersCard}`}
           >
             <p className={`${styles.cardTitle} ${styles.cardTitleSuppliers}`}>Suppliers</p>
-            <p className={styles.cardBody}>Create supplier contacts for purchase intake and scanner logs.</p>
+            <p className={styles.cardBody}>Create supplier contacts for purchase intake.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 
@@ -65,7 +65,7 @@ export default function CatalogMenu() {
             className={`${styles.actionCard} ${styles.purchaseCard}`}
           >
             <p className={`${styles.cardTitle} ${styles.cardTitlePurchase}`}>Purchase Entry</p>
-            <p className={styles.cardBody}>Record scanner purchase receipts from backoffice.</p>
+            <p className={styles.cardBody}>Record purchase receipts from backoffice.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
 

@@ -1,7 +1,6 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -17,10 +16,6 @@ public sealed class ScpgtWindow : Window
     private TextBlock _ordersAppText = null!;
     private TextBlock _syncWindowText = null!;
     private TextBlock _lastSyncText = null!;
-    private Button _syncButton = null!;
-
-    public event EventHandler? CloseRequested;
-    public event EventHandler? SyncRequested;
 
     public ScpgtWindow()
     {
@@ -79,21 +74,21 @@ public sealed class ScpgtWindow : Window
         };
         Grid.SetColumn(title, 0);
 
-        var close = new Button
+        var minimize = new Button
         {
-            Content = "Close",
+            Content = "Minimize",
             Padding = new Thickness(14, 6, 14, 6),
-            Background = new SolidColorBrush(Color.FromRgb(220, 38, 38)),
+            Background = new SolidColorBrush(Color.FromRgb(15, 23, 42)),
             Foreground = Brushes.White,
             BorderThickness = new Thickness(0),
             FontWeight = FontWeights.SemiBold,
             Cursor = Cursors.Hand
         };
-        close.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
-        Grid.SetColumn(close, 1);
+        minimize.Click += (_, _) => Hide();
+        Grid.SetColumn(minimize, 1);
 
         grid.Children.Add(title);
-        grid.Children.Add(close);
+        grid.Children.Add(minimize);
         return grid;
     }
 
@@ -114,7 +109,7 @@ public sealed class ScpgtWindow : Window
 
         _subStatusText = new TextBlock
         {
-            Text = "Hotkey: Shift + + + Backspace",
+            Text = "Hotkey: Shift + A + 1 + 0",
             FontSize = 13,
             Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105)),
             Margin = new Thickness(0, 6, 0, 20)
@@ -149,25 +144,6 @@ public sealed class ScpgtWindow : Window
 
         stack.Children.Add(infoGrid);
 
-        var buttonRow = new UniformGrid
-        {
-            Columns = 2,
-            Margin = new Thickness(0, 6, 0, 0)
-        };
-
-        _syncButton = BuildActionButton("Sync Now", Color.FromRgb(2, 132, 199), (_, _) =>
-        {
-            SyncRequested?.Invoke(this, EventArgs.Empty);
-        });
-        buttonRow.Children.Add(_syncButton);
-
-        buttonRow.Children.Add(BuildActionButton("Hide", Color.FromRgb(15, 23, 42), (_, _) =>
-        {
-            Hide();
-        }));
-
-        stack.Children.Add(buttonRow);
-
         var note = new TextBlock
         {
             Text = "Stocktake periods are opened in Afterten Orders → Outlet Stocktake. This service uploads POS sales within the sync window.",
@@ -192,12 +168,6 @@ public sealed class ScpgtWindow : Window
         _lastSyncText.Text = snapshot.LastSyncLabel;
     }
 
-    public void SetSyncInProgress(bool isBusy)
-    {
-        _syncButton.IsEnabled = !isBusy;
-        _syncButton.Content = isBusy ? "Syncing..." : "Sync Now";
-    }
-
     private static TextBlock BuildMetaText(string text)
     {
         return new TextBlock
@@ -215,22 +185,5 @@ public sealed class ScpgtWindow : Window
         Grid.SetRow(element, row);
         Grid.SetColumn(element, column);
         grid.Children.Add(element);
-    }
-
-    private static Button BuildActionButton(string label, Color color, RoutedEventHandler onClick)
-    {
-        var button = new Button
-        {
-            Content = label,
-            Margin = new Thickness(4),
-            Padding = new Thickness(12, 10, 12, 10),
-            Background = new SolidColorBrush(color),
-            Foreground = Brushes.White,
-            BorderThickness = new Thickness(0),
-            FontWeight = FontWeights.SemiBold,
-            Cursor = Cursors.Hand
-        };
-        button.Click += onClick;
-        return button;
     }
 }

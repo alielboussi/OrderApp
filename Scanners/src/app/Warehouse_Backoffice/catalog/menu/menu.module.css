@@ -281,3 +281,150 @@
   gap: 8px;
   margin-top: 12px;
 }
+
+.dialogOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.dialogCard {
+  width: min(880px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid #dbeafe;
+  background: #fff;
+  padding: 18px;
+}
+
+.dialogTitle {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dialogList {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.dialogRow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fff;
+}
+
+.dialogRowText {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.dialogFooter {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.dialogMeta {
+  font-size: 13px;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.dialogEmpty {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.scheduleGrid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 1fr);
+  gap: 14px;
+}
+
+.clockPanel {
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 10px;
+  background: #eff6ff;
+  display: grid;
+  gap: 10px;
+}
+
+.clockFace {
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border: 3px solid #1d4ed8;
+  background: #fff;
+  margin: 0 auto;
+  position: relative;
+}
+
+.clockCenter {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1d4ed8;
+  transform: translate(-50%, -50%);
+}
+
+.clockHandHour {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  width: 4px;
+  height: 55px;
+  border-radius: 4px;
+  background: #1e3a8a;
+  transform-origin: 50% 78px;
+}
+
+.clockHandMinute {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  width: 2px;
+  height: 72px;
+  border-radius: 4px;
+  background: #2563eb;
+  transform-origin: 50% 86px;
+}
+
+.clockInputs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}

@@ -71,6 +71,10 @@
           "table_schema": "public"
         },
         {
+          "table_name": "middleware_catalog_schedule",
+          "table_schema": "public"
+        },
+        {
           "table_name": "order_items",
           "table_schema": "public"
         },
@@ -1240,6 +1244,33 @@
           "table_schema": "public",
           "column_default": "'base'::text",
           "ordinal_position": 10
+        },
+        {
+          "data_type": "text",
+          "table_name": "middleware_catalog_schedule",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "middleware_catalog_schedule",
+          "column_name": "scheduled_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "middleware_catalog_schedule",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 3
         },
         {
           "data_type": "uuid",
@@ -5381,6 +5412,12 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE UNIQUE INDEX middleware_catalog_schedule_pkey ON public.middleware_catalog_schedule USING btree (id)",
+          "indexname": "middleware_catalog_schedule_pkey",
+          "table_name": "middleware_catalog_schedule",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE INDEX idx_order_items_order ON public.order_items USING btree (order_id)",
           "indexname": "idx_order_items_order",
           "table_name": "order_items",
@@ -7902,14 +7939,14 @@
           "function_schema": "public"
         },
         {
-          "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb",
-          "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET row_security TO 'off'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_consumption_per_base numeric := 1;\r\n  v_consumption_unit text;\r\n  v_effective_qty numeric;\r\n  v_flow_batch_id uuid;\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true)\r\n    into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n      is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n      coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n      p_flavour_id, p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id\r\n    into v_deduct_wh\r\n  from public.outlet_default_warehouses(p_outlet_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'default sales warehouse missing for outlet %', p_outlet_id;\r\n  end if;\r\n\r\n  perform public.ensure_open_stock_period(v_deduct_wh);\r\n  perform public.require_open_stock_period_for_outlet_warehouse(v_deduct_wh);\r\n\r\n  select coalesce(ci.consumption_qty_per_base, 1), ci.consumption_unit\r\n  into v_consumption_per_base, v_consumption_unit\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  v_effective_qty := p_qty_units * coalesce(v_consumption_per_base, 1);\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n    is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n    coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n    p_flavour_id, v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.stock_flow_batches(\r\n    source_type,\r\n    source_id,\r\n    outlet_id,\r\n    warehouse_id,\r\n    occurred_at,\r\n    status,\r\n    context\r\n  ) values (\r\n    'outlet_sale',\r\n    v_sale.id,\r\n    p_outlet_id,\r\n    v_deduct_wh,\r\n    p_sold_at,\r\n    'open',\r\n    coalesce(p_context, '{}')\r\n  ) returning id into v_flow_batch_id;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, v_effective_qty)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    occurred_at,\r\n    flow_batch_id\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * v_effective_qty,\r\n    'outlet_sale',\r\n    jsonb_build_object(\r\n      'sale_id', v_sale.id,\r\n      'outlet_id', p_outlet_id,\r\n      'sale_price', p_sale_price,\r\n      'vat_exc_price', p_vat_exc_price,\r\n      'flavour_id', p_flavour_id,\r\n      'uom_used', coalesce(v_consumption_unit, 'each'),\r\n      'consumption_qty_per_base', coalesce(v_consumption_per_base, 1),\r\n      'source_qty_units', p_qty_units,\r\n      'sold_at', p_sold_at,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context, '{}'),\r\n    p_sold_at,\r\n    v_flow_batch_id\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',p_outlet_id,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
+          "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET row_security TO 'off'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_consumption_per_base numeric := 1;\r\n  v_consumption_unit text;\r\n  v_effective_qty numeric;\r\n  v_flow_batch_id uuid;\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true)\r\n    into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false),\r\n      p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id\r\n    into v_deduct_wh\r\n  from public.outlet_default_warehouses(p_outlet_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'default sales warehouse missing for outlet %', p_outlet_id;\r\n  end if;\r\n\r\n  perform public.ensure_open_stock_period(v_deduct_wh);\r\n  perform public.require_open_stock_period_for_outlet_warehouse(v_deduct_wh);\r\n\r\n  select coalesce(ci.consumption_qty_per_base, 1), ci.consumption_unit\r\n  into v_consumption_per_base, v_consumption_unit\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  v_effective_qty := p_qty_units * coalesce(v_consumption_per_base, 1);\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false),\r\n    v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.stock_flow_batches(\r\n    source_type,\r\n    source_id,\r\n    outlet_id,\r\n    warehouse_id,\r\n    occurred_at,\r\n    status,\r\n    context\r\n  ) values (\r\n    'outlet_sale',\r\n    v_sale.id,\r\n    p_outlet_id,\r\n    v_deduct_wh,\r\n    p_sold_at,\r\n    'open',\r\n    coalesce(p_context, '{}')\r\n  ) returning id into v_flow_batch_id;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, v_effective_qty)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    occurred_at,\r\n    flow_batch_id\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * v_effective_qty,\r\n    'outlet_sale',\r\n    jsonb_build_object(\r\n      'sale_id', v_sale.id,\r\n      'outlet_id', p_outlet_id,\r\n      'uom_used', coalesce(v_consumption_unit, 'each'),\r\n      'consumption_qty_per_base', coalesce(v_consumption_per_base, 1),\r\n      'source_qty_units', p_qty_units,\r\n      'sold_at', p_sold_at,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context, '{}'),\r\n    p_sold_at,\r\n    v_flow_batch_id\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',p_outlet_id,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
           "function_name": "record_outlet_sale",
           "function_schema": "public"
         },
         {
-          "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb",
-          "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET row_security TO 'off'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_consumption_per_base numeric := 1;\r\n  v_consumption_unit text;\r\n  v_effective_qty numeric;\r\n  v_flow_batch_id uuid;\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true)\r\n    into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false),\r\n      p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id\r\n    into v_deduct_wh\r\n  from public.outlet_default_warehouses(p_outlet_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'default sales warehouse missing for outlet %', p_outlet_id;\r\n  end if;\r\n\r\n  perform public.ensure_open_stock_period(v_deduct_wh);\r\n  perform public.require_open_stock_period_for_outlet_warehouse(v_deduct_wh);\r\n\r\n  select coalesce(ci.consumption_qty_per_base, 1), ci.consumption_unit\r\n  into v_consumption_per_base, v_consumption_unit\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  v_effective_qty := p_qty_units * coalesce(v_consumption_per_base, 1);\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, is_production, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, coalesce(p_is_production, false),\r\n    v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.stock_flow_batches(\r\n    source_type,\r\n    source_id,\r\n    outlet_id,\r\n    warehouse_id,\r\n    occurred_at,\r\n    status,\r\n    context\r\n  ) values (\r\n    'outlet_sale',\r\n    v_sale.id,\r\n    p_outlet_id,\r\n    v_deduct_wh,\r\n    p_sold_at,\r\n    'open',\r\n    coalesce(p_context, '{}')\r\n  ) returning id into v_flow_batch_id;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, v_effective_qty)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    occurred_at,\r\n    flow_batch_id\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * v_effective_qty,\r\n    'outlet_sale',\r\n    jsonb_build_object(\r\n      'sale_id', v_sale.id,\r\n      'outlet_id', p_outlet_id,\r\n      'uom_used', coalesce(v_consumption_unit, 'each'),\r\n      'consumption_qty_per_base', coalesce(v_consumption_per_base, 1),\r\n      'source_qty_units', p_qty_units,\r\n      'sold_at', p_sold_at,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context, '{}'),\r\n    p_sold_at,\r\n    v_flow_batch_id\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',p_outlet_id,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
+          "arguments": "p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.record_outlet_sale(p_outlet_id uuid, p_item_id uuid, p_qty_units numeric, p_variant_key text DEFAULT 'base'::text, p_is_production boolean DEFAULT false, p_warehouse_id uuid DEFAULT NULL::uuid, p_sold_at timestamp with time zone DEFAULT now(), p_sale_price numeric DEFAULT NULL::numeric, p_vat_exc_price numeric DEFAULT NULL::numeric, p_flavour_price numeric DEFAULT NULL::numeric, p_flavour_id text DEFAULT NULL::text, p_context jsonb DEFAULT '{}'::jsonb)\n RETURNS outlet_sales\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET row_security TO 'off'\nAS $function$\r\ndeclare\r\n  v_sale public.outlet_sales%rowtype;\r\n  v_deduct_wh uuid;\r\n  v_deduct_enabled boolean;\r\n  v_variant_key text := public.normalize_variant_key(p_variant_key);\r\n  v_consumption_per_base numeric := 1;\r\n  v_consumption_unit text;\r\n  v_effective_qty numeric;\r\n  v_flow_batch_id uuid;\r\nbegin\r\n  if p_outlet_id is null or p_item_id is null or p_qty_units is null or p_qty_units <= 0 then\r\n    raise exception 'outlet, item, qty required';\r\n  end if;\r\n\r\n  select coalesce(deduct_on_pos_sale, true)\r\n    into v_deduct_enabled\r\n  from public.outlets where id = p_outlet_id;\r\n\r\n  if v_deduct_enabled = false then\r\n    insert into public.outlet_sales(\r\n      outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n      is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n    ) values (\r\n      p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n      coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n      p_flavour_id, p_warehouse_id, p_sold_at, auth.uid(), p_context\r\n    ) returning * into v_sale;\r\n    return v_sale;\r\n  end if;\r\n\r\n  select default_sales_warehouse_id\r\n    into v_deduct_wh\r\n  from public.outlet_default_warehouses(p_outlet_id);\r\n\r\n  if v_deduct_wh is null then\r\n    raise exception 'default sales warehouse missing for outlet %', p_outlet_id;\r\n  end if;\r\n\r\n  perform public.ensure_open_stock_period(v_deduct_wh);\r\n  perform public.require_open_stock_period_for_outlet_warehouse(v_deduct_wh);\r\n\r\n  select coalesce(ci.consumption_qty_per_base, 1), ci.consumption_unit\r\n  into v_consumption_per_base, v_consumption_unit\r\n  from public.catalog_items ci\r\n  where ci.id = p_item_id;\r\n\r\n  v_effective_qty := p_qty_units * coalesce(v_consumption_per_base, 1);\r\n\r\n  insert into public.outlet_sales(\r\n    outlet_id, item_id, variant_key, qty_units, sale_price, vat_exc_price, flavour_price,\r\n    is_production, flavour_id, warehouse_id, sold_at, created_by, context\r\n  ) values (\r\n    p_outlet_id, p_item_id, v_variant_key, p_qty_units, p_sale_price, p_vat_exc_price,\r\n    coalesce(p_flavour_price, p_vat_exc_price), coalesce(p_is_production, false),\r\n    p_flavour_id, v_deduct_wh, p_sold_at, auth.uid(), p_context\r\n  ) returning * into v_sale;\r\n\r\n  insert into public.stock_flow_batches(\r\n    source_type,\r\n    source_id,\r\n    outlet_id,\r\n    warehouse_id,\r\n    occurred_at,\r\n    status,\r\n    context\r\n  ) values (\r\n    'outlet_sale',\r\n    v_sale.id,\r\n    p_outlet_id,\r\n    v_deduct_wh,\r\n    p_sold_at,\r\n    'open',\r\n    coalesce(p_context, '{}')\r\n  ) returning id into v_flow_batch_id;\r\n\r\n  insert into public.outlet_stock_balances(outlet_id, item_id, variant_key, sent_units, consumed_units)\r\n  values (p_outlet_id, p_item_id, v_variant_key, 0, v_effective_qty)\r\n  on conflict (outlet_id, item_id, variant_key)\r\n  do update set consumed_units = public.outlet_stock_balances.consumed_units + excluded.consumed_units,\r\n                updated_at = now();\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    occurred_at,\r\n    flow_batch_id\r\n  ) values (\r\n    'warehouse',\r\n    v_deduct_wh,\r\n    p_item_id,\r\n    v_variant_key,\r\n    -1 * v_effective_qty,\r\n    'outlet_sale',\r\n    jsonb_build_object(\r\n      'sale_id', v_sale.id,\r\n      'outlet_id', p_outlet_id,\r\n      'sale_price', p_sale_price,\r\n      'vat_exc_price', p_vat_exc_price,\r\n      'flavour_id', p_flavour_id,\r\n      'uom_used', coalesce(v_consumption_unit, 'each'),\r\n      'consumption_qty_per_base', coalesce(v_consumption_per_base, 1),\r\n      'source_qty_units', p_qty_units,\r\n      'sold_at', p_sold_at,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context, '{}'),\r\n    p_sold_at,\r\n    v_flow_batch_id\r\n  );\r\n\r\n  perform public.apply_recipe_deductions(\r\n    p_item_id,\r\n    p_qty_units,\r\n    v_deduct_wh,\r\n    v_variant_key,\r\n    jsonb_build_object(\r\n      'source','outlet_sale',\r\n      'outlet_id',p_outlet_id,\r\n      'deduct_outlet_id',p_outlet_id,\r\n      'warehouse_id',v_deduct_wh,\r\n      'sale_id',v_sale.id,\r\n      'flow_batch_id', v_flow_batch_id\r\n    ) || coalesce(p_context,'{}'),\r\n    0,\r\n    array[]::uuid[]\r\n  );\r\n\r\n  return v_sale;\r\nend;\r\n$function$\n",
           "function_name": "record_outlet_sale",
           "function_schema": "public"
         },
@@ -8684,7 +8721,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8694,7 +8731,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -9034,7 +9071,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9044,7 +9081,7 @@
           "constraint_name": "item_storage_homes_normalized_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9084,22 +9121,12 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "item_storage_homes",
-          "column_name": "normalized_variant_key",
+          "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -9125,6 +9152,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9394,6 +9431,36 @@
           "constraint_name": "item_warehouse_handling_policies_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_warehouse_handling_policies",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_catalog_schedule",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155688_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_catalog_schedule",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155688_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_catalog_schedule",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "middleware_catalog_schedule_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "middleware_catalog_schedule",
           "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
@@ -9834,7 +9901,7 @@
           "constraint_name": "outlet_item_routes_norm_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9844,7 +9911,7 @@
           "constraint_name": "outlet_item_routes_norm_chk",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9894,16 +9961,6 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
@@ -9919,6 +9976,26 @@
         },
         {
           "table_name": "outlet_item_routes",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "normalized_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
           "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "outlet_item_routes_pkey",
@@ -9939,7 +10016,7 @@
         },
         {
           "table_name": "outlet_item_routes",
-          "column_name": "item_id",
+          "column_name": "normalized_variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -9965,16 +10042,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10254,7 +10321,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_variant_key",
+          "foreign_column_name": "sold_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10274,7 +10341,27 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10289,32 +10376,12 @@
         },
         {
           "table_name": "outlet_pos_deduction_rules",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
           "column_name": "sold_item_id",
           "table_schema": "public",
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "deduct_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10334,7 +10401,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_item_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10345,16 +10412,6 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "warehouse_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10369,32 +10426,12 @@
         },
         {
           "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
+          "column_name": "sold_item_id",
           "table_schema": "public",
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "warehouse_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_variant_key",
+          "foreign_column_name": "sold_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10414,7 +10451,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_item_id",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10429,12 +10466,32 @@
         },
         {
           "table_name": "outlet_pos_deduction_rules",
-          "column_name": "deduct_item_id",
+          "column_name": "sold_variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10489,12 +10546,22 @@
         },
         {
           "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
           "column_name": "deduct_variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_item_id",
+          "foreign_column_name": "sold_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10514,17 +10581,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "deduct_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_variant_key",
+          "foreign_column_name": "sold_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10544,7 +10601,17 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10564,7 +10631,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "sold_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10584,17 +10651,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_item_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10605,6 +10662,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10724,16 +10791,6 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_products",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_products_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_products",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -10749,7 +10806,7 @@
         },
         {
           "table_name": "outlet_products",
-          "column_name": "item_id",
+          "column_name": "outlet_id",
           "table_schema": "public",
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -10779,12 +10836,22 @@
         },
         {
           "table_name": "outlet_products",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_products_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_products",
+          "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_products",
           "column_name": "variant_key",
           "table_schema": "public",
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10804,7 +10871,7 @@
           "constraint_name": "outlet_products_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_products",
-          "foreign_column_name": "variant_key",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11044,6 +11111,16 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -11059,32 +11136,12 @@
         },
         {
           "table_name": "outlet_stock_balances",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
           "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11099,7 +11156,7 @@
         },
         {
           "table_name": "outlet_stock_balances",
-          "column_name": "variant_key",
+          "column_name": "item_id",
           "table_schema": "public",
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -11125,6 +11182,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11464,7 +11531,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_sales_warehouse_id",
+          "foreign_column_name": "deduct_on_pos_sale",
           "foreign_table_schema": "public"
         },
         {
@@ -11474,7 +11541,7 @@
           "constraint_name": "outlets_sales_wh_required",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "deduct_on_pos_sale",
+          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12504,7 +12571,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "from_uom",
+          "foreign_column_name": "to_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12514,7 +12581,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "to_uom",
+          "foreign_column_name": "from_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12694,7 +12761,7 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "user_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12714,26 +12781,6 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "role_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "role_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
@@ -12749,7 +12796,17 @@
         },
         {
           "table_name": "user_roles",
-          "column_name": "outlet_id",
+          "column_name": "role_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "role_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "role_id",
           "table_schema": "public",
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
@@ -12775,6 +12832,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {

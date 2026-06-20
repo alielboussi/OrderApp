@@ -97,7 +97,14 @@ if (-not (Test-Path $settingsJson)) {
                 @'
 {
     "PosDb": {
-        "ConnectionString": "Server=localhost;Database=POS;User Id=POSUSER;Password=CHANGE_ME;TrustServerCertificate=True"
+        "ConnectionString": "",
+        "Server": "localhost",
+        "Database": "POS",
+        "Username": "POSUSER",
+        "Password": "CHANGE_ME",
+        "TrustServerCertificate": true,
+        "IntegratedSecurity": false,
+        "Encrypt": false
     },
     "Outlet": {
         "Id": "00000000-0000-0000-0000-000000000000"

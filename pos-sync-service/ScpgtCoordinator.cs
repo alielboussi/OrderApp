@@ -16,9 +16,6 @@ public sealed class ScpgtCoordinator
     private readonly OutletOptions _outlet;
     private readonly ILogger<ScpgtCoordinator> _logger;
     private readonly string _contentRoot;
-    private DateTimeOffset? _lastSyncAt;
-    private int _lastProcessed;
-    private int _lastFailures;
 
     public ScpgtCoordinator(SupabaseClient supabase,
                              SyncRunner syncRunner,
@@ -37,18 +34,18 @@ public sealed class ScpgtCoordinator
     {
         if (_outlet.Id == Guid.Empty)
         {
-            return BuildSnapshot("Outlet Id is not configured.", "Update Outlet:Id in appsettings.json.", null, false);
+            return BuildSnapshot("Outlet Id is not configured.", "Update Outlet:Id in appsettings.json.", null, false, null);
         }
 
         var context = await _supabase.GetOutletSyncContextAsync(cancellationToken);
         if (context is null)
         {
-            return BuildSnapshot("Unable to load outlet.", "Check Supabase URL/key and outlet id.", null, false);
+            return BuildSnapshot("Unable to load outlet.", "Check Supabase URL/key and outlet id.", null, false, null);
         }
 
         if (string.IsNullOrWhiteSpace(context.WarehouseId))
         {
-            return BuildSnapshot("No warehouse linked to this outlet.", "Check outlet_warehouses mapping.", context, false);
+            return BuildSnapshot("No warehouse linked to this outlet.", "Check outlet_warehouses mapping.", context, false, null);
         }
 
         return await GetStatusAsync(cancellationToken, "Ready", "POS sync service is running.", context);
@@ -57,12 +54,8 @@ public sealed class ScpgtCoordinator
     public async Task<ScpgtUiSnapshot> RunManualSyncAsync(CancellationToken cancellationToken)
     {
         var syncResult = await _syncRunner.RunOnceAsync(cancellationToken);
-        _lastSyncAt = DateTimeOffset.UtcNow;
-        _lastProcessed = syncResult.ProcessedCount;
-        _lastFailures = syncResult.Failures.Count;
-
-        var status = _lastFailures > 0 ? "Sync completed with issues." : "Sync completed.";
-        var detail = $"Processed {_lastProcessed} orders. Failures {_lastFailures}.";
+        var status = syncResult.Failures.Count > 0 ? "Sync completed with issues." : "Sync completed.";
+        var detail = $"Processed {syncResult.ProcessedCount} orders. Failures {syncResult.Failures.Count}.";
 
         return await GetStatusAsync(cancellationToken, status, detail, null);
     }
@@ -85,7 +78,8 @@ public sealed class ScpgtCoordinator
                 overrideTitle ?? "Unable to load outlet.",
                 overrideDetail ?? "Check Supabase configuration.",
                 null,
-                false);
+                false,
+                null);
         }
 
         if (!context.HasPosMiddleware)
@@ -94,7 +88,8 @@ public sealed class ScpgtCoordinator
                 overrideTitle ?? "Middleware disabled.",
                 overrideDetail ?? "Enable has_pos_middleware on this outlet in Supabase.",
                 context,
-                false);
+                false,
+                null);
         }
 
         if (!context.SyncOpeningUtc.HasValue)
@@ -103,7 +98,8 @@ public sealed class ScpgtCoordinator
                 overrideTitle ?? "Waiting for stocktake period.",
                 overrideDetail ?? "Open a period in Afterten Orders → Outlet Stocktake.",
                 context,
-                false);
+                false,
+                null);
         }
 
         SupabaseClient.WarehousePeriodRow? openPeriod = null;
@@ -112,6 +108,8 @@ public sealed class ScpgtCoordinator
             openPeriod = await _supabase.GetOpenStockPeriodAsync(context.WarehouseId, cancellationToken);
         }
 
+        var lastHeartbeatUtc = await _supabase.GetLastHeartbeatUtcAsync(cancellationToken);
+
         var syncActive = openPeriod is not null;
         return BuildSnapshot(
             overrideTitle ?? (syncActive ? "Sync active." : "No open stocktake period."),
@@ -119,14 +117,16 @@ public sealed class ScpgtCoordinator
                 ? "Sales upload uses the POS sync window from stocktake open/close."
                 : "Start Outlet Stocktake in the Android app."),
             context,
-            syncActive && overrideTitle is null);
+            syncActive && overrideTitle is null,
+            lastHeartbeatUtc);
     }
 
     private ScpgtUiSnapshot BuildSnapshot(
         string title,
         string detail,
         OutletSyncContext? context,
-        bool shouldHideUi)
+        bool shouldHideUi,
+        DateTime? lastHeartbeatUtc)
     {
         var warehouseLabel = context?.WarehouseName is { Length: > 0 } name
             ? "Warehouse: " + name
@@ -148,11 +148,11 @@ public sealed class ScpgtCoordinator
         var maxUtc = ConfigStore.LoadMaxSaleDateUtc(_contentRoot);
         var syncWindowLabel = BuildConfiguredWindowLabel(context, minUtc, maxUtc);
 
-        var lastSyncLabel = "Last sync: Not yet";
-        if (_lastSyncAt.HasValue)
+        var lastSyncLabel = "Last website/supabase sync: Not yet";
+        if (lastHeartbeatUtc.HasValue)
         {
-            var local = _lastSyncAt.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
-            lastSyncLabel = $"Last sync: {local} | Processed {_lastProcessed} | Failures {_lastFailures}";
+            var local = DateTime.SpecifyKind(lastHeartbeatUtc.Value, DateTimeKind.Utc).ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
+            lastSyncLabel = $"Last website/supabase sync: {local}";
         }
 
         return new ScpgtUiSnapshot(

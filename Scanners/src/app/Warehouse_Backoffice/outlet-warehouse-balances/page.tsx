@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import styles from "./outlet-warehouse-balances.module.css";
-import { COLDROOM_CHILD_IDS, COLDROOM_PARENT_ID, COLDROOM_WAREHOUSES } from "@/lib/coldrooms";
 
 type OutletOption = {
   id: string;
@@ -171,11 +170,7 @@ export default function OutletWarehouseBalancesPage() {
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
-  const [selectedBalanceWarehouseIds, setSelectedBalanceWarehouseIds] = useState<string[]>([]);
   const [linkedWarehouseIds, setLinkedWarehouseIds] = useState<string[]>([]);
-  const [outletWarehouseLinks, setOutletWarehouseLinks] = useState<Array<{ outlet_id: string; warehouse_id: string }>>(
-    []
-  );
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
@@ -198,15 +193,6 @@ export default function OutletWarehouseBalancesPage() {
   const [includeFinished, setIncludeFinished] = useState(true);
   const [baseOnly, setBaseOnly] = useState(false);
   const [showPackWeightTotals, setShowPackWeightTotals] = useState(false);
-
-  const coldroomChildSet = useMemo(() => new Set(COLDROOM_CHILD_IDS), []);
-  const coldroomLabelMap = useMemo(() => {
-    const map = new Map<string, string>();
-    COLDROOM_WAREHOUSES.forEach((warehouse) => {
-      map.set(warehouse.id, warehouse.name);
-    });
-    return map;
-  }, []);
 
   const itemHasVariants = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -287,50 +273,11 @@ export default function OutletWarehouseBalancesPage() {
     setSelectedOutletIds([]);
   };
 
-  const coldroomLinkedIds = useMemo(() => {
-    const set = new Set<string>();
-    linkedWarehouseIds.forEach((id) => {
-      if (id === COLDROOM_PARENT_ID || coldroomChildSet.has(id)) {
-        set.add(id);
-      }
-    });
-    if (set.has(COLDROOM_PARENT_ID)) {
-      COLDROOM_CHILD_IDS.forEach((childId) => set.add(childId));
-    }
-    if (!set.has(COLDROOM_PARENT_ID)) {
-      const hasChild = COLDROOM_CHILD_IDS.some((childId) => set.has(childId));
-      if (hasChild) set.add(COLDROOM_PARENT_ID);
-    }
-    return Array.from(set);
-  }, [linkedWarehouseIds, coldroomChildSet]);
-
-  const hasColdroomBalances = coldroomLinkedIds.length > 0;
-  const coldroomWarehouseOptions = useMemo(
-    () => coldroomLinkedIds.map((id) => ({ id, name: coldroomLabelMap.get(id) ?? id })),
-    [coldroomLinkedIds, coldroomLabelMap]
-  );
-
-  const toggleBalanceWarehouse = (id: string) => {
-    setSelectedBalanceWarehouseIds((prev) =>
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
-    );
-  };
-
-  const selectAllBalanceWarehouses = () => {
-    setSelectedBalanceWarehouseIds(coldroomLinkedIds);
-  };
-
-  const clearBalanceWarehouses = () => {
-    setSelectedBalanceWarehouseIds([]);
-  };
-
   useEffect(() => {
     if (status !== "ok") return;
     if (selectedOutletIds.length === 0) {
       setLinkedWarehouseIds([]);
       setSelectedWarehouseId("");
-      setSelectedBalanceWarehouseIds([]);
-      setOutletWarehouseLinks([]);
       return;
     }
     let active = true;
@@ -351,7 +298,6 @@ export default function OutletWarehouseBalancesPage() {
         const warehouseIds = Array.from(new Set(safeRows.map((row) => row.warehouse_id)));
 
         setLinkedWarehouseIds(warehouseIds);
-        setOutletWarehouseLinks(safeRows);
         if (!active) return;
         if (warehouseIds.length === 0) {
           setSelectedWarehouseId("");
@@ -359,7 +305,6 @@ export default function OutletWarehouseBalancesPage() {
         }
 
         setSelectedWarehouseId("all");
-        setSelectedBalanceWarehouseIds([]);
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -372,17 +317,6 @@ export default function OutletWarehouseBalancesPage() {
       active = false;
     };
   }, [status, selectedOutletIds, supabase]);
-
-  useEffect(() => {
-    if (status !== "ok") return;
-    if (selectedOutletIds.length === 0) return;
-
-    if (hasColdroomBalances) {
-      setSelectedBalanceWarehouseIds((prev) => (prev.length ? prev : coldroomLinkedIds));
-    } else {
-      setSelectedBalanceWarehouseIds([]);
-    }
-  }, [status, hasColdroomBalances, coldroomLinkedIds, selectedOutletIds.length]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -453,10 +387,7 @@ export default function OutletWarehouseBalancesPage() {
   }, [status, selectedOutletIds, orderDate, supabase]);
 
   useEffect(() => {
-    const hasSelection = hasColdroomBalances
-      ? selectedBalanceWarehouseIds.length > 0
-      : Boolean(selectedWarehouseId);
-    if (status !== "ok" || !hasSelection) {
+    if (status !== "ok" || !selectedWarehouseId) {
       setItems([]);
       return;
     }
@@ -477,48 +408,14 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
-        let warehouseIds: string[] = [];
-        if (hasColdroomBalances) {
-          const set = new Set<string>();
-          selectedBalanceWarehouseIds.forEach((id) => {
-            if (id === COLDROOM_PARENT_ID) {
-              COLDROOM_CHILD_IDS.forEach((childId) => set.add(childId));
-              return;
-            }
-            if (coldroomChildSet.has(id)) {
-              set.add(id);
-              return;
-            }
-            set.add(id);
-          });
-          warehouseIds = Array.from(set);
-        } else if (selectedWarehouseId === "all") {
-          warehouseIds = linkedWarehouseIds;
-        } else if (selectedWarehouseId === COLDROOM_PARENT_ID) {
-          warehouseIds = COLDROOM_CHILD_IDS;
-        } else if (coldroomChildSet.has(selectedWarehouseId)) {
-          warehouseIds = [selectedWarehouseId];
-        } else {
-          warehouseIds = [selectedWarehouseId];
-        }
+        const warehouseIds =
+          selectedWarehouseId === "all" ? linkedWarehouseIds : [selectedWarehouseId];
         if (warehouseIds.length === 0) {
           if (active) setItems([]);
           return;
         }
 
         const outletIdSet = new Set(selectedOutletIds);
-        if (hasColdroomBalances && selectedBalanceWarehouseIds.length > 0) {
-          const allowedOutlets = new Set<string>();
-          outletWarehouseLinks.forEach((row) => {
-            if (!row?.outlet_id || !row?.warehouse_id) return;
-            if (!outletIdSet.has(row.outlet_id)) return;
-            if (warehouseIds.includes(row.warehouse_id)) {
-              allowedOutlets.add(row.outlet_id);
-            }
-          });
-          outletIdSet.clear();
-          allowedOutlets.forEach((id) => outletIdSet.add(id));
-        }
         const outletIds = Array.from(outletIdSet);
         if (outletIds.length === 0) {
           if (active) setItems([]);
@@ -537,7 +434,7 @@ export default function OutletWarehouseBalancesPage() {
         const warehouseNameMap = new Map<string, string>();
         (warehouseRows || []).forEach((row) => {
           if (!row?.id) return;
-          const label = row.name?.trim() || coldroomLabelMap.get(row.id) || row.id;
+          const label = row.name?.trim() || row.id;
           warehouseNameMap.set(row.id, label);
         });
 
@@ -562,7 +459,7 @@ export default function OutletWarehouseBalancesPage() {
           item_kind: string | null;
         }>) || []).map((row) => ({
           warehouse_id: row.warehouse_id,
-          warehouse_name: warehouseNameMap.get(row.warehouse_id) || coldroomLabelMap.get(row.warehouse_id) || row.warehouse_id,
+          warehouse_name: warehouseNameMap.get(row.warehouse_id) || row.warehouse_id,
           item_id: row.item_id,
           item_name: row.item_name,
           variant_key: row.variant_key,
@@ -612,31 +509,6 @@ export default function OutletWarehouseBalancesPage() {
         });
 
         const aggregated = Array.from(map.values());
-        const coldroomChildRows = aggregated.filter((row) => coldroomChildSet.has(row.warehouse_id));
-        if (coldroomChildRows.length > 0) {
-          const parentName = coldroomLabelMap.get(COLDROOM_PARENT_ID) ?? "Coldrooms (all)";
-          const parentMap = new Map<string, StockItem>();
-          coldroomChildRows.forEach((row) => {
-            const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
-            const key = `${row.item_id}::${vKey}`;
-            const existing = parentMap.get(key);
-            const onHandUnits = typeof row.net_units === "number" ? row.net_units : 0;
-            if (existing) {
-              existing.net_units = (existing.net_units ?? 0) + onHandUnits;
-            } else {
-              parentMap.set(key, {
-                warehouse_id: COLDROOM_PARENT_ID,
-                warehouse_name: parentName,
-                item_id: row.item_id,
-                item_name: row.item_name,
-                variant_key: row.variant_key,
-                item_kind: row.item_kind,
-                net_units: onHandUnits,
-              });
-            }
-          });
-          aggregated.push(...parentMap.values());
-        }
 
         aggregated.sort((a, b) => {
           const warehouseCompare = (a.warehouse_name ?? a.warehouse_id).localeCompare(
@@ -662,7 +534,6 @@ export default function OutletWarehouseBalancesPage() {
   }, [
     status,
     selectedWarehouseId,
-    selectedBalanceWarehouseIds,
     linkedWarehouseIds,
     includeIngredients,
     includeRaw,
@@ -671,9 +542,6 @@ export default function OutletWarehouseBalancesPage() {
     selectedOutletIds,
     refreshTick,
     supabase,
-    hasColdroomBalances,
-    coldroomChildSet,
-    outletWarehouseLinks,
   ]);
 
   useEffect(() => {
@@ -820,51 +688,6 @@ export default function OutletWarehouseBalancesPage() {
             </div>
           </div>
 
-          {hasColdroomBalances && (
-            <div className={styles.filterRow}>
-              <div className={`${styles.filterLabel} ${styles.warehousePicker}`}>
-                Warehouses
-                <div className={styles.warehouseActions}>
-                  <button
-                    type="button"
-                    className={styles.ghostButton}
-                    onClick={selectAllBalanceWarehouses}
-                    disabled={coldroomWarehouseOptions.length === 0}
-                  >
-                    Select all
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.ghostButton}
-                    onClick={clearBalanceWarehouses}
-                    disabled={coldroomWarehouseOptions.length === 0}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <details className={styles.warehouseDropdown}>
-                  <summary>
-                    {selectedBalanceWarehouseIds.length === 0
-                      ? "Choose warehouses"
-                      : `${selectedBalanceWarehouseIds.length} selected`}
-                  </summary>
-                  <div className={styles.warehouseChecklist}>
-                    {coldroomWarehouseOptions.map((warehouse) => (
-                      <label key={warehouse.id} className={styles.warehouseOption}>
-                        <input
-                          type="checkbox"
-                          checked={selectedBalanceWarehouseIds.includes(warehouse.id)}
-                          onChange={() => toggleBalanceWarehouse(warehouse.id)}
-                        />
-                        <span>{warehouse.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </details>
-              </div>
-            </div>
-          )}
-
           <div className={styles.filterRow}>
             <label className={styles.toggle}>
               <input
@@ -950,15 +773,9 @@ export default function OutletWarehouseBalancesPage() {
               <p className={styles.tableTitle}>Live Balances</p>
               <p className={styles.tableSubtitle}>
                 Showing {items.length} items
-                {hasColdroomBalances
-                  ? selectedBalanceWarehouseIds.length > 0
-                    ? ` · ${selectedBalanceWarehouseIds.length} selected`
-                    : ""
-                  : selectedWarehouseId === "all" && linkedWarehouseIds.length > 0
-                    ? ` · Summed across ${linkedWarehouseIds.length} warehouses`
-                    : selectedWarehouseId === COLDROOM_PARENT_ID
-                      ? ` · Summed across ${COLDROOM_CHILD_IDS.length} coldrooms`
-                      : ""}
+                {selectedWarehouseId === "all" && linkedWarehouseIds.length > 0
+                  ? ` · Summed across ${linkedWarehouseIds.length} warehouses`
+                  : ""}
                 {" · Auto-refreshes every 30s"}
               </p>
             </div>

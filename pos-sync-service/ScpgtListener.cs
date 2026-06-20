@@ -13,14 +13,20 @@ public sealed class ScpgtListener : IDisposable
     private const int WmSysKeydown = 0x0104;
     private const int WmSysKeyup = 0x0105;
     private const int VkShift = 0x10;
-    private const int VkBack = 0x08;
-    private const int VkOemPlus = 0xBB;
+    private const int VkA = 0x41;
+    private const int VkTop1 = 0x31;
+    private const int VkTop0 = 0x30;
+    private const int VkNum1 = 0x61;
+    private const int VkNum0 = 0x60;
 
     private readonly string _contentRoot;
     private LowLevelKeyboardProc? _hookCallback;
     private IntPtr _hookHandle;
     private bool _shiftDown;
-    private bool _plusDown;
+    private bool _aDown;
+    private bool _oneDown;
+    private bool _zeroDown;
+    private bool _comboHandled;
 
     public ScpgtListener(string contentRoot)
     {
@@ -63,17 +69,23 @@ public sealed class ScpgtListener : IDisposable
             if (message == WmKeydown || message == WmSysKeydown)
             {
                 if (key == VkShift) _shiftDown = true;
-                if (key == VkOemPlus) _plusDown = true;
+                if (key == VkA) _aDown = true;
+                if (key == VkTop1 || key == VkNum1) _oneDown = true;
+                if (key == VkTop0 || key == VkNum0) _zeroDown = true;
 
-                if (key == VkBack && _shiftDown && _plusDown)
+                if (!_comboHandled && _shiftDown && _aDown && _oneDown && _zeroDown)
                 {
+                    _comboHandled = true;
                     LaunchOrFocusUi();
                 }
             }
             else if (message == WmKeyup || message == WmSysKeyup)
             {
                 if (key == VkShift) _shiftDown = false;
-                if (key == VkOemPlus) _plusDown = false;
+                if (key == VkA) _aDown = false;
+                if (key == VkTop1 || key == VkNum1) _oneDown = false;
+                if (key == VkTop0 || key == VkNum0) _zeroDown = false;
+                _comboHandled = false;
             }
         }
 

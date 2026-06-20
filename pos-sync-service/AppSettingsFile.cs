@@ -42,7 +42,14 @@ public static class AppSettingsFile
         var builder = new StringBuilder();
         builder.AppendLine("{");
         builder.AppendLine("  \"PosDb\": {");
-        builder.AppendLine("    \"ConnectionString\": \"Server=localhost;Database=POS;User Id=POSUSER;Password=CHANGE_ME;TrustServerCertificate=True\"");
+        builder.AppendLine("    \"ConnectionString\": \"\",");
+        builder.AppendLine("    \"Server\": \"localhost\",");
+        builder.AppendLine("    \"Database\": \"POS\",");
+        builder.AppendLine("    \"Username\": \"POSUSER\",");
+        builder.AppendLine("    \"Password\": \"CHANGE_ME\",");
+        builder.AppendLine("    \"TrustServerCertificate\": true,");
+        builder.AppendLine("    \"IntegratedSecurity\": false,");
+        builder.AppendLine("    \"Encrypt\": false");
         builder.AppendLine("  },");
         builder.AppendLine("  \"Outlet\": {");
         builder.AppendLine("    \"Id\": \"00000000-0000-0000-0000-000000000000\"");

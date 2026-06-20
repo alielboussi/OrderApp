@@ -25,6 +25,8 @@ public sealed class PosRepository
         _logger = logger;
     }
 
+    private string ConnectionString => _options.GetEffectiveConnectionString();
+
     public async Task<IReadOnlyList<PosOrder>> ReadPendingOrdersAsync(
         int batchSize,
         DateTime? minOccurredAtUtc,
@@ -80,7 +82,7 @@ ORDER BY bt.id ASC;";
 
         var orders = new List<PosOrder>();
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(headerSql, conn)
@@ -175,7 +177,7 @@ ORDER BY bt.id DESC;";
 
         var recent = new List<PosSentSummary>();
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(sql, conn)
@@ -225,7 +227,7 @@ ORDER BY bt.id DESC;";
     UPDATE dbo.Sale        SET uploadstatus = 'Processed' WHERE Id = @SaleId;
     UPDATE dbo.Saledetails SET uploadstatus = 'Processed' WHERE saleid = @SaleId;";
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(sql, conn)
@@ -255,7 +257,7 @@ ORDER BY bt.id DESC;";
         var paramNames = idList.Select((_, idx) => "@p" + idx).ToArray();
         var sql = $"UPDATE dbo.InventoryConsumed SET uploadstatus = 'Processed' WHERE Id IN ({string.Join(",", paramNames)})";
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(sql, conn)
@@ -293,7 +295,7 @@ ORDER BY bt.id DESC;";
 
         var items = new List<PosLineItem>();
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(lineSql, conn)
@@ -375,7 +377,7 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
             _logger.LogWarning("Inventory match using date-only; branchid missing for sale on {SaleDate}", saleDate.Date);
         }
 
-        await using var conn = new SqlConnection(_options.ConnectionString);
+        await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
         await using var cmd = new SqlCommand(sql, conn)

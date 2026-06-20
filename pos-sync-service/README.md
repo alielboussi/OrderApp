@@ -10,12 +10,18 @@ dotnet publish -c Release -r win-x64 --self-contained true -o publish
 
 ## Configure
 Edit `publish/appsettings.json` per outlet:
-- `PosDb.ConnectionString`: SQL Server for the POS at that outlet.
+- `PosDb.ConnectionString`: optional full SQL Server connection string.
+- `PosDb.Server`, `PosDb.Database`, `PosDb.Username`, `PosDb.Password`: preferred explicit SQL credentials.
+- `PosDb.TrustServerCertificate`, `PosDb.IntegratedSecurity`, `PosDb.Encrypt`: SQL connection behavior.
 - `Outlet.Id`: Supabase outlet UUID.
 - `Supabase.Url`: Supabase project URL.
 - `Supabase.AnonKey`: Anonymous key (preferred if RPCs allow anon access).
 - `Supabase.ServiceKey`: Service role key (optional; used if provided).
 - `Sync.BatchSize`, `Sync.SourceSystem`: sync idempotency settings.
+
+Ready-to-fill template:
+- `appsettings.outlet.template.json` (copy to `%ProgramData%\SCPGT\appsettings.json` on each outlet PC).
+- Website scheduling UI: `Warehouse Backoffice -> Middleware updates` (apply `supabase/middleware_catalog_schedule.sql` first).
 
 ## Install as Windows Service (PowerShell as Administrator)
 Quick installer script (publishes, copies, installs service, seeds config):
@@ -33,6 +39,26 @@ New-Service -Name "SCPGT" -BinaryPathName "\"C:\\Program Files\\SCPGT\\SCPGT.exe
 Start-Service -Name "SCPGT"
 ```
 
+## Install with EXE (no PowerShell)
+From a published folder that contains `SCPGT.exe`:
+```
+SCPGT.exe --install-service --installPath "C:\Program Files\SCPGT" --configRoot "%ProgramData%\SCPGT"
+```
+- Prompts for admin (UAC) automatically.
+- Copies files, creates/updates the Windows service, registers startup listener, and starts the service.
+- For one-click install, double-click `scripts\install-service.bat` (calls the EXE installer mode).
+
+To uninstall with EXE:
+```
+SCPGT.exe --uninstall-service
+```
+
+Double-click behavior:
+- Double-clicking `SCPGT.exe` opens a prompt:
+  - **Yes** = install/update + start service
+  - **No** = uninstall service
+  - **Cancel** = close
+
 To uninstall manually:
 ```
 Stop-Service -Name "SCPGT"
@@ -41,7 +67,8 @@ sc delete SCPGT
 
 ## Hotkey listener
 - The installer registers a hidden listener at Windows startup to show the UI when the hotkey is pressed.
-- Default hotkey: Shift + `+` + Backspace.
+- Default hotkey: Shift + `A` + `1` + `0`.
+- UI is status-only (no sync/close buttons). Use the **Minimize** button to hide; press the hotkey to show it again.
 
 ## Deploy as a single folder
 1) Run `dotnet publish -c Release -r win-x64 --self-contained true -o publish` (already done) — this produces the `publish` folder with binaries **and** the `scripts` subfolder.
