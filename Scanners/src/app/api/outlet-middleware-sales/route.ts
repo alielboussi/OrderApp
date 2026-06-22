@@ -118,7 +118,7 @@ function parseLimit(value: string | null): number {
   return Math.min(Math.floor(parsed), MAX_LIMIT);
 }
 
-function toNumber(value: number | string | null | undefined): number {
+function toNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
     const parsed = Number(value);

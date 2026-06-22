@@ -28,9 +28,9 @@ SET @sql = N'GRANT SELECT, UPDATE ON dbo.InventoryConsumed TO ' + QUOTENAME(@Pri
 EXEC sp_executesql @sql;
 
 -- Catalog read + update/delete operations
-SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.MenuItem TO ' + QUOTENAME(@Principal) + N';';
+SET @sql = N'GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.MenuItem TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
-SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.ModifierFlavour TO ' + QUOTENAME(@Principal) + N';';
+SET @sql = N'GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.ModifierFlavour TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
 SET @sql = N'GRANT SELECT, INSERT, UPDATE ON dbo.MenuGroup TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
