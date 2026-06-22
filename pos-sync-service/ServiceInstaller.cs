@@ -48,7 +48,7 @@ public static class ServiceInstaller
 
             if (!skipCopy && !PathsEqual(sourceRoot, installPath))
             {
-                CopyDirectory(sourceRoot, installPath);
+                CopyServiceExecutable(sourceRoot, installPath);
             }
 
             EnsureConfig(configRoot, sourceRoot);
@@ -528,23 +528,30 @@ public static class ServiceInstaller
         return args.Any(arg => string.Equals(arg, name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void CopyDirectory(string sourceDir, string destinationDir)
+    private static void CopyServiceExecutable(string sourceRoot, string destinationDir)
     {
         Directory.CreateDirectory(destinationDir);
 
-        foreach (var file in Directory.EnumerateFiles(sourceDir))
+        var sourceExe = ResolveServiceExecutablePath(sourceRoot);
+        var targetExe = Path.Combine(destinationDir, "SCPGT.exe");
+        File.Copy(sourceExe, targetExe, overwrite: true);
+    }
+
+    private static string ResolveServiceExecutablePath(string sourceRoot)
+    {
+        var fromRoot = Path.Combine(sourceRoot, "SCPGT.exe");
+        if (File.Exists(fromRoot))
         {
-            var fileName = Path.GetFileName(file);
-            var target = Path.Combine(destinationDir, fileName);
-            File.Copy(file, target, overwrite: true);
+            return fromRoot;
         }
 
-        foreach (var subDir in Directory.EnumerateDirectories(sourceDir))
+        var runningExe = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(runningExe) && File.Exists(runningExe))
         {
-            var name = Path.GetFileName(subDir);
-            var target = Path.Combine(destinationDir, name);
-            CopyDirectory(subDir, target);
+            return runningExe;
         }
+
+        throw new FileNotFoundException("SCPGT.exe not found next to the installer.", fromRoot);
     }
 
     private static bool PathsEqual(string left, string right)

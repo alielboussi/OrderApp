@@ -305,10 +305,11 @@ export default function WarehouseBackofficeDashboard() {
       <section className={styles.pageCard}>
         <div className={styles.sectionHeaderBlue}>
           <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
-            POS {"->"} Supabase SKU sync
+            POS {"->"} Supabase catalog sync
           </h3>
           <p className={styles.pageCardBody} style={{ marginTop: 8 }}>
-            One click requests all active middleware outlets to pull local MintPOS catalog and sync SKUs to Supabase.
+            One click requests all active middleware outlets to pull local MintPOS catalog and sync variant SKUs and menu
+            groups to Supabase. Website catalog changes still flow outbound via Send updates on the catalog menu.
           </p>
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>

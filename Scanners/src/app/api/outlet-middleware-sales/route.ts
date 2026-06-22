@@ -28,6 +28,13 @@ type OutletRow = {
 type ItemRow = {
   id: string;
   name: string | null;
+  menu_group_id: string | null;
+};
+
+type MenuGroupRow = {
+  id: string;
+  name: string | null;
+  pos_menu_group_id: number | null;
 };
 
 type VariantRow = {
@@ -45,6 +52,9 @@ type SaleLine = {
   variant_uuid: string | null;
   variant_name: string | null;
   variant_sku: string | null;
+  menu_group_uuid: string | null;
+  menu_group_name: string | null;
+  pos_menu_group_id: number | null;
   quantity: number;
   price_before_vat_16: number;
   price_after_vat_16: number;
@@ -300,7 +310,7 @@ export async function GET(request: NextRequest) {
 
     const [outletsRes, itemsRes, variantsRes, ordersRes] = await Promise.all([
       supabase.from("outlets").select("id,name").in("id", outletIds),
-      supabase.from("catalog_items").select("id,name").in("id", itemIds),
+      supabase.from("catalog_items").select("id,name,menu_group_id").in("id", itemIds),
       supabase.from("catalog_variants").select("id,item_id,name,sku").in("item_id", itemIds),
       ordersPromise,
     ]);
@@ -312,6 +322,25 @@ export async function GET(request: NextRequest) {
 
     const outletById = new Map((outletsRes.data ?? []).map((row) => [row.id, row] as const));
     const itemById = new Map((itemsRes.data ?? []).map((row) => [row.id, row] as const));
+    const menuGroupIds = Array.from(
+      new Set(
+        ((itemsRes.data ?? []) as ItemRow[])
+          .map((row) => row.menu_group_id)
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+
+    let menuGroupById = new Map<string, MenuGroupRow>();
+    if (menuGroupIds.length > 0) {
+      const { data: menuGroupData, error: menuGroupError } = await supabase
+        .from("catalog_menu_groups")
+        .select("id,name,pos_menu_group_id")
+        .in("id", menuGroupIds);
+      if (menuGroupError) throw menuGroupError;
+      menuGroupById = new Map(
+        ((menuGroupData ?? []) as MenuGroupRow[]).map((row) => [row.id, row] as const)
+      );
+    }
     const orderBySourceEventId = new Map(
       ((ordersRes.data ?? []) as OrderRow[]).map((row) => [row.source_event_id, row] as const)
     );
@@ -344,6 +373,8 @@ export async function GET(request: NextRequest) {
       const unitBeforeVat = toNumber(row.vat_exc_price) || (unitAfterVat > 0 ? unitAfterVat / (1 + VAT_RATE) : 0);
       const lineTotal = unitAfterVat * quantity;
 
+      const menuGroup = item?.menu_group_id ? menuGroupById.get(item.menu_group_id) : undefined;
+
       const line: SaleLine = {
         outlet_uuid: row.outlet_id,
         outlet_name: outlet?.name ?? null,
@@ -352,6 +383,9 @@ export async function GET(request: NextRequest) {
         variant_uuid: matchedVariant?.id ?? null,
         variant_name: matchedVariant?.name ?? null,
         variant_sku: matchedVariant?.sku ?? null,
+        menu_group_uuid: menuGroup?.id ?? item?.menu_group_id ?? null,
+        menu_group_name: menuGroup?.name ?? null,
+        pos_menu_group_id: menuGroup?.pos_menu_group_id ?? null,
         quantity: round2(quantity),
         price_before_vat_16: round2(unitBeforeVat),
         price_after_vat_16: round2(unitAfterVat),
