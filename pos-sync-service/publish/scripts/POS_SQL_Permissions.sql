@@ -1,17 +1,37 @@
--- Run in SQL Server (MINTPOS)
+-- Run in SQL Server Management Studio against the POS database.
+-- Change @Principal if your SQL login/user is not named "mint".
 USE [MINTPOS];
 GO
 
--- Ensure user exists for login
-IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'mint')
+DECLARE @Principal sysname = N'mint';
+DECLARE @sql nvarchar(max);
+
+-- Ensure DB user exists for the login.
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @Principal)
 BEGIN
-  CREATE USER [mint] FOR LOGIN [mint];
+    SET @sql = N'CREATE USER ' + QUOTENAME(@Principal) + N' FOR LOGIN ' + QUOTENAME(@Principal) + N';';
+    EXEC sp_executesql @sql;
 END
 GO
 
--- Grant rights needed for POS sync to mark processed
-GRANT SELECT, UPDATE ON dbo.Sale TO [mint];
-GRANT SELECT, UPDATE ON dbo.Saledetails TO [mint];
-GRANT SELECT, UPDATE ON dbo.BillType TO [mint];
-GRANT SELECT, UPDATE ON dbo.MenuItem TO [mint];
-GRANT SELECT, UPDATE ON dbo.ModifierFlavour TO [mint];
+DECLARE @Principal sysname = N'mint';
+DECLARE @sql nvarchar(max);
+
+-- Sales read + processed marking
+SET @sql = N'GRANT SELECT, UPDATE ON dbo.Sale TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+SET @sql = N'GRANT SELECT, UPDATE ON dbo.BillType TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+SET @sql = N'GRANT SELECT, UPDATE ON dbo.SaleDetails TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+SET @sql = N'GRANT SELECT, UPDATE ON dbo.InventoryConsumed TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+
+-- Catalog read + update/delete operations
+SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.MenuItem TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.ModifierFlavour TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.SaleDetails TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+GO
