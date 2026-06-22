@@ -60,7 +60,7 @@ public sealed class SupabaseClient
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Supabase validation RPC failed {Status}: {Body}", (int)response.StatusCode, body);
+                _logger.LogError("Supabase validation RPC failed {Status}: {Body}", (int)response.StatusCode, body);
                 return new SupabaseResult(false, $"Validation RPC failed {(int)response.StatusCode}: {body}");
             }
 
@@ -149,7 +149,7 @@ public sealed class SupabaseClient
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Supabase RPC failed {Status}: {Body}", (int)response.StatusCode, body);
+            _logger.LogError("Supabase RPC failed {Status}: {Body}", (int)response.StatusCode, body);
             return new SupabaseResult(false, $"RPC failed {(int)response.StatusCode}: {body}");
         }
         catch (Exception ex)
@@ -458,6 +458,25 @@ public sealed class SupabaseClient
             return null;
         }
 
+        var lastValue = await TryReadCounterLastValueAsync(counterKey, label, cancellationToken);
+        if (!lastValue.HasValue)
+        {
+            lastValue = await TryReadCounterLastValueViaRpcAsync(counterKey, label, cancellationToken);
+        }
+
+        if (!lastValue.HasValue || lastValue.Value < 0)
+        {
+            return null;
+        }
+
+        return DateTimeOffset.FromUnixTimeSeconds(lastValue.Value).UtcDateTime;
+    }
+
+    private async Task<long?> TryReadCounterLastValueAsync(
+        string counterKey,
+        string label,
+        CancellationToken cancellationToken)
+    {
         var client = CreateClient();
 
         try
@@ -471,7 +490,62 @@ public sealed class SupabaseClient
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning("Supabase {Label} check failed {Status}: {Body}", label, (int)response.StatusCode, body);
+                _logger.LogError(
+                    "Supabase counter read failed for {Label} {Status}: {Body}",
+                    label,
+                    (int)response.StatusCode,
+                    body);
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
+            {
+                _logger.LogWarning("Supabase counter read returned no rows for {Label} key={CounterKey}.", label, counterKey);
+                return null;
+            }
+
+            var entry = doc.RootElement[0];
+            if (!entry.TryGetProperty("last_value", out var lastValueProp))
+            {
+                _logger.LogWarning("Supabase counter read missing last_value for {Label} key={CounterKey}.", label, counterKey);
+                return null;
+            }
+
+            return lastValueProp.GetInt64();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Supabase counter read crashed for {Label} key={CounterKey}.", label, counterKey);
+            return null;
+        }
+    }
+
+    private async Task<long?> TryReadCounterLastValueViaRpcAsync(
+        string counterKey,
+        string label,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await SendWithRetryAsync(
+                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/debug_pos_sync_counter")
+                {
+                    Content = JsonContent.Create(
+                        new { p_scope_id = _outlet.Id, p_counter_key = counterKey },
+                        options: JsonOptions)
+                },
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError(
+                    "Supabase {Label} RPC check failed {Status}: {Body}",
+                    label,
+                    (int)response.StatusCode,
+                    body);
                 return null;
             }
 
@@ -488,17 +562,11 @@ public sealed class SupabaseClient
                 return null;
             }
 
-            var lastValue = lastValueProp.GetInt64();
-            if (lastValue <= 0)
-            {
-                return null;
-            }
-
-            return DateTimeOffset.FromUnixTimeSeconds(lastValue).UtcDateTime;
+            return lastValueProp.GetInt64();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error checking POS sync {Label}", label);
+            _logger.LogError(ex, "Error checking POS sync {Label} via RPC", label);
             return null;
         }
     }
@@ -573,13 +641,19 @@ public sealed class SupabaseClient
 
                 response.Dispose();
             }
-            catch (HttpRequestException) when (attempt < RetryDelays.Length)
+            catch (HttpRequestException ex) when (attempt < RetryDelays.Length)
             {
-                // Retry transient network errors.
+                _logger.LogWarning(
+                    ex,
+                    "Supabase request attempt {Attempt} failed; retrying.",
+                    attempt + 1);
             }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < RetryDelays.Length)
+            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested && attempt < RetryDelays.Length)
             {
-                // Retry timeouts.
+                _logger.LogWarning(
+                    ex,
+                    "Supabase request attempt {Attempt} timed out; retrying.",
+                    attempt + 1);
             }
 
             await Task.Delay(RetryDelays[attempt], cancellationToken);
@@ -596,14 +670,21 @@ public sealed class SupabaseClient
             var response = await client.GetAsync(path, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError(
+                    "Supabase GET failed {Status} {Path}: {Body}",
+                    (int)response.StatusCode,
+                    path,
+                    body);
                 return default;
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             return JsonSerializer.Deserialize<T>(json, JsonOptions);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Supabase GET crashed {Path}", path);
             return default;
         }
     }
@@ -625,11 +706,12 @@ public sealed class SupabaseClient
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError("Supabase RPC call failed {Path} {Status}: {Body}", path, (int)response.StatusCode, body);
             return new SupabaseResult(false, body);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Supabase RPC call failed: {Path}", path);
+            _logger.LogError(ex, "Supabase RPC call failed: {Path}", path);
             return new SupabaseResult(false, ex.Message);
         }
     }

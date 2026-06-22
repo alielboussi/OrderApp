@@ -49,14 +49,14 @@ public sealed class SyncRunner
 
         if (!syncContext.HasPosMiddleware)
         {
-            _logger.LogDebug("Outlet has POS middleware disabled; skipping sales upload.");
+            _logger.LogInformation("Sales sync skipped: has_pos_middleware is false for this outlet.");
             return new SyncRunResult(0, failures);
         }
 
         if (!syncContext.SyncOpeningUtc.HasValue)
         {
             _logger.LogInformation(
-                "No pos_sync_opening counter — start an outlet stocktake period in the Afterten Orders app before syncing sales.");
+                "Sales sync skipped: no pos_sync_opening counter — open a stocktake period or set counter_values in Supabase.");
             return new SyncRunResult(0, failures);
         }
 
@@ -72,6 +72,16 @@ public sealed class SyncRunner
             minUtc,
             maxUtc,
             cancellationToken);
+
+        _logger.LogInformation(
+            "Sales sync cycle: opening={OpeningUtc:o} cutoff={CutoffUtc} window_min={MinUtc:o} window_max={MaxUtc} include_processed={IncludeProcessed} pending={PendingCount}",
+            syncContext.SyncOpeningUtc,
+            syncContext.SyncCutoffUtc,
+            minUtc,
+            maxUtc,
+            syncOptions.IncludeProcessed,
+            pending.Count);
+
         if (pending.Count == 0)
         {
             return new SyncRunResult(0, failures);
@@ -81,6 +91,8 @@ public sealed class SyncRunner
         {
             try
             {
+                LogSaleUploadAttempt(order);
+
                 var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
                 if (!validation.IsSuccess)
                 {
@@ -88,15 +100,21 @@ public sealed class SyncRunner
                     {
                         if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
                         {
-                            _logger.LogInformation("Skipping order {OrderId}: no mappable POS items.", order.PosOrderId);
+                            _logger.LogInformation(
+                                "Sale skipped bill={BillId} sale={SaleId} source={SourceEventId}: no mappable POS SKUs.",
+                                order.PosOrderId,
+                                order.PosSaleId,
+                                order.SourceEventId);
                             await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
                             processed++;
                         }
                         else
                         {
-                            _logger.LogDebug(
-                                "Deferring order {OrderId}: {Error}",
+                            _logger.LogInformation(
+                                "Sale deferred bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
                                 order.PosOrderId,
+                                order.PosSaleId,
+                                order.SourceEventId,
                                 validation.ErrorMessage ?? "Outside sync window");
                         }
 
@@ -105,7 +123,12 @@ public sealed class SyncRunner
 
                     var failure = new SyncFailure(order.PosOrderId, validation.ErrorMessage);
                     failures.Add(failure);
-                    _logger.LogWarning("Validation failed for order {OrderId}: {Error}", order.PosOrderId, validation.ErrorMessage ?? "Unknown error");
+                    _logger.LogWarning(
+                        "Sale validation failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
+                        order.PosOrderId,
+                        order.PosSaleId,
+                        order.SourceEventId,
+                        validation.ErrorMessage ?? "Unknown error");
                     await _supabaseClient.LogFailureAsync(order, "validation", validation.ErrorMessage ?? "Validation failed", null, cancellationToken);
                     continue;
                 }
@@ -121,13 +144,26 @@ public sealed class SyncRunner
                         await _repository.MarkInventoryProcessedAsync(inventoryIds, cancellationToken);
                     }
 
+                    _logger.LogInformation(
+                        "Sale uploaded bill={BillId} sale={SaleId} source={SourceEventId} occurred={OccurredAt:o} lines={LineCount}",
+                        order.PosOrderId,
+                        order.PosSaleId,
+                        order.SourceEventId,
+                        order.OccurredAt,
+                        order.Items.Count);
+
                     processed++;
                 }
                 else
                 {
                     var failure = new SyncFailure(order.PosOrderId, result.ErrorMessage);
                     failures.Add(failure);
-                    _logger.LogWarning("Failed to sync order {OrderId}: {Error}", order.PosOrderId, result.ErrorMessage ?? "Unknown error");
+                    _logger.LogWarning(
+                        "Sale upload failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
+                        order.PosOrderId,
+                        order.PosSaleId,
+                        order.SourceEventId,
+                        result.ErrorMessage ?? "Unknown error");
                     await _supabaseClient.LogFailureAsync(order, "sync", result.ErrorMessage ?? "Sync failed", null, cancellationToken);
                 }
             }
@@ -135,11 +171,17 @@ public sealed class SyncRunner
             {
                 var failure = new SyncFailure(order.PosOrderId, ex.Message);
                 failures.Add(failure);
-                _logger.LogError(ex, "Unexpected error syncing order {OrderId}", order.PosOrderId);
+                _logger.LogError(
+                    ex,
+                    "Sale upload exception bill={BillId} sale={SaleId} source={SourceEventId}",
+                    order.PosOrderId,
+                    order.PosSaleId,
+                    order.SourceEventId);
                 await _supabaseClient.LogFailureAsync(order, "exception", ex.Message, new { ex.StackTrace }, cancellationToken);
             }
         }
 
+        _logger.LogInformation("Sales sync cycle finished: uploaded={UploadedCount} failures={FailureCount}", processed, failures.Count);
         return new SyncRunResult(processed, failures);
     }
 
@@ -176,13 +218,36 @@ public sealed class SyncRunner
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to apply catalog sync event {EventId}", evt.Id);
+                _logger.LogError(ex, "Failed to apply catalog sync event {EventId}", evt.Id);
             }
         }
 
         if (delivered.Count > 0)
         {
             await _supabaseClient.MarkCatalogSyncDeliveredAsync(delivered, cancellationToken);
+        }
+    }
+
+    private void LogSaleUploadAttempt(PosOrder order)
+    {
+        _logger.LogInformation(
+            "Uploading sale bill={BillId} sale={SaleId} source={SourceEventId} occurred={OccurredAt:o} lines={LineCount}",
+            order.PosOrderId,
+            order.PosSaleId,
+            order.SourceEventId,
+            order.OccurredAt,
+            order.Items.Count);
+
+        foreach (var item in order.Items)
+        {
+            _logger.LogInformation(
+                "  line pos_item={PosItemId} sku={ItemSku} variant_sku={VariantSku} qty={Quantity} price={SalePrice} name={Name}",
+                item.PosItemId,
+                item.ItemSku ?? "",
+                item.VariantSku ?? "",
+                item.Quantity,
+                item.SalePrice,
+                item.Name);
         }
     }
 
@@ -218,7 +283,7 @@ public sealed class SyncRunner
             var result = await _supabaseClient.SyncPosCatalogSkuMapAsync(rows, cancellationToken);
             if (!result.IsSuccess)
             {
-                _logger.LogWarning("POS catalog SKU sync failed: {Error}", result.ErrorMessage ?? "Unknown error");
+                _logger.LogError("POS catalog SKU sync failed: {Error}", result.ErrorMessage ?? "Unknown error");
                 return;
             }
 
@@ -227,7 +292,7 @@ public sealed class SyncRunner
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "POS catalog SKU sync crashed.");
+            _logger.LogError(ex, "POS catalog SKU sync crashed.");
         }
     }
 }

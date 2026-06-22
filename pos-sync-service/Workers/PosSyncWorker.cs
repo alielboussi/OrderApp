@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,6 +8,7 @@ namespace PosSyncService;
 
 public sealed class PosSyncWorker(IOptions<SyncOptions> syncOptions,
                                   SyncRunner syncRunner,
+                                  IHostEnvironment hostEnvironment,
                                   ILogger<PosSyncWorker> logger) : BackgroundService
 {
     private readonly SyncOptions _syncOptions = syncOptions.Value;
@@ -15,7 +17,11 @@ public sealed class PosSyncWorker(IOptions<SyncOptions> syncOptions,
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("POS sync worker starting with poll interval {PollSeconds}s", _syncOptions.PollSeconds);
+        var logPath = Path.Combine(hostEnvironment.ContentRootPath, "log.txt");
+        _logger.LogInformation(
+            "POS sync worker starting with poll interval {PollSeconds}s; log file {LogPath}",
+            _syncOptions.PollSeconds,
+            logPath);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -26,7 +32,10 @@ public sealed class PosSyncWorker(IOptions<SyncOptions> syncOptions,
                 {
                     foreach (var failure in result.Failures)
                     {
-                        _logger.LogWarning("Failed to sync order {OrderId}: {Error}", failure.PosOrderId, failure.Error ?? "Unknown error");
+                        _logger.LogError(
+                            "Sync failure order={OrderId}: {Error}",
+                            failure.PosOrderId,
+                            failure.Error ?? "Unknown error");
                     }
                 }
             }

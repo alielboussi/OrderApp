@@ -49,6 +49,9 @@ if (uninstallService)
 }
 
 var configRoot = settings.ContentRootPath ?? AppContext.BaseDirectory;
+ProgramDataLogWriter.Initialize(configRoot);
+RegisterGlobalErrorHandlers(configRoot);
+
 var legacyIniPath = AppSettingsFile.GetIniPath(configRoot);
 var jsonPath = AppSettingsFile.GetJsonPath(configRoot);
 if (!File.Exists(jsonPath) && !File.Exists(legacyIniPath))
@@ -108,41 +111,74 @@ builder.Services.AddWindowsService(options =>
 
 builder.Services.Configure<LoggerFilterOptions>(options =>
 {
-    // Default to Information; override via Logging:LogLevel in config.
     options.MinLevel = LogLevel.Information;
 });
 
 builder.Services.AddLogging(logging =>
 {
     logging.AddSimpleConsole();
+    logging.AddProvider(new ProgramDataFileLoggerProvider(configRoot, LogLevel.Debug));
+    logging.AddFilter("Microsoft", LogLevel.Warning);
+    logging.AddFilter("System", LogLevel.Warning);
+    logging.AddFilter("PosSyncService", LogLevel.Debug);
 });
 
-using var host = builder.Build();
+try
+{
+    using var host = builder.Build();
 
-if (runListener || (!runAsService && !runUi))
-{
-    ConsoleWindowHelper.Hide();
-    using var cts = new CancellationTokenSource();
-    var listener = new ScpgtListener(settings.ContentRootPath ?? AppContext.BaseDirectory);
-    listener.Run(cts.Token);
+    if (runListener || (!runAsService && !runUi))
+    {
+        ConsoleWindowHelper.Hide();
+        using var cts = new CancellationTokenSource();
+        var listener = new ScpgtListener(settings.ContentRootPath ?? AppContext.BaseDirectory);
+        listener.Run(cts.Token);
+    }
+    else if (runUi)
+    {
+        ConsoleWindowHelper.Hide();
+        var uiThread = new Thread(() =>
+        {
+            ScpgtUi.Run(host);
+        })
+        {
+            IsBackground = false
+        };
+        uiThread.SetApartmentState(ApartmentState.STA);
+        uiThread.Start();
+        uiThread.Join();
+    }
+    else
+    {
+        await host.RunAsync();
+    }
 }
-else if (runUi)
+catch (Exception ex)
 {
-    ConsoleWindowHelper.Hide();
-    var uiThread = new Thread(() =>
+    ProgramDataLogWriter.Write(LogLevel.Critical, "Program", "Middleware failed to start or run.", ex);
+    throw;
+}
+
+static void RegisterGlobalErrorHandlers(string _)
+{
+    AppDomain.CurrentDomain.UnhandledException += (_, args) =>
     {
-        ScpgtUi.Run(host);
-    })
-    {
-        IsBackground = false
+        ProgramDataLogWriter.Write(
+            LogLevel.Critical,
+            "AppDomain",
+            "Unhandled exception — middleware may terminate.",
+            args.ExceptionObject as Exception);
     };
-    uiThread.SetApartmentState(ApartmentState.STA);
-    uiThread.Start();
-    uiThread.Join();
-}
-else
-{
-    await host.RunAsync();
+
+    TaskScheduler.UnobservedTaskException += (_, args) =>
+    {
+        ProgramDataLogWriter.Write(
+            LogLevel.Error,
+            "TaskScheduler",
+            "Unobserved task exception.",
+            args.Exception);
+        args.SetObserved();
+    };
 }
 
 static string? GetArgValue(string[] args, string name)

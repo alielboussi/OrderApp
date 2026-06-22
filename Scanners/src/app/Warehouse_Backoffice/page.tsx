@@ -32,6 +32,12 @@ type MiddlewareScheduleRow = {
 
 const OFFLINE_MS = 10 * 60 * 1000;
 const POLL_MS = 60_000;
+const EXCLUDED_HEARTBEAT_OUTLET_IDS = new Set<string>([
+  "24709409-08de-4906-b8ad-5b8d01db4a0b", // Ingredients Storeroom
+  "5b6934d6-a22d-424e-a257-c1a867edd3df", // Flour Potatoes Storeroom
+  "a497b8e7-31be-412d-817e-2b1ac9dda1d3", // Soyola Storeroom
+  "efb641b2-e3ed-4b04-924e-44b1c21d6213", // Coldrooms Storerooms
+]);
 
 function formatStamp(value?: string | null) {
   if (!value) return "—";
@@ -66,6 +72,7 @@ function formatCountdown(targetIso: string | null, nowMs: number) {
 
 function isHeartbeatMonitoredOutlet(outlet: OutletRow): boolean {
   if (outlet.active === false) return false;
+  if (EXCLUDED_HEARTBEAT_OUTLET_IDS.has(outlet.id)) return false;
 
   const label = `${outlet.name ?? ""} ${outlet.code ?? ""}`.toLowerCase();
   if (isStoreroomLabel(label)) return false;
