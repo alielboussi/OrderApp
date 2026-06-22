@@ -62,4 +62,5 @@ public sealed class SyncOptions
     public DateTime? MinSaleDateUtc { get; init; }
     public DateTime? MaxSaleDateUtc { get; init; }
     public bool IncludeProcessed { get; init; } = false;
+    public int PosCatalogSyncMinutes { get; init; } = 30;
 }

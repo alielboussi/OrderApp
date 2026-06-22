@@ -44,8 +44,8 @@ public static class AppSettingsFile
         builder.AppendLine("  \"PosDb\": {");
         builder.AppendLine("    \"ConnectionString\": \"\",");
         builder.AppendLine("    \"Server\": \"localhost\",");
-        builder.AppendLine("    \"Database\": \"POS\",");
-        builder.AppendLine("    \"Username\": \"POSUSER\",");
+        builder.AppendLine("    \"Database\": \"MINTPOS\",");
+        builder.AppendLine("    \"Username\": \"mint\",");
         builder.AppendLine("    \"Password\": \"CHANGE_ME\",");
         builder.AppendLine("    \"TrustServerCertificate\": true,");
         builder.AppendLine("    \"IntegratedSecurity\": false,");
@@ -62,7 +62,9 @@ public static class AppSettingsFile
         builder.AppendLine("  \"Sync\": {");
         builder.AppendLine("    \"PollSeconds\": 60,");
         builder.AppendLine("    \"BatchSize\": 50,");
-        builder.AppendLine("    \"SourceSystem\": \"afterten-pos\"");
+        builder.AppendLine("    \"SourceSystem\": \"afterten-pos\",");
+        builder.AppendLine("    \"IncludeProcessed\": false,");
+        builder.AppendLine("    \"PosCatalogSyncMinutes\": 30");
         builder.AppendLine("  },");
         builder.AppendLine("  \"Logging\": {");
         builder.AppendLine("    \"LogLevel\": {");

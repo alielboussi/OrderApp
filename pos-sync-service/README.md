@@ -6,7 +6,7 @@ A .NET 8 Worker Service that polls the local POS SQL Server database, posts orde
 ```
 dotnet publish -c Release -r win-x64 --self-contained true -o publish
 ```
-(This produces `SCPGT.exe` in `publish/`.)
+(This produces single-file `SCPGT.exe` in `publish/`.)
 
 ## Configure
 Edit `publish/appsettings.json` per outlet:
@@ -39,14 +39,13 @@ New-Service -Name "SCPGT" -BinaryPathName "\"C:\\Program Files\\SCPGT\\SCPGT.exe
 Start-Service -Name "SCPGT"
 ```
 
-## Install with EXE (no PowerShell)
-From a published folder that contains `SCPGT.exe`:
-```
-SCPGT.exe --install-service --installPath "C:\Program Files\SCPGT" --configRoot "%ProgramData%\SCPGT"
-```
-- Prompts for admin (UAC) automatically.
-- Copies files, creates/updates the Windows service, registers startup listener, and starts the service.
-- For one-click install, double-click `scripts\install-service.bat` (calls the EXE installer mode).
+## Install with EXE wizard only (no scripts/commands)
+Transfer only `SCPGT.exe` to outlet machine, then double-click it.
+- Opens setup wizard with **Back/Next** flow.
+- Lets user choose install folder and config folder.
+- Collects outlet UUID, Supabase URL/key, and POS SQL values in UI.
+- Prompts for admin (UAC), then installs/updates service and starts it.
+- Auto-saves config to `%ProgramData%\SCPGT\appsettings.json`.
 
 To uninstall with EXE:
 ```
@@ -54,10 +53,10 @@ SCPGT.exe --uninstall-service
 ```
 
 Double-click behavior:
-- Double-clicking `SCPGT.exe` opens a prompt:
-  - **Yes** = install/update + start service
-  - **No** = uninstall service
-  - **Cancel** = close
+- Double-clicking `SCPGT.exe` opens setup wizard:
+  - choose **Install / Update** or **Uninstall**
+  - use Next/Back navigation
+  - Finish applies action
 
 To uninstall manually:
 ```

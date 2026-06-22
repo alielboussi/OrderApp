@@ -16,6 +16,7 @@ public sealed class SyncRunner
     private readonly PosCatalogRepository _catalogRepository;
     private readonly SupabaseClient _supabaseClient;
     private readonly ILogger<SyncRunner> _logger;
+    private DateTimeOffset? _lastPosCatalogSyncUtc;
 
     public SyncRunner(IOptionsMonitor<SyncOptions> syncOptions,
                       PosRepository repository,
@@ -36,6 +37,7 @@ public sealed class SyncRunner
         var processed = 0;
 
         await _supabaseClient.SendHeartbeatAsync(cancellationToken);
+        await TrySyncPosCatalogMapAsync(force: false, cancellationToken);
         await ApplyCatalogSyncAsync(cancellationToken);
 
         var syncContext = await _supabaseClient.GetOutletSyncContextAsync(cancellationToken);
@@ -159,7 +161,14 @@ public sealed class SyncRunner
 
             try
             {
-                await _catalogRepository.ApplyCatalogEventAsync(evt, cancellationToken);
+                if (string.Equals(evt.EntityType, "sync_pos_catalog", StringComparison.OrdinalIgnoreCase))
+                {
+                    await TrySyncPosCatalogMapAsync(force: true, cancellationToken);
+                }
+                else
+                {
+                    await _catalogRepository.ApplyCatalogEventAsync(evt, cancellationToken);
+                }
                 delivered.Add(evt.Id);
             }
             catch (Exception ex)
@@ -183,5 +192,39 @@ public sealed class SyncRunner
 
         return errorMessage.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase)
             || errorMessage.Contains("outside_sync_window", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task TrySyncPosCatalogMapAsync(bool force, CancellationToken cancellationToken)
+    {
+        var syncMinutes = Math.Max(1, _syncOptions.CurrentValue.PosCatalogSyncMinutes);
+        var now = DateTimeOffset.UtcNow;
+        if (!force && _lastPosCatalogSyncUtc.HasValue && (now - _lastPosCatalogSyncUtc.Value).TotalMinutes < syncMinutes)
+        {
+            return;
+        }
+
+        try
+        {
+            var rows = await _repository.ReadPosCatalogSkuMapAsync(cancellationToken);
+            if (rows.Count == 0)
+            {
+                _lastPosCatalogSyncUtc = now;
+                return;
+            }
+
+            var result = await _supabaseClient.SyncPosCatalogSkuMapAsync(rows, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogWarning("POS catalog SKU sync failed: {Error}", result.ErrorMessage ?? "Unknown error");
+                return;
+            }
+
+            _lastPosCatalogSyncUtc = now;
+            _logger.LogInformation("POS catalog SKU sync completed with {Count} mapped variants.", rows.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "POS catalog SKU sync crashed.");
+        }
     }
 }

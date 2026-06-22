@@ -273,6 +273,52 @@ ORDER BY bt.id DESC;";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<PosCatalogSkuMapRow>> ReadPosCatalogSkuMapAsync(CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT
+    LTRIM(RTRIM(mi.Code)) AS ItemSku,
+    LTRIM(RTRIM(mi.Name)) AS ItemName,
+    LTRIM(RTRIM(mf.Name)) AS VariantName,
+    COALESCE(NULLIF(LTRIM(RTRIM(mf.Name2)), ''), CAST(mf.Id AS nvarchar(100))) AS VariantSku
+FROM dbo.ModifierFlavour mf WITH (NOLOCK)
+JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = mf.MenuItemId
+WHERE NULLIF(LTRIM(RTRIM(mi.Code)), '') IS NOT NULL
+  AND NULLIF(LTRIM(RTRIM(mf.Name)), '') IS NOT NULL
+  AND COALESCE(mi.Status, 'Active') = 'Active'
+  AND COALESCE(mf.Status, 'Active') = 'Active';";
+
+        var rows = new List<PosCatalogSkuMapRow>();
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var itemSku = reader["ItemSku"]?.ToString()?.Trim();
+            var itemName = reader["ItemName"]?.ToString()?.Trim();
+            var variantName = reader["VariantName"]?.ToString()?.Trim();
+            var variantSku = reader["VariantSku"]?.ToString()?.Trim();
+            if (string.IsNullOrWhiteSpace(itemSku) || string.IsNullOrWhiteSpace(itemName) || string.IsNullOrWhiteSpace(variantName) || string.IsNullOrWhiteSpace(variantSku))
+            {
+                continue;
+            }
+
+            rows.Add(new PosCatalogSkuMapRow(
+                itemSku,
+                itemName,
+                variantName,
+                variantSku
+            ));
+        }
+
+        return rows;
+    }
+
     private async Task<IReadOnlyList<PosLineItem>> LoadLineItemsAsync(string saleId, CancellationToken cancellationToken)
     {
         const string lineSql = @"

@@ -73,6 +73,11 @@ export default function WarehouseBackofficeDashboard() {
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<MiddlewareScheduleRow | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    requested: number;
+  } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -157,6 +162,26 @@ export default function WarehouseBackofficeDashboard() {
   const offlineCount = merged.filter((m) => m.offline).length;
   const onlineCount = merged.length - offlineCount;
   const countdown = formatCountdown(schedule?.scheduled_at ?? null, nowMs);
+
+  const runPosCatalogSync = async () => {
+    setSyncBusy(true);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/catalog/request-pos-catalog-sync", {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "Failed to request POS catalog sync");
+      }
+      setSyncResult(json);
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : "Failed to request POS catalog sync");
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   if (status !== "ok") {
     return null;
@@ -256,6 +281,33 @@ export default function WarehouseBackofficeDashboard() {
             </table>
           </div>
         )}
+      </section>
+
+      <section className={styles.pageCard}>
+        <div className={styles.sectionHeaderBlue}>
+          <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
+            POS {"->"} Supabase SKU sync
+          </h3>
+          <p className={styles.pageCardBody} style={{ marginTop: 8 }}>
+            One click requests all active middleware outlets to pull local MintPOS catalog and sync SKUs to Supabase.
+          </p>
+        </div>
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className={styles.btnPrimary} onClick={runPosCatalogSync} disabled={syncBusy}>
+            {syncBusy ? "Requesting..." : "Sync POS catalog now"}
+          </button>
+        </div>
+        {syncError ? (
+          <div className={styles.alertBanner} style={{ marginTop: 12 }}>
+            <strong>Sync failed:</strong> {syncError}
+          </div>
+        ) : null}
+        {syncResult ? (
+          <div className={styles.pageCardBody} style={{ marginTop: 12 }}>
+            <strong>Request sent.</strong> Middleware sync events queued for {syncResult.requested} outlet
+            {syncResult.requested === 1 ? "" : "s"}.
+          </div>
+        ) : null}
       </section>
 
       <OutletLiveBalancesPanel />

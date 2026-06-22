@@ -413,6 +413,30 @@ public sealed class SupabaseClient
         await PostRpcAsync("/rest/v1/rpc/mark_catalog_sync_delivered", new { p_event_ids = ids }, cancellationToken);
     }
 
+    public async Task<SupabaseResult> SyncPosCatalogSkuMapAsync(
+        IReadOnlyList<PosCatalogSkuMapRow> rows,
+        CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0)
+        {
+            return new SupabaseResult(true);
+        }
+
+        var payloadRows = rows.Select(row => new
+        {
+            item_sku = row.ItemSku,
+            item_name = row.ItemName,
+            variant_name = row.VariantName,
+            variant_sku = row.VariantSku
+        }).ToArray();
+
+        return await PostRpcAsync(
+            "/rest/v1/rpc/sync_pos_catalog_from_middleware",
+            new { p_rows = payloadRows },
+            cancellationToken
+        );
+    }
+
     private sealed record CatalogSyncRow(
         [property: JsonPropertyName("id")] Guid Id,
         [property: JsonPropertyName("entity_type")] string? EntityType,

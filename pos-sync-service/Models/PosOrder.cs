@@ -75,6 +75,13 @@ public sealed record PosSentSummary(
     string? PaymentType
 );
 
+public sealed record PosCatalogSkuMapRow(
+    string ItemSku,
+    string ItemName,
+    string VariantName,
+    string VariantSku
+);
+
 public sealed record SyncFailure(string PosOrderId, string? Error);
 
 public sealed record SyncRunResult(int ProcessedCount, IReadOnlyList<SyncFailure> Failures);

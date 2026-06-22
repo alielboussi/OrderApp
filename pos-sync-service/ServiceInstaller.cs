@@ -3,7 +3,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
 using System.Windows;
+using Microsoft.VisualBasic;
 using Microsoft.Win32;
 
 namespace PosSyncService;
@@ -48,6 +52,7 @@ public static class ServiceInstaller
             }
 
             EnsureConfig(configRoot, sourceRoot);
+            ApplyConfigOverrides(configRoot, args);
 
             var serviceExe = Path.Combine(installPath, "SCPGT.exe");
             if (!File.Exists(serviceExe))
@@ -100,18 +105,86 @@ public static class ServiceInstaller
 
     public static int InteractiveSetup(string sourceRoot)
     {
-        var choice = MessageBox.Show(
-            "SCPGT setup\n\nYes = Install/Update service\nNo = Uninstall service\nCancel = Close",
-            "SCPGT",
-            MessageBoxButton.YesNoCancel,
-            MessageBoxImage.Question);
-
-        return choice switch
+        var defaultInstallPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "SCPGT");
+        var defaultConfigRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "SCPGT");
+        var wizardState = RunInstallerWizard(defaultInstallPath, defaultConfigRoot);
+        if (wizardState is null || !wizardState.Confirmed)
         {
-            MessageBoxResult.Yes => InstallFromArgs(["--install-service"], sourceRoot),
-            MessageBoxResult.No => Uninstall(),
-            _ => 0
+            return 0;
+        }
+
+        if (!wizardState.InstallMode)
+        {
+            return Uninstall();
+        }
+
+        var args = new List<string>
+        {
+            "--install-service",
+            "--no-prompt",
+            "--installPath", wizardState.InstallPath,
+            "--configRoot", wizardState.ConfigRoot,
+            "--outlet-id", wizardState.OutletId,
+            "--supabase-url", wizardState.SupabaseUrl,
+            "--supabase-anon-key", wizardState.SupabaseAnonKey,
+            "--pos-server", wizardState.PosServer,
+            "--pos-database", wizardState.PosDatabase,
+            "--pos-username", wizardState.PosUsername,
+            "--pos-password", wizardState.PosPassword
         };
+
+        if (!string.IsNullOrWhiteSpace(wizardState.SupabaseServiceKey))
+        {
+            args.Add("--supabase-service-key");
+            args.Add(wizardState.SupabaseServiceKey);
+        }
+
+        return InstallFromArgs(args.ToArray(), sourceRoot);
+    }
+
+    private static InstallerWizardResult? RunInstallerWizard(string defaultInstallPath, string defaultConfigRoot)
+    {
+        InstallerWizardResult? wizardResult = null;
+        Exception? uiException = null;
+
+        var uiThread = new Thread(() =>
+        {
+            try
+            {
+                var app = new Application
+                {
+                    ShutdownMode = ShutdownMode.OnExplicitShutdown
+                };
+                var wizard = new InstallerWizardWindow(defaultInstallPath, defaultConfigRoot);
+                var accepted = wizard.ShowDialog() == true;
+                if (accepted && wizard.Result is { Confirmed: true })
+                {
+                    wizardResult = wizard.Result;
+                }
+            }
+            catch (Exception ex)
+            {
+                uiException = ex;
+            }
+        })
+        {
+            IsBackground = false
+        };
+        uiThread.SetApartmentState(ApartmentState.STA);
+        uiThread.Start();
+        uiThread.Join();
+
+        if (uiException is not null)
+        {
+            MessageBox.Show(
+                $"SCPGT setup UI failed to start: {uiException.Message}",
+                "SCPGT Setup",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return null;
+        }
+
+        return wizardResult;
     }
 
     private static void EnsureConfig(string configRoot, string sourceRoot)
@@ -130,6 +203,154 @@ public static class ServiceInstaller
         }
 
         AppSettingsFile.EnsureJson(configRoot);
+    }
+
+    private static void ApplyConfigOverrides(string configRoot, string[] args)
+    {
+        var path = AppSettingsFile.GetJsonPath(configRoot);
+        var root = LoadJson(path);
+        var posDb = root["PosDb"] as JsonObject ?? new JsonObject();
+        var outlet = root["Outlet"] as JsonObject ?? new JsonObject();
+        var supabase = root["Supabase"] as JsonObject ?? new JsonObject();
+
+        SetStringIfProvided(posDb, "ConnectionString", GetArgValue(args, "--pos-connection-string"));
+        SetStringIfProvided(posDb, "Server", GetArgValue(args, "--pos-server"));
+        SetStringIfProvided(posDb, "Database", GetArgValue(args, "--pos-database"));
+        SetStringIfProvided(posDb, "Username", GetArgValue(args, "--pos-username"));
+        SetStringIfProvided(posDb, "Password", GetArgValue(args, "--pos-password"));
+        SetStringIfProvided(outlet, "Id", GetArgValue(args, "--outlet-id"));
+        SetStringIfProvided(supabase, "Url", GetArgValue(args, "--supabase-url"));
+        SetStringIfProvided(supabase, "AnonKey", GetArgValue(args, "--supabase-anon-key"));
+        SetStringIfProvided(supabase, "ServiceKey", GetArgValue(args, "--supabase-service-key"));
+
+        var canPrompt = Environment.UserInteractive && !HasFlag(args, "--no-prompt");
+        if (canPrompt)
+        {
+            PromptForRequiredValues(posDb, outlet, supabase);
+        }
+
+        root["PosDb"] = posDb;
+        root["Outlet"] = outlet;
+        root["Supabase"] = supabase;
+
+        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static JsonObject LoadJson(string path)
+    {
+        try
+        {
+            return (JsonNode.Parse(File.ReadAllText(path)) as JsonObject) ?? new JsonObject();
+        }
+        catch
+        {
+            return new JsonObject();
+        }
+    }
+
+    private static void PromptForRequiredValues(JsonObject posDb, JsonObject outlet, JsonObject supabase)
+    {
+        outlet["Id"] = PromptIfMissing(
+            outlet,
+            "Id",
+            "Outlet UUID (public.outlets.id)",
+            static value => Guid.TryParse(value, out _),
+            "Outlet UUID must be a valid GUID.");
+
+        supabase["Url"] = PromptIfMissing(
+            supabase,
+            "Url",
+            "Supabase URL (https://...supabase.co)",
+            static value => Uri.TryCreate(value, UriKind.Absolute, out _),
+            "Supabase URL must be a valid absolute URL.");
+
+        supabase["AnonKey"] = PromptIfMissing(
+            supabase,
+            "AnonKey",
+            "Supabase anon key",
+            static value => !string.IsNullOrWhiteSpace(value),
+            "Anon key is required.");
+
+        var currentServer = ReadString(posDb, "Server");
+        if (IsPlaceholder(currentServer))
+        {
+            posDb["Server"] = PromptWithDefault("POS SQL Server", "localhost");
+        }
+
+        var currentDb = ReadString(posDb, "Database");
+        if (IsPlaceholder(currentDb))
+        {
+            posDb["Database"] = PromptWithDefault("POS SQL Database", "MINTPOS");
+        }
+
+        var currentUser = ReadString(posDb, "Username");
+        if (IsPlaceholder(currentUser))
+        {
+            posDb["Username"] = PromptWithDefault("POS SQL Username", "mint");
+        }
+
+        var currentPassword = ReadString(posDb, "Password");
+        if (IsPlaceholder(currentPassword))
+        {
+            posDb["Password"] = PromptWithDefault("POS SQL Password", string.Empty);
+        }
+    }
+
+    private static string PromptIfMissing(
+        JsonObject section,
+        string key,
+        string label,
+        Func<string, bool> validator,
+        string invalidMessage)
+    {
+        var current = ReadString(section, key);
+        if (!IsPlaceholder(current))
+        {
+            return current!;
+        }
+
+        while (true)
+        {
+            var value = Interaction.InputBox(label, "SCPGT Setup", string.Empty).Trim();
+            if (validator(value))
+            {
+                return value;
+            }
+
+            _ = MessageBox.Show(invalidMessage, "SCPGT Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private static string PromptWithDefault(string label, string defaultValue)
+    {
+        var value = Interaction.InputBox(label, "SCPGT Setup", defaultValue);
+        return string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim();
+    }
+
+    private static string? ReadString(JsonObject section, string key)
+    {
+        return section[key]?.GetValue<string>()?.Trim();
+    }
+
+    private static bool IsPlaceholder(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        return value.Contains("YOUR-PROJECT", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("SUPABASE_", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase)
+            || value == "00000000-0000-0000-0000-000000000000";
+    }
+
+    private static void SetStringIfProvided(JsonObject section, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            section[key] = value.Trim();
+        }
     }
 
     private static void StopKnownProcesses()
