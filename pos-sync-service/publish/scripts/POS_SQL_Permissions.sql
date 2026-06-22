@@ -32,6 +32,8 @@ SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.MenuItem TO ' + QUOTENAME(@Prin
 EXEC sp_executesql @sql;
 SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.ModifierFlavour TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
+SET @sql = N'GRANT SELECT, INSERT, UPDATE ON dbo.MenuGroup TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
 SET @sql = N'GRANT SELECT, UPDATE, DELETE ON dbo.SaleDetails TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
 GO

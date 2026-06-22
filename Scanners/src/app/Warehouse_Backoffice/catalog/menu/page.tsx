@@ -34,7 +34,7 @@ type DispatchMode = "send_now" | "schedule" | "delete";
 type DispatchStep = 1 | 2 | 3;
 type DispatchCandidate = {
   key: string;
-  entity_type: "item" | "variant";
+  entity_type: "item" | "variant" | "menu_group";
   entity_id: string;
   title: string;
   sku: string | null;
@@ -51,6 +51,8 @@ const SECTION_HEADERS: Record<string, string> = {
 
 function formatCandidateKind(changeType: string) {
   switch (changeType) {
+    case "upsert_menu_group":
+      return "Menu group update";
     case "upsert_item":
       return "Product update";
     case "upsert_variant":
@@ -354,6 +356,9 @@ export default function CatalogMenuPage() {
           </button>
           <button type="button" className={eb.btnSecondary} onClick={load} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button type="button" className={eb.btnSecondary} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu-groups")}>
+            Menu groups
           </button>
           <button type="button" className={eb.btnPrimary} onClick={openDispatchDialog} disabled={loading}>
             Send updates

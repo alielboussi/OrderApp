@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { fetchMenuGroupSyncFields } from "@/lib/catalogMenuGroup";
 
 const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
 const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle", "Tin Can", "Jar", "plastic"] as const;
@@ -31,6 +32,7 @@ type ItemPayload = {
   outlet_order_visible: boolean;
   image_url?: string | null;
   default_warehouse_id?: string | null;
+  menu_group_id?: string | null;
   active: boolean;
   /* legacy fields kept for compatibility with existing not-null constraints */
   consumption_uom?: string;
@@ -68,6 +70,7 @@ const OPTIONAL_COLUMNS = [
   "storage_unit",
   "storage_weight",
   "qty_decimal_places",
+  "menu_group_id",
 ] as const;
 
 function selectFields(optional: string[]) {
@@ -211,13 +214,21 @@ async function syncBaseStorageHomes(
 
 async function upsertItemUpdateDraft(
   supabase: ReturnType<typeof getServiceClient>,
-  params: { itemId: string; sku: string | null; name: string; price: number | null }
+  params: {
+    itemId: string;
+    sku: string | null;
+    name: string;
+    price: number | null;
+    menuGroupId?: string | null;
+  }
 ) {
+  const groupFields = await fetchMenuGroupSyncFields(supabase, params.menuGroupId ?? null);
   const payload: Record<string, unknown> = {
     change_type: "upsert_item",
     sku: params.sku,
     name: params.name,
     price: params.price,
+    ...groupFields,
   };
   const { error } = await supabase
     .from("middleware_update_drafts")
@@ -410,6 +421,7 @@ export async function POST(request: Request) {
     const requestedStorageHomeIds = normalizeStorageHomeIds(body.storage_home_ids);
     const defaultWarehouseId = requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null;
     const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
+    const menuGroupId = cleanUuid(body.menu_group_id);
 
     const payload: ItemPayload = {
       name,
@@ -429,6 +441,7 @@ export async function POST(request: Request) {
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: defaultWarehouseId,
+      menu_group_id: menuGroupId,
       active: cleanBoolean(body.active, true),
       // legacy columns kept filled to satisfy constraints
       consumption_uom: consumptionUnit,
@@ -492,6 +505,7 @@ export async function POST(request: Request) {
         sku: cleanText(payload.sku) ?? null,
         name: payload.name,
         price: payload.selling_price ?? null,
+        menuGroupId: menuGroupId,
       });
     } catch (queueError) {
       console.error("[catalog/items] save draft failed", queueError);
@@ -574,6 +588,7 @@ export async function PUT(request: Request) {
     const requestedStorageHomeIds = normalizeStorageHomeIds(body.storage_home_ids);
     const defaultWarehouseId = requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null;
     const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
+    const menuGroupId = cleanUuid(body.menu_group_id);
 
     const payload: ItemPayload = {
       name,
@@ -593,6 +608,7 @@ export async function PUT(request: Request) {
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       default_warehouse_id: defaultWarehouseId,
+      menu_group_id: menuGroupId,
       active: cleanBoolean(body.active, true),
       consumption_uom: consumptionUnit,
       purchase_pack_unit: purchasePackUnit,
@@ -656,6 +672,7 @@ export async function PUT(request: Request) {
         sku: cleanText(payload.sku) ?? null,
         name: payload.name,
         price: payload.selling_price ?? null,
+        menuGroupId: menuGroupId,
       });
     } catch (queueError) {
       console.error("[catalog/items] save draft failed", queueError);

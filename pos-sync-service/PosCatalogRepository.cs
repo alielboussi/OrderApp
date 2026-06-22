@@ -26,6 +26,9 @@ public sealed class PosCatalogRepository
     {
         switch (evt.EntityType?.ToLowerInvariant())
         {
+            case "menu_group":
+                await UpsertMenuGroupAsync(evt, cancellationToken);
+                break;
             case "item":
                 await UpsertMenuItemAsync(evt, cancellationToken);
                 break;
@@ -153,6 +156,74 @@ public sealed class PosCatalogRepository
         }
     }
 
+    private async Task UpsertMenuGroupAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
+    {
+        var name = evt.Payload.MenuGroupName ?? evt.Payload.Name;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        const string updateSql = @"
+UPDATE dbo.MenuGroup
+SET Name = @Name,
+    Status = COALESCE(Status, 'Active'),
+    uploadstatus = 'Pending'
+WHERE Id = TRY_CAST(@PosMenuGroupId AS int)
+   OR LTRIM(RTRIM(Name)) = LTRIM(RTRIM(@Name));";
+
+        const string insertSql = @"
+INSERT INTO dbo.MenuGroup (Name, Status, uploadstatus)
+VALUES (@Name, 'Active', 'Pending');";
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var updateCmd = new SqlCommand(updateSql, conn);
+        updateCmd.Parameters.AddWithValue("@Name", name.Trim());
+        updateCmd.Parameters.AddWithValue("@PosMenuGroupId", (object?)evt.Payload.PosMenuGroupId?.ToString() ?? DBNull.Value);
+        var updated = await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+
+        if (updated == 0)
+        {
+            await using var insertCmd = new SqlCommand(insertSql, conn);
+            insertCmd.Parameters.AddWithValue("@Name", name.Trim());
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private async Task<int?> ResolveMenuGroupIdAsync(SqlConnection conn, CatalogSyncPayload payload, CancellationToken cancellationToken)
+    {
+        if (payload.PosMenuGroupId.HasValue)
+        {
+            const string byIdSql = "SELECT TOP 1 Id FROM dbo.MenuGroup WITH (NOLOCK) WHERE Id = @Id;";
+            await using var byIdCmd = new SqlCommand(byIdSql, conn);
+            byIdCmd.Parameters.AddWithValue("@Id", payload.PosMenuGroupId.Value);
+            var byId = await byIdCmd.ExecuteScalarAsync(cancellationToken);
+            if (byId is not null && byId != DBNull.Value)
+            {
+                return Convert.ToInt32(byId);
+            }
+        }
+
+        var groupName = payload.MenuGroupName;
+        if (string.IsNullOrWhiteSpace(groupName))
+        {
+            return null;
+        }
+
+        const string byNameSql = "SELECT TOP 1 Id FROM dbo.MenuGroup WITH (NOLOCK) WHERE LTRIM(RTRIM(Name)) = LTRIM(RTRIM(@Name));";
+        await using var byNameCmd = new SqlCommand(byNameSql, conn);
+        byNameCmd.Parameters.AddWithValue("@Name", groupName.Trim());
+        var byName = await byNameCmd.ExecuteScalarAsync(cancellationToken);
+        if (byName is null || byName == DBNull.Value)
+        {
+            return null;
+        }
+
+        return Convert.ToInt32(byName);
+    }
+
     private async Task UpsertMenuItemAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
     {
         var sku = evt.Payload.Sku ?? evt.EntityId;
@@ -166,24 +237,26 @@ UPDATE dbo.MenuItem
 SET Name = COALESCE(@Name, Name),
     Code = @Sku,
     Price = COALESCE(@Price, Price),
+    MenuGroupId = COALESCE(@MenuGroupId, MenuGroupId),
     uploadstatus = 'Pending'
 WHERE Code = @Sku OR Id = TRY_CAST(@PosItemId AS int);";
 
         const string insertSql = @"
-INSERT INTO dbo.MenuItem (Code, Name, Price, Status, uploadstatus)
-VALUES (@Sku, @Name, @Price, 'Active', 'Pending');";
+INSERT INTO dbo.MenuItem (Code, Name, Price, Status, uploadstatus, MenuGroupId)
+VALUES (@Sku, @Name, @Price, 'Active', 'Pending', @MenuGroupId);";
 
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
+        var menuGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
 
         await using var updateCmd = new SqlCommand(updateSql, conn);
-        BindItemParams(updateCmd, evt, sku);
+        BindItemParams(updateCmd, evt, sku, menuGroupId);
         var updated = await updateCmd.ExecuteNonQueryAsync(cancellationToken);
 
         if (updated == 0 && !string.IsNullOrWhiteSpace(evt.Payload.Name))
         {
             await using var insertCmd = new SqlCommand(insertSql, conn);
-            BindItemParams(insertCmd, evt, sku);
+            BindItemParams(insertCmd, evt, sku, menuGroupId);
             await insertCmd.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -197,27 +270,53 @@ VALUES (@Sku, @Name, @Price, 'Active', 'Pending');";
             return;
         }
 
-        const string sql = @"
+        const string updateSql = @"
 UPDATE mf
 SET mf.name = COALESCE(@VariantName, mf.name),
     mf.Name2 = @VariantSku,
     mf.price = COALESCE(@Price, mf.price),
+    mf.MenuGroupId = COALESCE(@MenuGroupId, mf.MenuGroupId, mi.MenuGroupId),
     mf.UploadStatus = 'Pending'
 FROM dbo.ModifierFlavour mf
 JOIN dbo.MenuItem mi ON mi.Id = mf.MenuItemId
 WHERE mi.Code = @ItemSku AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int));";
 
+        const string insertSql = @"
+INSERT INTO dbo.ModifierFlavour (MenuItemId, MenuGroupId, name, Name2, price, Status, UploadStatus)
+SELECT mi.Id, COALESCE(@MenuGroupId, mi.MenuGroupId), @VariantName, @VariantSku, @Price, 'Active', 'Pending'
+FROM dbo.MenuItem mi
+WHERE mi.Code = @ItemSku
+  AND NOT EXISTS (
+      SELECT 1
+      FROM dbo.ModifierFlavour mf
+      WHERE mf.MenuItemId = mi.Id
+        AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int))
+  );";
+
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
+        var menuGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
 
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(updateSql, conn);
         cmd.Parameters.AddWithValue("@ItemSku", itemSku);
         cmd.Parameters.AddWithValue("@VariantSku", variantSku);
         cmd.Parameters.AddWithValue("@VariantName", (object?)evt.Payload.VariantName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
 
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        var updated = await cmd.ExecuteNonQueryAsync(cancellationToken);
+        if (updated == 0 && !string.IsNullOrWhiteSpace(evt.Payload.VariantName))
+        {
+            await using var insertCmd = new SqlCommand(insertSql, conn);
+            insertCmd.Parameters.AddWithValue("@ItemSku", itemSku);
+            insertCmd.Parameters.AddWithValue("@VariantSku", variantSku);
+            insertCmd.Parameters.AddWithValue("@VariantName", evt.Payload.VariantName.Trim());
+            insertCmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private async Task UpdatePriceAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
@@ -236,12 +335,13 @@ WHERE mi.Code = @ItemSku AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFla
         await UpsertMenuItemAsync(evt, cancellationToken);
     }
 
-    private static void BindItemParams(SqlCommand cmd, CatalogSyncEvent evt, string sku)
+    private static void BindItemParams(SqlCommand cmd, CatalogSyncEvent evt, string sku, int? menuGroupId)
     {
         cmd.Parameters.AddWithValue("@Sku", sku);
         cmd.Parameters.AddWithValue("@Name", (object?)evt.Payload.Name ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@PosItemId", (object?)evt.Payload.PosItemId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
     }
 
     private static List<string> NormalizeSkus(IEnumerable<string?>? first, IEnumerable<string?>? second, params string?[] singletons)
@@ -345,4 +445,13 @@ public sealed class CatalogSyncPayload
 
     [JsonPropertyName("command")]
     public string? Command { get; init; }
+
+    [JsonPropertyName("menu_group_id")]
+    public string? MenuGroupId { get; init; }
+
+    [JsonPropertyName("menu_group_name")]
+    public string? MenuGroupName { get; init; }
+
+    [JsonPropertyName("pos_menu_group_id")]
+    public int? PosMenuGroupId { get; init; }
 }

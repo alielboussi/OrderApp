@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { fetchMenuGroupSyncFieldsForItem } from "@/lib/catalogMenuGroup";
 
 // Rebuilt to clear parser cache.
 
@@ -192,6 +193,7 @@ async function upsertVariantUpdateDraft(
   supabase: ReturnType<typeof getServiceClient>,
   params: {
     variantId: string;
+    itemId: string;
     itemSku: string | null;
     variantSku: string | null;
     variantName: string;
@@ -199,6 +201,7 @@ async function upsertVariantUpdateDraft(
     posFlavourId: string | null;
   }
 ) {
+  const groupFields = await fetchMenuGroupSyncFieldsForItem(supabase, params.itemId);
   const payload = {
     change_type: "upsert_variant",
     item_sku: params.itemSku,
@@ -206,6 +209,7 @@ async function upsertVariantUpdateDraft(
     variant_name: params.variantName,
     price: params.price,
     pos_flavour_id: params.posFlavourId,
+    ...groupFields,
   };
   const { error } = await supabase
     .from("middleware_update_drafts")
@@ -599,6 +603,7 @@ export async function POST(request: Request) {
     try {
       await upsertVariantUpdateDraft(supabase, {
         variantId: responseVariant.id,
+        itemId,
         itemSku: itemRow?.sku ?? null,
         variantSku: responseVariant.sku ?? null,
         variantName: responseVariant.name,
@@ -821,6 +826,7 @@ export async function PUT(request: Request) {
     try {
       await upsertVariantUpdateDraft(supabase, {
         variantId: responseVariant.id,
+        itemId: effectiveItemId,
         itemSku: itemRow?.sku ?? null,
         variantSku: responseVariant.sku ?? null,
         variantName: responseVariant.name,

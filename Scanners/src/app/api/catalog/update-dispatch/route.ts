@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
 type DraftRow = {
-  entity_type: "item" | "variant";
+  entity_type: "item" | "variant" | "menu_group";
   entity_id: string;
   payload: Record<string, unknown> | null;
   updated_at?: string | null;
@@ -10,7 +10,7 @@ type DraftRow = {
 
 type CandidateRow = {
   key: string;
-  entity_type: "item" | "variant";
+  entity_type: "item" | "variant" | "menu_group";
   entity_id: string;
   title: string;
   sku: string | null;
@@ -18,6 +18,39 @@ type CandidateRow = {
   updated_at: string | null;
   payload: Record<string, unknown>;
 };
+
+const ENTITY_DISPATCH_ORDER: Record<CandidateRow["entity_type"], number> = {
+  menu_group: 0,
+  item: 1,
+  variant: 2,
+};
+
+function sortDispatchCandidates(candidates: CandidateRow[]): CandidateRow[] {
+  return [...candidates].sort((a, b) => {
+    const orderDiff = ENTITY_DISPATCH_ORDER[a.entity_type] - ENTITY_DISPATCH_ORDER[b.entity_type];
+    if (orderDiff !== 0) return orderDiff;
+    return (a.updated_at ?? "").localeCompare(b.updated_at ?? "");
+  });
+}
+
+function expandWithGroupDependencies(candidates: CandidateRow[], allCandidates: CandidateRow[]): CandidateRow[] {
+  const byKey = new Map(allCandidates.map((candidate) => [candidate.key, candidate] as const));
+  const selected = new Map(candidates.map((candidate) => [candidate.key, candidate] as const));
+
+  for (const candidate of candidates) {
+    if (candidate.entity_type !== "item" && candidate.entity_type !== "variant") continue;
+    const groupId = asText(candidate.payload.menu_group_id);
+    if (!groupId) continue;
+    const groupKey = `menu_group:${groupId}`;
+    if (selected.has(groupKey)) continue;
+    const groupCandidate = byKey.get(groupKey);
+    if (groupCandidate) {
+      selected.set(groupKey, groupCandidate);
+    }
+  }
+
+  return sortDispatchCandidates(Array.from(selected.values()));
+}
 
 function asText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -49,7 +82,7 @@ function toCandidate(draft: DraftRow): CandidateRow {
     asText(payload.variant_name) ??
     asText(payload.name) ??
     `${entityType} ${draft.entity_id}`;
-  const changeType = asText(payload.change_type) ?? (entityType === "item" ? "upsert_item" : "upsert_variant");
+  const changeType = asText(payload.change_type) ?? (entityType === "item" ? "upsert_item" : entityType === "variant" ? "upsert_variant" : "upsert_menu_group");
   return {
     key: `${entityType}:${draft.entity_id}`,
     entity_type: entityType,
@@ -161,7 +194,7 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: true });
     if (error) throw error;
 
-    const candidates = ((data ?? []) as DraftRow[]).map(toCandidate);
+    const candidates = sortDispatchCandidates(((data ?? []) as DraftRow[]).map(toCandidate));
     return NextResponse.json({ candidates });
   } catch (error) {
     console.error("[catalog/update-dispatch] GET failed", error);
@@ -207,10 +240,12 @@ export async function POST(request: Request) {
       candidates = ((data ?? []) as DraftRow[]).map(toCandidate);
     }
 
-    const chosen = candidates.filter((candidate) => selectedKeys.includes(candidate.key));
-    if (!chosen.length) {
+    const chosenRaw = candidates.filter((candidate) => selectedKeys.includes(candidate.key));
+    if (!chosenRaw.length) {
       return NextResponse.json({ error: "Selected updates are no longer available." }, { status: 400 });
     }
+
+    const chosen = mode === "delete" ? chosenRaw : expandWithGroupDependencies(chosenRaw, candidates);
 
     const rows: Array<{
       outlet_id: string;

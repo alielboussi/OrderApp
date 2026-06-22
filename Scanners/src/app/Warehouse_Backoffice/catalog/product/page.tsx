@@ -34,6 +34,7 @@ type FormState = {
   outlet_order_visible: boolean;
   image_url: string;
   active: boolean;
+  menu_group_id: string;
 };
 
 const defaultForm: FormState = {
@@ -58,6 +59,7 @@ const defaultForm: FormState = {
   outlet_order_visible: true,
   image_url: "",
   active: true,
+  menu_group_id: "",
 };
 
 
@@ -81,6 +83,7 @@ function ProductCreatePage() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingItem] = useState(false);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string | null }[]>([]);
+  const [menuGroups, setMenuGroups] = useState<{ id: string; name: string }[]>([]);
   const [storageSearch, setStorageSearch] = useState("");
   const uomOptions = useUomOptions();
 
@@ -92,6 +95,21 @@ function ProductCreatePage() {
     if (!Number.isFinite(parsed) || parsed <= 0) return "";
     return (parsed / 1.16).toFixed(2);
   }, [form.selling_price]);
+
+  useEffect(() => {
+    async function loadMenuGroups() {
+      try {
+        const res = await fetch("/api/catalog/menu-groups");
+        if (!res.ok) return;
+        const json = await res.json();
+        const rows = Array.isArray(json.groups) ? json.groups : [];
+        setMenuGroups(rows.map((group: { id: string; name: string }) => ({ id: group.id, name: group.name })));
+      } catch (error) {
+        console.error("Failed to load menu groups", error);
+      }
+    }
+    if (status === "ok") loadMenuGroups();
+  }, [status]);
 
   useEffect(() => {
     async function loadItem(id: string) {
@@ -133,6 +151,7 @@ function ProductCreatePage() {
             outlet_order_visible: item.outlet_order_visible ?? true,
             image_url: item.image_url ?? "",
             active: item.active ?? true,
+            menu_group_id: item.menu_group_id ?? "",
           });
         }
       } catch (error) {
@@ -299,6 +318,7 @@ function ProductCreatePage() {
         outlet_order_visible: form.outlet_order_visible,
         image_url: form.image_url,
         active: form.active,
+        menu_group_id: form.item_kind === "finished" && form.menu_group_id ? form.menu_group_id : null,
         ...(editingId ? { id: editingId } : {}),
       };
 
@@ -372,6 +392,18 @@ function ProductCreatePage() {
               onChange={(v) => handleChange("item_kind", v)}
               options={itemKinds}
             />
+            {form.item_kind === "finished" ? (
+              <Select
+                label="POS menu group"
+                hint="Required for products to appear on MintPOS screens"
+                value={form.menu_group_id}
+                onChange={(v) => handleChange("menu_group_id", v)}
+                options={[
+                  { value: "", label: "Select menu group" },
+                  ...menuGroups.map((group) => ({ value: group.id, label: group.name })),
+                ]}
+              />
+            ) : null}
             <Select
               label="How its consumed"
               hint="Outlet sales and transfers use this unit"

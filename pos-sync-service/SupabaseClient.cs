@@ -444,6 +444,29 @@ public sealed class SupabaseClient
         );
     }
 
+    public async Task<SupabaseResult> SyncPosMenuGroupsAsync(
+        IReadOnlyList<PosMenuGroupMapRow> rows,
+        CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0)
+        {
+            return new SupabaseResult(true);
+        }
+
+        var payloadRows = rows.Select(row => new
+        {
+            group_name = row.GroupName,
+            pos_menu_group_id = row.PosMenuGroupId,
+            item_sku = row.ItemSku
+        }).ToArray();
+
+        return await PostRpcAsync(
+            "/rest/v1/rpc/sync_pos_menu_groups_from_middleware",
+            new { p_rows = payloadRows },
+            cancellationToken
+        );
+    }
+
     private sealed record CatalogSyncRow(
         [property: JsonPropertyName("id")] Guid Id,
         [property: JsonPropertyName("entity_type")] string? EntityType,

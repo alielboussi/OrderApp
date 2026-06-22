@@ -21,6 +21,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Catalog",
     items: [
       { label: "Products", href: "/Warehouse_Backoffice/catalog/menu" },
+      { label: "Menu groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
       { label: "Manage catalog", href: "/Warehouse_Backoffice/catalog/manage" },
       { label: "Bulk variant update", href: "/Warehouse_Backoffice/variant-bulk-update" },
       { label: "Suppliers", href: "/Warehouse_Backoffice/suppliers" },

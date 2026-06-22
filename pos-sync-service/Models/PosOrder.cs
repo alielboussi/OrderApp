@@ -94,6 +94,12 @@ public sealed record PosCatalogSkuMapRow(
     string VariantSku
 );
 
+public sealed record PosMenuGroupMapRow(
+    int PosMenuGroupId,
+    string GroupName,
+    string? ItemSku
+);
+
 public sealed record SyncFailure(string PosOrderId, string? Error);
 
 public sealed record SyncRunResult(int ProcessedCount, IReadOnlyList<SyncFailure> Failures);

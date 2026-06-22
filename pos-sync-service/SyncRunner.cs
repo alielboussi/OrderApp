@@ -193,8 +193,13 @@ public sealed class SyncRunner
             return;
         }
 
+        var orderedEvents = events
+            .OrderBy(evt => CatalogEntityOrder(evt.EntityType))
+            .ThenBy(evt => evt.Id)
+            .ToList();
+
         var delivered = new List<Guid>();
-        foreach (var evt in events)
+        foreach (var evt in orderedEvents)
         {
             if (evt.Payload.ScheduledAt.HasValue && evt.Payload.ScheduledAt.Value > DateTimeOffset.UtcNow)
             {
@@ -287,6 +292,20 @@ public sealed class SyncRunner
                 return;
             }
 
+            var groupRows = await _repository.ReadPosMenuGroupMapAsync(cancellationToken);
+            if (groupRows.Count > 0)
+            {
+                var groupResult = await _supabaseClient.SyncPosMenuGroupsAsync(groupRows, cancellationToken);
+                if (!groupResult.IsSuccess)
+                {
+                    _logger.LogError("POS menu group sync failed: {Error}", groupResult.ErrorMessage ?? "Unknown error");
+                }
+                else
+                {
+                    _logger.LogInformation("POS menu group sync completed with {Count} rows.", groupRows.Count);
+                }
+            }
+
             _lastPosCatalogSyncUtc = now;
             _logger.LogInformation("POS catalog SKU sync completed with {Count} mapped variants.", rows.Count);
         }
@@ -294,5 +313,16 @@ public sealed class SyncRunner
         {
             _logger.LogError(ex, "POS catalog SKU sync crashed.");
         }
+    }
+
+    private static int CatalogEntityOrder(string? entityType)
+    {
+        return entityType?.ToLowerInvariant() switch
+        {
+            "menu_group" => 0,
+            "item" => 1,
+            "variant" => 2,
+            _ => 3
+        };
     }
 }

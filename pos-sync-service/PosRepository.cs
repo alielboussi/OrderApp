@@ -345,6 +345,49 @@ WHERE NULLIF(LTRIM(RTRIM(mi.Code)), '') IS NOT NULL
         return rows;
     }
 
+    public async Task<IReadOnlyList<PosMenuGroupMapRow>> ReadPosMenuGroupMapAsync(CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT
+    mg.Id AS PosMenuGroupId,
+    LTRIM(RTRIM(mg.Name)) AS GroupName,
+    NULLIF(LTRIM(RTRIM(mi.Code)), '') AS ItemSku
+FROM dbo.MenuGroup mg WITH (NOLOCK)
+LEFT JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.MenuGroupId = mg.Id
+WHERE NULLIF(LTRIM(RTRIM(mg.Name)), '') IS NOT NULL;";
+
+        var rows = new List<PosMenuGroupMapRow>();
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn)
+        {
+            CommandType = CommandType.Text
+        };
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reader.IsDBNull(reader.GetOrdinal("PosMenuGroupId")))
+            {
+                continue;
+            }
+
+            var groupName = reader["GroupName"]?.ToString()?.Trim();
+            if (string.IsNullOrWhiteSpace(groupName))
+            {
+                continue;
+            }
+
+            rows.Add(new PosMenuGroupMapRow(
+                PosMenuGroupId: Convert.ToInt32(reader["PosMenuGroupId"]),
+                GroupName: groupName,
+                ItemSku: reader["ItemSku"]?.ToString()?.Trim()
+            ));
+        }
+
+        return rows;
+    }
+
     private async Task<IReadOnlyList<PosLineItem>> LoadLineItemsAsync(string saleId, CancellationToken cancellationToken)
     {
         const string lineSql = @"
