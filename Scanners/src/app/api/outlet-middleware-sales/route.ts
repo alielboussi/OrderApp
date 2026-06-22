@@ -107,6 +107,20 @@ function variantLookupKey(itemId: string, variantIdOrSku: string): string {
   return `${itemId.toLowerCase()}::${variantIdOrSku.toLowerCase()}`;
 }
 
+function isMiddlewareContext(context: Record<string, unknown> | null): boolean {
+  if (!context) return false;
+
+  const sourceEventId = asNonEmptyText(context.source_event_id);
+  const saleId = asNonEmptyText(context.sale_id);
+  const posOrderId = asNonEmptyText(context.pos_order_id);
+  const sourceSystem = asNonEmptyText(context.source_system)?.toLowerCase() ?? null;
+
+  if (sourceEventId || saleId || posOrderId) return true;
+  if (sourceSystem && (sourceSystem.includes("pos") || sourceSystem.includes("afterten-pos"))) return true;
+
+  return false;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
@@ -136,11 +150,10 @@ export async function GET(request: NextRequest) {
     let salesQuery = supabase
       .from("outlet_sales")
       .select("id,outlet_id,item_id,variant_key,flavour_id,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,context")
-      .not("context->>source_event_id", "is", null)
       .gte("sold_at", effectiveSince.toISOString())
       .lte("sold_at", effectiveUntil.toISOString())
       .order("sold_at", { ascending: false })
-      .limit(limit);
+      .limit(Math.min(limit * 3, MAX_LIMIT));
 
     if (outletId) {
       salesQuery = salesQuery.eq("outlet_id", outletId);
@@ -149,7 +162,10 @@ export async function GET(request: NextRequest) {
     const { data: salesData, error: salesError } = await salesQuery;
     if (salesError) throw salesError;
 
-    const salesRows = ((salesData ?? []) as OutletSalesRow[]).filter((row) => row.outlet_id && row.item_id);
+    const salesRows = ((salesData ?? []) as OutletSalesRow[])
+      .filter((row) => row.outlet_id && row.item_id)
+      .filter((row) => isMiddlewareContext(row.context))
+      .slice(0, limit);
 
     if (salesRows.length === 0) {
       return NextResponse.json({
