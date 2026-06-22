@@ -62,6 +62,17 @@ type OrderRow = {
   raw_payload: Record<string, unknown> | null;
 };
 
+type SaleShift = {
+  shift_id: number | null;
+  shift_name: string | null;
+  shift_session_id: number | null;
+  terminal: string | null;
+  shift_session_start: string | null;
+  shift_session_end: string | null;
+  shift_session_status: string | null;
+  shift_opened_by: string | null;
+};
+
 type SaleEvent = {
   sale_reference: string;
   source_event_id: string | null;
@@ -69,6 +80,14 @@ type SaleEvent = {
   pos_sale_id: string | null;
   payment_type: string | null;
   payment_methods: PaymentMethod[];
+  shift_name: string | null;
+  shift_id: number | null;
+  shift_session_id: number | null;
+  terminal: string | null;
+  shift_session_start: string | null;
+  shift_session_end: string | null;
+  shift_session_status: string | null;
+  shift_opened_by: string | null;
   outlet_uuid: string;
   outlet_name: string | null;
   sold_at: string;
@@ -155,6 +174,54 @@ function extractPaymentMethods(rawPayload: Record<string, unknown> | null): Paym
       return { method, amount };
     })
     .filter((entry): entry is PaymentMethod => entry !== null);
+}
+
+function toNullableInt(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.trunc(parsed);
+  }
+  return null;
+}
+
+function toIsoTimestamp(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value.trim();
+  return new Date(parsed).toISOString();
+}
+
+function emptyShift(): SaleShift {
+  return {
+    shift_id: null,
+    shift_name: null,
+    shift_session_id: null,
+    terminal: null,
+    shift_session_start: null,
+    shift_session_end: null,
+    shift_session_status: null,
+    shift_opened_by: null,
+  };
+}
+
+function extractShift(rawPayload: Record<string, unknown> | null): SaleShift {
+  const fallbackTerminal = asNonEmptyText(rawPayload?.terminal);
+  if (!rawPayload || !rawPayload.shift || typeof rawPayload.shift !== "object") {
+    return { ...emptyShift(), terminal: fallbackTerminal };
+  }
+
+  const shift = rawPayload.shift as Record<string, unknown>;
+  return {
+    shift_id: toNullableInt(shift.shift_id),
+    shift_name: asNonEmptyText(shift.shift_name),
+    shift_session_id: toNullableInt(shift.shift_session_id),
+    terminal: asNonEmptyText(shift.terminal) ?? fallbackTerminal,
+    shift_session_start: toIsoTimestamp(shift.session_start),
+    shift_session_end: toIsoTimestamp(shift.session_end),
+    shift_session_status: asNonEmptyText(shift.session_status),
+    shift_opened_by: asNonEmptyText(shift.opened_by),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -295,6 +362,7 @@ export async function GET(request: NextRequest) {
       if (!existing) {
         const order = sourceEventId ? orderBySourceEventId.get(sourceEventId) : undefined;
         const paymentMethods = extractPaymentMethods(order?.raw_payload ?? null);
+        const shift = extractShift(order?.raw_payload ?? null);
         const posSaleId =
           asNonEmptyText(order?.pos_sale_id) ??
           asNonEmptyText(context.sale_id) ??
@@ -307,6 +375,14 @@ export async function GET(request: NextRequest) {
           pos_sale_id: posSaleId,
           payment_type: paymentMethods[0]?.method ?? null,
           payment_methods: paymentMethods,
+          shift_name: shift.shift_name,
+          shift_id: shift.shift_id,
+          shift_session_id: shift.shift_session_id,
+          terminal: shift.terminal,
+          shift_session_start: shift.shift_session_start,
+          shift_session_end: shift.shift_session_end,
+          shift_session_status: shift.shift_session_status,
+          shift_opened_by: shift.shift_opened_by,
           outlet_uuid: row.outlet_id,
           outlet_name: outlet?.name ?? null,
           sold_at: row.sold_at,
