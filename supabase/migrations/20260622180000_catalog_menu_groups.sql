@@ -67,10 +67,10 @@ begin
 
   with src as (
     select distinct
-      nullif(trim(group ->> 'group_name'), '') as group_name,
-      nullif((group ->> 'pos_menu_group_id'), '')::integer as pos_menu_group_id
-    from jsonb_array_elements(p_rows) as group
-    where nullif(trim(group ->> 'group_name'), '') is not null
+      nullif(trim(grp_row ->> 'group_name'), '') as group_name,
+      nullif((grp_row ->> 'pos_menu_group_id'), '')::integer as pos_menu_group_id
+    from jsonb_array_elements(p_rows) as grp_row
+    where nullif(trim(grp_row ->> 'group_name'), '') is not null
   ),
   updated as (
     update public.catalog_menu_groups g
@@ -96,10 +96,10 @@ begin
 
   with src as (
     select
-      nullif(trim(item_sku), '') as item_sku,
-      nullif(trim(group_name), '') as group_name,
-      nullif((group ->> 'pos_menu_group_id'), '')::integer as pos_menu_group_id
-    from jsonb_array_elements(p_rows) as group
+      nullif(trim(grp_row ->> 'item_sku'), '') as item_sku,
+      nullif(trim(grp_row ->> 'group_name'), '') as group_name,
+      nullif((grp_row ->> 'pos_menu_group_id'), '')::integer as pos_menu_group_id
+    from jsonb_array_elements(p_rows) as grp_row
   ),
   grp as (
     select
