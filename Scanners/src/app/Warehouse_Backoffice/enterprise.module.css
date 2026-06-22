@@ -521,6 +521,217 @@
   margin-bottom: 14px;
 }
 
+.dashboardStatsSections {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.dashboardStatsSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboardStatsSectionTitle {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-left: 12px;
+  border-left: 4px solid var(--eb-border);
+}
+
+.dashboardStatsSectionTitleBlue {
+  border-left-color: var(--eb-blue);
+  color: var(--eb-blue);
+}
+
+.dashboardStatsSectionTitleGreen {
+  border-left-color: var(--eb-green);
+  color: var(--eb-green);
+}
+
+.dashboardStatsSectionTitleGold {
+  border-left-color: var(--eb-gold);
+  color: var(--eb-gold);
+}
+
+.dashboardStatsSectionTitleRed {
+  border-left-color: var(--eb-red);
+  color: var(--eb-red);
+}
+
+.dashboardStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1200px) {
+  .dashboardStatsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboardStatsGrid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
+.dashboardStatCard {
+  border-radius: var(--eb-radius);
+  padding: 14px 12px 12px;
+  min-height: 108px;
+  box-shadow: 0 4px 14px rgba(17, 17, 17, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboardStatCardBlue {
+  background: linear-gradient(155deg, #eff6ff 0%, #dbeafe 55%, #bfdbfe 100%);
+  border: 1px solid #93c5fd;
+  border-left: 4px solid var(--eb-blue);
+}
+
+.dashboardStatCardGreen {
+  background: linear-gradient(155deg, #ecfdf3 0%, #bbf7d0 55%, #86efac 100%);
+  border: 1px solid #6ee7b7;
+  border-left: 4px solid var(--eb-green);
+}
+
+.dashboardStatCardGold {
+  background: linear-gradient(155deg, #fffbeb 0%, #fde68a 55%, #fcd34d 100%);
+  border: 1px solid #fbbf24;
+  border-left: 4px solid var(--eb-gold);
+}
+
+.dashboardStatCardRed {
+  background: linear-gradient(155deg, #fef2f2 0%, #fecaca 55%, #fca5a5 100%);
+  border: 1px solid #f87171;
+  border-left: 4px solid var(--eb-red);
+}
+
+.dashboardStatLabel {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dashboardStatLabelBlue {
+  color: var(--eb-blue);
+}
+
+.dashboardStatLabelGreen {
+  color: var(--eb-green);
+}
+
+.dashboardStatLabelGold {
+  color: var(--eb-gold);
+}
+
+.dashboardStatLabelRed {
+  color: var(--eb-red);
+}
+
+.dashboardStatValue {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--eb-black);
+  line-height: 1.25;
+}
+
+.dashboardStatMeta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.35;
+}
+
+.dashboardStatHint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #4b5563;
+  line-height: 1.35;
+}
+
+.dashboardStatSubLabel {
+  margin: 8px 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #374151;
+}
+
+.dashboardStatSubLabel:first-of-type {
+  margin-top: 4px;
+}
+
+.dashboardStatsFilters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.dashboardStatsFilters .fieldInput,
+.dashboardStatsFilters .fieldSelect {
+  width: 100%;
+  font-size: 12px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+}
+
+.dashboardStatsOutletPanel {
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 6px 8px;
+}
+
+.dashboardStatsOutletSelectAll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.dashboardStatsOutletList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 108px;
+  overflow-y: auto;
+}
+
+.dashboardStatsOutletRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.dashboardStatProduct {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--eb-black);
+}
+
 .summaryCard {
   border: 1px solid var(--eb-border);
   border-radius: var(--eb-radius);
@@ -584,9 +795,54 @@ button:disabled {
 }
 
 .syncOutletList {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .syncOutletList {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .syncOutletList {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
+.syncDialogOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.syncDialogCard {
+  width: min(420px, 100%);
+  border-radius: 12px;
+  border: 1px solid var(--eb-border);
+  background: #fff;
+  padding: 20px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+}
+
+.syncDialogTitle {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.syncDialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .syncOutletRow {

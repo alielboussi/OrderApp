@@ -1016,7 +1016,7 @@ export default function OutletSetupPage() {
             Program what each sale deducts from outlet warehouses on{" "}
             <a href="/Warehouse_Backoffice/pos-sale-deductions">POS sale deductions</a>.
             Live stock per outlet:{" "}
-            <a href="/Warehouse_Backoffice#outlet-live-balances">Outlet live balances</a>.
+            <a href="/Warehouse_Backoffice/outlet-live-balances">Outlet live balances</a>.
           </p>
         </div>
       </section>

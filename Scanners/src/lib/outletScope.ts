@@ -22,7 +22,7 @@ export function isMiddlewareCatalogSyncOutlet(outlet: MiddlewareOutletCandidate)
 /** Selling outlets with POS middleware — excludes hub/storeroom rows in the outlets table. */
 export function isPosMiddlewareOutlet(outlet: MiddlewareOutletCandidate): boolean {
   if (outlet.active === false) return false;
-  if (outlet.has_pos_middleware === false) return false;
+  if (outlet.has_pos_middleware !== true) return false;
 
   const channel = (outlet.channel ?? "selling").trim().toLowerCase();
   if (channel !== "selling") return false;

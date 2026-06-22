@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeFutureScheduledAt } from "@/lib/catalogSyncSchedule";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
 import { getServiceClient } from "@/lib/supabase-server";
 
@@ -28,6 +29,7 @@ function buildRows(
   entityType: string,
   outletOptions: Record<string, OutletSyncOptions>,
   requestedAt: string,
+  scheduledAt: string | null,
 ): SyncEventRow[] {
   return outletIds.map((outletId) => {
     const options = outletOptions[outletId] ?? {};
@@ -43,6 +45,7 @@ function buildRows(
         sync_menu_groups: options.sync_menu_groups !== false,
         exclude_item_skus: parseSkuList(options.exclude_item_skus),
         exclude_variant_skus: parseSkuList(options.exclude_variant_skus),
+        ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
       },
     };
   });
@@ -53,6 +56,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       outlet_ids?: string[];
       outlet_options?: Record<string, OutletSyncOptions>;
+      scheduled_at?: string | null;
     };
 
     const supabase = getServiceClient();
@@ -81,14 +85,22 @@ export async function POST(request: Request) {
 
     const requestedAt = new Date().toISOString();
     const outletOptions = body.outlet_options ?? {};
-    let rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt);
+    const scheduledAt =
+      typeof body.scheduled_at === "string" && body.scheduled_at.trim()
+        ? normalizeFutureScheduledAt(body.scheduled_at)
+        : null;
+    if (typeof body.scheduled_at === "string" && body.scheduled_at.trim() && !scheduledAt) {
+      return NextResponse.json({ error: "Scheduled time must be in the future" }, { status: 400 });
+    }
+
+    let rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt, scheduledAt);
     let { error } = await supabase.from("outlet_catalog_sync_events").insert(rows);
 
     // Backward compatibility: some databases still constrain entity_type
     // to legacy values and reject "sync_pos_catalog". In that case we
     // enqueue as "item" with a command payload that middleware understands.
     if (error?.code === "23514") {
-      rows = buildRows(outletIds, "item", outletOptions, requestedAt);
+      rows = buildRows(outletIds, "item", outletOptions, requestedAt, scheduledAt);
       const fallback = await supabase.from("outlet_catalog_sync_events").insert(rows);
       error = fallback.error;
     }
@@ -97,7 +109,7 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    return NextResponse.json({ ok: true, requested: rows.length });
+    return NextResponse.json({ ok: true, requested: rows.length, scheduled_at: scheduledAt });
   } catch (error) {
     console.error("[catalog/request-pos-catalog-sync] POST failed", error);
     return NextResponse.json({ error: "Unable to request POS catalog sync" }, { status: 500 });

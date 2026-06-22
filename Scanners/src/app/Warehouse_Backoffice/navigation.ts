@@ -14,6 +14,9 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Overview",
     items: [
       { label: "Dashboard", href: "/Warehouse_Backoffice" },
+      { label: "Middleware Connectivity", href: "/Warehouse_Backoffice/middleware-heartbeat" },
+      { label: "Portal/Mintpos Sync", href: "/Warehouse_Backoffice/pos-catalog-sync" },
+      { label: "Outlet live balances", href: "/Warehouse_Backoffice/outlet-live-balances" },
     ],
     tone: "system",
   },
@@ -21,8 +24,6 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Catalog",
     items: [
       { label: "Products", href: "/Warehouse_Backoffice/catalog/menu" },
-      { label: "Menu groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
-      { label: "Manage catalog", href: "/Warehouse_Backoffice/catalog/manage" },
       { label: "Bulk variant update", href: "/Warehouse_Backoffice/variant-bulk-update" },
       { label: "Suppliers", href: "/Warehouse_Backoffice/suppliers" },
     ],
@@ -54,9 +55,6 @@ export const BACKOFFICE_NAV: NavGroup[] = [
 
 export function pageTitleForPath(pathname: string, hash?: string): string {
   const normalizedHash = hash?.replace(/^#/, "") ?? "";
-  if (pathname === "/Warehouse_Backoffice" && normalizedHash === "outlet-live-balances") {
-    return "Live balances";
-  }
   for (const group of BACKOFFICE_NAV) {
     for (const item of group.items) {
       const itemPath = item.href.split("#")[0];

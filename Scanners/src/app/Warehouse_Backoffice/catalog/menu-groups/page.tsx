@@ -87,7 +87,7 @@ export default function CatalogMenuGroupsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Unable to save menu group");
 
-      setMessage(form.id ? "Menu group updated. Send updates from Products to push to MintPOS." : "Menu group created.");
+      setMessage(form.id ? "Menu group updated." : "Menu group created.");
       resetForm();
       await load();
     } catch (error) {
@@ -182,24 +182,24 @@ export default function CatalogMenuGroupsPage() {
         {!loading && groups.length === 0 ? <p className={styles.pageCardBody}>No menu groups yet.</p> : null}
         {!loading && groups.length > 0 ? (
           <div className={styles.tableWrap}>
-            <table className={styles.table}>
+            <table className={styles.dataTable}>
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>MintPOS ID</th>
-                  <th>Sort</th>
-                  <th>Status</th>
-                  <th />
+                  <th style={{ whiteSpace: "nowrap" }}>MintPOS ID</th>
+                  <th style={{ whiteSpace: "nowrap" }}>Sort</th>
+                  <th style={{ whiteSpace: "nowrap" }}>Status</th>
+                  <th style={{ whiteSpace: "nowrap", width: 88 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group) => (
                   <tr key={group.id}>
                     <td>{group.name}</td>
-                    <td>{group.pos_menu_group_id ?? "—"}</td>
-                    <td>{group.sort_order}</td>
-                    <td>{group.active ? "Active" : "Inactive"}</td>
-                    <td>
+                    <td style={{ whiteSpace: "nowrap" }}>{group.pos_menu_group_id ?? "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{group.sort_order}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{group.active ? "Active" : "Inactive"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>
                       <button type="button" className={styles.btnSecondary} onClick={() => startEdit(group)}>
                         Edit
                       </button>

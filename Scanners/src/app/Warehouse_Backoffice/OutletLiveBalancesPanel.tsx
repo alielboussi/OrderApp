@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import type { SellingOutlet } from "@/lib/sellingOutlets";
-import { isStoreroomLabel } from "@/lib/outletScope";
+import {
+  fetchSellingOutlets,
+  fetchSellingOutletWarehouses,
+  type SellingOutlet,
+  type SellingOutletWarehouse,
+} from "@/lib/sellingOutlets";
 import styles from "./enterprise.module.css";
-
 /** Quick Corner — excluded from live-balances picker (view other outlets here). */
 const LIVE_BALANCES_EXCLUDED_OUTLET_ID = "a406fede-7aab-4473-8e9f-ff645267466f";
 
@@ -48,6 +51,7 @@ export default function OutletLiveBalancesPanel({ enabled = true }: OutletLiveBa
   const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [outlets, setOutlets] = useState<SellingOutlet[]>([]);
   const [selectedOutletId, setSelectedOutletId] = useState("");
+  const [sellingWarehouses, setSellingWarehouses] = useState<SellingOutletWarehouse[]>([]);
   const [outletBalances, setOutletBalances] = useState<OutletBalanceRow[]>([]);
   const [warehouseBalances, setWarehouseBalances] = useState<WarehouseBalanceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,25 +63,10 @@ export default function OutletLiveBalancesPanel({ enabled = true }: OutletLiveBa
 
     const loadOutlets = async () => {
       try {
-        const { data, error } = await supabase
-          .from("outlets")
-          .select("id,name,code,active,default_sales_warehouse_id")
-          .order("name");
+        const rows = (await fetchSellingOutlets()).filter(
+          (row) => row.id && row.id !== LIVE_BALANCES_EXCLUDED_OUTLET_ID,
+        );
         if (!active) return;
-        if (error) throw error;
-
-        const rows = (data ?? [])
-          .filter((row) => row?.id && row.id !== LIVE_BALANCES_EXCLUDED_OUTLET_ID)
-          .filter((row) => row.active !== false)
-          .map(
-            (row): SellingOutlet => ({
-              id: row.id,
-              name: (row.name ?? "Outlet").trim(),
-              code: row.code ?? null,
-              default_sales_warehouse_id: row.default_sales_warehouse_id ?? null,
-            }),
-          );
-
         setOutlets(rows);
       } catch {
         if (active) setOutlets([]);
@@ -88,7 +77,29 @@ export default function OutletLiveBalancesPanel({ enabled = true }: OutletLiveBa
     return () => {
       active = false;
     };
-  }, [enabled, supabase]);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled || !selectedOutletId) {
+      setSellingWarehouses([]);
+      return;
+    }
+    let active = true;
+
+    const loadWarehouses = async () => {
+      try {
+        const links = await fetchSellingOutletWarehouses(selectedOutletId);
+        if (active) setSellingWarehouses(links);
+      } catch {
+        if (active) setSellingWarehouses([]);
+      }
+    };
+
+    loadWarehouses();
+    return () => {
+      active = false;
+    };
+  }, [enabled, selectedOutletId]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -160,13 +171,19 @@ export default function OutletLiveBalancesPanel({ enabled = true }: OutletLiveBa
   }, [enabled, supabase, selectedOutletId, outlets]);
 
   const warehousesForOutlet = useMemo(() => {
+    const allowedIds = new Set(sellingWarehouses.map((link) => link.warehouse_id));
     const map = new Map<string, string>();
+    for (const link of sellingWarehouses) {
+      map.set(link.warehouse_id, link.warehouse_name);
+    }
     for (const row of warehouseBalances) {
-      if (isStoreroomLabel(row.warehouse_name)) continue;
+      if (!allowedIds.has(row.warehouse_id)) continue;
       map.set(row.warehouse_id, row.warehouse_name);
     }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [warehouseBalances]);
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [sellingWarehouses, warehouseBalances]);
 
   const selectedOutlet = outlets.find((o) => o.id === selectedOutletId);
 

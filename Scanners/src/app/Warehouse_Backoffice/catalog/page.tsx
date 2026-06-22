@@ -43,14 +43,6 @@ export default function CatalogMenu() {
             <span className={styles.cardCta}>Open products</span>
           </button>
           <button
-            onClick={() => go("/Warehouse_Backoffice/catalog/menu-groups")}
-            className={`${styles.actionCard} ${styles.menuCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleMenu}`}>Menu Groups</p>
-            <p className={styles.cardBody}>Manage MintPOS menu groups and link products so they appear on POS screens.</p>
-            <span className={styles.cardCta}>Open groups</span>
-          </button>
-          <button
             onClick={() => go("/Warehouse_Backoffice/variant-bulk-update")}
             className={`${styles.actionCard} ${styles.bulkCard}`}
           >
