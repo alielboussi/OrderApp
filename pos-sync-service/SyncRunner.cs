@@ -37,7 +37,7 @@ public sealed class SyncRunner
         var processed = 0;
 
         await _supabaseClient.SendHeartbeatAsync(cancellationToken);
-        await TrySyncPosCatalogMapAsync(force: false, cancellationToken);
+        await TrySyncPosCatalogMapAsync(force: false, syncOptions: null, cancellationToken);
         await ApplyCatalogSyncAsync(cancellationToken);
 
         var syncContext = await _supabaseClient.GetOutletSyncContextAsync(cancellationToken);
@@ -213,7 +213,7 @@ public sealed class SyncRunner
                     || string.Equals(evt.Payload.Command, "sync_pos_catalog", StringComparison.OrdinalIgnoreCase);
                 if (isPosCatalogSync)
                 {
-                    await TrySyncPosCatalogMapAsync(force: true, cancellationToken);
+                    await TrySyncPosCatalogMapAsync(force: true, evt.Payload, cancellationToken);
                 }
                 else
                 {
@@ -267,7 +267,7 @@ public sealed class SyncRunner
             || errorMessage.Contains("outside_sync_window", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task TrySyncPosCatalogMapAsync(bool force, CancellationToken cancellationToken)
+    private async Task TrySyncPosCatalogMapAsync(bool force, CatalogSyncPayload? syncOptions, CancellationToken cancellationToken)
     {
         var syncMinutes = Math.Max(1, _syncOptions.CurrentValue.PosCatalogSyncMinutes);
         var now = DateTimeOffset.UtcNow;
@@ -276,38 +276,69 @@ public sealed class SyncRunner
             return;
         }
 
+        var syncProducts = syncOptions?.ShouldSyncProducts ?? true;
+        var syncVariants = syncOptions?.ShouldSyncVariants ?? true;
+        var syncMenuGroups = syncOptions?.ShouldSyncMenuGroups ?? true;
+        var excludeItemSkus = new HashSet<string>(
+            syncOptions?.ExcludeItemSkus ?? Array.Empty<string>(),
+            StringComparer.OrdinalIgnoreCase);
+        var excludeVariantSkus = new HashSet<string>(
+            syncOptions?.ExcludeVariantSkus ?? Array.Empty<string>(),
+            StringComparer.OrdinalIgnoreCase);
+
         try
         {
-            var rows = await _repository.ReadPosCatalogSkuMapAsync(cancellationToken);
-            if (rows.Count == 0)
+            if (syncProducts || syncVariants)
             {
-                _lastPosCatalogSyncUtc = now;
-                return;
-            }
+                var rows = await _repository.ReadPosCatalogSkuMapAsync(cancellationToken);
+                rows = rows
+                    .Where(row =>
+                        !excludeItemSkus.Contains(row.ItemSku)
+                        && !excludeVariantSkus.Contains(row.VariantSku))
+                    .ToArray();
 
-            var result = await _supabaseClient.SyncPosCatalogSkuMapAsync(rows, cancellationToken);
-            if (!result.IsSuccess)
-            {
-                _logger.LogError("POS catalog SKU sync failed: {Error}", result.ErrorMessage ?? "Unknown error");
-                return;
-            }
-
-            var groupRows = await _repository.ReadPosMenuGroupMapAsync(cancellationToken);
-            if (groupRows.Count > 0)
-            {
-                var groupResult = await _supabaseClient.SyncPosMenuGroupsAsync(groupRows, cancellationToken);
-                if (!groupResult.IsSuccess)
+                if (rows.Count > 0)
                 {
-                    _logger.LogError("POS menu group sync failed: {Error}", groupResult.ErrorMessage ?? "Unknown error");
+                    var result = await _supabaseClient.SyncPosCatalogSkuMapAsync(rows, syncProducts, syncVariants, cancellationToken);
+                    if (!result.IsSuccess)
+                    {
+                        _logger.LogError("POS catalog SKU sync failed: {Error}", result.ErrorMessage ?? "Unknown error");
+                        return;
+                    }
+
+                    _logger.LogInformation(
+                        "POS catalog SKU sync completed with {Count} mapped variants (products={SyncProducts}, variants={SyncVariants}).",
+                        rows.Count,
+                        syncProducts,
+                        syncVariants);
                 }
-                else
+            }
+
+            if (syncMenuGroups)
+            {
+                var groupRows = await _repository.ReadPosMenuGroupMapAsync(cancellationToken);
+                if (excludeItemSkus.Count > 0)
                 {
-                    _logger.LogInformation("POS menu group sync completed with {Count} rows.", groupRows.Count);
+                    groupRows = groupRows
+                        .Where(row => string.IsNullOrWhiteSpace(row.ItemSku) || !excludeItemSkus.Contains(row.ItemSku))
+                        .ToArray();
+                }
+
+                if (groupRows.Count > 0)
+                {
+                    var groupResult = await _supabaseClient.SyncPosMenuGroupsAsync(groupRows, cancellationToken);
+                    if (!groupResult.IsSuccess)
+                    {
+                        _logger.LogError("POS menu group sync failed: {Error}", groupResult.ErrorMessage ?? "Unknown error");
+                    }
+                    else
+                    {
+                        _logger.LogInformation("POS menu group sync completed with {Count} rows.", groupRows.Count);
+                    }
                 }
             }
 
             _lastPosCatalogSyncUtc = now;
-            _logger.LogInformation("POS catalog SKU sync completed with {Count} mapped variants.", rows.Count);
         }
         catch (Exception ex)
         {

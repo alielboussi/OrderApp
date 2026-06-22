@@ -566,3 +566,123 @@ button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.syncOutletPanel {
+  margin-top: 16px;
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  padding: 14px;
+  background: #fafafa;
+}
+
+.syncOutletSelectAll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.syncOutletList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.syncOutletRow {
+  border: 1px solid var(--eb-border);
+  border-radius: var(--eb-radius);
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.syncOutletRowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.syncOutletLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.syncOutletCode {
+  color: #5c5c5c;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.syncShieldButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #bfdbfe;
+  background: var(--eb-blue-soft);
+  color: var(--eb-blue);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.syncShieldButton:hover {
+  background: #dbeafe;
+}
+
+.syncShieldPanel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--eb-border);
+}
+
+.syncShieldIntro {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--eb-muted);
+}
+
+.syncShieldToggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.syncShieldToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.syncShieldFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.syncShieldField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eb-muted);
+}
+
+.syncShieldField textarea {
+  width: 100%;
+  border: 1px solid var(--eb-border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  resize: vertical;
+  min-height: 56px;
+}

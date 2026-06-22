@@ -8,6 +8,17 @@ export type MiddlewareOutletCandidate = {
   code?: string | null;
 };
 
+/** POS middleware outlets that should receive catalog sync — excludes storeroom/hub rows. */
+export function isMiddlewareCatalogSyncOutlet(outlet: MiddlewareOutletCandidate): boolean {
+  if (outlet.active === false) return false;
+  if (outlet.has_pos_middleware !== true) return false;
+
+  const label = `${outlet.name ?? ""} ${outlet.code ?? ""}`.toLowerCase();
+  if (isStoreroomLabel(label)) return false;
+
+  return true;
+}
+
 /** Selling outlets with POS middleware — excludes hub/storeroom rows in the outlets table. */
 export function isPosMiddlewareOutlet(outlet: MiddlewareOutletCandidate): boolean {
   if (outlet.active === false) return false;

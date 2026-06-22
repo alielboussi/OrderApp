@@ -43,6 +43,10 @@
           "table_schema": "public"
         },
         {
+          "table_name": "catalog_menu_groups",
+          "table_schema": "public"
+        },
+        {
           "table_name": "catalog_variants",
           "table_schema": "public"
         },
@@ -72,6 +76,10 @@
         },
         {
           "table_name": "middleware_catalog_schedule",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
           "table_schema": "public"
         },
         {
@@ -152,6 +160,14 @@
         },
         {
           "table_name": "scanners",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "stg_mintpos_menuitem",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "stg_mintpos_modifierflavour",
           "table_schema": "public"
         },
         {
@@ -569,6 +585,78 @@
           "table_schema": "public",
           "column_default": null,
           "ordinal_position": 35
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "catalog_items",
+          "column_name": "menu_group_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 36
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "catalog_menu_groups",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "gen_random_uuid()",
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "catalog_menu_groups",
+          "column_name": "name",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "integer",
+          "table_name": "catalog_menu_groups",
+          "column_name": "pos_menu_group_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "catalog_menu_groups",
+          "column_name": "active",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "true",
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "integer",
+          "table_name": "catalog_menu_groups",
+          "column_name": "sort_order",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "0",
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "catalog_menu_groups",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "catalog_menu_groups",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 7
         },
         {
           "data_type": "text",
@@ -1271,6 +1359,60 @@
           "table_schema": "public",
           "column_default": "now()",
           "ordinal_position": 3
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "middleware_update_drafts",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "gen_random_uuid()",
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_type",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "jsonb",
+          "table_name": "middleware_update_drafts",
+          "column_name": "payload",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "'{}'::jsonb",
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "middleware_update_drafts",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "middleware_update_drafts",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 6
         },
         {
           "data_type": "uuid",
@@ -3406,6 +3548,69 @@
           "ordinal_position": 3
         },
         {
+          "data_type": "bigint",
+          "table_name": "stg_mintpos_menuitem",
+          "column_name": "menuitem_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "stg_mintpos_menuitem",
+          "column_name": "item_sku",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "stg_mintpos_menuitem",
+          "column_name": "item_name",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "bigint",
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": "flavour_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "bigint",
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": "menuitem_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "text",
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": "variant_name",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": "variant_sku",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
           "data_type": "uuid",
           "table_name": "stock_flow_batches",
           "column_name": "id",
@@ -5298,6 +5503,12 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_catalog_items_menu_group_id ON public.catalog_items USING btree (menu_group_id)",
+          "indexname": "idx_catalog_items_menu_group_id",
+          "table_name": "catalog_items",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE UNIQUE INDEX idx_catalog_items_name_unique ON public.catalog_items USING btree (lower(name))",
           "indexname": "idx_catalog_items_name_unique",
           "table_name": "catalog_items",
@@ -5307,6 +5518,18 @@
           "indexdef": "CREATE UNIQUE INDEX idx_catalog_items_sku_unique ON public.catalog_items USING btree (lower(sku)) WHERE (sku IS NOT NULL)",
           "indexname": "idx_catalog_items_sku_unique",
           "table_name": "catalog_items",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX catalog_menu_groups_pkey ON public.catalog_menu_groups USING btree (id)",
+          "indexname": "catalog_menu_groups_pkey",
+          "table_name": "catalog_menu_groups",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX ux_catalog_menu_groups_name_lower ON public.catalog_menu_groups USING btree (lower(btrim(name)))",
+          "indexname": "ux_catalog_menu_groups_name_lower",
+          "table_name": "catalog_menu_groups",
           "table_schema": "public"
         },
         {
@@ -5415,6 +5638,18 @@
           "indexdef": "CREATE UNIQUE INDEX middleware_catalog_schedule_pkey ON public.middleware_catalog_schedule USING btree (id)",
           "indexname": "middleware_catalog_schedule_pkey",
           "table_name": "middleware_catalog_schedule",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX middleware_update_drafts_entity_type_entity_id_key ON public.middleware_update_drafts USING btree (entity_type, entity_id)",
+          "indexname": "middleware_update_drafts_entity_type_entity_id_key",
+          "table_name": "middleware_update_drafts",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX middleware_update_drafts_pkey ON public.middleware_update_drafts USING btree (id)",
+          "indexname": "middleware_update_drafts_pkey",
+          "table_name": "middleware_update_drafts",
           "table_schema": "public"
         },
         {
@@ -7849,14 +8084,14 @@
           "function_schema": "public"
         },
         {
-          "arguments": "p_user_id uuid",
-          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
           "function_name": "member_outlet_ids",
           "function_schema": "public"
         },
         {
-          "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids()\n RETURNS SETOF uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT unnest(COALESCE(public.member_outlet_ids(auth.uid()), ARRAY[]::uuid[]));\r\n$function$\n",
+          "arguments": "p_user_id uuid",
+          "definition": "CREATE OR REPLACE FUNCTION public.member_outlet_ids(p_user_id uuid)\n RETURNS uuid[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_temp'\nAS $function$\r\n  SELECT COALESCE(\r\n    CASE\r\n      WHEN p_user_id IS NULL THEN NULL\r\n      WHEN public.is_admin(p_user_id) THEN (SELECT array_agg(id) FROM public.outlets)\r\n      ELSE (SELECT array_agg(id) FROM public.outlets o WHERE o.auth_user_id = p_user_id AND o.active)\r\n    END,\r\n    '{}'\r\n  );\r\n$function$\n",
           "function_name": "member_outlet_ids",
           "function_schema": "public"
         },
@@ -8128,6 +8363,18 @@
           "arguments": "",
           "definition": "CREATE OR REPLACE FUNCTION public.sync_opening_stock_to_ledger()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_item_id uuid;\r\n  v_variant text;\r\n  v_period_id uuid;\r\n  v_warehouse_id uuid;\r\n  v_desired numeric := 0;\r\n  v_current numeric := 0;\r\n  v_delta numeric := 0;\r\n  v_kind text;\r\nbegin\r\n  if tg_op = 'DELETE' then\r\n    return old;\r\n  end if;\r\n\r\n  v_kind := lower(coalesce(new.kind, ''));\r\n  if v_kind not in ('opening', 'closing') then\r\n    return new;\r\n  end if;\r\n\r\n  v_item_id := new.item_id;\r\n  v_variant := public.normalize_variant_key(new.variant_key);\r\n  v_period_id := new.period_id;\r\n  v_desired := coalesce(new.counted_qty, 0);\r\n\r\n  select wsp.warehouse_id\r\n    into v_warehouse_id\r\n  from public.warehouse_stock_periods wsp\r\n  where wsp.id = v_period_id\r\n  limit 1;\r\n\r\n  if v_warehouse_id is null then\r\n    return new;\r\n  end if;\r\n\r\n  select coalesce(sum(sl.delta_units), 0)\r\n    into v_current\r\n  from public.stock_ledger sl\r\n  where sl.location_type = 'warehouse'\r\n    and sl.warehouse_id = v_warehouse_id\r\n    and sl.item_id = v_item_id\r\n    and public.normalize_variant_key(sl.variant_key) = v_variant;\r\n\r\n  v_delta := v_desired - coalesce(v_current, 0);\r\n  if v_delta = 0 then\r\n    return new;\r\n  end if;\r\n\r\n  insert into public.stock_ledger(\r\n    location_type,\r\n    warehouse_id,\r\n    item_id,\r\n    variant_key,\r\n    delta_units,\r\n    reason,\r\n    context,\r\n    occurred_at\r\n  ) values (\r\n    'warehouse',\r\n    v_warehouse_id,\r\n    v_item_id,\r\n    v_variant,\r\n    v_delta,\r\n    'opening_stock',\r\n    jsonb_build_object('period_id', v_period_id::text, 'source', 'stock_count', 'kind', v_kind),\r\n    now()\r\n  );\r\n\r\n  return new;\r\nend;\r\n$function$\n",
           "function_name": "sync_opening_stock_to_ledger",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_rows jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_catalog_from_middleware(p_rows jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_items_updated int := 0;\r\n  v_variants_updated int := 0;\r\nbegin\r\n  if p_rows is null or jsonb_typeof(p_rows) <> 'array' then\r\n    raise exception 'p_rows must be a JSON array';\r\n  end if;\r\n\r\n  with src as (\r\n    select\r\n      nullif(trim(item_sku), '') as item_sku,\r\n      nullif(trim(item_name), '') as item_name,\r\n      nullif(trim(variant_name), '') as variant_name,\r\n      nullif(trim(variant_sku), '') as variant_sku\r\n    from jsonb_to_recordset(p_rows) as r(\r\n      item_sku text,\r\n      item_name text,\r\n      variant_name text,\r\n      variant_sku text\r\n    )\r\n  ),\r\n  upd as (\r\n    update public.catalog_items ci\r\n    set\r\n      name = coalesce(src.item_name, ci.name),\r\n      updated_at = now()\r\n    from src\r\n    where ci.item_kind = 'finished'\r\n      and ci.sku = src.item_sku\r\n      and src.item_sku is not null\r\n      and src.item_name is not null\r\n    returning 1\r\n  )\r\n  select count(*) into v_items_updated from upd;\r\n\r\n  with src as (\r\n    select\r\n      nullif(trim(item_sku), '') as item_sku,\r\n      nullif(trim(variant_name), '') as variant_name,\r\n      nullif(trim(variant_sku), '') as variant_sku\r\n    from jsonb_to_recordset(p_rows) as r(\r\n      item_sku text,\r\n      item_name text,\r\n      variant_name text,\r\n      variant_sku text\r\n    )\r\n  ),\r\n  upd as (\r\n    update public.catalog_variants cv\r\n    set\r\n      name = src.variant_name,\r\n      sku = coalesce(src.variant_sku, cv.sku),\r\n      updated_at = now()\r\n    from src, public.catalog_items ci\r\n    where ci.item_kind = 'finished'\r\n      and cv.item_id = ci.id\r\n      and ci.sku = src.item_sku\r\n      and src.item_sku is not null\r\n      and src.variant_name is not null\r\n      and lower(trim(cv.name)) = lower(trim(src.variant_name))\r\n    returning 1\r\n  )\r\n  select count(*) into v_variants_updated from upd;\r\n\r\n  return jsonb_build_object(\r\n    'ok', true,\r\n    'items_updated', v_items_updated,\r\n    'variants_updated', v_variants_updated\r\n  );\r\nend;\r\n$function$\n",
+          "function_name": "sync_pos_catalog_from_middleware",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_rows jsonb",
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_pos_menu_groups_from_middleware(p_rows jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_groups_upserted int := 0;\r\n  v_items_linked int := 0;\r\nbegin\r\n  if p_rows is null or jsonb_typeof(p_rows) <> 'array' then\r\n    raise exception 'p_rows must be a JSON array';\r\n  end if;\r\n\r\n  with src as (\r\n    select distinct\r\n      nullif(trim(grp_row ->> 'group_name'), '') as group_name,\r\n      nullif((grp_row ->> 'pos_menu_group_id'), '')::integer as pos_menu_group_id\r\n    from jsonb_array_elements(p_rows) as grp_row\r\n    where nullif(trim(grp_row ->> 'group_name'), '') is not null\r\n  ),\r\n  updated as (\r\n    update public.catalog_menu_groups g\r\n    set\r\n      pos_menu_group_id = coalesce(src.pos_menu_group_id, g.pos_menu_group_id),\r\n      updated_at = now()\r\n    from src\r\n    where lower(trim(g.name)) = lower(trim(src.group_name))\r\n    returning g.id\r\n  ),\r\n  inserted as (\r\n    insert into public.catalog_menu_groups (name, pos_menu_group_id, updated_at)\r\n    select src.group_name, src.pos_menu_group_id, now()\r\n    from src\r\n    where not exists (\r\n      select 1\r\n      from public.catalog_menu_groups g\r\n      where lower(trim(g.name)) = lower(trim(src.group_name))\r\n    )\r\n    returning id\r\n  )\r\n  select (select count(*) from updated) + (select count(*) from inserted) into v_groups_upserted;\r\n\r\n  with src as (\r\n    select\r\n      nullif(trim(grp_row ->> 'item_sku'), '') as item_sku,\r\n      nullif(trim(grp_row ->> 'group_name'), '') as group_name,\r\n      nullif((grp_row ->> 'pos_menu_group_id'), '')::integer as pos_menu_group_id\r\n    from jsonb_array_elements(p_rows) as grp_row\r\n  ),\r\n  grp as (\r\n    select\r\n      src.item_sku,\r\n      coalesce(\r\n        g_by_id.id,\r\n        g_by_name.id\r\n      ) as menu_group_id\r\n    from src\r\n    left join public.catalog_menu_groups g_by_id\r\n      on g_by_id.pos_menu_group_id = src.pos_menu_group_id\r\n    left join public.catalog_menu_groups g_by_name\r\n      on lower(trim(g_by_name.name)) = lower(trim(src.group_name))\r\n    where src.item_sku is not null\r\n      and (src.group_name is not null or src.pos_menu_group_id is not null)\r\n  ),\r\n  upd as (\r\n    update public.catalog_items ci\r\n    set\r\n      menu_group_id = grp.menu_group_id,\r\n      updated_at = now()\r\n    from grp\r\n    where ci.item_kind = 'finished'\r\n      and ci.sku = grp.item_sku\r\n      and grp.menu_group_id is not null\r\n    returning 1\r\n  )\r\n  select count(*) into v_items_linked from upd;\r\n\r\n  return jsonb_build_object(\r\n    'ok', true,\r\n    'groups_upserted', v_groups_upserted,\r\n    'items_linked', v_items_linked\r\n  );\r\nend;\r\n$function$\n",
+          "function_name": "sync_pos_menu_groups_from_middleware",
           "function_schema": "public"
         },
         {
@@ -8516,11 +8763,91 @@
         },
         {
           "table_name": "catalog_items",
+          "column_name": "menu_group_id",
+          "table_schema": "public",
+          "constraint_name": "catalog_items_menu_group_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": "catalog_menu_groups",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_items",
           "column_name": "id",
           "table_schema": "public",
           "constraint_name": "catalog_items_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "catalog_items",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155903_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155903_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155903_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155903_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155903_6_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155903_7_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "catalog_menu_groups",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "catalog_menu_groups_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "catalog_menu_groups",
           "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
@@ -8721,7 +9048,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -8731,7 +9058,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8781,7 +9108,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -8791,7 +9118,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9121,7 +9448,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "storage_warehouse_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9131,16 +9458,6 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "item_storage_homes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "item_storage_homes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "item_storage_homes",
           "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
@@ -9166,6 +9483,16 @@
         },
         {
           "table_name": "item_storage_homes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "item_storage_homes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "item_storage_homes",
+          "foreign_column_name": "storage_warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "item_storage_homes",
           "column_name": "storage_warehouse_id",
           "table_schema": "public",
           "constraint_name": "item_storage_homes_pkey",
@@ -9181,7 +9508,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "storage_warehouse_id",
+          "foreign_column_name": "normalized_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -9191,7 +9518,7 @@
           "constraint_name": "item_storage_homes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "item_storage_homes",
-          "foreign_column_name": "normalized_variant_key",
+          "foreign_column_name": "storage_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -9462,6 +9789,126 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "middleware_catalog_schedule",
           "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155922_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155922_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155922_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155922_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155922_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155922_6_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_entity_type_check",
+          "constraint_type": "CHECK",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "entity_type",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_type",
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "entity_type",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_type",
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "entity_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_id",
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "entity_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_id",
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "entity_type",
           "foreign_table_schema": "public"
         },
         {
@@ -9991,16 +10438,6 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
@@ -10011,6 +10448,26 @@
           "constraint_name": "outlet_item_routes_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "normalized_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_item_routes",
+          "column_name": "normalized_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_item_routes_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -10022,16 +10479,6 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_item_routes",
           "foreign_column_name": "normalized_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_item_routes",
-          "column_name": "normalized_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_item_routes_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_item_routes",
-          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10321,7 +10768,47 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "deduct_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "outlet_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -10336,37 +10823,7 @@
         },
         {
           "table_name": "outlet_pos_deduction_rules",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "outlet_id",
+          "column_name": "sold_item_id",
           "table_schema": "public",
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
@@ -10411,16 +10868,6 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "warehouse_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_item_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "sold_item_id",
           "foreign_table_schema": "public"
         },
@@ -10432,46 +10879,6 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "sold_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "warehouse_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "sold_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10491,7 +10898,47 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "deduct_item_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "sold_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10561,26 +11008,6 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "deduct_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "warehouse_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "deduct_variant_key",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "sold_item_id",
           "foreign_table_schema": "public"
         },
@@ -10592,6 +11019,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10616,12 +11053,22 @@
         },
         {
           "table_name": "outlet_pos_deduction_rules",
+          "column_name": "deduct_variant_key",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_variant_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
           "column_name": "warehouse_id",
           "table_schema": "public",
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "warehouse_id",
+          "foreign_column_name": "deduct_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10641,17 +11088,7 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "sold_item_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_deduction_rules",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -10671,7 +11108,17 @@
           "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "outlet_pos_deduction_rules",
-          "foreign_column_name": "deduct_item_id",
+          "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_deduction_rules",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_deduction_rules_outlet_id_sold_item_id_sold_vari_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "outlet_pos_deduction_rules",
+          "foreign_column_name": "sold_item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11111,16 +11558,6 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "variant_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_stock_balances",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_stock_balances_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -11136,7 +11573,7 @@
         },
         {
           "table_name": "outlet_stock_balances",
-          "column_name": "item_id",
+          "column_name": "outlet_id",
           "table_schema": "public",
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -11152,6 +11589,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_stock_balances",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_stock_balances_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_stock_balances",
+          "foreign_column_name": "variant_key",
           "foreign_table_schema": "public"
         },
         {
@@ -11181,7 +11628,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11191,7 +11638,7 @@
           "constraint_name": "outlet_stock_balances_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_stock_balances",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11381,7 +11828,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "warehouse_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11391,16 +11838,6 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "outlet_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_warehouses",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "outlet_warehouses_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_warehouses",
           "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
@@ -11412,6 +11849,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
           "foreign_column_name": "outlet_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_warehouses",
+          "column_name": "warehouse_id",
+          "table_schema": "public",
+          "constraint_name": "outlet_warehouses_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_warehouses",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11511,7 +11958,7 @@
           "constraint_name": "outlets_default_wh_match",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_sales_warehouse_id",
+          "foreign_column_name": "default_receiving_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -11521,7 +11968,7 @@
           "constraint_name": "outlets_default_wh_match",
           "constraint_type": "CHECK",
           "foreign_table_name": "outlets",
-          "foreign_column_name": "default_receiving_warehouse_id",
+          "foreign_column_name": "default_sales_warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -12043,6 +12490,66 @@
           "foreign_table_name": "scanners",
           "foreign_column_name": "name",
           "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "stg_mintpos_menuitem",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155734_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "stg_mintpos_menuitem",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155734_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "stg_mintpos_menuitem",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155734_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155739_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155739_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "stg_mintpos_modifierflavour",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_155739_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
         },
         {
           "table_name": "stock_flow_batches",
@@ -12571,7 +13078,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "to_uom",
+          "foreign_column_name": "from_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12581,7 +13088,7 @@
           "constraint_name": "uom_conversions_from_uom_to_uom_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "uom_conversions",
-          "foreign_column_name": "from_uom",
+          "foreign_column_name": "to_uom",
           "foreign_table_schema": "public"
         },
         {
@@ -12761,16 +13268,6 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "user_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "user_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -12781,6 +13278,26 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
+          "foreign_column_name": "user_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
+          "foreign_column_name": "role_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "user_roles",
+          "column_name": "role_id",
+          "table_schema": "public",
+          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
           "foreign_table_schema": "public"
         },
@@ -12801,12 +13318,12 @@
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
-          "foreign_column_name": "role_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "user_roles",
-          "column_name": "role_id",
+          "column_name": "outlet_id",
           "table_schema": "public",
           "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
           "constraint_type": "UNIQUE",
@@ -12832,16 +13349,6 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "user_roles",
           "foreign_column_name": "role_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "user_roles",
-          "column_name": "outlet_id",
-          "table_schema": "public",
-          "constraint_name": "user_roles_user_id_role_id_outlet_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "user_roles",
-          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -13797,6 +14304,12 @@
           "table_schema": "public",
           "constraint_def": "FOREIGN KEY (locked_from_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
           "constraint_name": "catalog_items_locked_from_warehouse_id_fkey"
+        },
+        {
+          "table_name": "catalog_items",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (menu_group_id) REFERENCES catalog_menu_groups(id) ON DELETE SET NULL",
+          "constraint_name": "catalog_items_menu_group_id_fkey"
         },
         {
           "table_name": "catalog_variants",

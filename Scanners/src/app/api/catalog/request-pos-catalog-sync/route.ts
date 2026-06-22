@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
+import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
 import { getServiceClient } from "@/lib/supabase-server";
+
+type OutletSyncOptions = {
+  sync_products?: boolean;
+  sync_variants?: boolean;
+  sync_menu_groups?: boolean;
+  exclude_item_skus?: string[];
+  exclude_variant_skus?: string[];
+};
 
 type SyncEventRow = {
   outlet_id: string;
@@ -8,45 +17,78 @@ type SyncEventRow = {
   payload: Record<string, unknown>;
 };
 
-function buildRows(outletIds: string[], entityType: string): SyncEventRow[] {
-  const requestedAt = new Date().toISOString();
-  return outletIds.map((outletId) => ({
-    outlet_id: outletId,
-    entity_type: entityType,
-    entity_id: "pos_sku_map",
-    payload: {
-      command: "sync_pos_catalog",
-      requested_at: requestedAt,
-    },
-  }));
+function parseSkuList(values?: string[]): string[] {
+  return (values ?? [])
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
-export async function POST() {
+function buildRows(
+  outletIds: string[],
+  entityType: string,
+  outletOptions: Record<string, OutletSyncOptions>,
+  requestedAt: string,
+): SyncEventRow[] {
+  return outletIds.map((outletId) => {
+    const options = outletOptions[outletId] ?? {};
+    return {
+      outlet_id: outletId,
+      entity_type: entityType,
+      entity_id: "pos_sku_map",
+      payload: {
+        command: "sync_pos_catalog",
+        requested_at: requestedAt,
+        sync_products: options.sync_products !== false,
+        sync_variants: options.sync_variants !== false,
+        sync_menu_groups: options.sync_menu_groups !== false,
+        exclude_item_skus: parseSkuList(options.exclude_item_skus),
+        exclude_variant_skus: parseSkuList(options.exclude_variant_skus),
+      },
+    };
+  });
+}
+
+export async function POST(request: Request) {
   try {
+    const body = (await request.json().catch(() => ({}))) as {
+      outlet_ids?: string[];
+      outlet_options?: Record<string, OutletSyncOptions>;
+    };
+
     const supabase = getServiceClient();
     const { data: outlets, error: outletError } = await supabase
       .from("outlets")
-      .select("id")
+      .select("id,name,code,channel,active,has_pos_middleware")
       .eq("active", true)
       .eq("has_pos_middleware", true);
     if (outletError) throw outletError;
 
-    const outletIds = (outlets ?? [])
-      .map((row) => (row as { id?: string }).id)
-      .filter((id): id is string => Boolean(id));
+    const allowedIds = new Set(
+      (outlets ?? [])
+        .filter((row) => isMiddlewareCatalogSyncOutlet(row))
+        .map((row) => (row as { id?: string }).id)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    const requestedIds = (body.outlet_ids ?? [])
+      .map((id) => id.trim())
+      .filter((id) => allowedIds.has(id));
+    const outletIds = requestedIds.length > 0 ? requestedIds : Array.from(allowedIds);
 
     if (!outletIds.length) {
       return NextResponse.json({ ok: true, requested: 0 });
     }
 
-    let rows = buildRows(outletIds, "sync_pos_catalog");
+    const requestedAt = new Date().toISOString();
+    const outletOptions = body.outlet_options ?? {};
+    let rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt);
     let { error } = await supabase.from("outlet_catalog_sync_events").insert(rows);
 
     // Backward compatibility: some databases still constrain entity_type
     // to legacy values and reject "sync_pos_catalog". In that case we
     // enqueue as "item" with a command payload that middleware understands.
     if (error?.code === "23514") {
-      rows = buildRows(outletIds, "item");
+      rows = buildRows(outletIds, "item", outletOptions, requestedAt);
       const fallback = await supabase.from("outlet_catalog_sync_events").insert(rows);
       error = fallback.error;
     }

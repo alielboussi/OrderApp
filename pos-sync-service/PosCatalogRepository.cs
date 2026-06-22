@@ -454,4 +454,25 @@ public sealed class CatalogSyncPayload
 
     [JsonPropertyName("pos_menu_group_id")]
     public int? PosMenuGroupId { get; init; }
+
+    [JsonPropertyName("sync_products")]
+    public bool? SyncProducts { get; init; }
+
+    [JsonPropertyName("sync_variants")]
+    public bool? SyncVariants { get; init; }
+
+    [JsonPropertyName("sync_menu_groups")]
+    public bool? SyncMenuGroups { get; init; }
+
+    [JsonPropertyName("exclude_item_skus")]
+    public string[]? ExcludeItemSkus { get; init; }
+
+    [JsonPropertyName("exclude_variant_skus")]
+    public string[]? ExcludeVariantSkus { get; init; }
+
+    public bool ShouldSyncProducts => SyncProducts is not false;
+
+    public bool ShouldSyncVariants => SyncVariants is not false;
+
+    public bool ShouldSyncMenuGroups => SyncMenuGroups is not false;
 }

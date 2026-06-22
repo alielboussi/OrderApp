@@ -83,6 +83,11 @@ type SaleShift = {
   shift_opened_by: string | null;
 };
 
+type SaleLines = {
+  paragraph: string;
+  items: SaleLine[];
+};
+
 type SaleEvent = {
   sale_reference: string;
   source_event_id: string | null;
@@ -102,8 +107,10 @@ type SaleEvent = {
   outlet_name: string | null;
   sold_at: string;
   total_amount_of_sale: number;
-  lines: SaleLine[];
+  lines: SaleLines;
 };
+
+type MutableSaleEvent = Omit<SaleEvent, "lines"> & { lineItems: SaleLine[] };
 
 const isUuid = (value: string) =>
   /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value.trim());
@@ -139,6 +146,29 @@ function toNumber(value: unknown): number {
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function formatLineSegment(line: SaleLine): string {
+  const variant = line.variant_name ? ` (${line.variant_name})` : "";
+  const sku = line.variant_sku ? ` [sku ${line.variant_sku}]` : "";
+  const group = line.menu_group_name ? ` · ${line.menu_group_name}` : "";
+  return `${line.product_name ?? "Item"}${variant}${sku}${group} ×${line.quantity} @ ${line.price_after_vat_16} = ${line.line_total_amount}`;
+}
+
+function formatSaleLinesParagraph(lineItems: SaleLine[]): string {
+  if (lineItems.length === 0) return "";
+  return lineItems.map(formatLineSegment).join("; ");
+}
+
+function finalizeSale(event: MutableSaleEvent): SaleEvent {
+  const { lineItems, ...sale } = event;
+  return {
+    ...sale,
+    lines: {
+      paragraph: formatSaleLinesParagraph(lineItems),
+      items: lineItems,
+    },
+  };
 }
 
 function asNonEmptyText(value: unknown): string | null {
@@ -351,7 +381,7 @@ export async function GET(request: NextRequest) {
       if (row.sku) variantByItemAndIdOrSku.set(variantLookupKey(row.item_id, row.sku), row);
     }
 
-    const eventMap = new Map<string, SaleEvent>();
+    const eventMap = new Map<string, MutableSaleEvent>();
 
     for (const row of salesRows) {
       const context = row.context ?? {};
@@ -421,15 +451,17 @@ export async function GET(request: NextRequest) {
           outlet_name: outlet?.name ?? null,
           sold_at: row.sold_at,
           total_amount_of_sale: round2(lineTotal),
-          lines: [line],
+          lineItems: [line],
         });
       } else {
-        existing.lines.push(line);
+        existing.lineItems.push(line);
         existing.total_amount_of_sale = round2(existing.total_amount_of_sale + line.line_total_amount);
       }
     }
 
-    const sales = Array.from(eventMap.values()).sort((a, b) => b.sold_at.localeCompare(a.sold_at));
+    const sales = Array.from(eventMap.values())
+      .map(finalizeSale)
+      .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 
     return NextResponse.json({
       since: effectiveSince.toISOString(),

@@ -422,6 +422,8 @@ public sealed class SupabaseClient
 
     public async Task<SupabaseResult> SyncPosCatalogSkuMapAsync(
         IReadOnlyList<PosCatalogSkuMapRow> rows,
+        bool syncProducts,
+        bool syncVariants,
         CancellationToken cancellationToken)
     {
         if (rows.Count == 0)
@@ -432,9 +434,9 @@ public sealed class SupabaseClient
         var payloadRows = rows.Select(row => new
         {
             item_sku = row.ItemSku,
-            item_name = row.ItemName,
-            variant_name = row.VariantName,
-            variant_sku = row.VariantSku
+            item_name = syncProducts ? row.ItemName : null,
+            variant_name = syncVariants ? row.VariantName : null,
+            variant_sku = syncVariants ? row.VariantSku : null
         }).ToArray();
 
         return await PostRpcAsync(
