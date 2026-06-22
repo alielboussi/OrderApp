@@ -17,6 +17,16 @@ alter table public.catalog_items
 create index if not exists idx_catalog_items_menu_group_id
   on public.catalog_items (menu_group_id);
 
+create table if not exists public.middleware_update_drafts (
+  id uuid primary key default gen_random_uuid(),
+  entity_type text not null,
+  entity_id text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (entity_type, entity_id)
+);
+
 alter table public.middleware_update_drafts
   drop constraint if exists middleware_update_drafts_entity_type_check;
 
@@ -24,12 +34,22 @@ alter table public.middleware_update_drafts
   add constraint middleware_update_drafts_entity_type_check
   check (entity_type in ('item', 'variant', 'menu_group'));
 
-alter table public.outlet_catalog_sync_events
-  drop constraint if exists outlet_catalog_sync_events_entity_type_check;
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.tables
+    where table_schema = 'public'
+      and table_name = 'outlet_catalog_sync_events'
+  ) then
+    alter table public.outlet_catalog_sync_events
+      drop constraint if exists outlet_catalog_sync_events_entity_type_check;
 
-alter table public.outlet_catalog_sync_events
-  add constraint outlet_catalog_sync_events_entity_type_check
-  check (entity_type in ('item', 'variant', 'delete', 'menu_group', 'sync_pos_catalog'));
+    alter table public.outlet_catalog_sync_events
+      add constraint outlet_catalog_sync_events_entity_type_check
+      check (entity_type in ('item', 'variant', 'delete', 'menu_group', 'sync_pos_catalog'));
+  end if;
+end $$;
 
 create or replace function public.sync_pos_menu_groups_from_middleware(p_rows jsonb)
 returns jsonb
