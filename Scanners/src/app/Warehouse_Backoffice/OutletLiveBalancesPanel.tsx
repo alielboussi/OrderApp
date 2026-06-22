@@ -2,9 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import { fetchSellingOutlets, type SellingOutlet } from "@/lib/sellingOutlets";
+import type { SellingOutlet } from "@/lib/sellingOutlets";
 import { isStoreroomLabel } from "@/lib/outletScope";
 import styles from "./enterprise.module.css";
+
+/** Quick Corner — excluded from live-balances picker (view other outlets here). */
+const LIVE_BALANCES_EXCLUDED_OUTLET_ID = "a406fede-7aab-4473-8e9f-ff645267466f";
 
 type OutletBalanceRow = {
   outlet_id: string;
@@ -53,18 +56,39 @@ export default function OutletLiveBalancesPanel({ enabled = true }: OutletLiveBa
   useEffect(() => {
     if (!enabled) return;
     let active = true;
-    fetchSellingOutlets()
-      .then((rows) => {
+
+    const loadOutlets = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("outlets")
+          .select("id,name,code,active,default_sales_warehouse_id")
+          .order("name");
         if (!active) return;
+        if (error) throw error;
+
+        const rows = (data ?? [])
+          .filter((row) => row?.id && row.id !== LIVE_BALANCES_EXCLUDED_OUTLET_ID)
+          .filter((row) => row.active !== false)
+          .map(
+            (row): SellingOutlet => ({
+              id: row.id,
+              name: (row.name ?? "Outlet").trim(),
+              code: row.code ?? null,
+              default_sales_warehouse_id: row.default_sales_warehouse_id ?? null,
+            }),
+          );
+
         setOutlets(rows);
-      })
-      .catch(() => {
+      } catch {
         if (active) setOutlets([]);
-      });
+      }
+    };
+
+    loadOutlets();
     return () => {
       active = false;
     };
-  }, [enabled]);
+  }, [enabled, supabase]);
 
   useEffect(() => {
     if (!enabled) return;

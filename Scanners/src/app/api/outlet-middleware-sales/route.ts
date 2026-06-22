@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const API_FORMAT_VERSION = 2;
+
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 5000;
 const DEFAULT_DAYS = 7;
@@ -49,6 +54,8 @@ type SaleLine = {
   outlet_name: string | null;
   product_uuid: string;
   product_name: string | null;
+  group_uuid: string | null;
+  group_name: string | null;
   variant_uuid: string | null;
   variant_name: string | null;
   variant_sku: string | null;
@@ -151,7 +158,7 @@ function round2(value: number): number {
 function formatLineSegment(line: SaleLine): string {
   const variant = line.variant_name ? ` (${line.variant_name})` : "";
   const sku = line.variant_sku ? ` [sku ${line.variant_sku}]` : "";
-  const group = line.menu_group_name ? ` · ${line.menu_group_name}` : "";
+  const group = line.group_name ? ` · ${line.group_name}` : "";
   return `${line.product_name ?? "Item"}${variant}${sku}${group} ×${line.quantity} @ ${line.price_after_vat_16} = ${line.line_total_amount}`;
 }
 
@@ -312,6 +319,7 @@ export async function GET(request: NextRequest) {
 
     if (salesRows.length === 0) {
       return NextResponse.json({
+        api_format_version: API_FORMAT_VERSION,
         since: effectiveSince.toISOString(),
         until: effectiveUntil.toISOString(),
         limit,
@@ -404,17 +412,21 @@ export async function GET(request: NextRequest) {
       const lineTotal = unitAfterVat * quantity;
 
       const menuGroup = item?.menu_group_id ? menuGroupById.get(item.menu_group_id) : undefined;
+      const groupUuid = menuGroup?.id ?? item?.menu_group_id ?? null;
+      const groupName = menuGroup?.name ?? null;
 
       const line: SaleLine = {
         outlet_uuid: row.outlet_id,
         outlet_name: outlet?.name ?? null,
         product_uuid: row.item_id,
         product_name: item?.name ?? null,
+        group_uuid: groupUuid,
+        group_name: groupName,
         variant_uuid: matchedVariant?.id ?? null,
         variant_name: matchedVariant?.name ?? null,
         variant_sku: matchedVariant?.sku ?? null,
-        menu_group_uuid: menuGroup?.id ?? item?.menu_group_id ?? null,
-        menu_group_name: menuGroup?.name ?? null,
+        menu_group_uuid: groupUuid,
+        menu_group_name: groupName,
         pos_menu_group_id: menuGroup?.pos_menu_group_id ?? null,
         quantity: round2(quantity),
         price_before_vat_16: round2(unitBeforeVat),
@@ -463,13 +475,21 @@ export async function GET(request: NextRequest) {
       .map(finalizeSale)
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 
-    return NextResponse.json({
-      since: effectiveSince.toISOString(),
-      until: effectiveUntil.toISOString(),
-      limit,
-      sales_count: sales.length,
-      sales,
-    });
+    return NextResponse.json(
+      {
+        api_format_version: API_FORMAT_VERSION,
+        since: effectiveSince.toISOString(),
+        until: effectiveUntil.toISOString(),
+        limit,
+        sales_count: sales.length,
+        sales,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      },
+    );
   } catch (error) {
     console.error("[outlet-middleware-sales] GET failed", error);
     return NextResponse.json({ error: "Unable to load middleware outlet sales" }, { status: 500 });
