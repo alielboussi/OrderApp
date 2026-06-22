@@ -161,7 +161,10 @@ public sealed class SyncRunner
 
             try
             {
-                if (string.Equals(evt.EntityType, "sync_pos_catalog", StringComparison.OrdinalIgnoreCase))
+                var isPosCatalogSync =
+                    string.Equals(evt.EntityType, "sync_pos_catalog", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(evt.Payload.Command, "sync_pos_catalog", StringComparison.OrdinalIgnoreCase);
+                if (isPosCatalogSync)
                 {
                     await TrySyncPosCatalogMapAsync(force: true, cancellationToken);
                 }

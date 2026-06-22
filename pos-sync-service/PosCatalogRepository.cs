@@ -342,4 +342,7 @@ public sealed class CatalogSyncPayload
 
     [JsonPropertyName("all_variant_skus")]
     public string[]? AllVariantSkus { get; init; }
+
+    [JsonPropertyName("command")]
+    public string? Command { get; init; }
 }

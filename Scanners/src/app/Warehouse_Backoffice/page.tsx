@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import { isPosMiddlewareOutlet } from "@/lib/outletScope";
+import { isStoreroomLabel } from "@/lib/outletScope";
 import OutletLiveBalancesPanel from "./OutletLiveBalancesPanel";
 import styles from "./enterprise.module.css";
 
@@ -62,6 +62,18 @@ function formatCountdown(targetIso: string | null, nowMs: number) {
   if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
   if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
+}
+
+function isHeartbeatMonitoredOutlet(outlet: OutletRow): boolean {
+  if (outlet.active === false) return false;
+
+  const label = `${outlet.name ?? ""} ${outlet.code ?? ""}`.toLowerCase();
+  if (isStoreroomLabel(label)) return false;
+
+  if (outlet.has_pos_middleware === true) return true;
+
+  const channel = (outlet.channel ?? "").trim().toLowerCase();
+  return channel === "point of sale" || channel === "pos";
 }
 
 export default function WarehouseBackofficeDashboard() {
@@ -144,7 +156,7 @@ export default function WarehouseBackofficeDashboard() {
 
   const merged = useMemo(() => {
     const hbByOutlet = new Map(rows.map((r) => [r.outlet_id, r]));
-    const outlets = allOutlets.filter(isPosMiddlewareOutlet);
+    const outlets = allOutlets.filter(isHeartbeatMonitoredOutlet);
     return outlets.map((outlet) => {
       const hb = hbByOutlet.get(outlet.id);
       const lastSeen = hb?.last_seen_at ?? null;

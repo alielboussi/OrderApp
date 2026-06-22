@@ -358,7 +358,14 @@ public sealed class SupabaseClient
 
         try
         {
-            await PostRpcAsync("/rest/v1/rpc/upsert_outlet_heartbeat", payload, cancellationToken);
+            var result = await PostRpcAsync("/rest/v1/rpc/upsert_outlet_heartbeat", new { payload }, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogWarning(
+                    "Heartbeat RPC failed for outlet {OutletId}: {Error}",
+                    _outlet.Id,
+                    result.ErrorMessage ?? "Unknown error");
+            }
         }
         catch (Exception ex)
         {
@@ -499,7 +506,7 @@ public sealed class SupabaseClient
     private HttpClient CreateClient()
     {
         var client = _clientFactory.CreateClient("Supabase");
-        client.BaseAddress = new Uri(_options.Url);
+        client.BaseAddress = new Uri(NormalizeSupabaseBaseUrl(_options.Url));
         var key = ResolveAuthKey();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
         if (!client.DefaultRequestHeaders.Contains("apikey"))
@@ -508,6 +515,24 @@ public sealed class SupabaseClient
         }
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return client;
+    }
+
+    private static string NormalizeSupabaseBaseUrl(string? url)
+    {
+        var value = (url ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "https://localhost/";
+        }
+
+        value = value.TrimEnd('/');
+        const string restV1 = "/rest/v1";
+        if (value.EndsWith(restV1, StringComparison.OrdinalIgnoreCase))
+        {
+            value = value[..^restV1.Length];
+        }
+
+        return value + "/";
     }
 
     private string ResolveAuthKey()
