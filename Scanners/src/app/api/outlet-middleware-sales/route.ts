@@ -51,9 +51,24 @@ type SaleLine = {
   line_total_amount: number;
 };
 
+type PaymentMethod = {
+  method: string;
+  amount: number;
+};
+
+type OrderRow = {
+  source_event_id: string;
+  pos_sale_id: string | null;
+  raw_payload: Record<string, unknown> | null;
+};
+
 type SaleEvent = {
   sale_reference: string;
   source_event_id: string | null;
+  pos_bill_id: string | null;
+  pos_sale_id: string | null;
+  payment_type: string | null;
+  payment_methods: PaymentMethod[];
   outlet_uuid: string;
   outlet_name: string | null;
   sold_at: string;
@@ -121,6 +136,27 @@ function isMiddlewareContext(context: Record<string, unknown> | null): boolean {
   return false;
 }
 
+function extractPosBillId(sourceEventId: string | null, outletId: string): string | null {
+  if (!sourceEventId) return null;
+  const prefix = `${outletId}-`;
+  if (sourceEventId.startsWith(prefix)) return sourceEventId.slice(prefix.length);
+  return null;
+}
+
+function extractPaymentMethods(rawPayload: Record<string, unknown> | null): PaymentMethod[] {
+  if (!rawPayload || !Array.isArray(rawPayload.payments)) return [];
+
+  return rawPayload.payments
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const method = asNonEmptyText((entry as Record<string, unknown>).method);
+      if (!method) return null;
+      const amount = round2(toNumber((entry as Record<string, unknown>).amount));
+      return { method, amount };
+    })
+    .filter((entry): entry is PaymentMethod => entry !== null);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
@@ -179,19 +215,39 @@ export async function GET(request: NextRequest) {
 
     const outletIds = Array.from(new Set(salesRows.map((row) => row.outlet_id)));
     const itemIds = Array.from(new Set(salesRows.map((row) => row.item_id)));
+    const sourceEventIds = Array.from(
+      new Set(
+        salesRows
+          .map((row) => asNonEmptyText(row.context?.source_event_id))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
 
-    const [outletsRes, itemsRes, variantsRes] = await Promise.all([
+    const ordersPromise =
+      sourceEventIds.length > 0
+        ? supabase
+            .from("orders")
+            .select("source_event_id,pos_sale_id,raw_payload")
+            .in("source_event_id", sourceEventIds)
+        : Promise.resolve({ data: [], error: null });
+
+    const [outletsRes, itemsRes, variantsRes, ordersRes] = await Promise.all([
       supabase.from("outlets").select("id,name").in("id", outletIds),
       supabase.from("catalog_items").select("id,name").in("id", itemIds),
       supabase.from("catalog_variants").select("id,item_id,name,sku").in("item_id", itemIds),
+      ordersPromise,
     ]);
 
     if (outletsRes.error) throw outletsRes.error;
     if (itemsRes.error) throw itemsRes.error;
     if (variantsRes.error) throw variantsRes.error;
+    if (ordersRes.error) throw ordersRes.error;
 
     const outletById = new Map((outletsRes.data ?? []).map((row) => [row.id, row] as const));
     const itemById = new Map((itemsRes.data ?? []).map((row) => [row.id, row] as const));
+    const orderBySourceEventId = new Map(
+      ((ordersRes.data ?? []) as OrderRow[]).map((row) => [row.source_event_id, row] as const)
+    );
     const variantByItemAndIdOrSku = new Map<string, VariantRow>();
 
     for (const row of (variantsRes.data ?? []) as VariantRow[]) {
@@ -237,9 +293,20 @@ export async function GET(request: NextRequest) {
 
       const existing = eventMap.get(saleReference);
       if (!existing) {
+        const order = sourceEventId ? orderBySourceEventId.get(sourceEventId) : undefined;
+        const paymentMethods = extractPaymentMethods(order?.raw_payload ?? null);
+        const posSaleId =
+          asNonEmptyText(order?.pos_sale_id) ??
+          asNonEmptyText(context.sale_id) ??
+          asNonEmptyText(order?.raw_payload?.sale_id as string | undefined);
+
         eventMap.set(saleReference, {
           sale_reference: saleReference,
           source_event_id: sourceEventId,
+          pos_bill_id: extractPosBillId(sourceEventId, row.outlet_id),
+          pos_sale_id: posSaleId,
+          payment_type: paymentMethods[0]?.method ?? null,
+          payment_methods: paymentMethods,
           outlet_uuid: row.outlet_id,
           outlet_name: outlet?.name ?? null,
           sold_at: row.sold_at,
