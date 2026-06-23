@@ -113,11 +113,24 @@ export default function CatalogMenuPage() {
     setError(null);
     try {
       const [itemsRes, variantsRes] = await Promise.all([fetch("/api/catalog/items"), fetch("/api/catalog/variants")]);
-      if (!itemsRes.ok) throw new Error("Unable to load products");
-      if (!variantsRes.ok) throw new Error("Unable to load variants");
+      const itemsJson = await itemsRes.json().catch(() => ({}));
+      const variantsJson = await variantsRes.json().catch(() => ({}));
+      if (!itemsRes.ok) {
+        throw new Error(
+          typeof itemsJson.error === "string" ? itemsJson.error : "Unable to load products",
+        );
+      }
+      if (!variantsRes.ok) {
+        const details =
+          variantsJson.details && typeof variantsJson.details === "object"
+            ? (variantsJson.details as { message?: string }).message
+            : null;
+        throw new Error(
+          details ||
+            (typeof variantsJson.error === "string" ? variantsJson.error : "Unable to load variants"),
+        );
+      }
 
-      const itemsJson = await itemsRes.json();
-      const variantsJson = await variantsRes.json();
       setItems(Array.isArray(itemsJson.items) ? itemsJson.items : []);
       setVariants(Array.isArray(variantsJson.variants) ? variantsJson.variants : []);
     } catch (err) {
@@ -220,14 +233,8 @@ export default function CatalogMenuPage() {
           </p>
         </div>
         <div className={styles.headerActions}>
-          <button type="button" className={eb.btnAdd} onClick={() => router.push("/Warehouse_Backoffice/catalog/product")}>
-            Add Products
-          </button>
           <button type="button" className={eb.btnSecondary} onClick={load} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
-          </button>
-          <button type="button" className={eb.btnSecondary} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu-groups")}>
-            Menu groups
           </button>
         </div>
         <div className={eb.summaryGrid} style={{ marginTop: 16 }}>

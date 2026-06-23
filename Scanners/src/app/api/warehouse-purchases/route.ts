@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase-server';
+import { isMissingRelationError } from '@/lib/supabase-errors';
 import type { PurchaseItem, WarehousePurchase } from '@/types/purchases';
 
 const MAX_LIMIT = 200;
@@ -135,12 +136,18 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = (await query) as { data: PurchaseRecordRaw[] | null; error: Error | null };
     if (error) {
+      if (isMissingRelationError(error, 'warehouse_purchase_receipts', 'warehouse_purchase_items', 'suppliers')) {
+        return NextResponse.json({
+          purchases: [],
+          warning: 'Purchase tables missing — run supabase/scripts/recreate_warehouse_purchases.sql',
+        });
+      }
       throw error;
     }
 
     const operatorMap = new Map<string, string>();
-    const { data: operators } = await supabase.rpc('console_operator_directory');
-    if (Array.isArray(operators)) {
+    const { data: operators, error: operatorError } = await supabase.rpc('console_operator_directory');
+    if (!operatorError && Array.isArray(operators)) {
       operators.forEach((op) => {
         const id = (op as { auth_user_id?: string; id?: string }).auth_user_id ?? (op as { id?: string }).id;
         const name = (op as { display_name?: string; name?: string }).display_name ?? (op as { name?: string }).name;
@@ -160,12 +167,13 @@ export async function GET(req: NextRequest) {
         .from('users')
         .select('id,email,raw_user_meta_data')
         .in('id', recordedByIds);
-      if (userError) throw userError;
-      (userRows ?? []).forEach((row) => {
-        const meta = row?.raw_user_meta_data as { display_name?: string } | null;
-        const display = meta?.display_name?.trim() || row?.email?.trim();
-        if (row?.id && display) operatorFallbackMap.set(row.id, display);
-      });
+      if (!userError) {
+        (userRows ?? []).forEach((row) => {
+          const meta = row?.raw_user_meta_data as { display_name?: string } | null;
+          const display = meta?.display_name?.trim() || row?.email?.trim();
+          if (row?.id && display) operatorFallbackMap.set(row.id, display);
+        });
+      }
     }
 
     const warehouseIds = new Set<string>();
@@ -179,14 +187,13 @@ export async function GET(req: NextRequest) {
         .from('warehouses')
         .select('id,name')
         .in('id', Array.from(warehouseIds));
-      if (warehouseError) {
-        throw warehouseError;
+      if (!warehouseError) {
+        warehouseRows?.forEach((row) => {
+          if (row?.id) {
+            warehouseMap.set(row.id, row.name ?? null);
+          }
+        });
       }
-      warehouseRows?.forEach((row) => {
-        if (row?.id) {
-          warehouseMap.set(row.id, row.name ?? null);
-        }
-      });
     }
 
     const variantKeys = new Set<string>();

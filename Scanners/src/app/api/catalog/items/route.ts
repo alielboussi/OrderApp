@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { fetchMenuGroupSyncFields } from "@/lib/catalogMenuGroup";
+import { isMissingRelationError } from "@/lib/supabase-errors";
 
 const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
 const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle", "Tin Can", "Jar", "plastic"] as const;
@@ -56,10 +57,21 @@ type RecipeRow = {
 
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const BASE_FIELDS =
-  "id,name,sku,item_kind,has_variations,active,consumption_unit,consumption_qty_per_base,stocktake_uom,storage_unit,storage_weight,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,cost,locked_from_warehouse_id,outlet_order_visible,image_url,default_warehouse_id,active";
+const CORE_FIELDS =
+  "id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,cost,outlet_order_visible,image_url";
 
 const OPTIONAL_COLUMNS = [
+  "consumption_unit",
+  "consumption_qty_per_base",
+  "stocktake_uom",
+  "storage_unit",
+  "storage_weight",
+  "purchase_unit_mass",
+  "purchase_unit_mass_uom",
+  "transfer_unit",
+  "transfer_quantity",
+  "locked_from_warehouse_id",
+  "default_warehouse_id",
   "supplier_sku",
   "selling_price",
   "has_recipe",
@@ -67,15 +79,13 @@ const OPTIONAL_COLUMNS = [
   "consumption_unit_mass_uom",
   "inner_pack_unit_mass",
   "inner_pack_unit_mass_uom",
-  "storage_unit",
-  "storage_weight",
   "qty_decimal_places",
   "menu_group_id",
 ] as const;
 
 function selectFields(optional: string[]) {
   const optionalPart = optional.length ? `,${optional.join(",")}` : "";
-  return `${BASE_FIELDS}${optionalPart}`;
+  return `${CORE_FIELDS}${optionalPart}`;
 }
 
 function isUuid(value: unknown): value is string {
@@ -161,7 +171,7 @@ async function syncBaseStorageHomes(
       .delete()
       .eq("item_id", itemId)
       .eq("normalized_variant_key", normalizedVariantKey);
-    if (error) {
+    if (error && !isMissingRelationError(error, "item_storage_homes")) {
       throw new Error(error.message || "Failed to clear storage homes");
     }
     return;
@@ -173,6 +183,7 @@ async function syncBaseStorageHomes(
     .eq("item_id", itemId)
     .eq("normalized_variant_key", normalizedVariantKey);
   if (existingError) {
+    if (isMissingRelationError(existingError, "item_storage_homes")) return;
     throw new Error(existingError.message || "Failed to load storage homes");
   }
 
@@ -182,14 +193,14 @@ async function syncBaseStorageHomes(
       .filter((id): id is string => Boolean(id))
   );
   const toDelete = Array.from(existingIds).filter((id) => !uniqueIds.includes(id));
-  if (toDelete.length) {
+    if (toDelete.length) {
     const { error } = await supabase
       .from("item_storage_homes")
       .delete()
       .eq("item_id", itemId)
       .eq("normalized_variant_key", normalizedVariantKey)
       .in("storage_warehouse_id", toDelete);
-    if (error) {
+    if (error && !isMissingRelationError(error, "item_storage_homes")) {
       throw new Error(error.message || "Failed to remove storage homes");
     }
   }
@@ -206,7 +217,7 @@ async function syncBaseStorageHomes(
         })),
         { onConflict: "item_id,normalized_variant_key,storage_warehouse_id" }
       );
-    if (error) {
+    if (error && !isMissingRelationError(error, "item_storage_homes")) {
       throw new Error(error.message || "Failed to save storage homes");
     }
   }
@@ -257,9 +268,11 @@ export async function GET(request: Request) {
     let data: unknown;
     let error: SupabaseError = null;
     let single = false;
+    let useMinimalCore = false;
 
     while (true) {
-      const baseSelect = supabase.from("catalog_items").select(selectFields(optional));
+      const fieldList = useMinimalCore ? "id,name,sku,item_kind,active" : selectFields(optional);
+      const baseSelect = supabase.from("catalog_items").select(fieldList);
       if (id) {
         const result = await baseSelect.eq("id", id).maybeSingle();
         data = result.data;
@@ -284,6 +297,10 @@ export async function GET(request: Request) {
         optional.pop();
         continue;
       }
+      if (error?.code === "42703" && !useMinimalCore) {
+        useMinimalCore = true;
+        continue;
+      }
       break;
     }
 
@@ -299,8 +316,27 @@ export async function GET(request: Request) {
         .select("item_id, normalized_variant_key, storage_warehouse_id")
         .eq("normalized_variant_key", "base")
         .in("item_id", itemIds);
-      if (storageErr) throw storageErr;
-      storageHomes = Array.isArray(storageRows) ? storageRows : [];
+      if (storageErr) {
+        if (storageErr.code === "42703") {
+          const fallback = await supabase
+            .from("item_storage_homes")
+            .select("item_id, variant_key, storage_warehouse_id")
+            .eq("variant_key", "base")
+            .in("item_id", itemIds);
+          if (fallback.error && !isMissingRelationError(fallback.error, "item_storage_homes")) {
+            throw fallback.error;
+          }
+          storageHomes = (Array.isArray(fallback.data) ? fallback.data : []).map((row) => ({
+            item_id: row.item_id,
+            normalized_variant_key: row.variant_key ?? "base",
+            storage_warehouse_id: row.storage_warehouse_id,
+          }));
+        } else if (!isMissingRelationError(storageErr, "item_storage_homes")) {
+          throw storageErr;
+        }
+      } else {
+        storageHomes = Array.isArray(storageRows) ? storageRows : [];
+      }
     }
 
     const storageHomeIdsByItem: Record<string, string[]> = {};

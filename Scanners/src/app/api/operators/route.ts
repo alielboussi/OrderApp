@@ -1,13 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase-server';
 
-const SUPERVISOR_ROLE_ID = 'eef421e0-ce06-4518-93c4-6bb6525f6742';
-
-type UserRoleRow = {
-  user_id: string | null;
-  display_name: string | null;
-};
-
 type OperatorRecord = {
   id: string;
   display_name: string;
@@ -24,41 +17,31 @@ function normalizeDisplayName(input: unknown): string | null {
   return trimmed.length ? trimmed : null;
 }
 
+function isSupervisorUser(user: { user_metadata?: Record<string, unknown> | null; app_metadata?: Record<string, unknown> | null }) {
+  const role = user.app_metadata?.role ?? user.user_metadata?.role;
+  if (typeof role === 'string' && role.trim().toLowerCase() === 'supervisor') {
+    return true;
+  }
+  const roles = user.app_metadata?.roles ?? user.user_metadata?.roles;
+  if (Array.isArray(roles)) {
+    return roles.some((entry) => typeof entry === 'string' && entry.trim().toLowerCase() === 'supervisor');
+  }
+  return false;
+}
+
 export async function GET() {
   try {
     const supabase = getServiceClient();
-    const { data: roleRows, error: roleError } = await supabase
-      .from('user_roles')
-      .select('user_id, display_name')
-      .eq('role_id', SUPERVISOR_ROLE_ID);
-
-    if (roleError) {
-      throw roleError;
+    const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (error) {
+      throw error;
     }
 
-    const userIds = Array.from(
-      new Set((roleRows ?? []).map((row: UserRoleRow) => row?.user_id).filter((value): value is string => Boolean(value)))
-    );
-
-    if (!userIds.length) {
-      return NextResponse.json({ operators: [] });
-    }
-
-    const operatorResults = await Promise.all(
-      userIds.map(async (userId) => {
-        const roleRecord = (roleRows ?? []).find((row) => row?.user_id === userId);
-        const { data, error } = await supabase.auth.admin.getUserById(userId);
-        if (error || !data?.user) {
-          console.warn('[operators api] Unable to load auth user', userId, error);
-          return null;
-        }
-        const user = data.user;
-        if (user.is_anonymous) {
-          return null;
-        }
-        const roleDisplayName = normalizeDisplayName(roleRecord?.display_name);
+    const operators = (data?.users ?? [])
+      .filter((user) => !user.is_anonymous && isSupervisorUser(user))
+      .map((user) => {
         const metaDisplayName = normalizeDisplayName(user.user_metadata?.display_name);
-        const primaryDisplayName = roleDisplayName ?? metaDisplayName ?? user.email ?? 'Operator';
+        const primaryDisplayName = metaDisplayName ?? user.email ?? 'Operator';
         const fallbackName = user.email ?? primaryDisplayName;
         const email = user.email ?? 'operator@afterten.local';
         return {
@@ -68,10 +51,8 @@ export async function GET() {
           email,
           auth_user_id: user.id,
         } satisfies OperatorRecord;
-      })
-    );
+      });
 
-    const operators = operatorResults.filter((entry): entry is OperatorRecord => Boolean(entry));
     operators.sort((a, b) => a.display_name.localeCompare(b.display_name, undefined, { sensitivity: 'base' }));
 
     return NextResponse.json({ operators });

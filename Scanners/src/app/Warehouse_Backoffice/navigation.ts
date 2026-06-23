@@ -25,7 +25,9 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     items: [
       { label: "Products", href: "/Warehouse_Backoffice/catalog/menu" },
       { label: "Bulk variant update", href: "/Warehouse_Backoffice/variant-bulk-update" },
-      { label: "Suppliers", href: "/Warehouse_Backoffice/suppliers" },
+      { label: "Add product", href: "/Warehouse_Backoffice/catalog/product" },
+      { label: "Menu groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
+      { label: "Variants", href: "/Warehouse_Backoffice/catalog/variants" },
     ],
     tone: "catalog",
   },

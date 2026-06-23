@@ -13,7 +13,6 @@ function buildSupabaseUrls() {
       hasProject: false,
       authUsersUrl: baseFallback,
       outletsTableUrl: baseFallback,
-      userRolesUrl: baseFallback,
     };
   }
 
@@ -35,14 +34,12 @@ function buildSupabaseUrls() {
       hasProject: true,
       authUsersUrl: `${projectBase}/auth/users`,
       outletsTableUrl: `${projectBase}/editor?schema=public&table=outlets`,
-      userRolesUrl: `${projectBase}/editor?schema=public&table=user_roles`,
     };
   } catch {
     return {
       hasProject: false,
       authUsersUrl: baseFallback,
       outletsTableUrl: baseFallback,
-      userRolesUrl: baseFallback,
     };
   }
 }
@@ -66,8 +63,7 @@ export default function OutletOrdersSetupPage() {
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Outlet Orders Setup</h1>
             <p className={styles.subtitle}>
-              Follow this sequence to create an outlet user, link the outlet, wire warehouses, and expose items for
-              outlet orders and stocktake.
+              Follow this sequence to create an outlet user, link the outlet, and expose catalog items for outlet orders.
             </p>
             {!supabaseLinks.hasProject && (
               <p className={styles.notice}>Set NEXT_PUBLIC_SUPABASE_URL to enable direct Supabase dashboard links.</p>
@@ -87,7 +83,7 @@ export default function OutletOrdersSetupPage() {
           <div className={styles.sequenceHeader}>
             <h2 className={styles.sequenceTitle}>New Outlet Setup Sequence</h2>
             <p className={styles.sequenceSubtitle}>
-              Flow: add Supabase auth user, link user to outlet, assign roles, map warehouses, then map items.
+              Flow: add Supabase auth user, link user to outlet, then expose catalog items for outlet orders.
             </p>
           </div>
           <ol className={styles.sequenceSteps}>
@@ -114,35 +110,17 @@ export default function OutletOrdersSetupPage() {
             <li className={styles.sequenceStep}>
               <span className={styles.sequenceIndex}>3</span>
               <div className={styles.sequenceContent}>
-                <div className={styles.sequenceLabel}>Assign outlet roles</div>
-                <div className={styles.sequenceHint}>Add user_roles rows for the outlet (ex: Outlet, Stocktake).</div>
-                <button type="button" className={styles.sequenceButton} onClick={() => openExternal(supabaseLinks.userRolesUrl)}>
-                  Open User Roles Table
+                <div className={styles.sequenceLabel}>Optional: mark supervisor operators</div>
+                <div className={styles.sequenceHint}>
+                  Set user metadata role to <code>supervisor</code> on Auth users who should appear as operators.
+                </div>
+                <button type="button" className={styles.sequenceButton} onClick={() => openExternal(supabaseLinks.authUsersUrl)}>
+                  Open Auth Users
                 </button>
               </div>
             </li>
             <li className={styles.sequenceStep}>
               <span className={styles.sequenceIndex}>4</span>
-              <div className={styles.sequenceContent}>
-                <div className={styles.sequenceLabel}>Outlet automation defaults</div>
-                <div className={styles.sequenceHint}>Set the outlet sales/receiving warehouse mapping and deductions.</div>
-                <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/outlet-setup")}>
-                  Open Outlet Automation
-                </button>
-              </div>
-            </li>
-            <li className={styles.sequenceStep}>
-              <span className={styles.sequenceIndex}>5</span>
-              <div className={styles.sequenceContent}>
-                <div className={styles.sequenceLabel}>Map items to outlet warehouse</div>
-                <div className={styles.sequenceHint}>Route items/ingredients/raws to the outlet warehouse for orders and stocktake.</div>
-                <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/outlet-setup")}>
-                  Open Item to Warehouse Assignments
-                </button>
-              </div>
-            </li>
-            <li className={styles.sequenceStep}>
-              <span className={styles.sequenceIndex}>6</span>
               <div className={styles.sequenceContent}>
                 <div className={styles.sequenceLabel}>Enable item visibility for outlet orders</div>
                 <div className={styles.sequenceHint}>Ensure items/variants are marked Show in outlet orders.</div>
@@ -152,18 +130,13 @@ export default function OutletOrdersSetupPage() {
               </div>
             </li>
             <li className={styles.sequenceStep}>
-              <span className={styles.sequenceIndex}>7</span>
+              <span className={styles.sequenceIndex}>5</span>
               <div className={styles.sequenceContent}>
-                <div className={styles.sequenceLabel}>Verify orders and stocktake</div>
-                <div className={styles.sequenceHint}>Confirm items appear and stock periods are available.</div>
-                <div className={styles.sequenceActions}>
-                  <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/outlet-orders")}>
-                    Open Outlet Orders
-                  </button>
-                  <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/stock-reports")}>
-                    Open Stock Reports
-                  </button>
-                </div>
+                <div className={styles.sequenceLabel}>Verify outlet orders</div>
+                <div className={styles.sequenceHint}>Confirm items appear for the outlet ordering app.</div>
+                <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/outlet-orders")}>
+                  Open Outlet Orders
+                </button>
               </div>
             </li>
           </ol>

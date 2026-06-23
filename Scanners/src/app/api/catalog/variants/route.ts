@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { fetchMenuGroupSyncFieldsForItem } from "@/lib/catalogMenuGroup";
+import { isMissingRelationError } from "@/lib/supabase-errors";
 
 // Rebuilt to clear parser cache.
 
@@ -124,27 +125,31 @@ const normalizeVariantKey = (value?: string | null) => {
   return normalized && normalized.length ? normalized : "base";
 };
 
-const VARIANT_BASE_FIELDS =
-  "id,item_id,name,item_kind,consumption_uom,purchase_pack_unit,units_per_purchase_pack,transfer_unit,transfer_quantity,cost,outlet_order_visible,active";
+const VARIANT_CORE_FIELDS =
+  "id,item_id,name,item_kind,consumption_uom,purchase_pack_unit,units_per_purchase_pack,cost,active";
 
 const VARIANT_OPTIONAL_FIELDS = [
   "sku",
   "supplier_sku",
   "stocktake_uom",
+  "transfer_unit",
+  "transfer_quantity",
   "purchase_unit_mass",
   "purchase_unit_mass_uom",
   "inner_pack_unit_mass",
   "inner_pack_unit_mass_uom",
   "qty_decimal_places",
   "selling_price",
-  "locked_from_warehouse_id",
+  "outlet_order_visible",
   "image_url",
+  "locked_from_warehouse_id",
   "default_warehouse_id",
 ] as const;
 
-function selectVariantFields(optional: readonly string[]) {
+function selectVariantFields(optional: readonly string[], minimalCore = false) {
+  if (minimalCore) return "id,item_id,name,sku,item_kind,active";
   const optionalPart = optional.length ? `,${optional.join(",")}` : "";
-  return `${VARIANT_BASE_FIELDS}${optionalPart}`;
+  return `${VARIANT_CORE_FIELDS}${optionalPart}`;
 }
 
 function normalizeVariantRow(row: Partial<CatalogVariantRow>) {
@@ -343,6 +348,7 @@ export async function GET(request: Request) {
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
     let itemIds: string[] = [];
+
     if (itemId) {
       let itemRow: { id?: string; active?: boolean | null } | null = null;
       let itemError: SupabaseError = null;
@@ -360,32 +366,19 @@ export async function GET(request: Request) {
         return NextResponse.json({ variants: [] });
       }
       itemIds = [itemId];
-    } else {
-      let itemRows: { id?: string }[] | null = null;
-      let itemsError: SupabaseError = null;
-      const primary = await supabase.from("catalog_items").select("id").eq("active", true);
-      itemRows = (primary.data as typeof itemRows) ?? null;
-      itemsError = primary.error;
-      if (itemsError?.code === "42703") {
-        const fallback = await supabase.from("catalog_items").select("id");
-        itemRows = (fallback.data as typeof itemRows) ?? null;
-        itemsError = fallback.error;
-      }
-      if (itemsError) throw itemsError;
-      const rows = (itemRows ?? []) as Array<{ id: string | null | undefined }>;
-      itemIds = rows.map((row) => row.id).filter(Boolean) as string[];
     }
 
-    if (itemIds.length === 0 && !id) {
-      return NextResponse.json({ variants: [] });
+    if (!itemId && !id) {
+      return NextResponse.json({ variants: await loadAllVariants(supabase, search) });
     }
 
     const optional = [...VARIANT_OPTIONAL_FIELDS];
     let variantRows: Partial<CatalogVariantRow>[] | null = null;
     let variantError: SupabaseError = null;
+    let useMinimalCore = false;
 
     while (true) {
-      let variantQuery = supabase.from("catalog_variants").select(selectVariantFields(optional));
+      let variantQuery = supabase.from("catalog_variants").select(selectVariantFields(optional, useMinimalCore));
       if (itemIds.length) variantQuery = variantQuery.in("item_id", itemIds);
       if (id) variantQuery = variantQuery.eq("id", id);
 
@@ -400,97 +393,174 @@ export async function GET(request: Request) {
         optional.pop();
         continue;
       }
+      if (variantError?.code === "42703" && !useMinimalCore) {
+        useMinimalCore = true;
+        continue;
+      }
       break;
     }
 
-    if (variantError) throw variantError;
-
-    const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
-
-    const variants = (variantRows ?? [])
-      .map((row) => normalizeVariantRow(row))
-      .filter((variant) => normalizeVariantKey(variant.id) !== "base")
-      .map((variant) => ({
-        ...variant,
-        has_recipe: false,
-      }));
-
-    const storageHomeIdsByKey: Record<string, string[]> = {};
-    if (itemIds.length) {
-      let storageRows: {
-        item_id?: string;
-        normalized_variant_key?: string | null;
-        variant_key?: string | null;
-        storage_warehouse_id?: string | null;
-      }[] = [];
-      let storageErr: SupabaseError = null;
-
-      const primary = await supabase
-        .from("item_storage_homes")
-        .select("item_id, normalized_variant_key, storage_warehouse_id")
-        .in("item_id", itemIds);
-      storageRows = (primary.data as typeof storageRows) ?? [];
-      storageErr = primary.error;
-
-      if (storageErr?.code === "42703") {
-        const fallback = await supabase
-          .from("item_storage_homes")
-          .select("item_id, variant_key, storage_warehouse_id")
-          .in("item_id", itemIds);
-        storageRows = (fallback.data as typeof storageRows) ?? [];
-        storageErr = fallback.error;
+    if (variantError) {
+      if (isMissingRelationError(variantError, "catalog_variants")) {
+        return NextResponse.json({ variants: [] });
       }
-
-      if (storageErr?.code === "42P01") {
-        storageRows = [];
-        storageErr = null;
-      }
-
-      if (storageErr) throw storageErr;
-      storageRows.forEach((row) => {
-        const rawKey = row?.normalized_variant_key ?? row?.variant_key ?? null;
-        const normalizedKey = normalizeVariantKey(rawKey ?? undefined);
-        if (!row?.item_id || !normalizedKey || !row.storage_warehouse_id) return;
-        const key = `${row.item_id}::${normalizedKey}`;
-        const list = storageHomeIdsByKey[key] ?? [];
-        if (!list.includes(row.storage_warehouse_id)) {
-          list.push(row.storage_warehouse_id);
-        }
-        storageHomeIdsByKey[key] = list;
-      });
+      throw variantError;
     }
 
-    const variantsWithStorage = variants.map((variant) => {
-      const normalizedKey = normalizeVariant(variant.id);
-      const storageKey = `${variant.item_id}::${normalizedKey}`;
-      const storageHomeIds = storageHomeIdsByKey[storageKey] ?? [];
-      const defaultWarehouseId = variant.default_warehouse_id ?? null;
-      const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, storageHomeIds);
-      const storageHomeId = resolvedStorageHomeIds[0] ?? null;
-      return { ...variant, storage_home_id: storageHomeId, storage_home_ids: resolvedStorageHomeIds };
-    });
+    const enriched = await enrichVariants(supabase, variantRows ?? [], itemIds, search);
 
     if (id) {
-      const found = variantsWithStorage.find((variant) => variant.id === id && (!itemId || variant.item_id === itemId));
+      const found = enriched.find((variant) => variant.id === id);
       if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ variant: found });
     }
 
-    const filtered = search
-      ? variantsWithStorage.filter((variant) => {
-          const name = variant.name?.toLowerCase?.() ?? "";
-          const sku = variant.sku?.toLowerCase?.() ?? "";
-          const supplierSku = (variant as { supplier_sku?: string | null }).supplier_sku?.toLowerCase?.() ?? "";
-          return name.includes(search) || sku.includes(search) || supplierSku.includes(search);
-        })
-      : variantsWithStorage;
-
-    return NextResponse.json({ variants: filtered });
+    return NextResponse.json({ variants: enriched });
   } catch (error) {
     const details = toErrorDetails(error);
     console.error("[catalog/variants] GET failed", details);
     return NextResponse.json({ error: "Unable to load variants", details }, { status: 500 });
   }
+}
+
+async function loadAllVariants(
+  supabase: ReturnType<typeof getServiceClient>,
+  search: string,
+): Promise<ReturnType<typeof normalizeVariantRow>[]> {
+  const optional = [...VARIANT_OPTIONAL_FIELDS];
+  let variantRows: Partial<CatalogVariantRow>[] | null = null;
+  let variantError: SupabaseError = null;
+  let useMinimalCore = false;
+  let useActiveFilter = true;
+
+  while (true) {
+    let variantQuery = supabase.from("catalog_variants").select(selectVariantFields(optional, useMinimalCore));
+    if (useActiveFilter) {
+      variantQuery = variantQuery.eq("active", true);
+    }
+
+    const result = (await variantQuery) as {
+      data: Partial<CatalogVariantRow>[] | null;
+      error: SupabaseError;
+    };
+    variantRows = result.data;
+    variantError = result.error;
+
+    if (variantError?.code === "42703" && optional.length) {
+      optional.pop();
+      continue;
+    }
+    if (variantError?.code === "42703" && useActiveFilter) {
+      useActiveFilter = false;
+      continue;
+    }
+    if (variantError?.code === "42703" && !useMinimalCore) {
+      useMinimalCore = true;
+      continue;
+    }
+    break;
+  }
+
+  if (variantError) {
+    if (isMissingRelationError(variantError, "catalog_variants")) {
+      return [];
+    }
+    throw variantError;
+  }
+
+  const itemIds = Array.from(
+    new Set(
+      (variantRows ?? [])
+        .map((row) => row.item_id)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  );
+
+  return enrichVariants(supabase, variantRows ?? [], itemIds, search);
+}
+
+async function enrichVariants(
+  supabase: ReturnType<typeof getServiceClient>,
+  variantRows: Partial<CatalogVariantRow>[],
+  itemIds: string[],
+  search: string,
+) {
+  const normalizeVariant = (key: string | null | undefined) => (key && key.trim() ? key.trim() : "base");
+
+  const variants = (variantRows ?? [])
+    .map((row) => normalizeVariantRow(row))
+    .filter((variant) => normalizeVariantKey(variant.id) !== "base")
+    .map((variant) => ({
+      ...variant,
+      has_recipe: false,
+    }));
+
+  const storageItemIds =
+    itemIds.length > 0
+      ? itemIds
+      : Array.from(new Set(variants.map((variant) => variant.item_id).filter(Boolean)));
+
+  const storageHomeIdsByKey: Record<string, string[]> = {};
+  if (storageItemIds.length) {
+    let storageRows: {
+      item_id?: string;
+      normalized_variant_key?: string | null;
+      variant_key?: string | null;
+      storage_warehouse_id?: string | null;
+    }[] = [];
+    let storageErr: SupabaseError = null;
+
+    const primary = await supabase
+      .from("item_storage_homes")
+      .select("item_id, normalized_variant_key, storage_warehouse_id")
+      .in("item_id", storageItemIds);
+    storageRows = (primary.data as typeof storageRows) ?? [];
+    storageErr = primary.error;
+
+    if (storageErr?.code === "42703") {
+      const fallback = await supabase
+        .from("item_storage_homes")
+        .select("item_id, variant_key, storage_warehouse_id")
+        .in("item_id", storageItemIds);
+      storageRows = (fallback.data as typeof storageRows) ?? [];
+      storageErr = fallback.error;
+    }
+
+    if (storageErr && !isMissingRelationError(storageErr, "item_storage_homes")) {
+      throw storageErr;
+    }
+
+    storageRows.forEach((row) => {
+      const rawKey = row?.normalized_variant_key ?? row?.variant_key ?? null;
+      const normalizedKey = normalizeVariantKey(rawKey ?? undefined);
+      if (!row?.item_id || !normalizedKey || !row.storage_warehouse_id) return;
+      const key = `${row.item_id}::${normalizedKey}`;
+      const list = storageHomeIdsByKey[key] ?? [];
+      if (!list.includes(row.storage_warehouse_id)) {
+        list.push(row.storage_warehouse_id);
+      }
+      storageHomeIdsByKey[key] = list;
+    });
+  }
+
+  const variantsWithStorage = variants.map((variant) => {
+    const normalizedKey = normalizeVariant(variant.id);
+    const storageKey = `${variant.item_id}::${normalizedKey}`;
+    const storageHomeIds = storageHomeIdsByKey[storageKey] ?? [];
+    const defaultWarehouseId = variant.default_warehouse_id ?? null;
+    const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, storageHomeIds);
+    const storageHomeId = resolvedStorageHomeIds[0] ?? null;
+    return { ...variant, storage_home_id: storageHomeId, storage_home_ids: resolvedStorageHomeIds };
+  });
+
+  if (!search) return variantsWithStorage;
+
+  return variantsWithStorage.filter((variant) => {
+    const name = variant.name?.toLowerCase?.() ?? "";
+    const sku = variant.sku?.toLowerCase?.() ?? "";
+    const supplierSku = variant.supplier_sku?.toLowerCase?.() ?? "";
+    return name.includes(search) || sku.includes(search) || supplierSku.includes(search);
+  });
 }
 
 export async function POST(request: Request) {

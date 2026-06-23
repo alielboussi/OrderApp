@@ -1,25 +1,32 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import {
-  type CatalogSyncEventRow,
-  type HeartbeatRow,
-  type OutletRow,
-  formatStamp,
-  isHeartbeatMonitoredOutlet,
-  isPosCatalogSyncEvent,
-  MIDDLEWARE_POLL_MS,
-  OFFLINE_MS,
-} from "./middlewareMonitorShared";
 import styles from "./enterprise.module.css";
+import { formatStamp, MIDDLEWARE_POLL_MS, OFFLINE_MS } from "./middlewareMonitorShared";
+
+type MiddlewareOutletRow = {
+  outlet: {
+    id: string;
+    name: string;
+    code?: string | null;
+  };
+  last_seen_at: string | null;
+  last_catalog_sync_at: string | null;
+  host_name: string | null;
+  middleware_version: string | null;
+  offline: boolean;
+};
+
+type MiddlewareStatusResponse = {
+  online_count: number;
+  offline_count: number;
+  outlets: MiddlewareOutletRow[];
+};
 
 export default function MiddlewareStatusPanel() {
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
-  const [rows, setRows] = useState<HeartbeatRow[]>([]);
-  const [allOutlets, setAllOutlets] = useState<OutletRow[]>([]);
+  const [merged, setMerged] = useState<MiddlewareOutletRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastCatalogSyncByOutlet, setLastCatalogSyncByOutlet] = useState<Record<string, string>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -27,44 +34,16 @@ export default function MiddlewareStatusPanel() {
     const load = async () => {
       setLoading(true);
       try {
-        const [hbRes, outRes, catalogSyncRes] = await Promise.all([
-          supabase
-            .from("outlet_pos_heartbeats")
-            .select("outlet_id,last_seen_at,middleware_version,host_name,outlets(id,name,code)")
-            .order("last_seen_at", { ascending: false }),
-          supabase.from("outlets").select("id,name,code,active,has_pos_middleware,channel").order("name"),
-          supabase
-            .from("outlet_catalog_sync_events")
-            .select("outlet_id,delivered_at,entity_type,payload")
-            .eq("status", "delivered")
-            .not("delivered_at", "is", null)
-            .order("delivered_at", { ascending: false })
-            .limit(500),
-        ]);
-
+        const res = await fetch("/api/middleware-status", { cache: "no-store" });
+        const json = (await res.json()) as MiddlewareStatusResponse & { error?: string };
+        if (!res.ok) throw new Error(json.error || "Unable to load middleware status");
         if (!active) return;
-        if (hbRes.error) throw hbRes.error;
-        if (outRes.error) throw outRes.error;
-
-        setRows((hbRes.data as HeartbeatRow[]) ?? []);
-        setAllOutlets((outRes.data as OutletRow[]) ?? []);
-        if (catalogSyncRes.error) {
-          setLastCatalogSyncByOutlet({});
-        } else {
-          const syncMap: Record<string, string> = {};
-          for (const row of (catalogSyncRes.data as CatalogSyncEventRow[]) ?? []) {
-            if (!isPosCatalogSyncEvent(row) || !row.delivered_at) continue;
-            if (!syncMap[row.outlet_id]) {
-              syncMap[row.outlet_id] = row.delivered_at;
-            }
-          }
-          setLastCatalogSyncByOutlet(syncMap);
-        }
-      } catch {
+        setMerged(json.outlets ?? []);
+        setLoadError(null);
+      } catch (err) {
         if (active) {
-          setRows([]);
-          setAllOutlets([]);
-          setLastCatalogSyncByOutlet({});
+          setMerged([]);
+          setLoadError(err instanceof Error ? err.message : "Unable to load middleware status");
         }
       } finally {
         if (active) setLoading(false);
@@ -77,24 +56,7 @@ export default function MiddlewareStatusPanel() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [supabase]);
-
-  const merged = useMemo(() => {
-    const hbByOutlet = new Map(rows.map((r) => [r.outlet_id, r]));
-    const outlets = allOutlets.filter(isHeartbeatMonitoredOutlet);
-    return outlets.map((outlet) => {
-      const hb = hbByOutlet.get(outlet.id);
-      const lastSeen = hb?.last_seen_at ?? null;
-      const offline = !lastSeen || Date.now() - new Date(lastSeen).getTime() > OFFLINE_MS;
-      return {
-        outlet,
-        hb,
-        lastSeen,
-        offline,
-        lastCatalogSyncAt: lastCatalogSyncByOutlet[outlet.id] ?? null,
-      };
-    });
-  }, [rows, allOutlets, lastCatalogSyncByOutlet]);
+  }, []);
 
   const offlineCount = merged.filter((m) => m.offline).length;
   const onlineCount = merged.length - offlineCount;
@@ -139,8 +101,18 @@ export default function MiddlewareStatusPanel() {
             Outlet middleware status
           </h3>
         </div>
-        {loading && merged.length === 0 ? (
+        {loadError ? (
+          <p className={styles.pageCardBody} style={{ color: "#b42318" }}>
+            {loadError}
+          </p>
+        ) : loading && merged.length === 0 ? (
           <p className={styles.pageCardBody}>Loading middleware status…</p>
+        ) : merged.length === 0 ? (
+          <p className={styles.pageCardBody}>
+            No middleware outlets found. Run <code>recreate_warehouses_core.sql</code> and{" "}
+            <code>link_outlets_to_warehouses.sql</code> in Supabase, then confirm outlets have{" "}
+            <strong>has_pos_middleware = true</strong> or an <strong>outlet_warehouses</strong> link.
+          </p>
         ) : (
           <div className={styles.tableWrap}>
             <table className={styles.dataTable}>
@@ -155,7 +127,7 @@ export default function MiddlewareStatusPanel() {
                 </tr>
               </thead>
               <tbody>
-                {merged.map(({ outlet, hb, lastSeen, offline, lastCatalogSyncAt }) => (
+                {merged.map(({ outlet, last_seen_at, offline, last_catalog_sync_at, host_name, middleware_version }) => (
                   <tr key={outlet.id}>
                     <td>
                       <strong>{outlet.name}</strong>
@@ -168,10 +140,10 @@ export default function MiddlewareStatusPanel() {
                         <span className={styles.pillLive}>Online</span>
                       )}
                     </td>
-                    <td>{formatStamp(lastSeen)}</td>
-                    <td>{formatStamp(lastCatalogSyncAt)}</td>
-                    <td>{hb?.host_name ?? "—"}</td>
-                    <td>{hb?.middleware_version ?? "—"}</td>
+                    <td>{formatStamp(last_seen_at)}</td>
+                    <td>{formatStamp(last_catalog_sync_at)}</td>
+                    <td>{host_name ?? "—"}</td>
+                    <td>{middleware_version ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

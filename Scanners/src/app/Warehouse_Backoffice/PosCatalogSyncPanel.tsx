@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
 import { formatStamp } from "./middlewareMonitorShared";
 import styles from "./enterprise.module.css";
@@ -66,7 +65,6 @@ function toUtcIso(localDateTime: string): string | null {
 }
 
 export default function PosCatalogSyncPanel() {
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const [allOutlets, setAllOutlets] = useState<OutletRow[]>([]);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncResult, setSyncResult] = useState<{
@@ -99,13 +97,11 @@ export default function PosCatalogSyncPanel() {
 
     const load = async () => {
       try {
-        const { data, error } = await supabase
-          .from("outlets")
-          .select("id,name,code,active,has_pos_middleware,channel")
-          .order("name");
+        const res = await fetch("/api/outlets?scope=middleware", { cache: "no-store" });
+        if (!res.ok) throw new Error("Unable to load outlets");
+        const json = await res.json();
         if (!active) return;
-        if (error) throw error;
-        setAllOutlets((data as OutletRow[]) ?? []);
+        setAllOutlets((json.outlets as OutletRow[]) ?? []);
       } catch {
         if (active) setAllOutlets([]);
       }
@@ -115,7 +111,7 @@ export default function PosCatalogSyncPanel() {
     return () => {
       active = false;
     };
-  }, [supabase]);
+  }, []);
 
   const middlewareOutlets = useMemo(
     () =>

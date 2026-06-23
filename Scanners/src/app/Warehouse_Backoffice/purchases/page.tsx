@@ -12,9 +12,7 @@ type ApiImportStatus =
   | "duplicate"
   | "duplicate_receipt"
   | "missing_item"
-  | "missing_storage_home"
-  | "missing_open_period"
-  | "missing_opening_stock"
+  | "missing_warehouse"
   | "invalid_qty"
   | "error";
 
@@ -48,10 +46,6 @@ type ApiImportResponse = {
 };
 
 const SYNC_INTERVAL_MS = 300_000;
-const ALLOWED_WAREHOUSE_IDS = [
-  "f71a25d0-9ec2-454d-a606-93cfaa3c606b",
-  "0c9ddd9e-d42c-475f-9232-5e9d649b0916",
-];
 
 const STATUS_LABELS: Record<ApiImportStatus, string> = {
   ready: "Ready",
@@ -59,9 +53,7 @@ const STATUS_LABELS: Record<ApiImportStatus, string> = {
   duplicate: "Duplicate",
   duplicate_receipt: "Dup receipt",
   missing_item: "No match",
-  missing_storage_home: "No storage",
-  missing_open_period: "No period",
-  missing_opening_stock: "No opening",
+  missing_warehouse: "No warehouse",
   invalid_qty: "Bad qty",
   error: "Error",
 };
@@ -173,7 +165,7 @@ export default function WarehousePurchasesPage() {
       .then((r) => r.json())
       .then((data) => {
         const list = normalizeList<Warehouse>(data, ["warehouses", "data"]);
-        setWarehouses(list.filter((w) => ALLOWED_WAREHOUSE_IDS.includes(w.id)));
+        setWarehouses(list);
       })
       .catch(() => setWarehouses([]));
   }, [status]);

@@ -52,15 +52,6 @@ export default function CatalogMenu() {
           </button>
 
           <button
-            onClick={() => go("/Warehouse_Backoffice/suppliers")}
-            className={`${styles.actionCard} ${styles.suppliersCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleSuppliers}`}>Suppliers</p>
-            <p className={styles.cardBody}>Create supplier contacts for purchase intake.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
-
-          <button
             onClick={() => go("/Warehouse_Backoffice/purchases")}
             className={`${styles.actionCard} ${styles.purchaseCard}`}
           >

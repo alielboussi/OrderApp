@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 import { BACKOFFICE_NAV, pageTitleForPath, navGroupLabelClass } from "./navigation";
+import MiddlewareStatusBadge from "./MiddlewareStatusBadge";
 import styles from "./enterprise.module.css";
 
 type BackofficeShellProps = {
@@ -110,6 +111,7 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
           <div>
             <h2 className={styles.headerTitle}>{pageTitle}</h2>
           </div>
+          <MiddlewareStatusBadge />
         </header>
         <div className={styles.welcomeBanner}>
           Welcome to the Afterten Portal, {emailUsername}

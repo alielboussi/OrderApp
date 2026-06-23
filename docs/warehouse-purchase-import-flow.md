@@ -21,6 +21,7 @@ This document describes how the Afterten stock movements API is imported into th
 - `productId`, `variantSku`, `itemSku`, `sku`, `productName`
 - `warehouseId`, `warehouseName`
 - `ref.invoiceId`, `by.name`, `at`
+- `supplier.name` / `supplierName` / `vendorName` (upserted into `suppliers` on import)
 
 ## Core Steps
 

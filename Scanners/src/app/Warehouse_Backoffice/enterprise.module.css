@@ -151,9 +151,36 @@
   padding: 14px 24px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.middlewareBadge {
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid var(--eb-border);
+  white-space: nowrap;
+}
+
+.middlewareBadgeOk {
+  background: var(--eb-green-soft);
+  color: var(--eb-green);
+  border-color: #bbf7d0;
+}
+
+.middlewareBadgeWarn {
+  background: var(--eb-gold-soft);
+  color: var(--eb-gold);
+  border-color: #fde68a;
+}
+
+.middlewareBadgeMuted {
+  background: #f3f4f6;
+  color: var(--eb-muted);
 }
 
 .headerTitle {

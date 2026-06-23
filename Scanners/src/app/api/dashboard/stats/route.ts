@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseDateRangeParam } from "@/lib/dateRangeParam";
 import { getServiceClient } from "@/lib/supabase-server";
+import { isMissingRelationError } from "@/lib/supabase-errors";
 
 type ProductQty = {
   name: string;
@@ -145,17 +146,27 @@ export async function GET(request: NextRequest) {
       }
 
       const salesRes = await salesQuery;
-      if (salesRes.error) throw salesRes.error;
-      salesRows = (salesRes.data as SalesRow[]) ?? [];
+      if (salesRes.error) {
+        if (!isMissingRelationError(salesRes.error, "outlet_sales")) throw salesRes.error;
+      } else {
+        salesRows = (salesRes.data as SalesRow[]) ?? [];
+      }
     }
 
-    let purchasesQuery = supabase
+    let purchasesRes = await supabase
       .from("warehouse_purchase_receipts")
       .select("recorded_at,items:warehouse_purchase_items(item_id,qty_units,unit_cost,item:catalog_items(name))")
       .gte("recorded_at", purchasesRange.from.toISOString())
       .lte("recorded_at", purchasesRange.to.toISOString())
       .order("recorded_at", { ascending: false })
       .limit(500);
+
+    if (
+      purchasesRes.error &&
+      isMissingRelationError(purchasesRes.error, "warehouse_purchase_receipts", "warehouse_purchase_items")
+    ) {
+      purchasesRes = { data: [], error: null };
+    }
 
     let ordersQuery = supabase
       .from("orders")
@@ -165,7 +176,7 @@ export async function GET(request: NextRequest) {
       .lte("created_at", ordersRange.to.toISOString())
       .limit(500);
 
-    const [purchasesRes, ordersRes] = await Promise.all([purchasesQuery, ordersQuery]);
+    const ordersRes = await ordersQuery;
 
     if (purchasesRes.error) throw purchasesRes.error;
     if (ordersRes.error) throw ordersRes.error;

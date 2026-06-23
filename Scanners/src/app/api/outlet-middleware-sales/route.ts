@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { isMissingRelationError } from "@/lib/supabase-errors";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -310,7 +311,22 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: salesData, error: salesError } = await salesQuery;
-    if (salesError) throw salesError;
+    if (salesError) {
+      if (isMissingRelationError(salesError, "outlet_sales")) {
+        return NextResponse.json({
+          api_format_version: API_FORMAT_VERSION,
+          since: effectiveSince.toISOString(),
+          until: effectiveUntil.toISOString(),
+          limit,
+          sales_count: 0,
+          grouping: "by_outlet",
+          outlet_summaries: [],
+          sales: [],
+          warning: "outlet_sales table missing — run supabase/scripts/recreate_outlet_sales.sql",
+        });
+      }
+      throw salesError;
+    }
 
     const salesRows = ((salesData ?? []) as OutletSalesRow[])
       .filter((row) => row.outlet_id && row.item_id)
@@ -324,6 +340,8 @@ export async function GET(request: NextRequest) {
         until: effectiveUntil.toISOString(),
         limit,
         sales_count: 0,
+        grouping: "by_outlet",
+        outlet_summaries: [],
         sales: [],
       });
     }
@@ -395,7 +413,8 @@ export async function GET(request: NextRequest) {
       const context = row.context ?? {};
       const sourceEventId = asNonEmptyText(context.source_event_id);
       const fallbackSaleRef = asNonEmptyText(context.sale_id) ?? row.id;
-      const saleReference = sourceEventId ?? `${row.outlet_id}:${fallbackSaleRef}`;
+      // Always scope grouping by outlet — shared warehouse must not merge Till 1 + Till 2 sales.
+      const saleReference = `${row.outlet_id}:${sourceEventId ?? fallbackSaleRef}`;
       const outlet = outletById.get(row.outlet_id) as OutletRow | undefined;
       const item = itemById.get(row.item_id) as ItemRow | undefined;
 
@@ -475,6 +494,21 @@ export async function GET(request: NextRequest) {
       .map(finalizeSale)
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 
+    const outletSummaries = Array.from(
+      sales.reduce((map, sale) => {
+        const existing = map.get(sale.outlet_uuid) ?? {
+          outlet_id: sale.outlet_uuid,
+          outlet_name: sale.outlet_name,
+          sales_count: 0,
+          total_amount: 0,
+        };
+        existing.sales_count += 1;
+        existing.total_amount = round2(existing.total_amount + sale.total_amount_of_sale);
+        map.set(sale.outlet_uuid, existing);
+        return map;
+      }, new Map<string, { outlet_id: string; outlet_name: string | null; sales_count: number; total_amount: number }>()),
+    ).sort((a, b) => (a.outlet_name ?? "").localeCompare(b.outlet_name ?? ""));
+
     return NextResponse.json(
       {
         api_format_version: API_FORMAT_VERSION,
@@ -482,6 +516,8 @@ export async function GET(request: NextRequest) {
         until: effectiveUntil.toISOString(),
         limit,
         sales_count: sales.length,
+        grouping: "by_outlet",
+        outlet_summaries: outletSummaries,
         sales,
       },
       {

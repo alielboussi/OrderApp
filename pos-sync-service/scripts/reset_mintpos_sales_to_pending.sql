@@ -1,0 +1,2 @@
+-- Moved to: supabase/scripts/reset_mintpos_sales_to_pending.sql
+-- (MintPOS / SQL Server — not Supabase)

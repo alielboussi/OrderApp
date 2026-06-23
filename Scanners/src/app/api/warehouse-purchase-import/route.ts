@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { isMissingRelationError } from "@/lib/supabase-errors";
+
+const CATALOG_VARIANT_SELECT =
+  "id,item_id,name,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost";
+const CATALOG_ITEM_SELECT =
+  "id,name,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost";
+
+const SHARED_WAREHOUSE_ALIASES = ["till 1", "till 2", "till 1 & 2 warehouse"];
 
 const SOURCE = "afterten_stock_api";
 const API_BASE_URL = "https://afterten-stock-api-896827614552.us-central1.run.app";
@@ -35,6 +43,25 @@ type ApiMovementRaw = {
   unitName?: string | null;
   ref?: { invoiceId?: string | null } | null;
   by?: { name?: string | null } | null;
+  supplier?: {
+    _id?: string | null;
+    id?: string | null;
+    name?: string | null;
+    contactName?: string | null;
+    contact_name?: string | null;
+    phone?: string | null;
+    contact_phone?: string | null;
+    email?: string | null;
+    contact_email?: string | null;
+    whatsapp?: string | null;
+    whatsapp_number?: string | null;
+  } | null;
+  supplierName?: string | null;
+  supplier_name?: string | null;
+  supplierId?: string | null;
+  vendorName?: string | null;
+  vendor_name?: string | null;
+  fromSupplier?: string | null;
   at?: string | null;
 };
 
@@ -42,7 +69,6 @@ type CatalogVariantRow = {
   id: string;
   item_id: string;
   name: string | null;
-  default_warehouse_id: string | null;
   active: boolean | null;
   sku: string | null;
   item_kind: string | null;
@@ -55,7 +81,6 @@ type CatalogVariantRow = {
 type CatalogItemRow = {
   id: string;
   name: string | null;
-  default_warehouse_id: string | null;
   active: boolean | null;
   sku: string | null;
   item_kind: string | null;
@@ -66,26 +91,15 @@ type CatalogItemRow = {
   cost: number | null;
 };
 
-type StorageHomeRow = {
-  item_id: string;
-  normalized_variant_key: string | null;
-  storage_warehouse_id: string | null;
-};
+type WarehouseRow = { id: string; name: string | null; outlet_id?: string | null };
 
-type WarehouseRow = { id: string; name: string | null };
-
-type PeriodRow = {
-  id: string;
+type OutletWarehouseRow = {
+  outlet_id: string;
   warehouse_id: string;
-  opened_at: string | null;
-  status: string | null;
-};
-
-type StockCountRow = {
-  period_id: string;
-  item_id: string;
-  variant_key: string | null;
-  kind: string | null;
+  outlets:
+    | { name: string | null; code: string | null }
+    | { name: string | null; code: string | null }[]
+    | null;
 };
 
 type PurchaseReceiptRow = {
@@ -106,9 +120,7 @@ type ImportStatus =
   | "duplicate"
   | "duplicate_receipt"
   | "missing_item"
-  | "missing_storage_home"
-  | "missing_open_period"
-  | "missing_opening_stock"
+  | "missing_warehouse"
   | "invalid_qty"
   | "error";
 
@@ -130,12 +142,12 @@ type MatchedMovement = {
   invoiceId: string | null;
   operatorName: string | null;
   movementAt: string | null;
+  supplierName: string | null;
   itemId: string | null;
   itemName: string | null;
   variantId?: string | null;
   variantKey: string | null;
   variantName: string | null;
-  defaultWarehouseId: string | null;
   storageWarehouseId?: string | null;
   unitsPerPurchasePack?: number | null;
   purchasePackUnit?: string | null;
@@ -157,6 +169,8 @@ type ImportItem = {
   movement_at: string | null;
   invoice_id: string | null;
   operator_name: string | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
   api_warehouse_id: string | null;
   api_warehouse_name: string | null;
   item_id: string | null;
@@ -179,9 +193,7 @@ type ImportSummary = {
   ready: number;
   duplicates: number;
   missing_item: number;
-  missing_storage_home: number;
-  missing_open_period: number;
-  missing_opening_stock: number;
+  missing_warehouse: number;
   invalid_qty: number;
   errors: number;
 };
@@ -247,6 +259,97 @@ function readUnitsPerPurchasePack(raw: Record<string, unknown>): number | null {
   return candidate;
 }
 
+type SupplierFromApi = {
+  name: string;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  whatsapp_number: string | null;
+  external_id: string | null;
+};
+
+function readSupplierFromMovement(raw: Record<string, unknown>): SupplierFromApi | null {
+  const nested =
+    raw.supplier && typeof raw.supplier === "object"
+      ? (raw.supplier as Record<string, unknown>)
+      : raw.vendor && typeof raw.vendor === "object"
+        ? (raw.vendor as Record<string, unknown>)
+        : null;
+
+  const name =
+    cleanText(nested?.name) ??
+    cleanText(raw.supplierName) ??
+    cleanText(raw.supplier_name) ??
+    cleanText(raw.vendorName) ??
+    cleanText(raw.vendor_name) ??
+    cleanText(raw.fromSupplier);
+
+  if (!name) return null;
+
+  return {
+    name,
+    contact_name: cleanText(nested?.contactName) ?? cleanText(nested?.contact_name) ?? null,
+    contact_phone: cleanText(nested?.phone) ?? cleanText(nested?.contact_phone) ?? null,
+    contact_email: cleanText(nested?.email) ?? cleanText(nested?.contact_email) ?? null,
+    whatsapp_number: cleanText(nested?.whatsapp) ?? cleanText(nested?.whatsapp_number) ?? null,
+    external_id:
+      cleanText(nested?._id) ??
+      cleanText(nested?.id) ??
+      cleanText(raw.supplierId) ??
+      cleanText(raw.supplier_id) ??
+      null,
+  };
+}
+
+async function ensureSuppliersFromApi(
+  supabase: ReturnType<typeof getServiceClient>,
+  suppliers: SupplierFromApi[],
+  dryRun: boolean,
+): Promise<Map<string, string>> {
+  const uniqueByName = new Map<string, SupplierFromApi>();
+  for (const supplier of suppliers) {
+    const key = normalizeNameKey(supplier.name);
+    if (!key || uniqueByName.has(key)) continue;
+    uniqueByName.set(key, supplier);
+  }
+
+  const { data: existingRows, error: existingError } = await supabase.from("suppliers").select("id,name");
+  if (existingError) throw existingError;
+
+  const idByNameKey = new Map<string, string>();
+  (existingRows ?? []).forEach((row) => {
+    const key = normalizeNameKey(row.name);
+    if (key && row.id) idByNameKey.set(key, row.id);
+  });
+
+  if (dryRun) return idByNameKey;
+
+  for (const [nameKey, supplier] of uniqueByName.entries()) {
+    if (idByNameKey.has(nameKey)) continue;
+
+    const notes = supplier.external_id ? `stock-api:${supplier.external_id}` : null;
+    const { data: created, error } = await supabase
+      .from("suppliers")
+      .insert({
+        name: supplier.name,
+        contact_name: supplier.contact_name,
+        contact_phone: supplier.contact_phone,
+        contact_email: supplier.contact_email,
+        whatsapp_number: supplier.whatsapp_number,
+        notes,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    if (created?.id) idByNameKey.set(nameKey, created.id);
+  }
+
+  return idByNameKey;
+}
+
 function resolveUnitsPerPurchasePack(
   variant?: CatalogVariantRow | null,
   item?: CatalogItemRow | null
@@ -291,9 +394,7 @@ function buildSummary(items: ImportItem[]): ImportSummary {
     ready: 0,
     duplicates: 0,
     missing_item: 0,
-    missing_storage_home: 0,
-    missing_open_period: 0,
-    missing_opening_stock: 0,
+    missing_warehouse: 0,
     invalid_qty: 0,
     errors: 0,
   };
@@ -313,14 +414,8 @@ function buildSummary(items: ImportItem[]): ImportSummary {
       case "missing_item":
         summary.missing_item += 1;
         break;
-      case "missing_storage_home":
-        summary.missing_storage_home += 1;
-        break;
-      case "missing_open_period":
-        summary.missing_open_period += 1;
-        break;
-      case "missing_opening_stock":
-        summary.missing_opening_stock += 1;
+      case "missing_warehouse":
+        summary.missing_warehouse += 1;
         break;
       case "invalid_qty":
         summary.invalid_qty += 1;
@@ -354,10 +449,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const envStocktakeUserId = process.env.Afterten_Stocktake_User_Id?.trim();
-    const headerStocktakeUserId = req.headers.get("x-afterten-stocktake-user")?.trim();
-    const rawStocktakeUserId =
-      envStocktakeUserId || (process.env.NODE_ENV !== "production" ? headerStocktakeUserId : undefined);
     const debugToken = process.env.Afterten_Debug_Token?.trim();
     const headerDebug = req.headers.get("x-afterten-debug")?.trim();
     debugEnabled = Boolean(debugToken && headerDebug && headerDebug === debugToken);
@@ -366,12 +457,8 @@ export async function POST(req: NextRequest) {
           hasPurchaseToken: Boolean(envToken),
           hasSupabaseUrl: Boolean(process.env.SUPABASE_URL?.trim()),
           hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
-          hasStocktakeUserId: Boolean(rawStocktakeUserId),
         }
       : undefined;
-    let stocktakeUserId = rawStocktakeUserId && isUuid(rawStocktakeUserId)
-      ? rawStocktakeUserId
-      : null;
 
     debugStep = "fetch-api";
     const response = await fetch(`${API_BASE_URL}${API_PATH}`, {
@@ -403,6 +490,7 @@ export async function POST(req: NextRequest) {
       const totalCost = cleanNumber(item.totalCost);
       const apiPurchasePackUnit = readPurchasePackUnit(item as Record<string, unknown>);
       const apiUnitsPerPurchasePack = readUnitsPerPurchasePack(item as Record<string, unknown>);
+      const supplier = readSupplierFromMovement(item as Record<string, unknown>);
       return {
         movementId: cleanText(item._id),
         lotId: cleanText(item.lotId),
@@ -421,6 +509,7 @@ export async function POST(req: NextRequest) {
         invoiceId: cleanText(item.ref?.invoiceId),
         operatorName: cleanText(item.by?.name),
         movementAt: cleanText(item.at),
+        supplierName: supplier?.name ?? null,
       };
     });
 
@@ -448,51 +537,77 @@ export async function POST(req: NextRequest) {
 
     const supabase = getServiceClient();
 
-    if (debugEnabled) debugStep = "validate-stocktake-user";
-    if (stocktakeUserId) {
-      const { data, error } = await supabase
-        .from("stocktake_app_users")
-        .select("id")
-        .eq("id", stocktakeUserId)
-        .eq("active", true)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data?.id) stocktakeUserId = null;
+    debugStep = "load-warehouse-directory";
+    const [allWarehousesRes, outletWarehousesRes] = await Promise.all([
+      supabase.from("warehouses").select("id,name,outlet_id").eq("active", true),
+      supabase.from("outlet_warehouses").select("outlet_id,warehouse_id,outlets(name,code)"),
+    ]);
+
+    if (allWarehousesRes.error && !isMissingRelationError(allWarehousesRes.error, "warehouses")) {
+      throw allWarehousesRes.error;
+    }
+    if (
+      outletWarehousesRes.error &&
+      !isMissingRelationError(outletWarehousesRes.error, "outlet_warehouses")
+    ) {
+      throw outletWarehousesRes.error;
     }
 
+    const warehouseByName = new Map<string, WarehouseRow>();
+    ((allWarehousesRes.data as WarehouseRow[] | null) ?? []).forEach((row) => {
+      const key = normalizeWarehouseName(row.name ?? null);
+      if (key) warehouseByName.set(key, row);
+    });
+
+    const sharedWarehouse =
+      warehouseByName.get(normalizeWarehouseName("Till 1 & 2 Warehouse") ?? "") ??
+      Array.from(warehouseByName.values()).find((row) =>
+        (row.name ?? "").toLowerCase().includes("till 1") && (row.name ?? "").toLowerCase().includes("2")
+      );
+    if (sharedWarehouse?.id) {
+      for (const alias of SHARED_WAREHOUSE_ALIASES) {
+        warehouseByName.set(alias, sharedWarehouse);
+      }
+    }
+
+    const outletFirstWarehouse = new Map<string, string>();
+    const outletByNameKey = new Map<string, string>();
+    ((outletWarehousesRes.data as OutletWarehouseRow[] | null) ?? []).forEach((row) => {
+      if (!outletFirstWarehouse.has(row.outlet_id)) {
+        outletFirstWarehouse.set(row.outlet_id, row.warehouse_id);
+      }
+      const outlet = Array.isArray(row.outlets) ? row.outlets[0] : row.outlets;
+      const nameKey = normalizeWarehouseName(outlet?.name ?? null);
+      const codeKey = normalizeWarehouseName(outlet?.code ?? null);
+      if (nameKey) outletByNameKey.set(nameKey, row.outlet_id);
+      if (codeKey) outletByNameKey.set(codeKey, row.outlet_id);
+      if (nameKey && !warehouseByName.has(nameKey)) {
+        warehouseByName.set(nameKey, { id: row.warehouse_id, name: outlet?.name ?? null });
+      }
+    });
+
+    const resolveWarehouseId = (warehouseName: string | null): string | null => {
+      const key = normalizeWarehouseName(warehouseName);
+      if (!key) return null;
+      const direct = warehouseByName.get(key);
+      if (direct?.id) return direct.id;
+      const outletId = outletByNameKey.get(key);
+      if (outletId) return outletFirstWarehouse.get(outletId) ?? null;
+      return null;
+    };
+
     debugStep = "load-catalog";
-    const [variantByIdRes, variantBySkuRes, warehouseByNameRes] = await Promise.all([
+    const [variantByIdRes, variantBySkuRes] = await Promise.all([
       productIds.length
-        ? supabase
-            .from("catalog_variants")
-            .select(
-              "id,item_id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost"
-            )
-            .in("id", productIds)
+        ? supabase.from("catalog_variants").select(CATALOG_VARIANT_SELECT).in("id", productIds)
         : Promise.resolve({ data: [], error: null }),
       skuList.length
-        ? supabase
-            .from("catalog_variants")
-            .select(
-              "id,item_id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost"
-            )
-            .in("sku", skuList)
-        : Promise.resolve({ data: [], error: null }),
-      warehouseNames.length
-        ? supabase.from("warehouses").select("id,name").in("name", warehouseNames)
+        ? supabase.from("catalog_variants").select(CATALOG_VARIANT_SELECT).in("sku", skuList)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (variantByIdRes.error) throw variantByIdRes.error;
     if (variantBySkuRes.error) throw variantBySkuRes.error;
-    if (warehouseByNameRes.error) throw warehouseByNameRes.error;
-
-    const warehouseByNameRows = (warehouseByNameRes.data as WarehouseRow[] | null) ?? [];
-    const warehouseByName = new Map<string, WarehouseRow>();
-    warehouseByNameRows.forEach((row) => {
-      const key = normalizeWarehouseName(row.name ?? null);
-      if (key) warehouseByName.set(key, row);
-    });
 
     const variantRows = [
       ...((variantByIdRes.data as CatalogVariantRow[] | null) ?? []),
@@ -512,28 +627,13 @@ export async function POST(req: NextRequest) {
 
     const [itemByIdRes, itemBySkuRes, itemByNameRes] = await Promise.all([
       itemIdsToFetch.length
-        ? supabase
-            .from("catalog_items")
-            .select(
-              "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
-            )
-            .in("id", itemIdsToFetch)
+        ? supabase.from("catalog_items").select(CATALOG_ITEM_SELECT).in("id", itemIdsToFetch)
         : Promise.resolve({ data: [], error: null }),
       skuList.length
-        ? supabase
-            .from("catalog_items")
-            .select(
-              "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
-            )
-            .in("sku", skuList)
+        ? supabase.from("catalog_items").select(CATALOG_ITEM_SELECT).in("sku", skuList)
         : Promise.resolve({ data: [], error: null }),
       nameList.length
-        ? supabase
-            .from("catalog_items")
-            .select(
-              "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
-            )
-            .in("name", nameList)
+        ? supabase.from("catalog_items").select(CATALOG_ITEM_SELECT).in("name", nameList)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -575,8 +675,6 @@ export async function POST(req: NextRequest) {
           variantId: variantMatch.id,
           variantKey: normalizeVariantKey(variantMatch.id),
           variantName: variantMatch.name ?? null,
-          defaultWarehouseId:
-            variantMatch.default_warehouse_id ?? parentItem?.default_warehouse_id ?? null,
           unitsPerPurchasePack: resolveUnitsPerPurchasePack(variantMatch, parentItem),
           purchasePackUnit: variantMatch.purchase_pack_unit ?? parentItem?.purchase_pack_unit ?? null,
           consumptionUom: variantMatch.consumption_uom ?? parentItem?.consumption_uom ?? null,
@@ -592,7 +690,6 @@ export async function POST(req: NextRequest) {
           variantId: null,
           variantKey: null,
           variantName: null,
-          defaultWarehouseId: null,
           unitsPerPurchasePack: null,
           purchasePackUnit: null,
           consumptionUom: null,
@@ -613,7 +710,6 @@ export async function POST(req: NextRequest) {
           variantId: null,
           variantKey: "base",
           variantName: null,
-          defaultWarehouseId: itemMatch.default_warehouse_id ?? null,
           unitsPerPurchasePack: resolveUnitsPerPurchasePack(null, itemMatch),
           purchasePackUnit: itemMatch.purchase_pack_unit ?? null,
           consumptionUom: itemMatch.consumption_uom ?? null,
@@ -628,7 +724,6 @@ export async function POST(req: NextRequest) {
         variantId: null,
         variantKey: null,
         variantName: null,
-        defaultWarehouseId: null,
         unitsPerPurchasePack: null,
         purchasePackUnit: null,
         consumptionUom: null,
@@ -642,7 +737,6 @@ export async function POST(req: NextRequest) {
         key: string;
         name: string;
         sku: string | null;
-        defaultWarehouseId: string | null;
         itemKind: string;
         cost: number | null;
         purchasePackUnit: string | null;
@@ -658,7 +752,6 @@ export async function POST(req: NextRequest) {
         id: string;
         name: string;
         sku: string | null;
-        defaultWarehouseId: string | null;
         itemKind: string;
         cost: number | null;
         purchasePackUnit: string | null;
@@ -686,8 +779,6 @@ export async function POST(req: NextRequest) {
         (row.itemSku ? itemBySku.get(row.itemSku) : undefined) ||
         (!row.variantSku && row.sku ? itemBySku.get(row.sku) : undefined);
 
-      const preferredWarehouseId =
-        warehouseByName.get(normalizeWarehouseName(row.warehouseName ?? null) ?? "")?.id ?? null;
       const rawUnitCost = row.unitCost ?? (row.totalCost && row.qty ? row.totalCost / row.qty : null);
       const apiPurchasePackUnit = normalizePackUnit(row.apiPurchasePackUnit ?? null);
       const apiUnitsPerPurchasePack =
@@ -707,7 +798,6 @@ export async function POST(req: NextRequest) {
                 key: itemKey,
                 name,
                 sku: baseSku,
-                defaultWarehouseId: preferredWarehouseId,
                 itemKind: DEFAULT_ITEM_KIND,
                 cost: baseCostPerUnit,
                 purchasePackUnit: apiPurchasePackUnit,
@@ -730,7 +820,6 @@ export async function POST(req: NextRequest) {
               id: variantId,
               name,
               sku: row.variantSku ?? null,
-              defaultWarehouseId: preferredWarehouseId,
               itemKind,
               cost: costPerUnit,
               purchasePackUnit: apiPurchasePackUnit,
@@ -751,7 +840,6 @@ export async function POST(req: NextRequest) {
               key: itemKey,
               name,
               sku: baseSku,
-              defaultWarehouseId: preferredWarehouseId,
               itemKind: DEFAULT_ITEM_KIND,
               cost: baseCostPerUnit,
               purchasePackUnit: apiPurchasePackUnit,
@@ -774,15 +862,12 @@ export async function POST(req: NextRequest) {
           cost: plan.cost ?? undefined,
           purchase_pack_unit: plan.purchasePackUnit ?? "each",
           units_per_purchase_pack: plan.unitsPerPurchasePack ?? 1,
-          default_warehouse_id: plan.defaultWarehouseId,
         }));
 
         const { data, error } = await supabase
           .from("catalog_items")
           .insert(itemsToCreate)
-          .select(
-            "id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,consumption_qty_per_base,cost"
-          );
+          .select(CATALOG_ITEM_SELECT);
         if (error) throw error;
 
         const createdItems = (data as CatalogItemRow[] | null) ?? [];
@@ -823,16 +908,13 @@ export async function POST(req: NextRequest) {
             cost: plan.cost ?? undefined,
             purchase_pack_unit: plan.purchasePackUnit ?? "each",
             units_per_purchase_pack: plan.unitsPerPurchasePack ?? 1,
-            default_warehouse_id: plan.defaultWarehouseId,
           }));
 
         if (variantsToCreate.length) {
           const { data, error } = await supabase
             .from("catalog_variants")
             .insert(variantsToCreate)
-            .select(
-              "id,item_id,name,default_warehouse_id,active,sku,item_kind,units_per_purchase_pack,purchase_pack_unit,consumption_uom,cost"
-            );
+            .select(CATALOG_VARIANT_SELECT);
           if (error) throw error;
 
           const createdVariants = (data as CatalogVariantRow[] | null) ?? [];
@@ -851,45 +933,10 @@ export async function POST(req: NextRequest) {
 
     const matchedItems: MatchedMovement[] = movements.map((row) => matchMovement(row));
 
-    const itemIds = Array.from(
-      new Set(matchedItems.map((row) => row.itemId).filter((value): value is string => !!value))
-    );
-
-    const storageRowsRes = itemIds.length
-      ? await supabase
-          .from("item_storage_homes")
-          .select("item_id,normalized_variant_key,storage_warehouse_id")
-          .in("item_id", itemIds)
-      : { data: [], error: null };
-
-    if (storageRowsRes.error) throw storageRowsRes.error;
-    const storageRows = (storageRowsRes.data as StorageHomeRow[] | null) ?? [];
-
-    const storageMap = new Map<string, string[]>();
-    storageRows.forEach((row) => {
-      const key = `${row.item_id}|${normalizeVariantKey(row.normalized_variant_key ?? "base")}`;
-      const existing = storageMap.get(key) ?? [];
-      if (row.storage_warehouse_id && !existing.includes(row.storage_warehouse_id)) {
-        existing.push(row.storage_warehouse_id);
-      }
-      storageMap.set(key, existing);
-    });
-
-    const resolvedRows: MatchedMovement[] = matchedItems.map((row) => {
-      if (!row.itemId || !row.variantKey) {
-        return { ...row, storageWarehouseId: null };
-      }
-      const storageKey = `${row.itemId}|${normalizeVariantKey(row.variantKey)}`;
-      const storageIds = storageMap.get(storageKey) ?? [];
-      const warehouseNameKey = normalizeWarehouseName(row.warehouseName ?? null);
-      const fallbackWarehouseId = warehouseNameKey
-        ? warehouseByName.get(warehouseNameKey)?.id ?? null
-        : null;
-      const resolvedWarehouseId = createdItemIds.has(row.itemId)
-        ? storageIds[0] ?? null
-        : row.defaultWarehouseId || storageIds[0] || fallbackWarehouseId || null;
-      return { ...row, storageWarehouseId: resolvedWarehouseId };
-    });
+    const resolvedRows: MatchedMovement[] = matchedItems.map((row) => ({
+      ...row,
+      storageWarehouseId: resolveWarehouseId(row.warehouseName),
+    }));
 
     const storageWarehouseIds = Array.from(
       new Set(resolvedRows.map((row) => row.storageWarehouseId).filter((value): value is string => !!value))
@@ -900,143 +947,11 @@ export async function POST(req: NextRequest) {
       ? await supabase.from("warehouses").select("id,name").in("id", storageWarehouseIds)
       : { data: [], error: null };
 
-    if (warehouseRowsRes.error) throw warehouseRowsRes.error;
+    if (warehouseRowsRes.error && !isMissingRelationError(warehouseRowsRes.error, "warehouses")) {
+      throw warehouseRowsRes.error;
+    }
     const warehouseRows = (warehouseRowsRes.data as WarehouseRow[] | null) ?? [];
     const warehouseNameMap = new Map(warehouseRows.map((row) => [row.id, row.name ?? row.id]));
-
-    debugStep = "load-periods";
-    const periodRowsRes = storageWarehouseIds.length
-      ? await supabase
-          .from("warehouse_stock_periods")
-          .select("id,warehouse_id,opened_at,status")
-          .in("warehouse_id", storageWarehouseIds)
-          .eq("status", "open")
-          .order("opened_at", { ascending: false })
-      : { data: [], error: null };
-
-    if (periodRowsRes.error) throw periodRowsRes.error;
-    const periodRows = (periodRowsRes.data as PeriodRow[] | null) ?? [];
-    const openPeriodByWarehouse = new Map<string, string>();
-    periodRows.forEach((row) => {
-      if (!openPeriodByWarehouse.has(row.warehouse_id)) {
-        openPeriodByWarehouse.set(row.warehouse_id, row.id);
-      }
-    });
-
-    const warehousesWithExistingItems = new Set<string>();
-    const warehousesWithNewItems = new Set<string>();
-    resolvedRows.forEach((row) => {
-      if (!row.storageWarehouseId || !row.itemId) return;
-      if (createdItemIds.has(row.itemId)) {
-        warehousesWithNewItems.add(row.storageWarehouseId);
-      } else {
-        warehousesWithExistingItems.add(row.storageWarehouseId);
-      }
-    });
-
-    const missingOpenWarehouses = storageWarehouseIds.filter((warehouseId) => {
-      if (openPeriodByWarehouse.has(warehouseId)) return false;
-      if (!warehousesWithNewItems.has(warehouseId)) return false;
-      if (warehousesWithExistingItems.has(warehouseId)) return false;
-      return true;
-    });
-
-    debugCounts.missingOpenWarehouses = missingOpenWarehouses.length;
-
-    debugStep = "auto-open-periods";
-    if (!dryRun && stocktakeUserId && missingOpenWarehouses.length) {
-      const newPeriods = missingOpenWarehouses.map((warehouseId) => ({
-        warehouse_id: warehouseId,
-        opened_by: stocktakeUserId,
-        status: "open",
-        note: "Auto-open from API purchase import",
-      }));
-
-      const { data, error } = await supabase
-        .from("warehouse_stock_periods")
-        .insert(newPeriods)
-        .select("id,warehouse_id");
-      if (error) throw error;
-
-      (data as { id?: string | null; warehouse_id?: string | null }[] | null)?.forEach((row) => {
-        if (row?.id && row?.warehouse_id) {
-          openPeriodByWarehouse.set(row.warehouse_id, row.id);
-        }
-      });
-    }
-
-    const periodIds = Array.from(new Set(openPeriodByWarehouse.values()));
-    debugCounts.openPeriods = periodIds.length;
-
-    debugStep = "load-openings";
-    const openingRowsRes = periodIds.length && itemIds.length
-      ? await supabase
-          .from("warehouse_stock_counts")
-          .select("period_id,item_id,variant_key,kind")
-          .in("period_id", periodIds)
-          .in("item_id", itemIds)
-          .eq("kind", "opening")
-      : { data: [], error: null };
-
-    if (openingRowsRes.error) throw openingRowsRes.error;
-    const openingRows = (openingRowsRes.data as StockCountRow[] | null) ?? [];
-    const openingSet = new Set(
-      openingRows.map((row) => `${row.period_id}|${row.item_id}|${normalizeVariantKey(row.variant_key ?? "base")}`)
-    );
-
-    debugStep = "insert-openings";
-    if (!dryRun && stocktakeUserId) {
-      const openingInserts: Record<string, unknown>[] = [];
-      const openingInsertSet = new Set<string>();
-
-      resolvedRows.forEach((row) => {
-        if (!row.storageWarehouseId || !row.itemId || !row.variantKey) return;
-        if (!createdItemIds.has(row.itemId)) return;
-        const openPeriodId = openPeriodByWarehouse.get(row.storageWarehouseId) ?? null;
-        if (!openPeriodId) return;
-        const unitsPerPack =
-          typeof row.apiUnitsPerPurchasePack === "number" && row.apiUnitsPerPurchasePack > 0
-            ? row.apiUnitsPerPurchasePack
-            : typeof row.unitsPerPurchasePack === "number" && row.unitsPerPurchasePack > 0
-              ? row.unitsPerPurchasePack
-              : 1;
-        const effectiveQty = computeEffectiveQty(row.qty, unitsPerPack);
-        if (!effectiveQty || effectiveQty <= 0) return;
-
-        const openingKey = `${openPeriodId}|${row.itemId}|${normalizeVariantKey(row.variantKey)}`;
-        if (openingSet.has(openingKey) || openingInsertSet.has(openingKey)) return;
-
-        openingInserts.push({
-          period_id: openPeriodId,
-          item_id: row.itemId,
-          variant_key: normalizeVariantKey(row.variantKey),
-          kind: "opening",
-          counted_qty: effectiveQty,
-          counted_by: stocktakeUserId,
-          context: {
-            source: SOURCE,
-            movement_id: row.movementId,
-            invoice_id: row.invoiceId,
-          },
-        });
-        openingInsertSet.add(openingKey);
-      });
-
-      debugCounts.openingInserts = openingInserts.length;
-      if (openingInserts.length) {
-        const { error } = await supabase
-          .from("warehouse_stock_counts")
-          .upsert(openingInserts, { onConflict: "period_id,item_id,variant_key,kind" });
-        if (error) throw error;
-
-        openingInserts.forEach((row) => {
-          const key = `${row.period_id}|${row.item_id}|${normalizeVariantKey(
-            typeof row.variant_key === "string" ? row.variant_key : "base"
-          )}`;
-          openingSet.add(key);
-        });
-      }
-    }
 
     debugStep = "load-imports";
     const movementIds = Array.from(
@@ -1051,7 +966,17 @@ export async function POST(req: NextRequest) {
           .in("source_movement_id", movementIds)
       : { data: [], error: null };
 
-    if (importRowsRes.error) throw importRowsRes.error;
+    if (importRowsRes.error) {
+      if (isMissingRelationError(importRowsRes.error, "warehouse_purchase_imports")) {
+        return NextResponse.json({
+          ok: true,
+          summary: buildSummary([]),
+          items: [],
+          warning: "warehouse_purchase_imports missing — run supabase/scripts/recreate_warehouse_purchases.sql",
+        });
+      }
+      throw importRowsRes.error;
+    }
     const importRows = (importRowsRes.data as ImportRow[] | null) ?? [];
     const importMap = new Map(importRows.map((row) => [row.source_movement_id, row]));
 
@@ -1078,6 +1003,13 @@ export async function POST(req: NextRequest) {
       receiptRows.map((row) => [`${row.warehouse_id}|${row.reference_code}`, row.id])
     );
 
+    const supplierCandidates = rawItems
+      .map((item) => readSupplierFromMovement(item as Record<string, unknown>))
+      .filter((row): row is SupplierFromApi => Boolean(row));
+
+    debugStep = "sync-suppliers";
+    const supplierIdByNameKey = await ensureSuppliersFromApi(supabase, supplierCandidates, dryRun);
+
     const imports: ImportItem[] = resolvedRows.map((row) => {
       const movementId = row.movementId ?? "";
       const referenceCode = row.invoiceId || movementId || null;
@@ -1097,15 +1029,10 @@ export async function POST(req: NextRequest) {
       const effectiveUnitCost = computeEffectiveUnitCost(rawUnitCost, unitsPerPack);
       const qtyValid = typeof effectiveQty === "number" && effectiveQty > 0;
 
-      const openPeriodId = row.storageWarehouseId
-        ? openPeriodByWarehouse.get(row.storageWarehouseId) ?? null
-        : null;
-      const openingKey = openPeriodId && row.itemId && row.variantKey
-        ? `${openPeriodId}|${row.itemId}|${normalizeVariantKey(row.variantKey)}`
-        : null;
-      const hasOpening = openingKey ? openingSet.has(openingKey) : false;
       const createdItem = row.itemId ? createdItemIds.has(row.itemId) : false;
       const createdVariant = row.variantId ? createdVariantIds.has(row.variantId) : false;
+      const supplierNameKey = normalizeNameKey(row.supplierName);
+      const supplierId = supplierNameKey ? supplierIdByNameKey.get(supplierNameKey) ?? null : null;
 
       let status: ImportStatus = "ready";
       let statusMessage: string | null = null;
@@ -1120,22 +1047,8 @@ export async function POST(req: NextRequest) {
         status = "missing_item";
         statusMessage = "No catalog item or variant found.";
       } else if (!row.storageWarehouseId) {
-        status = "missing_storage_home";
-        statusMessage = "Storage home is not configured.";
-      } else if (!openPeriodId) {
-        status = "missing_open_period";
-        statusMessage = stocktakeUserId
-          ? createdItem
-            ? "No open stock period for new item."
-            : "No open stock period for storage home."
-          : "No open stock period for storage home (stocktake user id missing).";
-      } else if (!hasOpening) {
-        status = "missing_opening_stock";
-        statusMessage = stocktakeUserId
-          ? createdItem
-            ? "Opening stock not recorded for new item."
-            : "Opening stock not recorded yet."
-          : "Opening stock missing (stocktake user id missing).";
+        status = "missing_warehouse";
+        statusMessage = "No warehouse matched for this movement (check outlet/warehouse names).";
       } else if (!qtyValid) {
         status = "invalid_qty";
         statusMessage = "Quantity must be greater than zero.";
@@ -1156,6 +1069,8 @@ export async function POST(req: NextRequest) {
         movement_at: row.movementAt ?? null,
         invoice_id: row.invoiceId ?? null,
         operator_name: row.operatorName ?? null,
+        supplier_id: supplierId,
+        supplier_name: row.supplierName ?? null,
         api_warehouse_id: row.warehouseId ?? null,
         api_warehouse_name: row.warehouseName ?? null,
         item_id: row.itemId ?? null,
@@ -1300,6 +1215,7 @@ export async function POST(req: NextRequest) {
     if (!dryRun) {
       for (const [groupKey, rows] of groups.entries()) {
         const [warehouseId, referenceCode] = groupKey.split("|");
+        const supplierId = rows.find((row) => row.supplier_id)?.supplier_id ?? null;
         const payloadItems = rows.map((row) => ({
           product_id: row.item_id,
           variant_key: row.variant_key ?? "base",
@@ -1311,7 +1227,7 @@ export async function POST(req: NextRequest) {
         try {
           const { data, error } = await supabase.rpc("record_purchase_receipt", {
             p_warehouse_id: warehouseId,
-            p_supplier_id: null,
+            p_supplier_id: supplierId,
             p_reference_code: referenceCode,
             p_items: payloadItems,
             p_note: "API import: Afterten stock movements",
