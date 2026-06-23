@@ -46,14 +46,14 @@ export default function MiddlewareStatusBadge() {
   }, []);
 
   const label =
-    error || onlineCount === null
+    error || onlineCount === null || offlineCount === null
       ? "Middleware: unavailable"
       : offlineCount > 0
         ? `Middleware: ${onlineCount} online · ${offlineCount} offline`
         : `Middleware: ${onlineCount} online`;
 
   const tone =
-    error || onlineCount === null
+    error || onlineCount === null || offlineCount === null
       ? styles.middlewareBadgeMuted
       : offlineCount > 0
         ? styles.middlewareBadgeWarn

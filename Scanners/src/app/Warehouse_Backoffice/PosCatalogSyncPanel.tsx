@@ -243,6 +243,8 @@ export default function PosCatalogSyncPanel() {
           </h3>
           <p className={styles.pageCardBody} style={{ marginTop: 8 }}>
             Pull MintPOS catalog from selected outlets into Supabase — products, variants, and menu groups.
+            For ordering-app outlets (<code>uses_orders_app</code>), each sync also auto-binds POS SKUs to that
+            outlet&apos;s default sales warehouse. POS-only outlets (Till 1, Till 2, Quick Corner) are skipped.
           </p>
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-import { isMiddlewareCatalogSyncOutlet, isPosMiddlewareOutlet } from "@/lib/outletScope";
+import { isMiddlewareCatalogSyncOutlet, isPosDeductionProgrammingOutlet, isPosMiddlewareOutlet } from "@/lib/outletScope";
 import { isHeartbeatMonitoredOutlet } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
 
 type OutletRow = {
@@ -55,6 +55,8 @@ export async function GET(request: Request) {
 
     if (scope === "selling") {
       outlets = outlets.filter((outlet) => isPosMiddlewareOutlet(outlet));
+    } else if (scope === "pos-deductions") {
+      outlets = outlets.filter((outlet) => isPosDeductionProgrammingOutlet(outlet));
     } else if (scope === "middleware" || scope === "catalog-sync") {
       outlets = outlets.filter((outlet) => isMiddlewareCatalogSyncOutlet(outlet));
     } else if (scope === "heartbeat") {

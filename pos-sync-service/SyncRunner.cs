@@ -306,6 +306,14 @@ public sealed class SyncRunner
                         return;
                     }
 
+                    var bindingResult = await _supabaseClient.SyncOutletPosCatalogBindingsAsync(rows, cancellationToken);
+                    if (!bindingResult.IsSuccess)
+                    {
+                        _logger.LogWarning(
+                            "Outlet catalog binding sync failed: {Error}",
+                            bindingResult.ErrorMessage ?? "Unknown error");
+                    }
+
                     _logger.LogInformation(
                         "POS catalog SKU sync completed with {Count} mapped variants (products={SyncProducts}, variants={SyncVariants}).",
                         rows.Count,

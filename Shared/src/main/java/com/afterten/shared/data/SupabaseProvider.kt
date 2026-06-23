@@ -708,10 +708,18 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
     @Serializable
     data class OutletWarehouseDamageDto(
         val id: String,
+        @SerialName("outlet_id") val outletId: String? = null,
         @SerialName("warehouse_id") val warehouseId: String? = null,
         val note: String? = null,
+        @SerialName("reported_by") val reportedBy: String? = null,
         @SerialName("created_at") val createdAt: String? = null,
-        val context: kotlinx.serialization.json.JsonElement? = null
+    )
+
+    @Serializable
+    data class OutletDamageLineInput(
+        @SerialName("product_id") val productId: String,
+        @SerialName("variant_key") val variantKey: String = "base",
+        val qty: Double,
     )
 
     @Serializable
@@ -1533,8 +1541,8 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
         val filter = java.net.URLEncoder.encode("(${ids.joinToString(",")})", Charsets.UTF_8.name())
         val url = buildString {
             append(supabaseUrl)
-            append("/rest/v1/warehouse_damages")
-            append("?select=id,warehouse_id,note,created_at,context")
+            append("/rest/v1/outlet_damages")
+            append("?select=id,outlet_id,warehouse_id,note,reported_by,created_at")
             append("&warehouse_id=in.$filter")
             append("&order=created_at.desc")
             append("&limit=").append(limit.coerceAtMost(200))
@@ -1547,6 +1555,34 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
         val txt = resp.bodyAsText()
         if (code !in 200..299) throw IllegalStateException("fetchOutletWarehouseDamages failed: HTTP $code $txt")
         return relaxedJson.decodeFromString(ListSerializer(OutletWarehouseDamageDto.serializer()), txt)
+    }
+
+    suspend fun recordOutletDamage(
+        jwt: String,
+        outletId: String,
+        warehouseId: String,
+        items: List<OutletDamageLineInput>,
+        note: String? = null,
+        reportedBy: String? = null,
+    ): String {
+        if (items.isEmpty()) throw IllegalArgumentException("At least one damage line is required")
+        val body = buildMap<String, Any?> {
+            put("p_outlet_id", outletId)
+            put("p_warehouse_id", warehouseId)
+            put("p_items", items)
+            put("p_note", note)
+            put("p_reported_by", reportedBy)
+        }
+        val resp = http.post("$supabaseUrl/rest/v1/rpc/record_outlet_damage") {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        val code = resp.status.value
+        val txt = resp.bodyAsText()
+        if (code !in 200..299) throw IllegalStateException("recordOutletDamage failed: HTTP $code $txt")
+        return txt.trim('"')
     }
 
     suspend fun createWarehouse(

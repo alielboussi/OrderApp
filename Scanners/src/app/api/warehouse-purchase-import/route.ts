@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchReceiveMovements, resolvePurchasesApiToken } from "@/lib/afterten-stock-api";
 import { getServiceClient } from "@/lib/supabase-server";
 import { isMissingRelationError } from "@/lib/supabase-errors";
 
@@ -10,8 +11,6 @@ const CATALOG_ITEM_SELECT =
 const SHARED_WAREHOUSE_ALIASES = ["till 1", "till 2", "till 1 & 2 warehouse"];
 
 const SOURCE = "afterten_stock_api";
-const API_BASE_URL = "https://afterten-stock-api-896827614552.us-central1.run.app";
-const API_PATH = "/stock/movements?type=receive";
 const DEFAULT_ITEM_KIND = "ingredient";
 
 type ApiMovementRaw = {
@@ -439,9 +438,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const dryRun = body?.dryRun === true;
 
-    const envToken = process.env.Afterten_Purchases_Api_Token?.trim();
-    const headerToken = req.headers.get("x-afterten-token")?.trim();
-    const token = envToken || (process.env.NODE_ENV !== "production" ? headerToken : undefined);
+    const token = resolvePurchasesApiToken(req.headers.get("x-afterten-token"));
     if (!token) {
       return NextResponse.json(
         { ok: false, error: "Afterten_Purchases_Api_Token is missing" },
@@ -454,32 +451,20 @@ export async function POST(req: NextRequest) {
     debugEnabled = Boolean(debugToken && headerDebug && headerDebug === debugToken);
     debugEnv = debugEnabled
       ? {
-          hasPurchaseToken: Boolean(envToken),
+          hasPurchaseToken: Boolean(process.env.Afterten_Purchases_Api_Token?.trim()),
           hasSupabaseUrl: Boolean(process.env.SUPABASE_URL?.trim()),
           hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
         }
       : undefined;
 
     debugStep = "fetch-api";
-    const response = await fetch(`${API_BASE_URL}${API_PATH}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      return NextResponse.json(
-        { ok: false, error: text || response.statusText },
-        { status: 502 }
-      );
+    let rawItems: ApiMovementRaw[];
+    try {
+      rawItems = (await fetchReceiveMovements(token)) as ApiMovementRaw[];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Stock API request failed";
+      return NextResponse.json({ ok: false, error: message }, { status: 502 });
     }
-
-    debugStep = "parse-api";
-    const payload = await response.json().catch(() => ({}));
-    const rawItems: ApiMovementRaw[] = Array.isArray(payload?.items) ? payload.items : [];
 
     debugCounts.movements = rawItems.length;
 

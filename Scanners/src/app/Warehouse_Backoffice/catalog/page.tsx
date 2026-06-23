@@ -59,15 +59,6 @@ export default function CatalogMenu() {
             <p className={styles.cardBody}>Record purchase receipts from backoffice.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
-
-          <button
-            onClick={() => go("/Warehouse_Backoffice/outlet-setup")}
-            className={`${styles.actionCard} ${styles.routingCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitleRouting}`}>Item To Warehouse Assignments</p>
-            <p className={styles.cardBody}>Set outlet sales defaults, per-item routing, and storage homes.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
         </section>
       </main>
     </div>

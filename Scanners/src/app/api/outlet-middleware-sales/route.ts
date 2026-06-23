@@ -495,18 +495,20 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 
     const outletSummaries = Array.from(
-      sales.reduce((map, sale) => {
-        const existing = map.get(sale.outlet_uuid) ?? {
-          outlet_id: sale.outlet_uuid,
-          outlet_name: sale.outlet_name,
-          sales_count: 0,
-          total_amount: 0,
-        };
-        existing.sales_count += 1;
-        existing.total_amount = round2(existing.total_amount + sale.total_amount_of_sale);
-        map.set(sale.outlet_uuid, existing);
-        return map;
-      }, new Map<string, { outlet_id: string; outlet_name: string | null; sales_count: number; total_amount: number }>()),
+      sales
+        .reduce((map, sale) => {
+          const existing = map.get(sale.outlet_uuid) ?? {
+            outlet_id: sale.outlet_uuid,
+            outlet_name: sale.outlet_name,
+            sales_count: 0,
+            total_amount: 0,
+          };
+          existing.sales_count += 1;
+          existing.total_amount = round2(existing.total_amount + sale.total_amount_of_sale);
+          map.set(sale.outlet_uuid, existing);
+          return map;
+        }, new Map<string, { outlet_id: string; outlet_name: string | null; sales_count: number; total_amount: number }>())
+        .values(),
     ).sort((a, b) => (a.outlet_name ?? "").localeCompare(b.outlet_name ?? ""));
 
     return NextResponse.json(

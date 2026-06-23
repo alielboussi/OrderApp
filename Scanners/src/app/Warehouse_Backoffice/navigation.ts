@@ -16,18 +16,17 @@ export const BACKOFFICE_NAV: NavGroup[] = [
       { label: "Dashboard", href: "/Warehouse_Backoffice" },
       { label: "Middleware Connectivity", href: "/Warehouse_Backoffice/middleware-heartbeat" },
       { label: "Portal/Mintpos Sync", href: "/Warehouse_Backoffice/pos-catalog-sync" },
-      { label: "Outlet live balances", href: "/Warehouse_Backoffice/outlet-live-balances" },
+      { label: "Outlet Live Balances", href: "/Warehouse_Backoffice/outlet-live-balances" },
     ],
     tone: "system",
   },
   {
-    label: "Catalog",
+    label: "Products",
     items: [
-      { label: "Products", href: "/Warehouse_Backoffice/catalog/menu" },
-      { label: "Bulk variant update", href: "/Warehouse_Backoffice/variant-bulk-update" },
-      { label: "Add product", href: "/Warehouse_Backoffice/catalog/product" },
-      { label: "Menu groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
-      { label: "Variants", href: "/Warehouse_Backoffice/catalog/variants" },
+      { label: "Add Product", href: "/Warehouse_Backoffice/catalog/product" },
+      { label: "Add Groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
+      { label: "Add Variants", href: "/Warehouse_Backoffice/catalog/variants" },
+      { label: "Bulk Updates", href: "/Warehouse_Backoffice/variant-bulk-update" },
     ],
     tone: "catalog",
   },
@@ -39,18 +38,15 @@ export const BACKOFFICE_NAV: NavGroup[] = [
   {
     label: "Outlets",
     items: [
-      { label: "Outlet orders", href: "/Warehouse_Backoffice/outlet-orders" },
-      { label: "Outlet setup", href: "/Warehouse_Backoffice/outlet-setup" },
-      { label: "POS sale deductions", href: "/Warehouse_Backoffice/pos-sale-deductions" },
-      { label: "Transfers", href: "/Warehouse_Backoffice/transfers" },
-      { label: "Damages", href: "/Warehouse_Backoffice/damages" },
+      { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders" },
+      { label: "Sale Deduction Setups", href: "/Warehouse_Backoffice/pos-sale-deductions" },
       { label: "Stocktakes", href: "/Warehouse_Backoffice/stocktakes" },
     ],
     tone: "outlets",
   },
   {
     label: "Reports",
-    items: [{ label: "Reports hub", href: "/Warehouse_Backoffice/reports-hub" }],
+    items: [{ label: "Reports Hub", href: "/Warehouse_Backoffice/reports-hub" }],
     tone: "default",
   },
 ];
@@ -69,6 +65,7 @@ export function pageTitleForPath(pathname: string, hash?: string): string {
       }
     }
   }
+  if (pathname.startsWith("/Warehouse_Backoffice/catalog/menu")) return "Products";
   if (pathname.startsWith("/Warehouse_Backoffice/purchase-entry")) return "Purchases";
   return "Warehouse Backoffice";
 }

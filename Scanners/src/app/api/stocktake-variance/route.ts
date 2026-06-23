@@ -202,35 +202,47 @@ export async function GET(request: Request) {
 
   const { data: itemRows, error: itemError } = await supabase
     .from("catalog_items")
-    .select("id,name,cost,item_kind")
+    .select("id,name,cost,selling_price,item_kind")
     .in("id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"]);
 
   if (itemError) {
     return NextResponse.json({ error: itemError.message }, { status: 500 });
   }
 
-  const itemMap = new Map<string, { name: string | null; cost: number; item_kind: string | null }>();
+  const itemMap = new Map<string, { name: string | null; cost: number; selling_price: number; item_kind: string | null }>();
   (itemRows ?? []).forEach((row) => {
     if (!row?.id) return;
     const cost = parseQty(row.cost);
-    itemMap.set(row.id, { name: row.name ?? null, cost, item_kind: row.item_kind ?? null });
+    const sellingPrice = parseQty(row.selling_price);
+    itemMap.set(row.id, {
+      name: row.name ?? null,
+      cost,
+      selling_price: sellingPrice > 0 ? sellingPrice : cost,
+      item_kind: row.item_kind ?? null,
+    });
   });
 
   const { data: variantRows, error: variantError } = await supabase
     .from("catalog_variants")
-    .select("id,item_id,name,cost,active")
+    .select("id,item_id,name,cost,selling_price,active")
     .in("item_id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"]);
 
   if (variantError) {
     return NextResponse.json({ error: variantError.message }, { status: 500 });
   }
 
-  const variantMap = new Map<string, { name: string | null; cost: number }>();
+  const variantMap = new Map<string, { name: string | null; cost: number; selling_price: number }>();
   (variantRows ?? []).forEach((row) => {
     if (!row?.id || !row?.item_id) return;
     if (row.active === false) return;
     const key = `${row.item_id}::${normalizeVariantKey(row.id)}`;
-    variantMap.set(key, { name: row.name ?? null, cost: parseQty(row.cost) });
+    const cost = parseQty(row.cost);
+    const sellingPrice = parseQty(row.selling_price);
+    variantMap.set(key, {
+      name: row.name ?? null,
+      cost,
+      selling_price: sellingPrice > 0 ? sellingPrice : cost,
+    });
   });
 
   const rows = Array.from(keys)
@@ -244,10 +256,10 @@ export async function GET(request: Request) {
       const transferQty = transferMap.get(key) ?? 0;
       const damageQty = damageMap.get(key) ?? 0;
       const salesQty = includeSales ? (salesMap.get(key) ?? 0) : 0;
-      // Expected = Opening + transfers (orders in) + damages + sales (ledger-signed)
+      // Expected = Opening + orders accepted + damages − sales (ledger-signed deltas)
       const expectedQty = openingQty + transferQty + damageQty + salesQty;
-      // Variance = Expected - Closing (positive = short vs book)
-      const varianceQty = expectedQty - closingQty;
+      // Variance qty = Closing − Expected
+      const varianceQty = closingQty - expectedQty;
       const itemName = itemMap.get(itemId)?.name ?? itemId;
       const itemKind = itemMap.get(itemId)?.item_kind ?? null;
       const variantKey = normalizeVariantKey(variantKeyRaw);
@@ -255,7 +267,10 @@ export async function GET(request: Request) {
       const isVariant = variantKey !== "base" && !!variantInfo;
       const variantName = variantKey === "base" ? itemName : variantInfo?.name ?? variantKey;
       const variantLabel = variantKey === "base" ? itemName : `${itemName} - ${variantName}`;
-      const unitCost = variantInfo?.cost ?? itemMap.get(itemId)?.cost ?? 0;
+      const unitPrice =
+        (variantInfo?.selling_price ?? 0) > 0
+          ? (variantInfo?.selling_price ?? 0)
+          : (itemMap.get(itemId)?.selling_price ?? itemMap.get(itemId)?.cost ?? 0);
       const hasActivity = [openingQty, transferQty, damageQty, salesQty, closingQty].some(
         (value) => Math.abs(value) > 0.0000001
       );
@@ -275,9 +290,11 @@ export async function GET(request: Request) {
         closing_qty: closingQty,
         expected_qty: expectedQty,
         variance_qty: varianceQty,
-        unit_cost: unitCost,
-        variance_cost: varianceQty * unitCost,
-        variant_amount: varianceQty * unitCost,
+        unit_cost: unitPrice,
+        unit_price: unitPrice,
+        variance_cost: varianceQty * unitPrice,
+        variance_amount: varianceQty * unitPrice,
+        variant_amount: varianceQty * unitPrice,
       };
     })
     .filter((row) => row !== null)

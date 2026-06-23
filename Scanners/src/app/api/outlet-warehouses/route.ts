@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import {
   isOutletDeductionWarehouse,
+  isPosDeductionProgrammingOutlet,
   isPosMiddlewareOutlet,
   outletCandidateFromLink,
   outletWarehouseLabel,
@@ -83,6 +84,15 @@ export async function GET(request: Request) {
     if (scope === "outlet") {
       links = links.filter((row) =>
         isSellingOutletWarehouseLink({ ...row, requireStocktakeFlag: requireStocktake })
+      );
+    } else if (scope === "pos-deductions") {
+      links = links.filter(
+        (row) =>
+          isPosDeductionProgrammingOutlet({ id: row.outlet_id, active: row.outlet?.active }) &&
+          isOutletDeductionWarehouse({
+            name: row.warehouse?.name ?? row.warehouse_name,
+            warehouse_scope: row.warehouse?.warehouse_scope ?? row.warehouse_scope,
+          })
       );
     }
 

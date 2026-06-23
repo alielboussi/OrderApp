@@ -8,6 +8,22 @@ export type MiddlewareOutletCandidate = {
   code?: string | null;
 };
 
+/** POS-only tills — no ordering-app deductions; excluded from POS deduction programming UI. */
+export const POS_ONLY_OUTLET_IDS = new Set([
+  "648e949d-8648-4c43-80d4-f08feb7bdd04", // Till 1
+  "a406fede-7aab-4473-8e9f-ff645267466f", // Quick Corner
+  "a655b0a1-a37a-43d6-aa55-7f97377b2660", // Till 2
+]);
+
+export function isSellingChannel(channel?: string | null): boolean {
+  const normalized = (channel ?? "selling").trim().toLowerCase();
+  if (!normalized || normalized === "selling") return true;
+  if (normalized === "pos" || normalized === "point of sale" || normalized === "point of sales") {
+    return true;
+  }
+  return /\bpoint\s+of\s+sale(s)?\b/.test(normalized);
+}
+
 /** POS middleware outlets that should receive catalog sync — excludes storeroom/hub rows. */
 export function isMiddlewareCatalogSyncOutlet(outlet: MiddlewareOutletCandidate): boolean {
   if (outlet.active === false) return false;
@@ -23,14 +39,21 @@ export function isMiddlewareCatalogSyncOutlet(outlet: MiddlewareOutletCandidate)
 export function isPosMiddlewareOutlet(outlet: MiddlewareOutletCandidate): boolean {
   if (outlet.active === false) return false;
   if (outlet.has_pos_middleware !== true) return false;
-
-  const channel = (outlet.channel ?? "selling").trim().toLowerCase();
-  if (channel !== "selling") return false;
+  if (!isSellingChannel(outlet.channel)) return false;
 
   const label = `${outlet.name ?? ""} ${outlet.code ?? ""}`.toLowerCase();
   if (isStoreroomLabel(label)) return false;
 
   return true;
+}
+
+/** Outlets eligible for POS sale deduction programming (all active except POS-only tills). */
+export function isPosDeductionProgrammingOutlet(outlet: {
+  id?: string | null;
+  active?: boolean | null;
+}): boolean {
+  if (!outlet.id || POS_ONLY_OUTLET_IDS.has(outlet.id)) return false;
+  return outlet.active !== false;
 }
 
 export function isStoreroomLabel(label: string): boolean {

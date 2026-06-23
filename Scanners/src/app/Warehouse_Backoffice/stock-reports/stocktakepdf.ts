@@ -82,8 +82,8 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
         }
 
         cells.push(
-          `<td>${formatQty(row.closing_qty)}</td>`,
           `<td>${formatQty(row.expected_qty)}</td>`,
+          `<td>${formatQty(row.closing_qty)}</td>`,
           `<td>${formatQty(row.variance_qty)}</td>`,
           `<td>${formatCurrency(row.variant_amount)}</td>`
         );
@@ -216,13 +216,13 @@ export function buildStocktakeVariancePdfHtml(options: StocktakePdfOptions): str
                   <tr>
                     <th>Item</th>
                     <th>Opening</th>
-                    <th>Transfers</th>
+                    <th>Orders Accepted</th>
                     <th>Damages</th>
                     ${includeSales ? "<th>Sales</th>" : ""}
+                    <th>Expected</th>
                     <th>Closing</th>
-                    <th>${includeSales ? "Expected" : "Predicted"}</th>
-                    <th>Variance</th>
-                    <th>Variance Cost</th>
+                    <th>Variance Qty</th>
+                    <th>Variance Amount</th>
                   </tr>
                 </thead>
                 <tbody>

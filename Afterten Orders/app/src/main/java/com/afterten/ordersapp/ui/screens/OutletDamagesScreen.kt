@@ -91,7 +91,7 @@ fun OutletDamagesScreen(
     ) { padding ->
         Column(Modifier.padding(padding).padding(16.dp)) {
             Text(
-                "Write-offs at your outlet warehouses — same data as backoffice Outlets → Damages.",
+                "Write-offs at your outlet warehouses — recorded from the Afterten Orders app.",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.height(12.dp))

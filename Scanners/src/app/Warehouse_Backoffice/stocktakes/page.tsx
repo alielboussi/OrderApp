@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import { fetchSellingOutlets, fetchSellingOutletWarehouses, groupSellingOutletWarehouses } from "@/lib/sellingOutlets";
+import { fetchPosDeductionOutlets, fetchPosDeductionOutletWarehouses, groupSellingOutletWarehouses } from "@/lib/sellingOutlets";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import eb from "../enterprise.module.css";
 import styles from "./outlet-stocktake.module.css";
@@ -108,9 +108,31 @@ export default function StocktakesPage() {
   const closedPeriods = useMemo(() => periods.filter((p) => p.status === "closed"), [periods]);
 
   const loadOutletWarehouses = useCallback(async () => {
-    const [outlets, links] = await Promise.all([fetchSellingOutlets(), fetchSellingOutletWarehouses()]);
+    const [outlets, links] = await Promise.all([
+      fetchPosDeductionOutlets(),
+      fetchPosDeductionOutletWarehouses(),
+    ]);
     const defaults = new Map(outlets.map((outlet) => [outlet.id, outlet.default_sales_warehouse_id ?? null]));
-    const rows = groupSellingOutletWarehouses(links, defaults);
+    const grouped = groupSellingOutletWarehouses(links, defaults);
+
+    const rows = [...grouped];
+    for (const outlet of outlets) {
+      if (rows.some((row) => row.outlet_id === outlet.id)) continue;
+      const defaultWh = outlet.default_sales_warehouse_id;
+      if (!defaultWh) continue;
+      rows.push({
+        outlet_id: outlet.id,
+        outlet_name: outlet.name,
+        warehouse_id: defaultWh,
+        warehouse_name: "Default warehouse",
+        display_name: outlet.name,
+      });
+    }
+
+    rows.sort((a, b) =>
+      a.outlet_name.localeCompare(b.outlet_name, undefined, { sensitivity: "base" }),
+    );
+
     setOutletWarehouses(rows);
     setSelectedWarehouseId((current) => {
       if (current && rows.some((row) => row.warehouse_id === current)) return current;
@@ -309,12 +331,15 @@ export default function StocktakesPage() {
           </h3>
           <p className={eb.pageCardBody}>
             Live ledger balance per outlet warehouse. Opening and closing counts are captured in the Afterten Orders app;
-            transfers, damages, and POS sales flow from middleware into the variance automatically when a period closes.
+            order receipts and POS sales flow from middleware into the variance automatically when a period closes.
+            Till 1, Till 2, and Quick Corner are excluded from this list.
           </p>
         </div>
         <p className={styles.formula}>
-          Expected = Opening + Order transfers + Damages − Sales · Variance = Expected − Closing · Variance value = Cost ×
-          Variance qty
+          Expected = Opening Stock Of Period + Orders Accepted By Supervisor + Damages Of The Outlet Warehouse − Sales Of
+          The Period · Variance Qty Of Product = Closing Stock Of Period − Expected Value Of Same Period · Opening Stock
+          Of Next Period = Closing Stock Of Previous Period · Variance Amount Of Product = Variance Qty Of Product × Price
+          Of Product
         </p>
       </section>
 
@@ -328,7 +353,7 @@ export default function StocktakesPage() {
               onChange={(e) => setSelectedWarehouseId(e.target.value)}
             >
               {outletWarehouses.length === 0 ? (
-                <option value="">No selling outlets configured</option>
+                <option value="">No eligible outlets configured</option>
               ) : (
                 outletWarehouses.map((row) => (
                   <option key={row.warehouse_id} value={row.warehouse_id}>
@@ -500,13 +525,13 @@ export default function StocktakesPage() {
                           <tr>
                             <th>Product</th>
                             <th>Opening</th>
-                            <th>Transfers</th>
+                            <th>Orders Accepted</th>
                             <th>Damages</th>
                             {includeSales && <th>Sales</th>}
                             <th>Expected</th>
                             <th>Closing</th>
-                            <th>Variance</th>
-                            <th>Value</th>
+                            <th>Variance Qty</th>
+                            <th>Variance Amount</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -535,8 +560,8 @@ export default function StocktakesPage() {
           {closedPeriods.length > 0 && (
             <section className={eb.pageCard}>
               <p className={styles.muted}>
-                When a period closes, the next period opens automatically with opening stock equal to the previous
-                closing snapshot. Use the PDF button on any closed period for the variance report.
+                When a period closes, the next period opens with opening stock equal to the previous period&apos;s
+                closing stock. Use the PDF button on any closed period for the variance report.
               </p>
             </section>
           )}

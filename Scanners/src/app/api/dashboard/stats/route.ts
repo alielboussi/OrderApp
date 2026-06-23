@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let purchasesRes = await supabase
+    const purchasesRes = await supabase
       .from("warehouse_purchase_receipts")
       .select("recorded_at,items:warehouse_purchase_items(item_id,qty_units,unit_cost,item:catalog_items(name))")
       .gte("recorded_at", purchasesRange.from.toISOString())
@@ -161,11 +161,15 @@ export async function GET(request: NextRequest) {
       .order("recorded_at", { ascending: false })
       .limit(500);
 
+    let purchaseRows: PurchaseReceiptRow[] = [];
     if (
       purchasesRes.error &&
       isMissingRelationError(purchasesRes.error, "warehouse_purchase_receipts", "warehouse_purchase_items")
     ) {
-      purchasesRes = { data: [], error: null };
+      purchaseRows = [];
+    } else {
+      if (purchasesRes.error) throw purchasesRes.error;
+      purchaseRows = (purchasesRes.data as PurchaseReceiptRow[]) ?? [];
     }
 
     let ordersQuery = supabase
@@ -178,7 +182,6 @@ export async function GET(request: NextRequest) {
 
     const ordersRes = await ordersQuery;
 
-    if (purchasesRes.error) throw purchasesRes.error;
     if (ordersRes.error) throw ordersRes.error;
 
     let salesQty = 0;
@@ -202,7 +205,7 @@ export async function GET(request: NextRequest) {
     let purchasesCost = 0;
     const purchasesByProduct: Array<{ name: string; qty: number }> = [];
 
-    for (const receipt of (purchasesRes.data as PurchaseReceiptRow[]) ?? []) {
+    for (const receipt of purchaseRows) {
       for (const item of receipt.items ?? []) {
         const qty = toNumber(item.qty_units);
         if (qty <= 0) continue;
@@ -250,7 +253,7 @@ export async function GET(request: NextRequest) {
         total_cost: Math.round(purchasesCost * 100) / 100,
         most_purchased: mostPurchased,
         least_purchased: leastPurchased,
-        receipt_count: (purchasesRes.data ?? []).length,
+        receipt_count: purchaseRows.length,
       },
       outlet_orders: {
         order_count: orderIds.length,

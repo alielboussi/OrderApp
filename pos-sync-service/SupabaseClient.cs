@@ -446,6 +446,30 @@ public sealed class SupabaseClient
         );
     }
 
+    public async Task<SupabaseResult> SyncOutletPosCatalogBindingsAsync(
+        IReadOnlyList<PosCatalogSkuMapRow> rows,
+        CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0 || _outlet.Id == Guid.Empty)
+        {
+            return new SupabaseResult(true);
+        }
+
+        var payloadRows = rows.Select(row => new
+        {
+            item_sku = row.ItemSku,
+            item_name = row.ItemName,
+            variant_name = row.VariantName,
+            variant_sku = row.VariantSku
+        }).ToArray();
+
+        return await PostRpcAsync(
+            "/rest/v1/rpc/sync_outlet_pos_catalog_bindings",
+            new { p_outlet_id = _outlet.Id, p_rows = payloadRows },
+            cancellationToken
+        );
+    }
+
     public async Task<SupabaseResult> SyncPosMenuGroupsAsync(
         IReadOnlyList<PosMenuGroupMapRow> rows,
         CancellationToken cancellationToken)
