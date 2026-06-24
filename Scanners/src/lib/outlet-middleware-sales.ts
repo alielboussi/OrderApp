@@ -377,7 +377,7 @@ export async function handleOutletMiddlewareSalesRequest(
             effectiveUntil,
             limit,
             filterResult,
-            "outlet_sales table missing — run supabase/scripts/recreate_outlet_sales.sql",
+            "outlet_sales table missing — apply outlet_sales schema in Supabase",
           ),
         );
       }
