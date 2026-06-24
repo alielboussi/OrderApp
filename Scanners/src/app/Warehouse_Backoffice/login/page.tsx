@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import styles from "./login.module.css";
+
+function getOAuthCallbackUrl(): string {
+  return `${window.location.origin}/Warehouse_Backoffice/auth/callback`;
+}
 
 export default function WarehouseBackofficeLogin() {
   const router = useRouter();
@@ -12,6 +16,15 @@ export default function WarehouseBackofficeLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get("error");
+    if (authError) {
+      setError(decodeURIComponent(authError));
+    }
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -30,13 +43,52 @@ export default function WarehouseBackofficeLogin() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: getOAuthCallbackUrl(),
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
+      });
+      if (oauthError) throw oauthError;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to start Google sign-in";
+      setError(message);
+      setGoogleLoading(false);
+    }
+  };
+
+  const busy = loading || googleLoading;
+
   return (
     <div className={styles.page}>
       <main className={styles.shell}>
         <section className={styles.card}>
           <p className={styles.kicker}>AfterTen Logistics</p>
           <h1 className={styles.title}>Warehouse Backoffice Login</h1>
-          <p className={styles.subtitle}>Sign in with your Supabase Authentication user.</p>
+          <p className={styles.subtitle}>Sign in with Google or your Supabase Authentication user.</p>
+
+          <button
+            type="button"
+            className={styles.googleButton}
+            onClick={handleGoogleSignIn}
+            disabled={busy}
+          >
+            <span className={styles.googleIcon} aria-hidden="true" />
+            {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+          </button>
+
+          <div className={styles.divider} role="separator" aria-label="or">
+            <span>or</span>
+          </div>
+
           <form onSubmit={handleSubmit} className={styles.form}>
             <label className={styles.label}>
               Email
@@ -59,7 +111,7 @@ export default function WarehouseBackofficeLogin() {
               />
             </label>
             {error ? <p className={styles.error}>{error}</p> : null}
-            <button className={styles.submit} type="submit" disabled={loading}>
+            <button className={styles.submit} type="submit" disabled={busy}>
               {loading ? "Signing in..." : "Enter backoffice"}
             </button>
           </form>

@@ -23,6 +23,8 @@ export function getWarehouseBrowserClient(): SupabaseClient {
       auth: {
         persistSession: true,
         storageKey: "sb-warehouse-backoffice",
+        detectSessionInUrl: true,
+        flowType: "pkce",
       },
     });
   }

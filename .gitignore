@@ -55,3 +55,7 @@ $RECYCLE.BIN/
 # Env files
 .env*
 !.env.example
+
+# Local OAuth / API secrets (never commit)
+**/google-oauth-credentials.txt
+client_secret_*.json

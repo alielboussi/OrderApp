@@ -220,9 +220,25 @@ export async function POST(request: Request) {
     }
 
     const supabase = getServiceClient();
-    const outletIds = await middlewareOutletIds();
-    if (!outletIds.length) {
+    const allMiddlewareOutletIds = await middlewareOutletIds();
+    if (!allMiddlewareOutletIds.length) {
       return NextResponse.json({ error: "No active middleware outlets found." }, { status: 400 });
+    }
+
+    const requestedOutletIds = Array.isArray(body?.outlet_ids)
+      ? body.outlet_ids
+          .filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0)
+          .map((value) => value.trim())
+      : [];
+
+    const allowedMiddleware = new Set(allMiddlewareOutletIds);
+    const outletIds =
+      requestedOutletIds.length > 0
+        ? requestedOutletIds.filter((outletId) => allowedMiddleware.has(outletId))
+        : allMiddlewareOutletIds;
+
+    if (!outletIds.length) {
+      return NextResponse.json({ error: "No valid middleware outlets selected." }, { status: 400 });
     }
 
     let candidates: CandidateRow[] = [];
@@ -293,6 +309,7 @@ export async function POST(request: Request) {
       ok: true,
       sent: chosen.length,
       outlets: outletIds.length,
+      outlet_ids: outletIds,
       mode,
       scheduled_at: scheduledAt,
     });
