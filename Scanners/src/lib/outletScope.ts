@@ -9,11 +9,65 @@ export type MiddlewareOutletCandidate = {
 };
 
 /** POS-only tills — no ordering-app deductions; excluded from POS deduction programming UI. */
-export const POS_ONLY_OUTLET_IDS = new Set([
+export const TILL_OUTLET_IDS = new Set([
   "648e949d-8648-4c43-80d4-f08feb7bdd04", // Till 1
-  "a406fede-7aab-4473-8e9f-ff645267466f", // Quick Corner
   "a655b0a1-a37a-43d6-aa55-7f97377b2660", // Till 2
 ]);
+
+export const QUICK_CORNER_OUTLET_ID = "a406fede-7aab-4473-8e9f-ff645267466f";
+
+export const POS_ONLY_OUTLET_IDS = new Set([
+  ...TILL_OUTLET_IDS,
+  QUICK_CORNER_OUTLET_ID, // Quick Corner
+]);
+
+/** Middleware sales export API profile — Till 1/2 share `till`, Quick Corner uses `quick_corner`. */
+export type MiddlewareSalesApiProfile = "till" | "quick_corner";
+
+export const MIDDLEWARE_SALES_API_PATHS: Record<MiddlewareSalesApiProfile, string> = {
+  till: "/api/outlet-middleware-sales/tills",
+  quick_corner: "/api/outlet-middleware-sales/quick-corner",
+};
+
+export function middlewareSalesApiProfileForOutletId(outletId: string): MiddlewareSalesApiProfile | null {
+  if (TILL_OUTLET_IDS.has(outletId)) return "till";
+  if (outletId === QUICK_CORNER_OUTLET_ID) return "quick_corner";
+  return null;
+}
+
+export function outletIdsForMiddlewareSalesApiProfile(profile: MiddlewareSalesApiProfile): string[] {
+  if (profile === "till") return Array.from(TILL_OUTLET_IDS);
+  return [QUICK_CORNER_OUTLET_ID];
+}
+
+export function parseMiddlewareSalesApiProfile(value: string | null | undefined): MiddlewareSalesApiProfile | null {
+  const normalized = value?.trim().toLowerCase().replace(/-/g, "_");
+  if (!normalized) return null;
+  if (normalized === "till" || normalized === "tills") return "till";
+  if (normalized === "quick_corner" || normalized === "quickcorner") return "quick_corner";
+  return null;
+}
+
+export function resolveMiddlewareSalesApiProfile(
+  outletId: string | null,
+  profileParam: string | null | undefined,
+  fixedProfile?: MiddlewareSalesApiProfile,
+): { profile: MiddlewareSalesApiProfile; outletIds: string[] } | { error: string } {
+  const profile = fixedProfile ?? parseMiddlewareSalesApiProfile(profileParam);
+  if (!profile) {
+    return { error: "middleware sales profile is required (till or quick_corner)" };
+  }
+
+  const allowedOutletIds = outletIdsForMiddlewareSalesApiProfile(profile);
+  if (outletId) {
+    if (!allowedOutletIds.includes(outletId)) {
+      return { error: `outletId is not part of the ${profile} middleware sales API profile` };
+    }
+    return { profile, outletIds: [outletId] };
+  }
+
+  return { profile, outletIds: allowedOutletIds };
+}
 
 export function isSellingChannel(channel?: string | null): boolean {
   const normalized = (channel ?? "selling").trim().toLowerCase();

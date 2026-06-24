@@ -15,12 +15,12 @@ type BackofficeShellProps = {
 
 function navItemActive(pathname: string, hash: string, href: string): boolean {
   const [itemPath, itemHash = ""] = href.split("#");
-  if (pathname !== itemPath) {
-    return itemPath !== "/Warehouse_Backoffice" && pathname.startsWith(itemPath);
+  if (itemHash) {
+    return pathname === itemPath && hash === itemHash;
   }
-  if (itemHash) return hash === itemHash;
-  if (hash === "outlet-live-balances") return false;
-  return href === pathname;
+  if (pathname === itemPath) return true;
+  if (itemPath === "/Warehouse_Backoffice") return false;
+  return pathname.startsWith(`${itemPath}/`);
 }
 
 function usernameForEmail(email: string | null): string {

@@ -7,7 +7,6 @@ import styles from "../enterprise.module.css";
 const REPORT_LINKS = [
   { label: "Outlet Sales", href: "/Warehouse_Backoffice/reports", tone: "blue" as const, desc: "Filter sales by outlet, date, and product." },
   { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders", tone: "gold" as const, desc: "Filter orders by outlet and date." },
-  { label: "Warehouse History", href: "/Warehouse_Backoffice/inventory", tone: "green" as const, desc: "Purchase receipts and warehouse intake." },
   { label: "Stock Reports", href: "/Warehouse_Backoffice/stock-reports", tone: "blue" as const, desc: "Stocktake periods for mapped warehouses." },
   { label: "Movement Reports", href: "/Warehouse_Backoffice/warehouse-reports", tone: "gold" as const, desc: "Movement totals by date range." },
   { label: "Flow Traces", href: "/Warehouse_Backoffice/flow-traces", tone: "blue" as const, desc: "Audit stock deductions." },

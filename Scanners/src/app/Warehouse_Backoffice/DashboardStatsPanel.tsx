@@ -22,12 +22,6 @@ type DashboardStats = {
     most_sold: ProductStat;
     least_sold: ProductStat;
   };
-  purchases: {
-    total_qty: number;
-    total_cost: number;
-    most_purchased: ProductStat;
-    least_purchased: ProductStat;
-  };
   outlet_orders: {
     order_count: number;
     most_ordered: ProductStat;
@@ -122,8 +116,6 @@ export default function DashboardStatsPanel() {
   const [salesOutletsInitialized, setSalesOutletsInitialized] = useState(false);
   const [salesFrom, setSalesFrom] = useState(toDateInputValue(weekAgo));
   const [salesTo, setSalesTo] = useState(toDateInputValue(today));
-  const [purchasesFrom, setPurchasesFrom] = useState(toDateInputValue(weekAgo));
-  const [purchasesTo, setPurchasesTo] = useState(toDateInputValue(today));
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -213,8 +205,6 @@ export default function DashboardStatsPanel() {
       const params = new URLSearchParams({
         sales_from: salesFrom,
         sales_to: salesTo,
-        purchases_from: purchasesFrom,
-        purchases_to: purchasesTo,
         orders_from: salesFrom,
         orders_to: salesTo,
       });
@@ -230,7 +220,7 @@ export default function DashboardStatsPanel() {
     } finally {
       setStatsLoading(false);
     }
-  }, [salesFrom, salesTo, selectedSalesOutletIds, purchasesFrom, purchasesTo]);
+  }, [salesFrom, salesTo, selectedSalesOutletIds]);
 
   useEffect(() => {
     void loadStats();
@@ -248,8 +238,6 @@ export default function DashboardStatsPanel() {
         sales_from: salesFrom,
         sales_to: salesTo,
         sales_outlet_ids: outletLeaderId,
-        purchases_from: salesFrom,
-        purchases_to: salesTo,
         orders_from: salesFrom,
         orders_to: salesTo,
       });
@@ -410,49 +398,6 @@ export default function DashboardStatsPanel() {
                 </p>
               </>
             )}
-          </StatCard>
-        </StatsSection>
-
-        <StatsSection title="Purchases" tone="gold">
-          <StatCard tone="gold" label="Purchases">
-            <div className={styles.dashboardStatsFilters}>
-              <input
-                type="date"
-                className={styles.fieldInput}
-                value={purchasesFrom}
-                onChange={(event) => setPurchasesFrom(event.target.value)}
-                aria-label="Purchases from date"
-              />
-              <input
-                type="date"
-                className={styles.fieldInput}
-                value={purchasesTo}
-                onChange={(event) => setPurchasesTo(event.target.value)}
-                aria-label="Purchases to date"
-              />
-            </div>
-            <p className={styles.dashboardStatValue}>{statsLoading ? "…" : formatQty(stats?.purchases.total_qty ?? 0)}</p>
-            <p className={styles.dashboardStatMeta}>
-              Cost {statsLoading ? "…" : formatMoney(stats?.purchases.total_cost ?? 0)}
-            </p>
-          </StatCard>
-
-          <StatCard tone="gold" label="Most purchased product">
-            <p className={styles.dashboardStatProduct} title={stats?.purchases.most_purchased?.name ?? undefined}>
-              {statsLoading ? "…" : productLine(stats?.purchases.most_purchased ?? null)}
-            </p>
-            <p className={styles.dashboardStatHint}>
-              {purchasesFrom} to {purchasesTo}
-            </p>
-          </StatCard>
-
-          <StatCard tone="gold" label="Least purchased product">
-            <p className={styles.dashboardStatProduct} title={stats?.purchases.least_purchased?.name ?? undefined}>
-              {statsLoading ? "…" : productLine(stats?.purchases.least_purchased ?? null)}
-            </p>
-            <p className={styles.dashboardStatHint}>
-              {purchasesFrom} to {purchasesTo}
-            </p>
           </StatCard>
         </StatsSection>
 

@@ -18,18 +18,6 @@ type SalesRow = {
   catalog_items: { name: string | null } | { name: string | null }[] | null;
 };
 
-type PurchaseItemRow = {
-  item_id: string | null;
-  qty_units: number | string | null;
-  unit_cost: number | string | null;
-  item: { name: string | null } | { name: string | null }[] | null;
-};
-
-type PurchaseReceiptRow = {
-  recorded_at: string | null;
-  items: PurchaseItemRow[] | null;
-};
-
 type OrderItemRow = {
   name: string | null;
   qty: number | null;
@@ -105,8 +93,6 @@ export async function GET(request: NextRequest) {
 
     const salesFrom = parseDateRangeParam(url.searchParams.get("sales_from"), false);
     const salesTo = parseDateRangeParam(url.searchParams.get("sales_to"), true);
-    const purchasesFrom = parseDateRangeParam(url.searchParams.get("purchases_from"), false);
-    const purchasesTo = parseDateRangeParam(url.searchParams.get("purchases_to"), true);
     const ordersFrom = parseDateRangeParam(url.searchParams.get("orders_from"), false);
     const ordersTo = parseDateRangeParam(url.searchParams.get("orders_to"), true);
 
@@ -114,16 +100,12 @@ export async function GET(request: NextRequest) {
       from: salesFrom ?? defaultRange().from,
       to: salesTo ?? defaultRange().to,
     };
-    const purchasesRange = {
-      from: purchasesFrom ?? salesRange.from,
-      to: purchasesTo ?? salesRange.to,
-    };
     const ordersRange = {
       from: ordersFrom ?? salesRange.from,
       to: ordersTo ?? salesRange.to,
     };
 
-    if (salesRange.from > salesRange.to || purchasesRange.from > purchasesRange.to || ordersRange.from > ordersRange.to) {
+    if (salesRange.from > salesRange.to || ordersRange.from > ordersRange.to) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
 
@@ -151,25 +133,6 @@ export async function GET(request: NextRequest) {
       } else {
         salesRows = (salesRes.data as SalesRow[]) ?? [];
       }
-    }
-
-    const purchasesRes = await supabase
-      .from("warehouse_purchase_receipts")
-      .select("recorded_at,items:warehouse_purchase_items(item_id,qty_units,unit_cost,item:catalog_items(name))")
-      .gte("recorded_at", purchasesRange.from.toISOString())
-      .lte("recorded_at", purchasesRange.to.toISOString())
-      .order("recorded_at", { ascending: false })
-      .limit(500);
-
-    let purchaseRows: PurchaseReceiptRow[] = [];
-    if (
-      purchasesRes.error &&
-      isMissingRelationError(purchasesRes.error, "warehouse_purchase_receipts", "warehouse_purchase_items")
-    ) {
-      purchaseRows = [];
-    } else {
-      if (purchasesRes.error) throw purchasesRes.error;
-      purchaseRows = (purchasesRes.data as PurchaseReceiptRow[]) ?? [];
     }
 
     let ordersQuery = supabase
@@ -201,24 +164,6 @@ export async function GET(request: NextRequest) {
     const salesAgg = aggregateByName(salesByProduct);
     const { most: mostSold, least: leastSold } = pickMostLeast(salesAgg);
 
-    let purchasesQty = 0;
-    let purchasesCost = 0;
-    const purchasesByProduct: Array<{ name: string; qty: number }> = [];
-
-    for (const receipt of purchaseRows) {
-      for (const item of receipt.items ?? []) {
-        const qty = toNumber(item.qty_units);
-        if (qty <= 0) continue;
-        const cost = toNumber(item.unit_cost);
-        purchasesQty += qty;
-        purchasesCost += qty * cost;
-        purchasesByProduct.push({ name: relName(item.item), qty });
-      }
-    }
-
-    const purchasesAgg = aggregateByName(purchasesByProduct);
-    const { most: mostPurchased, least: leastPurchased } = pickMostLeast(purchasesAgg);
-
     const orderIds = ((ordersRes.data as Array<{ id: string }>) ?? []).map((row) => row.id).filter(Boolean);
     const ordersByProduct: Array<{ name: string; qty: number }> = [];
 
@@ -248,13 +193,6 @@ export async function GET(request: NextRequest) {
         least_sold: leastSold,
         row_count: salesRows.length,
       },
-      purchases: {
-        total_qty: purchasesQty,
-        total_cost: Math.round(purchasesCost * 100) / 100,
-        most_purchased: mostPurchased,
-        least_purchased: leastPurchased,
-        receipt_count: purchaseRows.length,
-      },
       outlet_orders: {
         order_count: orderIds.length,
         most_ordered: mostOrdered,
@@ -262,7 +200,6 @@ export async function GET(request: NextRequest) {
       },
       ranges: {
         sales: { from: salesRange.from.toISOString(), to: salesRange.to.toISOString() },
-        purchases: { from: purchasesRange.from.toISOString(), to: purchasesRange.to.toISOString() },
         orders: { from: ordersRange.from.toISOString(), to: ordersRange.to.toISOString() },
       },
     });

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-import { isMiddlewareCatalogSyncOutlet, isPosDeductionProgrammingOutlet, isPosMiddlewareOutlet } from "@/lib/outletScope";
+import {
+  isMiddlewareCatalogSyncOutlet,
+  isPosDeductionProgrammingOutlet,
+  isPosMiddlewareOutlet,
+  middlewareSalesApiProfileForOutletId,
+  MIDDLEWARE_SALES_API_PATHS,
+} from "@/lib/outletScope";
 import { isHeartbeatMonitoredOutlet } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
 
 type OutletRow = {
@@ -21,9 +27,12 @@ type Outlet = {
   channel: string | null;
   has_pos_middleware: boolean | null;
   default_sales_warehouse_id: string | null;
+  middleware_sales_api_profile: string | null;
+  middleware_sales_api_path: string | null;
 };
 
 function mapOutlet(row: OutletRow): Outlet {
+  const profile = middlewareSalesApiProfileForOutletId(row.id);
   return {
     id: row.id,
     name: (row.name ?? "Outlet").trim(),
@@ -32,6 +41,8 @@ function mapOutlet(row: OutletRow): Outlet {
     channel: row.channel ?? null,
     has_pos_middleware: row.has_pos_middleware ?? null,
     default_sales_warehouse_id: row.default_sales_warehouse_id ?? null,
+    middleware_sales_api_profile: profile,
+    middleware_sales_api_path: profile ? MIDDLEWARE_SALES_API_PATHS[profile] : null,
   };
 }
 

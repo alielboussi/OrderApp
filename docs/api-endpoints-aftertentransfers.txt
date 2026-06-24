@@ -3,33 +3,73 @@ Base URL: https://aftertentransfers.app
 
 Generated from Scanners/src/app/api (Next.js App Router).
 All paths are relative to the base URL unless noted.
+Last updated: 2026-06-23
 
 ================================================================================
-MIDDLEWARE & POS SALES
+MIDDLEWARE SALES EXPORT (external consumers — same JSON format on all routes)
+================================================================================
+
+These routes READ synced POS sales from Supabase. SCPGT middleware on outlet PCs
+does NOT call these — it pushes sales into Supabase directly.
+
+Outlet mapping (middleware_sales_api_profile in Supabase):
+
+  Till 1   648e949d-8648-4c43-80d4-f08feb7bdd04  → profile: till
+  Till 2   a655b0a1-a37a-43d6-aa55-7f97377b2660  → profile: till
+  Quick Corner  a406fede-7aab-4473-8e9f-ff645267466f  → profile: quick_corner
+
+--- Till 1 + Till 2 (shared route) ---
+
+GET  https://aftertentransfers.app/api/outlet-middleware-sales/tills
+     Both tills. Query: since, until, limit (default 1000, max 5000).
+
+GET  https://aftertentransfers.app/api/outlet-middleware-sales/tills?outletId=648e949d-8648-4c43-80d4-f08feb7bdd04
+     Till 1 only.
+
+GET  https://aftertentransfers.app/api/outlet-middleware-sales/tills?outletId=a655b0a1-a37a-43d6-aa55-7f97377b2660
+     Till 2 only.
+
+--- Quick Corner ---
+
+GET  https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner
+     Quick Corner only. Query: since, until, limit.
+
+--- Legacy / all outlets ---
+
+GET  https://aftertentransfers.app/api/outlet-middleware-sales
+     All middleware outlets. Query: outletId, since, until, limit,
+     profile (till | quick_corner).
+
+Response fields (all routes): api_format_version (2), since, until, limit,
+sales_count, grouping ("by_outlet"), middleware_api_profile, outlet_ids,
+outlet_summaries[], sales[] (each sale has outlet_uuid, lines, payment_methods, etc.).
+
+================================================================================
+MIDDLEWARE MONITORING & POS SYNC
 ================================================================================
 
 GET  https://aftertentransfers.app/api/middleware-status
-     Middleware heartbeat + catalog sync status for POS outlets.
+     Middleware heartbeat + last catalog sync per POS outlet.
 
 GET  https://aftertentransfers.app/api/middleware-catalog-schedule
 PUT  https://aftertentransfers.app/api/middleware-catalog-schedule
-     Scheduled POS catalog sync settings.
-
-GET  https://aftertentransfers.app/api/outlet-middleware-sales
-     POS sales by outlet (not warehouse). Query: outletId (Till 1 / Till 2 separately), since, until, limit.
-     Response includes outlet_uuid per sale and outlet_summaries when multiple outlets match.
+     Global scheduled POS catalog sync (PUT body: { scheduled_at }).
 
 GET  https://aftertentransfers.app/api/pos-sales
-     POS orders/sales from Supabase (query: outletId, since, until, branchId, includeSales).
+     POS orders from Supabase orders table.
+     Query: outletId, since, until, limit (default 500, max 2000),
+     branchId, sourceEventId, sourceEventPrefix,
+     includeSales (or include=sales) to also return outlet_sales rows.
 
 GET  https://aftertentransfers.app/api/pos-sync-alert
-     POS sync alert / health check.
+     POS mapping mismatches + sync failures (last 7 days).
 
 POST https://aftertentransfers.app/api/catalog/sync-pos-catalog
-     Push catalog/menu groups to POS middleware.
+     Bulk upsert catalog items/variants from JSON rows (backoffice import).
 
 POST https://aftertentransfers.app/api/catalog/request-pos-catalog-sync
-     Queue catalog sync event for an outlet.
+     Queue on-demand POS catalog sync for outlet(s).
+     Body: { outlet_ids[], outlet_options?, scheduled_at? }.
 
 POST https://aftertentransfers.app/api/catalog/cancel-offline-pending-sync
      Cancel pending offline catalog sync events.
@@ -39,43 +79,38 @@ DASHBOARD
 ================================================================================
 
 GET  https://aftertentransfers.app/api/dashboard/stats
-     Sales, purchases, and outlet-order stats (query: sales_from, sales_to, purchases_from, purchases_to, orders_from, orders_to, sales_outlet_ids).
+     Sales + outlet-order aggregates.
+     Query: sales_from, sales_to, orders_from, orders_to,
+     sales_outlet_ids (comma-separated UUIDs) or sales_outlet_id (repeatable).
 
 ================================================================================
 OUTLETS & WAREHOUSES
 ================================================================================
 
 GET  https://aftertentransfers.app/api/outlets
-     List outlets (query: scope = all | selling | middleware | heartbeat | catalog-sync).
+     List outlets.
+     Query scope: selling | pos-deductions | middleware | catalog-sync | heartbeat
+     (omit scope for all).
+     Each outlet includes middleware_sales_api_profile and middleware_sales_api_path
+     when applicable (till → /api/outlet-middleware-sales/tills,
+     quick_corner → /api/outlet-middleware-sales/quick-corner).
 
 PUT  https://aftertentransfers.app/api/outlets
-     Update outlet settings.
+     Update outlet default_sales_warehouse_id.
+     Body: { updates: [{ id, default_sales_warehouse_id }] } or single { id, ... }.
 
 GET  https://aftertentransfers.app/api/outlet-warehouses
-     Outlet ↔ warehouse links (query: outletId).
+     Outlet ↔ warehouse links.
+     Query: outlet_id, scope (outlet | pos-deductions),
+     stocktake=1 or for_stocktake=true (with scope=outlet).
 
 GET  https://aftertentransfers.app/api/warehouses
      List warehouses.
+     Query: include_inactive (1|true), scope (outlet | hub), outlet_id,
+     locked_id / fromLockedId / lockedWarehouseId (repeatable).
 
 GET  https://aftertentransfers.app/api/operators
      Operator directory (supervisors from Auth metadata).
-
-================================================================================
-PURCHASES
-================================================================================
-
-GET  https://aftertentransfers.app/api/warehouse-purchases
-     Purchase receipt history (query: warehouseId, startDate, endDate, limit).
-
-POST https://aftertentransfers.app/api/warehouse-purchase-import
-     Import receive movements from Afterten stock API (body: dryRun).
-
-GET  https://aftertentransfers.app/api/suppliers
-     Read-only supplier list (rows created by purchase import from stock API).
-
-POST https://aftertentransfers.app/api/suppliers
-PATCH https://aftertentransfers.app/api/suppliers
-     Disabled — suppliers are inserted during POST /api/warehouse-purchase-import.
 
 ================================================================================
 CATALOG
@@ -85,13 +120,13 @@ GET  https://aftertentransfers.app/api/catalog/items
 POST https://aftertentransfers.app/api/catalog/items
 PUT  https://aftertentransfers.app/api/catalog/items
 DELETE https://aftertentransfers.app/api/catalog/items
-     Catalog products (query: id, item_kind, etc.).
+     Catalog products. GET query: id, q (search).
 
 GET  https://aftertentransfers.app/api/catalog/variants
 POST https://aftertentransfers.app/api/catalog/variants
 PUT  https://aftertentransfers.app/api/catalog/variants
 DELETE https://aftertentransfers.app/api/catalog/variants
-     Catalog variants (query: item_id, id).
+     Catalog variants. GET query: item_id, id.
 
 GET  https://aftertentransfers.app/api/catalog/menu-groups
 POST https://aftertentransfers.app/api/catalog/menu-groups
@@ -101,63 +136,54 @@ PUT  https://aftertentransfers.app/api/catalog/menu-groups
 GET  https://aftertentransfers.app/api/catalog/pos-item-map
 POST https://aftertentransfers.app/api/catalog/pos-item-map
 DELETE https://aftertentransfers.app/api/catalog/pos-item-map
-     POS item ↔ catalog mapping.
+     POS item ↔ catalog mapping per outlet.
 
 GET  https://aftertentransfers.app/api/catalog/update-dispatch
 POST https://aftertentransfers.app/api/catalog/update-dispatch
      Catalog update dispatch queue for outlets.
 
 GET  https://aftertentransfers.app/api/ingredient-catalog
-     Ingredient/raw catalog listing.
+     Ingredient items for storage homes.
+     Query: storage_home_id (repeatable UUID).
 
 ================================================================================
-STOCK & WAREHOUSE OPS (legacy — may require dropped stock tables)
+STOCK & WAREHOUSE OPS
 ================================================================================
 
 POST https://aftertentransfers.app/api/stock
-     Stock movements / adjustments.
-
-GET  https://aftertentransfers.app/api/warehouse-transfers
-     Warehouse transfer history.
-
-GET  https://aftertentransfers.app/api/warehouse-damages
-     Damage log history.
+     Warehouse live stock snapshot (body: warehouseId, search?).
 
 GET  https://aftertentransfers.app/api/warehouse-periods
-     Stock periods (query: warehouseId, limit).
+     Stocktake periods for a warehouse. Query: warehouseId, limit (max 50).
 
 GET  https://aftertentransfers.app/api/stocktake-variance
-     Stocktake variance report (query: period_id).
+     Stocktake variance report. Query: period_id.
 
 PUT  https://aftertentransfers.app/api/item-storage-homes
      Item storage home assignments.
 
-GET  https://aftertentransfers.app/api/outlet-routes
-PUT  https://aftertentransfers.app/api/outlet-routes
-     Outlet item routing (query: item_id, variant_key).
-
 GET  https://aftertentransfers.app/api/outlet-order-routes
 PUT  https://aftertentransfers.app/api/outlet-order-routes
-     Outlet order routing.
+     Outlet order routing rules.
 
 GET  https://aftertentransfers.app/api/outlet-pos-deduction-rules
 PUT  https://aftertentransfers.app/api/outlet-pos-deduction-rules
 DELETE https://aftertentransfers.app/api/outlet-pos-deduction-rules
-     POS sale deduction rules.
+     POS sale deduction rules (programming which stock to deduct on POS sale).
 
 ================================================================================
 RECIPES & UOM
 ================================================================================
 
 GET  https://aftertentransfers.app/api/recipe-ingredients
-     Recipe ingredient lines.
+     Recipe ingredient lines. Query: item_id.
 
 GET  https://aftertentransfers.app/api/recipe-uom
 POST https://aftertentransfers.app/api/recipe-uom
      Recipe UOM profiles.
 
 POST https://aftertentransfers.app/api/recipe-uom/available
-     Available recipe UOM quantities.
+     Available recipe UOM quantities (body: item ids / filters).
 
 GET  https://aftertentransfers.app/api/recipe-source-warehouses
 PUT  https://aftertentransfers.app/api/recipe-source-warehouses
@@ -165,6 +191,17 @@ PUT  https://aftertentransfers.app/api/recipe-source-warehouses
 
 GET  https://aftertentransfers.app/api/uoms
      UOM options list.
+
+================================================================================
+SUPPLIERS (read-only)
+================================================================================
+
+GET  https://aftertentransfers.app/api/suppliers
+     Supplier list.
+
+POST https://aftertentransfers.app/api/suppliers
+PATCH https://aftertentransfers.app/api/suppliers
+     Disabled (403) — suppliers maintained from import data.
 
 ================================================================================
 OTHER
@@ -183,10 +220,33 @@ OPTIONS https://aftertentransfers.app/api/supabase-proxy/*
      https://aftertentransfers.app/api/supabase-proxy/rest/v1/outlets
 
 ================================================================================
+REMOVED ROUTES (no longer in codebase)
+================================================================================
+
+  /api/warehouse-purchases
+  /api/warehouse-purchase-import
+  /api/warehouse-transfers
+  /api/warehouse-damages
+  /api/outlet-routes
+
+================================================================================
+EXTERNAL APIs (not hosted on aftertentransfers.app)
+================================================================================
+
+SCPGT middleware (outlet PCs)
+  Connects directly to Supabase REST + RPC — configured in:
+  C:\ProgramData\SCPGT\appsettings.json
+  (Supabase.Url, Supabase.AnonKey / ServiceKey, OutletId)
+
+Afterten stock API (legacy purchase import source — if still used elsewhere)
+  https://afterten-stock-api-896827614552.us-central1.run.app/stock/movements?type=receive
+
+================================================================================
 NOTES
 ================================================================================
 
-- Middleware service on outlet PCs calls Supabase RPC directly; it does not use these Next.js routes except where backoffice triggers sync.
-- External stock API (purchase import source) is separate:
-  https://afterten-stock-api-896827614552.us-central1.run.app/stock/movements?type=receive
-- Auth: most backoffice APIs expect a logged-in Supabase session; some import routes use server env tokens.
+- Auth: backoffice APIs expect a logged-in Supabase session; middleware sales
+  export routes are public GET (no auth in route handler).
+- Default date window for sales export APIs: last 7 days when since/until omitted.
+- Till 1 & Till 2 share one export URL (/tills); filter with outletId when needed.
+- Quick Corner uses a separate URL (/quick-corner) with identical response shape.

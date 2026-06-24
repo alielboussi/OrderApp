@@ -49,4 +49,11 @@ Produces **only** `publish\SCPGT.exe` (~77 MB self-contained).
 | SQL permission errors | Re-run MintPOS grants (`unified.sql`) |
 | No sales syncing | Confirm outlet `has_pos_middleware` + stocktake window open |
 
-Sales API: `https://<website>/api/outlet-middleware-sales`
+Sales export API (same JSON on both routes):
+
+| Outlet | Route |
+|--------|-------|
+| Till 1, Till 2 | `https://<website>/api/outlet-middleware-sales/tills` |
+| Quick Corner | `https://<website>/api/outlet-middleware-sales/quick-corner` |
+
+Legacy (all outlets): `https://<website>/api/outlet-middleware-sales`

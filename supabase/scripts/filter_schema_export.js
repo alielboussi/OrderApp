@@ -41,6 +41,9 @@ const DROP_TABLES = new Set([
   "warehouse_stock_periods",
   "warehouse_transfer_items",
   "warehouse_transfers",
+  "warehouse_purchase_imports",
+  "warehouse_purchase_items",
+  "warehouse_purchase_receipts",
 ]);
 
 const DROP_VIEWS = new Set([
@@ -114,8 +117,6 @@ function keepView(name) {
 const WAREHOUSE_COLUMN_KEEP_TABLES = new Set([
   "warehouses",
   "outlet_warehouses",
-  "warehouse_purchase_receipts",
-  "warehouse_purchase_imports",
 ]);
 
 function keepColumn(row) {

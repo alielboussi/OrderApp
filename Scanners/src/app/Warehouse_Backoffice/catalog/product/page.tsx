@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, FormEvent, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { useUomOptions } from "@/lib/use-uom-options";
+import eb from "../../enterprise.module.css";
 import styles from "./product.module.css";
 
 const itemKinds = [
@@ -75,7 +76,6 @@ const mergeStorageHomeIds = (primaryId: string, ids: string[]) => {
 };
 
 function ProductCreatePage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { status, readOnly } = useWarehouseAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
@@ -343,34 +343,9 @@ function ProductCreatePage() {
     }
   };
 
-  const back = () => router.push("/Warehouse_Backoffice");
-  const backOne = () => router.back();
-
   return (
-    <div className={styles.page}>
-      <style>{globalStyles}</style>
-      <main className={styles.shell}>
-        <header className={styles.hero}>
-          <div className={styles.grow}>
-            <p className={styles.kicker}>Catalog</p>
-            <h1 className={styles.title}>{editingId ? "Edit Product" : "Create Product"}</h1>
-            <p className={styles.subtitle}>
-              {editingId
-                ? "Update an existing product."
-                : "Insert a new product into catalog_items. Labels below tell you exactly what to type (pack qty vs sent qty, etc.)."}
-            </p>
-          </div>
-          <div className={styles.headerButtons}>
-            <button onClick={backOne} className={styles.backButton}>
-              Back
-            </button>
-            <button onClick={back} className={styles.backButton}>
-              Back to Dashboard
-            </button>
-          </div>
-        </header>
-
-        <form className={styles.form} onSubmit={submit}>
+    <section className={eb.pageCard}>
+      <form className={styles.form} onSubmit={submit}>
           <div className={styles.fieldGrid}>
             <Field
               label="Sku"
@@ -518,22 +493,21 @@ function ProductCreatePage() {
           </div>
 
           {result && (
-            <div className={`${styles.callout} ${result.ok ? styles.calloutSuccess : styles.calloutError}`}>
+            <p className={`${styles.callout} ${result.ok ? styles.calloutSuccess : styles.calloutError}`}>
               {result.message}
-            </div>
+            </p>
           )}
 
           <div className={styles.actions}>
-            <button type="button" onClick={() => setForm(defaultForm)} className={styles.secondaryButton}>
+            <button type="button" onClick={() => setForm(defaultForm)} className={eb.btnSecondary}>
               Clear form
             </button>
-            <button type="submit" className={styles.primaryButton} disabled={saving || readOnly}>
+            <button type="submit" className={eb.btnAdd} disabled={saving || readOnly}>
               {readOnly ? "Read-only" : saving ? "Saving..." : "Save product"}
             </button>
           </div>
         </form>
-      </main>
-    </div>
+    </section>
   );
 }
 
@@ -594,7 +568,7 @@ function Select({ label, hint, value, onChange, options, required, disabled }: S
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={styles.input}
+        className={styles.select}
         required={required}
         disabled={disabled}
       >
@@ -632,9 +606,3 @@ function Checkbox({ label, hint, checked, onChange }: CheckboxProps) {
   );
 }
 
-const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-input, select, button { font-family: inherit; }
-input:focus, select:focus { outline: 2px solid #22c55e; }
-button:hover { transform: translateY(-1px); }
-`;

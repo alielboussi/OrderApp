@@ -180,7 +180,7 @@ export default function SuppliersPage() {
             Suppliers
           </h3>
           <p className={eb.pageCardBody}>
-            Create suppliers so backoffice purchases can attach inventory to the right partner.
+            Create and manage supplier contacts for warehouse operations.
           </p>
         </div>
         <div className={eb.summaryGrid} style={{ marginTop: 16 }}>

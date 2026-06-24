@@ -18,9 +18,9 @@ export default function CatalogMenu() {
         <header className={styles.hero}>
           <div className={styles.grow}>
             <p className={styles.kicker}>AfterTen Logistics</p>
-            <h1 className={styles.title}>Product Setup & Purchase Entry</h1>
+            <h1 className={styles.title}>Product Setup</h1>
             <p className={styles.subtitle}>
-              Create items, variants, recipes, supplier links, and purchase entries for outlet routing and POS matching.
+              Create items, variants, recipes, and supplier links for outlet routing and POS matching.
             </p>
           </div>
           <div className={styles.headerButtons}>
@@ -51,14 +51,6 @@ export default function CatalogMenu() {
             <span className={styles.cardCta}>Open</span>
           </button>
 
-          <button
-            onClick={() => go("/Warehouse_Backoffice/purchases")}
-            className={`${styles.actionCard} ${styles.purchaseCard}`}
-          >
-            <p className={`${styles.cardTitle} ${styles.cardTitlePurchase}`}>Purchase Entry</p>
-            <p className={styles.cardBody}>Record purchase receipts from backoffice.</p>
-            <span className={styles.cardCta}>Open</span>
-          </button>
         </section>
       </main>
     </div>

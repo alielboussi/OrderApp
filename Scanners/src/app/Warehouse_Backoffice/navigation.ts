@@ -23,17 +23,13 @@ export const BACKOFFICE_NAV: NavGroup[] = [
   {
     label: "Products",
     items: [
+      { label: "View Products & Variants", href: "/Warehouse_Backoffice/catalog/menu" },
       { label: "Add Product", href: "/Warehouse_Backoffice/catalog/product" },
       { label: "Add Groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
       { label: "Add Variants", href: "/Warehouse_Backoffice/catalog/variants" },
       { label: "Bulk Updates", href: "/Warehouse_Backoffice/variant-bulk-update" },
     ],
     tone: "catalog",
-  },
-  {
-    label: "Inventory",
-    items: [{ label: "Purchases", href: "/Warehouse_Backoffice/purchases" }],
-    tone: "inventory",
   },
   {
     label: "Outlets",
@@ -57,16 +53,17 @@ export function pageTitleForPath(pathname: string, hash?: string): string {
     for (const item of group.items) {
       const itemPath = item.href.split("#")[0];
       const itemHash = item.href.includes("#") ? item.href.split("#")[1] : "";
-      if (pathname === itemPath && (!itemHash || itemHash === normalizedHash)) {
-        return item.label;
+      if (itemHash) {
+        if (pathname === itemPath && itemHash === normalizedHash) return item.label;
+        continue;
       }
-      if (pathname === item.href || (itemPath !== "/Warehouse_Backoffice" && pathname.startsWith(itemPath))) {
+      if (pathname === itemPath) return item.label;
+      if (itemPath !== "/Warehouse_Backoffice" && pathname.startsWith(`${itemPath}/`)) {
         return item.label;
       }
     }
   }
-  if (pathname.startsWith("/Warehouse_Backoffice/catalog/menu")) return "Products";
-  if (pathname.startsWith("/Warehouse_Backoffice/purchase-entry")) return "Purchases";
+  if (pathname === "/Warehouse_Backoffice/catalog/menu") return "View Products & Variants";
   return "Warehouse Backoffice";
 }
 

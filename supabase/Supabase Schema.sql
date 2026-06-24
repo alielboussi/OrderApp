@@ -82,18 +82,6 @@
           "table_schema": "public"
         },
         {
-          "table_name": "warehouse_purchase_imports",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public"
-        },
-        {
           "table_name": "warehouses",
           "table_schema": "public"
         }
@@ -1837,6 +1825,15 @@
           "ordinal_position": 16
         },
         {
+          "data_type": "text",
+          "table_name": "outlets",
+          "column_name": "middleware_sales_api_profile",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 17
+        },
+        {
           "data_type": "bigint",
           "table_name": "pos_inventory_consumed",
           "column_name": "id",
@@ -2261,312 +2258,6 @@
         },
         {
           "data_type": "uuid",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source_movement_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source_invoice_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "warehouse_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "item_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "variant_key",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "qty_units",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "unit_cost",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 9
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "movement_at",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 10
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "receipt_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 11
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "status",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'imported'::text",
-          "ordinal_position": 12
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "error_message",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 13
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 14
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "updated_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 15
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "receipt_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "item_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "qty_units",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "qty_input_mode",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'units'::text",
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "numeric",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "unit_cost",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "created_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_items",
-          "column_name": "variant_key",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": "'base'::text",
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "gen_random_uuid()",
-          "ordinal_position": 1
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "warehouse_id",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 2
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "supplier_id",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 3
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "reference_code",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 4
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "note",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 5
-        },
-        {
-          "data_type": "boolean",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "auto_whatsapp",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "false",
-          "ordinal_position": 6
-        },
-        {
-          "data_type": "jsonb",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "context",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "'{}'::jsonb",
-          "ordinal_position": 7
-        },
-        {
-          "data_type": "uuid",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "recorded_by",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 8
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "recorded_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 9
-        },
-        {
-          "data_type": "timestamp with time zone",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "received_at",
-          "is_nullable": "NO",
-          "table_schema": "public",
-          "column_default": "now()",
-          "ordinal_position": 10
-        },
-        {
-          "data_type": "text",
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "operator_name",
-          "is_nullable": "YES",
-          "table_schema": "public",
-          "column_default": null,
-          "ordinal_position": 11
-        },
-        {
-          "data_type": "uuid",
           "table_name": "warehouses",
           "column_name": "id",
           "is_nullable": "NO",
@@ -2880,60 +2571,6 @@
           "table_schema": "public"
         },
         {
-          "indexdef": "CREATE INDEX idx_purchase_imports_receipt ON public.warehouse_purchase_imports USING btree (receipt_id)",
-          "indexname": "idx_purchase_imports_receipt",
-          "table_name": "warehouse_purchase_imports",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_purchase_imports_warehouse ON public.warehouse_purchase_imports USING btree (warehouse_id)",
-          "indexname": "idx_purchase_imports_warehouse",
-          "table_name": "warehouse_purchase_imports",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX warehouse_purchase_imports_pkey ON public.warehouse_purchase_imports USING btree (id)",
-          "indexname": "warehouse_purchase_imports_pkey",
-          "table_name": "warehouse_purchase_imports",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX warehouse_purchase_imports_source_source_movement_id_key ON public.warehouse_purchase_imports USING btree (source, source_movement_id)",
-          "indexname": "warehouse_purchase_imports_source_source_movement_id_key",
-          "table_name": "warehouse_purchase_imports",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_purchase_items_receipt ON public.warehouse_purchase_items USING btree (receipt_id)",
-          "indexname": "idx_purchase_items_receipt",
-          "table_name": "warehouse_purchase_items",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX warehouse_purchase_items_pkey ON public.warehouse_purchase_items USING btree (id)",
-          "indexname": "warehouse_purchase_items_pkey",
-          "table_name": "warehouse_purchase_items",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE INDEX idx_purchase_receipts_supplier ON public.warehouse_purchase_receipts USING btree (supplier_id)",
-          "indexname": "idx_purchase_receipts_supplier",
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX ux_purchase_receipts_reference_per_warehouse ON public.warehouse_purchase_receipts USING btree (warehouse_id, reference_code)",
-          "indexname": "ux_purchase_receipts_reference_per_warehouse",
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public"
-        },
-        {
-          "indexdef": "CREATE UNIQUE INDEX warehouse_purchase_receipts_pkey ON public.warehouse_purchase_receipts USING btree (id)",
-          "indexname": "warehouse_purchase_receipts_pkey",
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public"
-        },
-        {
           "indexdef": "CREATE INDEX idx_warehouses_outlet_id ON public.warehouses USING btree (outlet_id)",
           "indexname": "idx_warehouses_outlet_id",
           "table_name": "warehouses",
@@ -3173,30 +2810,6 @@
           "table_schema": "public",
           "using_expression": "true",
           "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "warehouse_purchase_items",
-          "policy_name": "warehouse_purchase_items_authenticated_select",
-          "table_schema": "public",
-          "using_expression": "true",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "warehouse_purchase_receipts",
-          "policy_name": "warehouse_purchase_receipts_authenticated_select",
-          "table_schema": "public",
-          "using_expression": "true",
-          "with_check_expression": null
         }
       ],
       "triggers": [
@@ -3402,12 +3015,6 @@
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.next_purchase_receipt_reference()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_next bigint;\r\n  v_scope uuid := '00000000-0000-0000-0000-000000000000';\r\nbegin\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('purchase_receipt', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  return 'PR-' || lpad(v_next::text, 6, '0');\r\nend;\r\n$function$\n",
-          "function_name": "next_purchase_receipt_reference",
-          "function_schema": "public"
-        },
-        {
-          "arguments": "",
           "definition": "CREATE OR REPLACE FUNCTION public.next_stocktake_number()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_next bigint;\r\n  v_scope uuid := '00000000-0000-0000-0000-000000000000';\r\nbegin\r\n  insert into public.counter_values(counter_key, scope_id, last_value)\r\n  values ('stocktake_number', v_scope, 1)\r\n  on conflict (counter_key, scope_id)\r\n  do update set last_value = public.counter_values.last_value + 1,\r\n                updated_at = now()\r\n  returning last_value into v_next;\r\n\r\n  return 'AT' || lpad(v_next::text, 10, '0');\r\nend;\r\n$function$\n",
           "function_name": "next_stocktake_number",
           "function_schema": "public"
@@ -3464,12 +3071,6 @@
           "arguments": "p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text",
           "definition": "CREATE OR REPLACE FUNCTION public.record_damage(p_warehouse_id uuid, p_items jsonb, p_note text DEFAULT NULL::text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_damage_id uuid;\r\n  v_variant_key text;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  perform public.require_open_stock_period_for_outlet_warehouse(p_warehouse_id);\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one damage line is required';\r\n  end if;\r\n\r\n  insert into public.warehouse_damages(warehouse_id, note, context, created_by)\r\n  values (p_warehouse_id, p_note, coalesce(p_items, '[]'::jsonb), auth.uid())\r\n  returning id into v_damage_id;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      nullif(elem->>'note', '') as line_note\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each damage line needs product_id and qty > 0';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(rec.variant_key);\r\n\r\n    insert into public.stock_ledger(location_type, warehouse_id, item_id, variant_key, delta_units, reason, context)\r\n    values (\r\n      'warehouse',\r\n      p_warehouse_id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      -1 * rec.qty_units,\r\n      'damage',\r\n      jsonb_build_object('damage_id', v_damage_id, 'note', coalesce(rec.line_note, p_note))\r\n    );\r\n  end loop;\r\n\r\n  return v_damage_id;\r\nend;\r\n$function$\n",
           "function_name": "record_damage",
-          "function_schema": "public"
-        },
-        {
-          "arguments": "p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false",
-          "definition": "CREATE OR REPLACE FUNCTION public.record_purchase_receipt(p_warehouse_id uuid, p_items jsonb, p_supplier_id uuid DEFAULT NULL::uuid, p_reference_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_auto_whatsapp boolean DEFAULT false)\n RETURNS warehouse_purchase_receipts\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  rec record;\r\n  v_receipt public.warehouse_purchase_receipts%rowtype;\r\n  v_reference text;\r\n  v_variant_key text;\r\nbegin\r\n  if p_warehouse_id is null then\r\n    raise exception 'warehouse_id is required';\r\n  end if;\r\n\r\n  if p_items is null or jsonb_array_length(p_items) = 0 then\r\n    raise exception 'at least one purchase item is required';\r\n  end if;\r\n\r\n  v_reference := coalesce(nullif(p_reference_code, ''), public.next_purchase_receipt_reference());\r\n\r\n  insert into public.warehouse_purchase_receipts (\r\n    warehouse_id,\r\n    supplier_id,\r\n    reference_code,\r\n    note,\r\n    auto_whatsapp,\r\n    context,\r\n    recorded_by\r\n  )\r\n  values (\r\n    p_warehouse_id,\r\n    p_supplier_id,\r\n    v_reference,\r\n    p_note,\r\n    coalesce(p_auto_whatsapp, false),\r\n    coalesce(p_items, '[]'::jsonb),\r\n    auth.uid()\r\n  )\r\n  returning * into v_receipt;\r\n\r\n  for rec in\r\n    select\r\n      (elem->>'product_id')::uuid as item_id,\r\n      coalesce(nullif(elem->>'variant_key', ''), nullif(elem->>'variation_id', ''), 'base') as variant_key,\r\n      (elem->>'qty')::numeric as qty_units,\r\n      coalesce(nullif(elem->>'qty_input_mode', ''), 'units') as qty_input_mode,\r\n      nullif(elem->>'unit_cost', '')::numeric as unit_cost\r\n    from jsonb_array_elements(p_items) elem\r\n  loop\r\n    if rec.item_id is null or rec.qty_units is null or rec.qty_units <= 0 then\r\n      raise exception 'each purchase item requires a valid product_id and qty';\r\n    end if;\r\n\r\n    v_variant_key := public.normalize_variant_key(coalesce(rec.variant_key, 'base'));\r\n\r\n    insert into public.warehouse_purchase_items (\r\n      receipt_id,\r\n      item_id,\r\n      variant_key,\r\n      qty_units,\r\n      qty_input_mode,\r\n      unit_cost\r\n    )\r\n    values (\r\n      v_receipt.id,\r\n      rec.item_id,\r\n      v_variant_key,\r\n      rec.qty_units,\r\n      rec.qty_input_mode,\r\n      rec.unit_cost\r\n    );\r\n  end loop;\r\n\r\n  return v_receipt;\r\nend;\r\n$function$\n",
-          "function_name": "record_purchase_receipt",
           "function_schema": "public"
         },
         {
@@ -4161,7 +3762,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -4171,7 +3772,7 @@
           "constraint_name": "catalog_variants_item_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -4221,7 +3822,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -4231,17 +3832,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "counter_values",
-          "column_name": "scope_id",
-          "table_schema": "public",
-          "constraint_name": "counter_values_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -4252,6 +3843,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
           "foreign_column_name": "scope_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "counter_values",
+          "column_name": "scope_id",
+          "table_schema": "public",
+          "constraint_name": "counter_values_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "counter_values",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -4371,7 +3972,7 @@
           "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
-          "foreign_column_name": "entity_id",
+          "foreign_column_name": "entity_type",
           "foreign_table_schema": "public"
         },
         {
@@ -4381,7 +3982,7 @@
           "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
-          "foreign_column_name": "entity_type",
+          "foreign_column_name": "entity_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5011,7 +4612,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "warehouse_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5021,7 +4622,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5435,326 +5036,6 @@
           "foreign_table_schema": "public"
         },
         {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156708_12_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156708_14_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156708_15_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156708_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156708_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156708_3_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_imports_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "warehouse_purchase_imports",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_imports_source_source_movement_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "warehouse_purchase_imports",
-          "foreign_column_name": "source_movement_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_imports_source_source_movement_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "warehouse_purchase_imports",
-          "foreign_column_name": "source",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source_movement_id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_imports_source_source_movement_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "warehouse_purchase_imports",
-          "foreign_column_name": "source",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_imports",
-          "column_name": "source_movement_id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_imports_source_source_movement_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "warehouse_purchase_imports",
-          "foreign_column_name": "source_movement_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156686_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156686_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156686_3_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156686_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156686_5_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156686_7_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_items_qty_units_check",
-          "constraint_type": "CHECK",
-          "foreign_table_name": "warehouse_purchase_items",
-          "foreign_column_name": "qty_units",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": "item_id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_items_item_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "catalog_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": "receipt_id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_items_receipt_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "warehouse_purchase_receipts",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_items_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "warehouse_purchase_items",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_10_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_1_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_2_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_4_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_6_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_7_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": null,
-          "table_schema": "public",
-          "constraint_name": "2200_156669_9_not_null",
-          "constraint_type": "CHECK",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "recorded_by",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_receipts_recorded_by_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": null,
-          "foreign_column_name": null,
-          "foreign_table_schema": null
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "supplier_id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_receipts_supplier_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "suppliers",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "warehouse_id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_receipts_warehouse_id_fkey",
-          "constraint_type": "FOREIGN KEY",
-          "foreign_table_name": "warehouses",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "column_name": "id",
-          "table_schema": "public",
-          "constraint_name": "warehouse_purchase_receipts_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "warehouse_purchase_receipts",
-          "foreign_column_name": "id",
-          "foreign_table_schema": "public"
-        },
-        {
           "table_name": "warehouses",
           "column_name": null,
           "table_schema": "public",
@@ -5985,36 +5266,6 @@
           "table_schema": "public",
           "constraint_def": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
           "constraint_name": "pos_inventory_consumed_outlet_id_fkey"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (item_id) REFERENCES catalog_items(id) ON DELETE CASCADE",
-          "constraint_name": "warehouse_purchase_items_item_id_fkey"
-        },
-        {
-          "table_name": "warehouse_purchase_items",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (receipt_id) REFERENCES warehouse_purchase_receipts(id) ON DELETE CASCADE",
-          "constraint_name": "warehouse_purchase_items_receipt_id_fkey"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (recorded_by) REFERENCES auth.users(id) ON DELETE SET NULL",
-          "constraint_name": "warehouse_purchase_receipts_recorded_by_fkey"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL",
-          "constraint_name": "warehouse_purchase_receipts_supplier_id_fkey"
-        },
-        {
-          "table_name": "warehouse_purchase_receipts",
-          "table_schema": "public",
-          "constraint_def": "FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT",
-          "constraint_name": "warehouse_purchase_receipts_warehouse_id_fkey"
         },
         {
           "table_name": "warehouses",
