@@ -58,7 +58,7 @@ public sealed class PosCatalogRepository
         var itemSkus = NormalizeSkus(evt.Payload.ItemSkus, null, evt.Payload.ItemSku, evt.Payload.Sku);
         var variantSkus = NormalizeSkus(evt.Payload.VariantSkus, evt.Payload.AllVariantSkus, evt.Payload.VariantSku);
 
-        if (deleteType != "variant" && deleteType != "item")
+        if (deleteType != "variant" && deleteType != "item" && deleteType != "menu_group")
         {
             deleteType = variantSkus.Count > 0 && itemSkus.Count == 0 ? "variant" : "item";
         }
@@ -69,34 +69,61 @@ public sealed class PosCatalogRepository
 
         try
         {
-            if (deleteType == "variant")
+        if (deleteType == "variant")
+        {
+            if (variantSkus.Count == 0)
             {
-                if (variantSkus.Count == 0)
-                {
-                    _logger.LogWarning("Delete variant event {EventId} has no variant SKUs.", evt.Id);
-                    await tx.CommitAsync(cancellationToken);
-                    return;
-                }
-
-                await ExecuteDeleteBySkusAsync(
-                    conn,
-                    tx,
-                    "DELETE FROM dbo.SaleDetails WHERE FlavourId IN ({0});",
-                    "@flavourSku",
-                    variantSkus,
-                    cancellationToken
-                );
-
-                await ExecuteDeleteBySkusAsync(
-                    conn,
-                    tx,
-                    "DELETE FROM dbo.ModifierFlavour WHERE Id IN ({0});",
-                    "@variantSku",
-                    variantSkus,
-                    cancellationToken
-                );
+                _logger.LogWarning("Delete variant event {EventId} has no variant SKUs.", evt.Id);
+                await tx.CommitAsync(cancellationToken);
+                return;
             }
-            else
+
+            await ExecuteDeleteBySkusAsync(
+                conn,
+                tx,
+                "DELETE FROM dbo.SaleDetails WHERE FlavourId IN ({0});",
+                "@flavourSku",
+                variantSkus,
+                cancellationToken
+            );
+
+            await ExecuteDeleteBySkusAsync(
+                conn,
+                tx,
+                "DELETE FROM dbo.ModifierFlavour WHERE Id IN ({0});",
+                "@variantSku",
+                variantSkus,
+                cancellationToken
+            );
+        }
+        else if (deleteType == "menu_group")
+        {
+            var groupName = evt.Payload.MenuGroupName ?? evt.Payload.Name;
+            var posMenuGroupId = evt.Payload.PosMenuGroupId;
+            if (!posMenuGroupId.HasValue && string.IsNullOrWhiteSpace(groupName))
+            {
+                _logger.LogWarning("Delete menu group event {EventId} has no group id or name.", evt.Id);
+                await tx.CommitAsync(cancellationToken);
+                return;
+            }
+
+            const string deleteGroupSql = @"
+DELETE FROM dbo.MenuGroup
+WHERE (@PosMenuGroupId IS NOT NULL AND Id = @PosMenuGroupId)
+   OR (@GroupName IS NOT NULL AND LTRIM(RTRIM(Name)) = LTRIM(RTRIM(@GroupName)));";
+
+            await using var deleteGroupCmd = new SqlCommand(deleteGroupSql, conn, tx);
+            deleteGroupCmd.Parameters.AddWithValue(
+                "@PosMenuGroupId",
+                posMenuGroupId.HasValue ? posMenuGroupId.Value : DBNull.Value
+            );
+            deleteGroupCmd.Parameters.AddWithValue(
+                "@GroupName",
+                string.IsNullOrWhiteSpace(groupName) ? DBNull.Value : groupName.Trim()
+            );
+            await deleteGroupCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        else
             {
                 if (itemSkus.Count == 0)
                 {
@@ -179,6 +206,20 @@ VALUES (@Name, 'Active', 'Pending');";
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
+        if (evt.Payload.IsInsertOnly)
+        {
+            var existingGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
+            if (existingGroupId.HasValue)
+            {
+                return;
+            }
+
+            await using var insertCmd = new SqlCommand(insertSql, conn);
+            insertCmd.Parameters.AddWithValue("@Name", name.Trim());
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
         await using var updateCmd = new SqlCommand(updateSql, conn);
         updateCmd.Parameters.AddWithValue("@Name", name.Trim());
         updateCmd.Parameters.AddWithValue("@PosMenuGroupId", (object?)evt.Payload.PosMenuGroupId?.ToString() ?? DBNull.Value);
@@ -249,6 +290,24 @@ VALUES (@Sku, @Name, @Price, 'Active', 'Pending', @MenuGroupId);";
         await conn.OpenAsync(cancellationToken);
         var menuGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
 
+        if (evt.Payload.IsInsertOnly)
+        {
+            if (await MenuItemExistsByCodeAsync(conn, sku, cancellationToken))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(evt.Payload.Name))
+            {
+                return;
+            }
+
+            await using var insertCmd = new SqlCommand(insertSql, conn);
+            BindItemParams(insertCmd, evt, sku, menuGroupId);
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
         await using var updateCmd = new SqlCommand(updateSql, conn);
         BindItemParams(updateCmd, evt, sku, menuGroupId);
         var updated = await updateCmd.ExecuteNonQueryAsync(cancellationToken);
@@ -297,11 +356,34 @@ WHERE mi.Code = @ItemSku
         await conn.OpenAsync(cancellationToken);
         var menuGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
 
+        if (evt.Payload.IsInsertOnly)
+        {
+            if (await VariantExistsBySkuAsync(conn, itemSku, variantSku, evt.Payload.PosFlavourId, cancellationToken))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(evt.Payload.VariantName))
+            {
+                return;
+            }
+
+            await using var insertCmd = new SqlCommand(insertSql, conn);
+            insertCmd.Parameters.AddWithValue("@ItemSku", itemSku);
+            insertCmd.Parameters.AddWithValue("@VariantSku", variantSku);
+            insertCmd.Parameters.AddWithValue("@VariantName", evt.Payload.VariantName.Trim());
+            BindVariantPriceParams(insertCmd, evt.Payload);
+            insertCmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
+            insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
+            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
         await using var cmd = new SqlCommand(updateSql, conn);
         cmd.Parameters.AddWithValue("@ItemSku", itemSku);
         cmd.Parameters.AddWithValue("@VariantSku", variantSku);
         cmd.Parameters.AddWithValue("@VariantName", (object?)evt.Payload.VariantName ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
+        BindVariantPriceParams(cmd, evt.Payload);
         cmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
 
@@ -312,7 +394,7 @@ WHERE mi.Code = @ItemSku
             insertCmd.Parameters.AddWithValue("@ItemSku", itemSku);
             insertCmd.Parameters.AddWithValue("@VariantSku", variantSku);
             insertCmd.Parameters.AddWithValue("@VariantName", evt.Payload.VariantName.Trim());
-            insertCmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
+            BindVariantPriceParams(insertCmd, evt.Payload);
             insertCmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
             insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
             await insertCmd.ExecuteNonQueryAsync(cancellationToken);
@@ -335,6 +417,21 @@ WHERE mi.Code = @ItemSku
         await UpsertMenuItemAsync(evt, cancellationToken);
     }
 
+    private static decimal? ResolveVariantPosPrice(CatalogSyncPayload payload)
+    {
+        if (payload.VatExcPrice is > 0)
+        {
+            return payload.VatExcPrice;
+        }
+
+        if (payload.Price is > 0)
+        {
+            return Math.Round(payload.Price.Value / 1.16m, 2, MidpointRounding.AwayFromZero);
+        }
+
+        return null;
+    }
+
     private static void BindItemParams(SqlCommand cmd, CatalogSyncEvent evt, string sku, int? menuGroupId)
     {
         cmd.Parameters.AddWithValue("@Sku", sku);
@@ -342,6 +439,45 @@ WHERE mi.Code = @ItemSku
         cmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@PosItemId", (object?)evt.Payload.PosItemId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
+    }
+
+    private static void BindVariantPriceParams(SqlCommand cmd, CatalogSyncPayload payload)
+    {
+        cmd.Parameters.AddWithValue("@Price", (object?)ResolveVariantPosPrice(payload) ?? DBNull.Value);
+    }
+
+    private static async Task<bool> MenuItemExistsByCodeAsync(
+        SqlConnection conn,
+        string sku,
+        CancellationToken cancellationToken)
+    {
+        const string sql = "SELECT TOP 1 1 FROM dbo.MenuItem WITH (NOLOCK) WHERE Code = @Sku;";
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@Sku", sku.Trim());
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is not null && result != DBNull.Value;
+    }
+
+    private static async Task<bool> VariantExistsBySkuAsync(
+        SqlConnection conn,
+        string itemSku,
+        string variantSku,
+        string? posFlavourId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT TOP 1 1
+FROM dbo.ModifierFlavour mf WITH (NOLOCK)
+JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = mf.MenuItemId
+WHERE mi.Code = @ItemSku
+  AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int));";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@ItemSku", itemSku.Trim());
+        cmd.Parameters.AddWithValue("@VariantSku", variantSku.Trim());
+        cmd.Parameters.AddWithValue("@PosFlavourId", (object?)posFlavourId ?? DBNull.Value);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is not null && result != DBNull.Value;
     }
 
     private static List<string> NormalizeSkus(IEnumerable<string?>? first, IEnumerable<string?>? second, params string?[] singletons)
@@ -422,6 +558,9 @@ public sealed class CatalogSyncPayload
     [JsonPropertyName("price")]
     public decimal? Price { get; init; }
 
+    [JsonPropertyName("vat_exc_price")]
+    public decimal? VatExcPrice { get; init; }
+
     [JsonPropertyName("pos_item_id")]
     public string? PosItemId { get; init; }
 
@@ -469,6 +608,11 @@ public sealed class CatalogSyncPayload
 
     [JsonPropertyName("exclude_variant_skus")]
     public string[]? ExcludeVariantSkus { get; init; }
+
+    [JsonPropertyName("sync_mode")]
+    public string? SyncMode { get; init; }
+
+    public bool IsInsertOnly => string.Equals(SyncMode, "insert_only", StringComparison.OrdinalIgnoreCase);
 
     public bool ShouldSyncProducts => SyncProducts is not false;
 

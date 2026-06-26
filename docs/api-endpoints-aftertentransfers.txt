@@ -1,7 +1,7 @@
 Afterten Transfers App — API endpoints
 Base URL: https://aftertentransfers.app
 
-Generated from Scanners/src/app/api (Next.js App Router).
+Generated from Afterten Website Portal/src/app/api (Next.js App Router).
 All paths are relative to the base URL unless noted.
 Last updated: 2026-06-23
 
@@ -132,6 +132,17 @@ GET  https://aftertentransfers.app/api/catalog/menu-groups
 POST https://aftertentransfers.app/api/catalog/menu-groups
 PUT  https://aftertentransfers.app/api/catalog/menu-groups
      POS menu groups.
+
+GET  https://aftertentransfers.app/api/catalog/changes
+     Catalog change feed (products, variants, menu groups).
+     Query: since (ISO), until (ISO), change_type (comma-separated),
+     entity_type (item|variant|menu_group), entity_id, sku, limit (default 100, max 1000).
+     Change types: product_added, product_deleted, product_name_updated,
+     product_price_updated, product_cost_updated, product_updated,
+     variant_added, variant_deleted, variant_name_updated, variant_price_updated,
+     variant_cost_updated, variant_updated, menu_group_added, menu_group_deleted,
+     menu_group_name_updated, menu_group_updated.
+     Poll with ?since=<latest_at> for near-real-time updates.
 
 GET  https://aftertentransfers.app/api/catalog/pos-item-map
 POST https://aftertentransfers.app/api/catalog/pos-item-map

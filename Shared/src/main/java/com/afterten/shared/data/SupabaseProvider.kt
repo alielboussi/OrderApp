@@ -219,6 +219,17 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
         val jwtBits = decodeJwt(jwt)
         val userId = jwtBits.sub
         val userEmail = jwtBits.email ?: email // fallback to typed email
+
+        if (!userId.isNullOrBlank()) {
+            val activeText = http.get("$supabaseUrl/rest/v1/warehouse_auth_accounts?select=active&user_id=eq.$userId") {
+                header("apikey", supabaseAnonKey)
+                header(HttpHeaders.Authorization, "Bearer $jwt")
+            }.bodyAsText()
+            if (!activeText.contains("\"active\":true")) {
+                error("Your account is pending approval. An administrator must activate your account before you can sign in.")
+            }
+        }
+
         val isAdmin = run {
             val configuredEmail = config.adminEmail.takeIf { it.isNotBlank() }?.lowercase()
             val configuredUuid = config.adminUuid.takeIf { it.isNotBlank() }

@@ -1,6 +1,0 @@
-AfterTen Web Entry Points (updated 2026-06-17)
-
-https://aftertentransfers.app/                      # Landing page
-https://aftertentransfers.app/Warehouse_Backoffice  # Warehouse backoffice dashboard
-https://aftertentransfers.app/api/warehouses         # JSON feed of warehouses
-https://aftertentransfers.app/api/stock              # JSON stock aggregation view

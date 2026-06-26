@@ -1,0 +1,314 @@
+import { NextResponse } from "next/server";
+import { getServiceClient } from "@/lib/supabase-server";
+
+const STOCK_VIEW_NAME = process.env.STOCK_VIEW_NAME ?? "warehouse_live_items";
+
+function parseQty(value: number | null): number {
+  if (typeof value !== "number" || Number.isNaN(value)) return 0;
+  return value;
+}
+
+function normalizeVariantKey(value?: string | null): string {
+  const raw = (value ?? "").trim().toLowerCase();
+  return raw.length ? raw : "base";
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const periodId = searchParams.get("period_id");
+
+  if (!periodId) {
+    return NextResponse.json({ error: "period_id is required" }, { status: 400 });
+  }
+
+  const supabase = getServiceClient();
+
+  const { data: periodRow, error: periodError } = await supabase
+    .from("warehouse_stock_periods")
+    .select("id,warehouse_id,opened_at,closed_at,stocktake_number")
+    .eq("id", periodId)
+    .maybeSingle();
+
+  if (periodError) {
+    return NextResponse.json({ error: periodError.message }, { status: 500 });
+  }
+
+  if (!periodRow?.warehouse_id || !periodRow?.opened_at) {
+    return NextResponse.json({ error: "Stock period not found." }, { status: 404 });
+  }
+
+  const openedAt = periodRow.opened_at;
+  const closedAtRaw = periodRow.closed_at ?? null;
+  const isOpenPeriod = !closedAtRaw;
+  const closedAt = closedAtRaw ?? new Date().toISOString();
+  const warehouseId = periodRow.warehouse_id;
+
+  let includeSales = true;
+  try {
+    const { data: outletRows, error: outletError } = await supabase
+      .from("outlets")
+      .select("id")
+      .eq("default_sales_warehouse_id", warehouseId)
+      .eq("active", true)
+      .limit(1);
+    if (outletError) throw outletError;
+    includeSales = Array.isArray(outletRows) && outletRows.length > 0;
+  } catch (error) {
+    console.warn("stocktake-variance: outlet lookup failed", error);
+    includeSales = true;
+  }
+
+  const { data: countRows, error: countError } = await supabase
+    .from("warehouse_stock_counts")
+    .select("item_id,variant_key,counted_qty,kind,counted_at")
+    .eq("period_id", periodId)
+    .in("kind", ["opening", "closing"]);
+
+  if (countError) {
+    return NextResponse.json({ error: countError.message }, { status: 500 });
+  }
+
+  const toKey = (itemId: string, variantKey?: string | null) => `${itemId}::${normalizeVariantKey(variantKey)}`;
+
+  const openingMap = new Map<string, number>();
+  const closingMap = new Map<string, number>();
+
+  (countRows ?? []).forEach((row) => {
+    if (!row?.item_id) return;
+    const key = toKey(row.item_id, row.variant_key);
+    const qty = parseQty(row.counted_qty);
+    if (row.kind === "opening") {
+      openingMap.set(key, qty);
+    } else if (row.kind === "closing") {
+      closingMap.set(key, qty);
+    }
+  });
+
+  const { data: ledgerRows, error: ledgerError } = await supabase
+    .from("stock_ledger")
+    .select("item_id,variant_key,delta_units,reason,occurred_at")
+    .eq("location_type", "warehouse")
+    .eq("warehouse_id", warehouseId)
+    .gte("occurred_at", openedAt)
+    .lte("occurred_at", closedAt)
+    .in("reason", ["warehouse_transfer", "damage", "outlet_sale", "recipe_consumption"]);
+
+  if (ledgerError) {
+    return NextResponse.json({ error: ledgerError.message }, { status: 500 });
+  }
+
+  const transferMap = new Map<string, number>();
+  const damageMap = new Map<string, number>();
+  const salesMap = new Map<string, number>();
+
+  const countedKeys = new Set<string>([...openingMap.keys(), ...closingMap.keys()]);
+  const openingTimeByKey = new Map<string, number>();
+
+  (countRows ?? []).forEach((row) => {
+    if (row.kind !== "opening" || !row.item_id) return;
+    const key = toKey(row.item_id, row.variant_key);
+    const raw = typeof row.counted_at === "string" ? Date.parse(row.counted_at) : NaN;
+    if (Number.isNaN(raw)) return;
+    const current = openingTimeByKey.get(key);
+    if (current === undefined || raw > current) {
+      openingTimeByKey.set(key, raw);
+    }
+  });
+
+  const liveMap = new Map<string, number>();
+  if (isOpenPeriod) {
+    let stockRows: Array<{
+      item_id?: string | null;
+      product_id?: string | null;
+      variant_key?: string | null;
+      net_units?: number | string | null;
+      qty?: number | string | null;
+    }> = [];
+    try {
+      const primary = await supabase
+        .from(STOCK_VIEW_NAME)
+        .select("item_id,product_id,variant_key,net_units")
+        .eq("warehouse_id", warehouseId);
+      stockRows = (primary.data as typeof stockRows) ?? [];
+      if (primary.error?.code === "42703") {
+        const fallback = await supabase
+          .from(STOCK_VIEW_NAME)
+          .select("product_id,variant_key,qty")
+          .eq("warehouse_id", warehouseId);
+        stockRows = (fallback.data as typeof stockRows) ?? [];
+        if (fallback.error) throw fallback.error;
+      } else if (primary.error) {
+        throw primary.error;
+      }
+    } catch (error) {
+      console.warn("stocktake-variance: live stock lookup failed", error);
+    }
+
+    stockRows.forEach((row) => {
+      const itemId = row.item_id ?? row.product_id;
+      if (!itemId) return;
+      const key = toKey(itemId, row.variant_key);
+      const qtyRaw = row.net_units ?? row.qty;
+      const qty = typeof qtyRaw === "number" ? qtyRaw : Number(qtyRaw) || 0;
+      liveMap.set(key, qty);
+    });
+  }
+
+  if (isOpenPeriod) {
+    liveMap.forEach((_value, key) => countedKeys.add(key));
+  }
+
+  if (countedKeys.size === 0) {
+    return NextResponse.json({
+      include_sales: includeSales,
+      period: {
+        id: periodRow.id,
+        opened_at: periodRow.opened_at,
+        closed_at: periodRow.closed_at,
+        stocktake_number: periodRow.stocktake_number,
+        warehouse_id: periodRow.warehouse_id,
+      },
+      rows: [],
+    });
+  }
+
+  (ledgerRows ?? []).forEach((row) => {
+    if (!row?.item_id) return;
+    const key = toKey(row.item_id, row.variant_key);
+    if (!countedKeys.has(key)) return;
+    const openingAt = openingTimeByKey.get(key);
+    if (openingAt !== undefined) {
+      const occurredAt = typeof row.occurred_at === "string" ? Date.parse(row.occurred_at) : NaN;
+      if (!Number.isNaN(occurredAt) && occurredAt < openingAt) return;
+    }
+    const delta = parseQty(row.delta_units);
+    if (row.reason === "warehouse_transfer") {
+      transferMap.set(key, (transferMap.get(key) ?? 0) + delta);
+    } else if (row.reason === "damage") {
+      damageMap.set(key, (damageMap.get(key) ?? 0) + delta);
+    } else if (row.reason === "outlet_sale") {
+      salesMap.set(key, (salesMap.get(key) ?? 0) + delta);
+    }
+  });
+
+  const keys = new Set<string>(countedKeys);
+  if (isOpenPeriod) {
+    liveMap.forEach((_value, key) => {
+      keys.add(key);
+    });
+  }
+
+  const itemIds = Array.from(new Set(Array.from(keys).map((key) => key.split("::")[0])));
+
+  const { data: itemRows, error: itemError } = await supabase
+    .from("catalog_items")
+    .select("id,name,cost,selling_price,item_kind")
+    .in("id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (itemError) {
+    return NextResponse.json({ error: itemError.message }, { status: 500 });
+  }
+
+  const itemMap = new Map<string, { name: string | null; cost: number; selling_price: number; item_kind: string | null }>();
+  (itemRows ?? []).forEach((row) => {
+    if (!row?.id) return;
+    const cost = parseQty(row.cost);
+    const sellingPrice = parseQty(row.selling_price);
+    itemMap.set(row.id, {
+      name: row.name ?? null,
+      cost,
+      selling_price: sellingPrice > 0 ? sellingPrice : cost,
+      item_kind: row.item_kind ?? null,
+    });
+  });
+
+  const { data: variantRows, error: variantError } = await supabase
+    .from("catalog_variants")
+    .select("id,item_id,name,cost,selling_price,active")
+    .in("item_id", itemIds.length ? itemIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (variantError) {
+    return NextResponse.json({ error: variantError.message }, { status: 500 });
+  }
+
+  const variantMap = new Map<string, { name: string | null; cost: number; selling_price: number }>();
+  (variantRows ?? []).forEach((row) => {
+    if (!row?.id || !row?.item_id) return;
+    if (row.active === false) return;
+    const key = `${row.item_id}::${normalizeVariantKey(row.id)}`;
+    const cost = parseQty(row.cost);
+    const sellingPrice = parseQty(row.selling_price);
+    variantMap.set(key, {
+      name: row.name ?? null,
+      cost,
+      selling_price: sellingPrice > 0 ? sellingPrice : cost,
+    });
+  });
+
+  const rows = Array.from(keys)
+    .map((key) => {
+      const [itemId, variantKeyRaw] = key.split("::");
+      const openingQty = openingMap.get(key) ?? 0;
+      const closingQty =
+        closingMap.has(key)
+          ? (closingMap.get(key) ?? 0)
+          : (isOpenPeriod ? (liveMap.get(key) ?? 0) : 0);
+      const transferQty = transferMap.get(key) ?? 0;
+      const damageQty = damageMap.get(key) ?? 0;
+      const salesQty = includeSales ? (salesMap.get(key) ?? 0) : 0;
+      // Expected = Opening + orders accepted + damages − sales (ledger-signed deltas)
+      const expectedQty = openingQty + transferQty + damageQty + salesQty;
+      // Variance qty = Closing − Expected
+      const varianceQty = closingQty - expectedQty;
+      const itemName = itemMap.get(itemId)?.name ?? itemId;
+      const itemKind = itemMap.get(itemId)?.item_kind ?? null;
+      const variantKey = normalizeVariantKey(variantKeyRaw);
+      const variantInfo = variantMap.get(`${itemId}::${variantKey}`);
+      const isVariant = variantKey !== "base" && !!variantInfo;
+      const variantName = variantKey === "base" ? itemName : variantInfo?.name ?? variantKey;
+      const variantLabel = variantKey === "base" ? itemName : `${itemName} - ${variantName}`;
+      const unitPrice =
+        (variantInfo?.selling_price ?? 0) > 0
+          ? (variantInfo?.selling_price ?? 0)
+          : (itemMap.get(itemId)?.selling_price ?? itemMap.get(itemId)?.cost ?? 0);
+      const hasActivity = [openingQty, transferQty, damageQty, salesQty, closingQty].some(
+        (value) => Math.abs(value) > 0.0000001
+      );
+      if (!hasActivity) return null;
+      return {
+        item_id: itemId,
+        item_name: itemName,
+        item_kind: itemKind,
+        variant_key: variantKey,
+        is_variant: isVariant,
+        variant_name: variantName,
+        variant_label: variantLabel,
+        opening_qty: openingQty,
+        transfer_qty: transferQty,
+        damage_qty: damageQty,
+        sales_qty: salesQty,
+        closing_qty: closingQty,
+        expected_qty: expectedQty,
+        variance_qty: varianceQty,
+        unit_cost: unitPrice,
+        unit_price: unitPrice,
+        variance_cost: varianceQty * unitPrice,
+        variance_amount: varianceQty * unitPrice,
+        variant_amount: varianceQty * unitPrice,
+      };
+    })
+    .filter((row) => row !== null)
+    .sort((a, b) => (a!.variant_label ?? "").localeCompare(b!.variant_label ?? ""));
+
+  return NextResponse.json({
+    include_sales: includeSales,
+    period: {
+      id: periodRow.id,
+      opened_at: periodRow.opened_at,
+      closed_at: periodRow.closed_at,
+      stocktake_number: periodRow.stocktake_number,
+      warehouse_id: periodRow.warehouse_id,
+    },
+    rows,
+  });
+}

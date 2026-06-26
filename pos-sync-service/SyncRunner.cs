@@ -194,7 +194,7 @@ public sealed class SyncRunner
         }
 
         var orderedEvents = events
-            .OrderBy(evt => CatalogEntityOrder(evt.EntityType))
+            .OrderBy(evt => CatalogEntityOrder(evt))
             .ThenBy(evt => evt.Id)
             .ToList();
 
@@ -354,9 +354,21 @@ public sealed class SyncRunner
         }
     }
 
-    private static int CatalogEntityOrder(string? entityType)
+    private static int CatalogEntityOrder(CatalogSyncEvent evt)
     {
-        return entityType?.ToLowerInvariant() switch
+        var entityType = evt.EntityType?.ToLowerInvariant();
+        if (entityType == "delete")
+        {
+            return (evt.Payload.DeleteType ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "variant" => 0,
+                "item" => 1,
+                "menu_group" => 2,
+                _ => 3
+            };
+        }
+
+        return entityType switch
         {
             "menu_group" => 0,
             "item" => 1,

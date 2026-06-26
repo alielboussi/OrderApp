@@ -82,6 +82,18 @@
           "table_schema": "public"
         },
         {
+          "table_name": "warehouse_audit_viewers",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "table_schema": "public"
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
           "table_name": "warehouses",
           "table_schema": "public"
         }
@@ -2258,6 +2270,177 @@
         },
         {
           "data_type": "uuid",
+          "table_name": "warehouse_audit_viewers",
+          "column_name": "user_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "user_id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "email",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "boolean",
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "active",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "false",
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "activated_at",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "updated_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "id",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "gen_random_uuid()",
+          "ordinal_position": 1
+        },
+        {
+          "data_type": "timestamp with time zone",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "created_at",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": "now()",
+          "ordinal_position": 2
+        },
+        {
+          "data_type": "uuid",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "user_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 3
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "user_email",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 4
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "action",
+          "is_nullable": "NO",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 5
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "page",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 6
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "method",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 7
+        },
+        {
+          "data_type": "integer",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "status",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 8
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "entity_type",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 9
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "entity_id",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 10
+        },
+        {
+          "data_type": "text",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "entity_name",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 11
+        },
+        {
+          "data_type": "jsonb",
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "details",
+          "is_nullable": "YES",
+          "table_schema": "public",
+          "column_default": null,
+          "ordinal_position": 12
+        },
+        {
+          "data_type": "uuid",
           "table_name": "warehouses",
           "column_name": "id",
           "is_nullable": "NO",
@@ -2571,6 +2754,54 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE UNIQUE INDEX warehouse_audit_viewers_pkey ON public.warehouse_audit_viewers USING btree (user_id)",
+          "indexname": "warehouse_audit_viewers_pkey",
+          "table_name": "warehouse_audit_viewers",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX warehouse_auth_accounts_active_idx ON public.warehouse_auth_accounts USING btree (active, created_at DESC)",
+          "indexname": "warehouse_auth_accounts_active_idx",
+          "table_name": "warehouse_auth_accounts",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX warehouse_auth_accounts_pkey ON public.warehouse_auth_accounts USING btree (user_id)",
+          "indexname": "warehouse_auth_accounts_pkey",
+          "table_name": "warehouse_auth_accounts",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX warehouse_backoffice_logs_action_idx ON public.warehouse_backoffice_logs USING btree (action)",
+          "indexname": "warehouse_backoffice_logs_action_idx",
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX warehouse_backoffice_logs_created_at_idx ON public.warehouse_backoffice_logs USING btree (created_at DESC)",
+          "indexname": "warehouse_backoffice_logs_created_at_idx",
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX warehouse_backoffice_logs_page_idx ON public.warehouse_backoffice_logs USING btree (page)",
+          "indexname": "warehouse_backoffice_logs_page_idx",
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX warehouse_backoffice_logs_pkey ON public.warehouse_backoffice_logs USING btree (id)",
+          "indexname": "warehouse_backoffice_logs_pkey",
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX warehouse_backoffice_logs_user_email_idx ON public.warehouse_backoffice_logs USING btree (user_email)",
+          "indexname": "warehouse_backoffice_logs_user_email_idx",
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE INDEX idx_warehouses_outlet_id ON public.warehouses USING btree (outlet_id)",
           "indexname": "idx_warehouses_outlet_id",
           "table_name": "warehouses",
@@ -2810,6 +3041,42 @@
           "table_schema": "public",
           "using_expression": "true",
           "with_check_expression": null
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouse_auth_accounts",
+          "policy_name": "warehouse_auth_accounts_read_own",
+          "table_schema": "public",
+          "using_expression": "(user_id = auth.uid())",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "INSERT",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouse_backoffice_logs",
+          "policy_name": "warehouse_backoffice_logs_insert_own",
+          "table_schema": "public",
+          "using_expression": null,
+          "with_check_expression": "(user_id = auth.uid())"
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouse_backoffice_logs",
+          "policy_name": "warehouse_backoffice_logs_select_viewer",
+          "table_schema": "public",
+          "using_expression": "warehouse_can_view_audit_logs()",
+          "with_check_expression": null
         }
       ],
       "triggers": [
@@ -2824,6 +3091,12 @@
           "trigger_def": "CREATE TRIGGER trg_order_items_lock BEFORE INSERT OR DELETE OR UPDATE ON order_items FOR EACH ROW EXECUTE FUNCTION assert_order_item_editable()",
           "table_schema": "public",
           "trigger_name": "trg_order_items_lock"
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "trigger_def": "CREATE TRIGGER warehouse_auth_accounts_set_updated_at BEFORE UPDATE ON warehouse_auth_accounts FOR EACH ROW EXECUTE FUNCTION set_warehouse_auth_account_updated_at()",
+          "table_schema": "public",
+          "trigger_name": "warehouse_auth_accounts_set_updated_at"
         }
       ],
       "functions": [
@@ -2933,6 +3206,12 @@
           "arguments": "p_outlet_id uuid",
           "definition": "CREATE OR REPLACE FUNCTION public.get_outlet_pos_sync_opening(p_outlet_id uuid)\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT to_timestamp(cv.last_value)\r\n  FROM public.counter_values cv\r\n  WHERE cv.counter_key = 'pos_sync_opening'\r\n    AND cv.scope_id = p_outlet_id\r\n  ORDER BY cv.updated_at DESC NULLS LAST\r\n  LIMIT 1;\r\n$function$\n",
           "function_name": "get_outlet_pos_sync_opening",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.handle_new_warehouse_auth_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  INSERT INTO public.warehouse_auth_accounts (user_id, email, active)\r\n  VALUES (NEW.id, NEW.email, false)\r\n  ON CONFLICT (user_id) DO NOTHING;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+          "function_name": "handle_new_warehouse_auth_user",
           "function_schema": "public"
         },
         {
@@ -3159,6 +3438,12 @@
         },
         {
           "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.set_warehouse_auth_account_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  IF NEW.active IS TRUE AND (OLD.active IS DISTINCT FROM TRUE) THEN\r\n    NEW.activated_at := now();\r\n  END IF;\r\n  IF NEW.active IS FALSE THEN\r\n    NEW.activated_at := NULL;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+          "function_name": "set_warehouse_auth_account_updated_at",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
           "definition": "CREATE OR REPLACE FUNCTION public.stock_ledger_flow_trace()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_sale_id uuid := nullif(new.context->>'sale_id', '')::uuid;\r\n  v_order_id uuid := nullif(new.context->>'order_id', '')::uuid;\r\n  v_outlet_id uuid := nullif(new.context->>'outlet_id', '')::uuid;\r\n  v_component_kind text := lower(coalesce(new.context->>'component_kind', ''));\r\n  v_flow_batch_id uuid := coalesce(new.flow_batch_id, nullif(new.context->>'flow_batch_id', '')::uuid);\r\n  v_level text;\r\n  v_trace_id uuid;\r\n  v_available numeric := null;\r\n  v_negative boolean := false;\r\nbegin\r\n  if new.reason not in ('outlet_sale', 'recipe_consumption') then\r\n    return new;\r\n  end if;\r\n\r\n  if new.reason = 'outlet_sale' then\r\n    v_level := 'finished';\r\n  elsif v_component_kind = 'ingredient' then\r\n    v_level := 'ingredient';\r\n  else\r\n    v_level := 'raw';\r\n  end if;\r\n\r\n  if new.warehouse_id is not null then\r\n    select wli.net_units\r\n      into v_available\r\n    from public.warehouse_live_items wli\r\n    where wli.warehouse_id = new.warehouse_id\r\n      and wli.item_id = new.item_id\r\n      and public.normalize_variant_key(wli.variant_key) = public.normalize_variant_key(coalesce(new.variant_key, 'base'))\r\n    limit 1;\r\n  end if;\r\n\r\n  if v_available is not null and v_available < 0 then\r\n    v_negative := true;\r\n  end if;\r\n\r\n  if v_flow_batch_id is not null then\r\n    insert into public.flow_traces (\r\n      sale_id,\r\n      order_id,\r\n      outlet_id,\r\n      level,\r\n      item_id,\r\n      variant_key,\r\n      warehouse_id,\r\n      flow_batch_id,\r\n      context\r\n    ) values (\r\n      v_sale_id,\r\n      v_order_id,\r\n      v_outlet_id,\r\n      v_level,\r\n      new.item_id,\r\n      public.normalize_variant_key(coalesce(new.variant_key, 'base')),\r\n      new.warehouse_id,\r\n      v_flow_batch_id,\r\n      new.context\r\n    )\r\n    on conflict on constraint ux_flow_traces_batch_level_item_wh\r\n    do update set\r\n      context = excluded.context\r\n    returning id into v_trace_id;\r\n  else\r\n    insert into public.flow_traces (\r\n      sale_id,\r\n      order_id,\r\n      outlet_id,\r\n      level,\r\n      item_id,\r\n      variant_key,\r\n      warehouse_id,\r\n      context\r\n    ) values (\r\n      v_sale_id,\r\n      v_order_id,\r\n      v_outlet_id,\r\n      v_level,\r\n      new.item_id,\r\n      public.normalize_variant_key(coalesce(new.variant_key, 'base')),\r\n      new.warehouse_id,\r\n      new.context\r\n    )\r\n    on conflict on constraint ux_flow_traces_sale_level_item_wh\r\n    do update set\r\n      context = excluded.context\r\n    returning id into v_trace_id;\r\n  end if;\r\n\r\n  insert into public.flow_trace_steps (\r\n    trace_id,\r\n    occurred_at,\r\n    delta_units,\r\n    available_units,\r\n    reason,\r\n    negative,\r\n    context,\r\n    flow_batch_id,\r\n    ledger_id\r\n  ) values (\r\n    v_trace_id,\r\n    new.occurred_at,\r\n    new.delta_units,\r\n    v_available,\r\n    new.reason,\r\n    v_negative,\r\n    new.context,\r\n    v_flow_batch_id,\r\n    new.id\r\n  )\r\n  on conflict (ledger_id)\r\n  do nothing;\r\n\r\n  return new;\r\nend;\r\n$function$\n",
           "function_name": "stock_ledger_flow_trace",
           "function_schema": "public"
@@ -3245,6 +3530,18 @@
           "arguments": "payload jsonb",
           "definition": "CREATE OR REPLACE FUNCTION public.validate_pos_order(payload jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_outlet uuid := nullif(payload->>'outlet_id', '')::uuid;\r\n  v_source text := nullif(payload->>'source_event_id', '');\r\n  v_item jsonb;\r\n  v_resolved record;\r\n  v_qty numeric;\r\n  v_qty_text text;\r\n  v_errors jsonb := '[]'::jsonb;\r\n  v_has_mapped boolean := false;\r\n  v_item_sku text;\r\n  v_variant_sku text;\r\n  v_sold_at timestamptz;\r\n  v_has_middleware boolean := false;\r\nBEGIN\r\n  IF v_outlet IS NULL THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','missing_outlet','message','outlet_id is required'));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  IF v_source IS NULL THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','missing_source','message','source_event_id is required'));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  SELECT COALESCE(o.has_pos_middleware, false)\r\n  INTO v_has_middleware\r\n  FROM public.outlets o\r\n  WHERE o.id = v_outlet;\r\n\r\n  IF NOT v_has_middleware THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n      'code', 'middleware_disabled',\r\n      'message', 'POS middleware is not enabled for this outlet'\r\n    ));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  IF EXISTS (SELECT 1 FROM public.orders WHERE source_event_id = v_source) THEN\r\n    RETURN jsonb_build_object('ok', true, 'errors', '[]'::jsonb, 'duplicate', true);\r\n  END IF;\r\n\r\n  v_sold_at := COALESCE(nullif(payload->>'occurred_at', '')::timestamptz, now());\r\n  IF NOT public.outlet_pos_sale_in_sync_window(v_outlet, v_sold_at) THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n      'code', 'outside_sync_window',\r\n      'message', 'Sale is outside the current POS sync window — open a stocktake period in the Afterten Orders app'\r\n    ));\r\n    RETURN jsonb_build_object('ok', false, 'errors', v_errors);\r\n  END IF;\r\n\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(payload->'items', '[]'::jsonb))\r\n  LOOP\r\n    v_item_sku := nullif(trim(COALESCE(v_item->>'item_sku', v_item->>'catalog_item_sku', '')), '');\r\n    v_variant_sku := nullif(trim(COALESCE(v_item->>'variant_sku', v_item->>'flavour_sku', '')), '');\r\n\r\n    IF v_item_sku IS NULL THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code', 'missing_item_sku',\r\n        'message', format('Line \"%s\" has no item SKU — set MenuItem.Code to catalog SKU on POS', COALESCE(v_item->>'name', v_item->>'pos_item_id'))\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    SELECT * INTO v_resolved FROM public.resolve_catalog_by_sku(v_item_sku, v_variant_sku) LIMIT 1;\r\n    IF NOT FOUND THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object(\r\n        'code', 'unknown_sku',\r\n        'message', format('No catalog match for SKU %s%s', v_item_sku, CASE WHEN v_variant_sku IS NOT NULL THEN ' / ' || v_variant_sku ELSE '' END)\r\n      ));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    v_qty_text := nullif(v_item->>'quantity', '');\r\n    v_qty := COALESCE(v_qty_text::numeric, 0);\r\n    IF v_qty <= 0 THEN\r\n      v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','invalid_qty','message','quantity must be > 0'));\r\n      CONTINUE;\r\n    END IF;\r\n\r\n    v_has_mapped := true;\r\n  END LOOP;\r\n\r\n  IF NOT v_has_mapped AND jsonb_array_length(COALESCE(payload->'items', '[]'::jsonb)) > 0 THEN\r\n    v_errors := v_errors || jsonb_build_array(jsonb_build_object('code','no_mappable_items','message','No line items matched catalog SKUs'));\r\n  END IF;\r\n\r\n  RETURN jsonb_build_object('ok', jsonb_array_length(v_errors) = 0 OR v_has_mapped, 'errors', v_errors);\r\nEND;\r\n$function$\n",
           "function_name": "validate_pos_order",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.warehouse_account_is_active()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT COALESCE(\r\n    (SELECT waa.active FROM public.warehouse_auth_accounts waa WHERE waa.user_id = auth.uid()),\r\n    false\r\n  );\r\n$function$\n",
+          "function_name": "warehouse_account_is_active",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "",
+          "definition": "CREATE OR REPLACE FUNCTION public.warehouse_can_view_audit_logs()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  SELECT EXISTS (\r\n    SELECT 1\r\n    FROM public.warehouse_audit_viewers v\r\n    WHERE v.user_id = auth.uid()\r\n  );\r\n$function$\n",
+          "function_name": "warehouse_can_view_audit_logs",
           "function_schema": "public"
         },
         {
@@ -3822,7 +4119,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -3832,17 +4129,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "counter_values",
-          "column_name": "scope_id",
-          "table_schema": "public",
-          "constraint_name": "counter_values_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -3853,6 +4140,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
           "foreign_column_name": "counter_key",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "counter_values",
+          "column_name": "scope_id",
+          "table_schema": "public",
+          "constraint_name": "counter_values_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "counter_values",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -3992,7 +4289,7 @@
           "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
-          "foreign_column_name": "entity_id",
+          "foreign_column_name": "entity_type",
           "foreign_table_schema": "public"
         },
         {
@@ -4002,7 +4299,7 @@
           "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
-          "foreign_column_name": "entity_type",
+          "foreign_column_name": "entity_id",
           "foreign_table_schema": "public"
         },
         {
@@ -4632,7 +4929,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "warehouse_id",
           "foreign_table_schema": "public"
         },
         {
@@ -4642,7 +4939,7 @@
           "constraint_name": "outlet_warehouses_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_warehouses",
-          "foreign_column_name": "warehouse_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5036,6 +5333,146 @@
           "foreign_table_schema": "public"
         },
         {
+          "table_name": "warehouse_audit_viewers",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156935_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_audit_viewers",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_audit_viewers_user_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_audit_viewers",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_audit_viewers_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "warehouse_audit_viewers",
+          "foreign_column_name": "user_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156869_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156869_3_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156869_4_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156869_6_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_auth_accounts_user_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_auth_accounts_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "warehouse_auth_accounts",
+          "foreign_column_name": "user_id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156917_1_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156917_2_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": null,
+          "table_schema": "public",
+          "constraint_name": "2200_156917_5_not_null",
+          "constraint_type": "CHECK",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "user_id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_backoffice_logs_user_id_fkey",
+          "constraint_type": "FOREIGN KEY",
+          "foreign_table_name": null,
+          "foreign_column_name": null,
+          "foreign_table_schema": null
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "column_name": "id",
+          "table_schema": "public",
+          "constraint_name": "warehouse_backoffice_logs_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "warehouse_backoffice_logs",
+          "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
           "table_name": "warehouses",
           "column_name": null,
           "table_schema": "public",
@@ -5266,6 +5703,24 @@
           "table_schema": "public",
           "constraint_def": "FOREIGN KEY (outlet_id) REFERENCES outlets(id) ON DELETE CASCADE",
           "constraint_name": "pos_inventory_consumed_outlet_id_fkey"
+        },
+        {
+          "table_name": "warehouse_audit_viewers",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+          "constraint_name": "warehouse_audit_viewers_user_id_fkey"
+        },
+        {
+          "table_name": "warehouse_auth_accounts",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+          "constraint_name": "warehouse_auth_accounts_user_id_fkey"
+        },
+        {
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public",
+          "constraint_def": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL",
+          "constraint_name": "warehouse_backoffice_logs_user_id_fkey"
         },
         {
           "table_name": "warehouses",

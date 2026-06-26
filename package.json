@@ -2,14 +2,14 @@
   "name": "afterten-orderapp",
   "private": true,
   "workspaces": [
-    "Scanners"
+    "Afterten Website Portal"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace Scanners",
-    "build": "npm run build --workspace Scanners",
-    "start": "npm run start --workspace Scanners",
-    "lint": "npm run lint --workspace Scanners",
-    "vercel-build": "npm run build --workspace Scanners"
+    "dev": "npm run dev --workspace scanners",
+    "build": "npm run build --workspace scanners",
+    "start": "npm run start --workspace scanners",
+    "lint": "npm run lint --workspace scanners",
+    "vercel-build": "npm run build --workspace scanners"
   },
   "devDependencies": {
     "babel-plugin-react-compiler": "1.0.0",
