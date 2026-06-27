@@ -4,7 +4,7 @@ import { handleOutletMiddlewareSalesRequest } from "@/lib/outlet-middleware-sale
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/** Till 1 & Till 2 middleware sales export (same JSON format as Quick Corner route). */
+/** Till 1 & Till 2 — one shared middleware sales export (Quick Corner uses /quick-corner). */
 export async function GET(request: NextRequest) {
   return handleOutletMiddlewareSalesRequest(request, { fixedProfile: "till" });
 }

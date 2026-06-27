@@ -5,6 +5,5 @@ https://aftertentransfers.app/Warehouse_Backoffice  # Warehouse backoffice dashb
 https://aftertentransfers.app/api/warehouses         # JSON feed of warehouses
 https://aftertentransfers.app/api/stock              # JSON stock aggregation view
 https://aftertentransfers.app/api/catalog/changes    # Catalog change feed (products, variants, menu groups)
-https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner  # Quick Corner sales export
-https://aftertentransfers.app/api/outlet-middleware-sales/tills?outletId=648e949d-8648-4c43-80d4-f08feb7bdd04  # Till 1 sales export
-https://aftertentransfers.app/api/outlet-middleware-sales/tills?outletId=a655b0a1-a37a-43d6-aa55-7f97377b2660  # Till 2 sales export
+https://aftertentransfers.app/api/outlet-middleware-sales/tills        # Till 1 + Till 2 sales export (both tills)
+https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner  # Quick Corner sales export (separate)
