@@ -152,12 +152,24 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
+function uniqueViolationMessage(error: { message?: string; details?: string; hint?: string }): string | null {
+  const blob = `${error.details ?? ""} ${error.message ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  if (blob.includes("idx_catalog_items_name_unique") || blob.includes("key (name)") || blob.includes("(lower(name))")) {
+    return "A product with this name already exists. Use a different name.";
+  }
+  if (blob.includes("idx_catalog_items_sku_unique") || blob.includes("key (sku)") || blob.includes("(lower(sku))")) {
+    return "That SKU is already in use. Leave the SKU blank to auto-assign the next ID on save.";
+  }
+  return null;
+}
+
 function toErrorResponse(error: unknown, fallback: string) {
   if (error && typeof error === "object") {
     const supabaseError = error as { message?: string; code?: string; details?: string; hint?: string };
     if (supabaseError.code === "23505") {
+      const specific = uniqueViolationMessage(supabaseError);
       return NextResponse.json(
-        { error: "SKU already exists. Clear the SKU field and save again to auto-assign the next ID." },
+        { error: specific ?? "A unique value conflict occurred. Check product name and SKU." },
         { status: 409 }
       );
     }
@@ -514,8 +526,9 @@ export async function POST(request: Request) {
 
     let attemptPayload: Partial<ItemPayload> = payload;
     const optionalKeys = [...OPTIONAL_COLUMNS];
-    let data: { id?: string } | null = null;
+    let data: { id?: string; sku?: string | null } | null = null;
     let error: SupabaseError = null;
+    let skuRetries = 0;
 
     while (true) {
       const result = await supabase
@@ -523,8 +536,22 @@ export async function POST(request: Request) {
         .insert([attemptPayload])
         .select("id,name,sku,item_kind")
         .single();
-      data = (result.data as { id?: string } | null) ?? null;
+      data = (result.data as { id?: string; sku?: string | null } | null) ?? null;
       error = (result.error as SupabaseError) ?? null;
+
+      if (error?.code === "23505" && itemKind.value === "finished" && skuRetries < 5) {
+        const blob = `${error.details ?? ""} ${error.message ?? ""} ${error.hint ?? ""}`.toLowerCase();
+        const isNameConflict =
+          blob.includes("idx_catalog_items_name_unique") ||
+          blob.includes("key (name)") ||
+          blob.includes("(lower(name))");
+        if (!isNameConflict) {
+          resolvedSku = await allocatePosItemSku(supabase, null);
+          attemptPayload = { ...attemptPayload, sku: resolvedSku };
+          skuRetries += 1;
+          continue;
+        }
+      }
 
       if (error?.code === "42703" && optionalKeys.length) {
         const removeKey = optionalKeys.shift();

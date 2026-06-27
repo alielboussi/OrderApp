@@ -64,6 +64,8 @@ function ProductCreatePage() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingItem] = useState(false);
   const [menuGroups, setMenuGroups] = useState<{ id: string; name: string }[]>([]);
+  const [suggestedSku, setSuggestedSku] = useState("");
+  const [skuManual, setSkuManual] = useState(false);
   const uomOptions = useUomOptions();
 
   const editingId = searchParams?.get("id")?.trim() || "";
@@ -74,7 +76,7 @@ function ProductCreatePage() {
       if (!res.ok) return;
       const json = await res.json();
       if (typeof json.next_item_sku === "string") {
-        setForm((prev) => (prev.sku.trim() ? prev : { ...prev, sku: json.next_item_sku }));
+        setSuggestedSku(json.next_item_sku);
       }
     } catch (error) {
       console.error("Failed to load next POS item SKU", error);
@@ -104,9 +106,9 @@ function ProductCreatePage() {
   }, [status]);
 
   useEffect(() => {
-    if (status !== "ok" || editingId || form.item_kind !== "finished" || form.sku.trim()) return;
+    if (status !== "ok" || editingId || form.item_kind !== "finished") return;
     void fetchNextPosSku();
-  }, [status, editingId, form.item_kind, form.sku, fetchNextPosSku]);
+  }, [status, editingId, form.item_kind, fetchNextPosSku]);
 
   useEffect(() => {
     async function loadItem(id: string) {
@@ -146,6 +148,9 @@ function ProductCreatePage() {
   }, [editingId]);
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
+    if (key === "sku" && typeof value === "string") {
+      setSkuManual(true);
+    }
     setForm((prev) => {
       if (key === "has_variations") {
         return { ...prev, has_variations: Boolean(value) };
@@ -153,6 +158,16 @@ function ProductCreatePage() {
       return { ...prev, [key]: value };
     });
   };
+
+  const usesAutoSku =
+    !editingId && form.item_kind === "finished" && !skuManual && !form.sku.trim();
+  const skuHint = usesAutoSku
+    ? suggestedSku
+      ? `Auto-assigned on save (next available ID: ${suggestedSku})`
+      : "Auto-assigned on save when left blank"
+    : form.item_kind === "finished"
+      ? "MintPOS product ID — leave blank to auto-assign on save"
+      : "Optional internal SKU";
 
   if (status !== "ok") return null;
 
@@ -172,7 +187,7 @@ function ProductCreatePage() {
     try {
       const payload = {
         name: form.name,
-        sku: form.sku,
+        sku: usesAutoSku ? "" : form.sku.trim(),
         supplier_sku: null,
         item_kind: form.item_kind,
         consumption_unit: form.consumption_unit,
@@ -248,6 +263,8 @@ function ProductCreatePage() {
       setResult({ ok: true, message: successMessage });
       if (!editingId) {
         setForm(defaultForm);
+        setSkuManual(false);
+        setSuggestedSku("");
         void fetchNextPosSku();
       }
     } catch (error) {
@@ -265,9 +282,10 @@ function ProductCreatePage() {
           <div className={styles.fieldGrid}>
             <Field
               label="Sku"
-              hint="MintPOS product ID (auto-assigned for finished products when left blank)"
+              hint={skuHint}
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}
+              placeholder={usesAutoSku && suggestedSku ? suggestedSku : undefined}
             />
             <Field
               label="Product name"
@@ -393,7 +411,7 @@ function ProductCreatePage() {
           )}
 
           <div className={styles.actions}>
-            <button type="button" onClick={() => { setForm(defaultForm); void fetchNextPosSku(); }} className={eb.btnSecondary}>
+            <button type="button" onClick={() => { setForm(defaultForm); setSkuManual(false); setSuggestedSku(""); void fetchNextPosSku(); }} className={eb.btnSecondary}>
               Clear form
             </button>
             <button type="submit" className={eb.btnAdd} disabled={saving || readOnly}>
@@ -424,9 +442,10 @@ type FieldProps = {
   step?: string;
   min?: string;
   disabled?: boolean;
+  placeholder?: string;
 };
 
-function Field({ label, hint, value, onChange, required, type = "text", step, min, disabled }: FieldProps) {
+function Field({ label, hint, value, onChange, required, type = "text", step, min, disabled, placeholder }: FieldProps) {
   return (
     <label className={styles.field}>
       <span className={styles.label}>{label}</span>
@@ -440,6 +459,7 @@ function Field({ label, hint, value, onChange, required, type = "text", step, mi
         step={step}
         min={min}
         disabled={disabled}
+        placeholder={placeholder}
       />
     </label>
   );
