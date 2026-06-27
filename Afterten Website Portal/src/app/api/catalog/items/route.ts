@@ -34,7 +34,7 @@ type ItemPayload = {
   cost: number;
   selling_price?: number | null;
   has_variations: boolean;
-  has_recipe: boolean;
+  has_recipe?: boolean;
   outlet_order_visible: boolean;
   image_url?: string | null;
   default_warehouse_id?: string | null;
