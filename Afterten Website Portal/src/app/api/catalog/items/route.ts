@@ -13,7 +13,7 @@ const QTY_UNITS = ["each", "g", "kg", "mg", "ml", "l", "case", "crate", "bottle"
 
 type ItemKind = (typeof ITEM_KINDS)[number];
 type QtyUnit = (typeof QTY_UNITS)[number];
-type SupabaseError = { code?: string; message?: string } | null;
+type SupabaseError = { code?: string; message?: string; details?: string; hint?: string } | null;
 type ItemRecord = Record<string, unknown> & {
   id?: string;
   default_warehouse_id?: string | null;
