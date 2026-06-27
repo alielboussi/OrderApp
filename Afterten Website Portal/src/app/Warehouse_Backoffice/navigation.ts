@@ -36,15 +36,20 @@ export const BACKOFFICE_NAV: NavGroup[] = [
   {
     label: "Outlets",
     items: [
+      { label: "Outlet Catalog Access", href: "/Warehouse_Backoffice/outlets/catalog-access" },
+      { label: "Stocktake Corrections", href: "/Warehouse_Backoffice/outlets/stocktake-corrections" },
       { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders" },
-      { label: "Sale Deduction Setups", href: "/Warehouse_Backoffice/pos-sale-deductions" },
+      { label: "Fulfillment recipes", href: "/Warehouse_Backoffice/pos-sale-deductions" },
       { label: "Stocktakes", href: "/Warehouse_Backoffice/stocktakes" },
     ],
     tone: "outlets",
   },
   {
     label: "Reports",
-    items: [{ label: "Reports Hub", href: "/Warehouse_Backoffice/reports-hub" }],
+    items: [
+      { label: "Reports Hub", href: "/Warehouse_Backoffice/reports-hub" },
+      { label: "Variance Reports", href: "/Warehouse_Backoffice/reports/variance" },
+    ],
     tone: "default",
   },
   {

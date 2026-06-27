@@ -8,6 +8,7 @@ import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import { useUomOptions } from "@/lib/use-uom-options";
+import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -15,7 +16,6 @@ const itemKinds = [
   { value: "raw", label: "Raw (unprocessed material)" },
 ];
 
-type Warehouse = { id: string; name: string };
 type Item = { id: string; name: string; sku?: string | null; menu_group_id?: string | null; item_kind?: string | null };
 
 const normalizeUomValue = (value?: string | null) => {
@@ -24,29 +24,17 @@ const normalizeUomValue = (value?: string | null) => {
   return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
 };
 
-const mergeStorageHomeIds = (primaryId: string, ids: string[]) => {
-  if (!primaryId) return ids;
-  return ids.includes(primaryId) ? ids : [primaryId, ...ids];
-};
-
-
 type FormState = {
   item_id: string;
   name: string;
   sku: string;
   item_kind: string;
   consumption_uom: string;
-  purchase_pack_unit: string;
-  units_per_purchase_pack: string;
-  transfer_unit: string;
-  transfer_quantity: string;
-  stocktake_uom: string;
+  units_per_pack: string;
   cost: string;
   selling_price: string;
   outlet_order_visible: boolean;
   image_url: string;
-  storage_home_id: string;
-  storage_home_ids: string[];
   active: boolean;
 };
 
@@ -56,17 +44,11 @@ const defaultForm: FormState = {
   sku: "",
   item_kind: "finished",
   consumption_uom: "pc",
-  purchase_pack_unit: "pc",
-  units_per_purchase_pack: "1",
-  transfer_unit: "pc",
-  transfer_quantity: "1",
-  stocktake_uom: "pc",
+  units_per_pack: "1",
   cost: "0",
   selling_price: "0",
   outlet_order_visible: true,
   image_url: "",
-  storage_home_id: "",
-  storage_home_ids: [],
   active: true,
 };
 
@@ -75,12 +57,10 @@ function VariantCreatePage() {
   const searchParams = useSearchParams();
   const { status, readOnly, userId, userEmail } = useWarehouseAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingVariant] = useState(false);
-  const [storageSearch, setStorageSearch] = useState("");
   const uomOptions = useUomOptions();
 
   const editingId = searchParams?.get("id")?.trim() || "";
@@ -100,22 +80,18 @@ function VariantCreatePage() {
   }, []);
 
   useEffect(() => {
-    async function load() {
+    async function loadItems() {
       try {
-        const [wRes, iRes] = await Promise.all([fetch("/api/warehouses"), fetch("/api/catalog/items")]);
-        if (wRes.ok) {
-          const json = await wRes.json();
-          setWarehouses(Array.isArray(json.warehouses) ? json.warehouses : []);
-        }
-        if (iRes.ok) {
-          const json = await iRes.json();
+        const res = await fetch("/api/catalog/items");
+        if (res.ok) {
+          const json = await res.json();
           setItems(Array.isArray(json.items) ? json.items : []);
         }
       } catch (error) {
-        console.error("catalog loads failed", error);
+        console.error("catalog load failed", error);
       }
     }
-    load();
+    loadItems();
   }, []);
 
   useEffect(() => {
@@ -128,31 +104,17 @@ function VariantCreatePage() {
         const json = await res.json();
         const variant = json?.variant;
         if (variant) {
-          const storageHomeId = variant.storage_home_id ?? variant.default_warehouse_id ?? "";
-          const storageHomeIds = Array.isArray(variant.storage_home_ids)
-            ? variant.storage_home_ids.filter((id: unknown): id is string => typeof id === "string")
-            : [];
-          const mergedStorageHomeIds = mergeStorageHomeIds(
-            storageHomeId,
-            storageHomeIds.filter((id: string) => id !== storageHomeId)
-          );
           setForm({
             item_id: variant.item_id ?? incomingItemId ?? "",
             name: variant.name ?? "",
             sku: variant.sku ?? "",
             item_kind: variant.item_kind ?? "finished",
             consumption_uom: normalizeUomValue(variant.consumption_uom) || "pc",
-            purchase_pack_unit: variant.purchase_pack_unit ?? normalizeUomValue(variant.consumption_uom) ?? "pc",
-            units_per_purchase_pack: (variant.units_per_purchase_pack ?? 1).toString(),
-            transfer_unit: normalizeUomValue(variant.transfer_unit) || normalizeUomValue(variant.consumption_uom) || "pc",
-            transfer_quantity: (variant.transfer_quantity ?? 1).toString(),
-            stocktake_uom: normalizeUomValue(variant.consumption_uom) || "pc",
+            units_per_pack: String(variant.units_per_purchase_pack ?? 1),
             cost: (variant.cost ?? 0).toString(),
             selling_price: (variant.selling_price ?? 0).toString(),
             outlet_order_visible: variant.outlet_order_visible ?? true,
             image_url: variant.image_url ?? "",
-            storage_home_id: storageHomeId,
-            storage_home_ids: mergedStorageHomeIds,
             active: variant.active ?? true,
           });
         }
@@ -172,7 +134,6 @@ function VariantCreatePage() {
     if (!editingId) void fetchNextVariantSku();
   }, [editingId, fetchNextVariantSku]);
 
-  const warehouseOptions = useMemo(() => [{ id: "", name: "Not set" }, ...warehouses], [warehouses]);
   const itemOptions = useMemo(() => [{ id: "", name: "Select parent product" }, ...items], [items]);
   const vatExcludedPrice = useMemo(() => {
     const parsed = Number(form.selling_price);
@@ -183,90 +144,8 @@ function VariantCreatePage() {
   if (status !== "ok") return null;
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
-    setForm((prev) => {
-      if (key === "storage_home_id") {
-        const nextId = typeof value === "string" ? value : "";
-        const nextIds = nextId
-          ? mergeStorageHomeIds(nextId, prev.storage_home_ids.filter((id) => id !== nextId))
-          : [];
-        return { ...prev, storage_home_id: nextId, storage_home_ids: nextIds };
-      }
-      if (key === "consumption_uom" && typeof value === "string") {
-        return {
-          ...prev,
-          consumption_uom: value,
-          stocktake_uom: value,
-        };
-      }
-      return { ...prev, [key]: value };
-    });
+    setForm((prev) => ({ ...prev, [key]: value }));
   };
-
-  const toggleStorageHome = (warehouseId: string) => {
-    if (!warehouseId) return;
-    setForm((prev) => {
-      const exists = prev.storage_home_ids.includes(warehouseId);
-      const nextIds = exists
-        ? prev.storage_home_ids.filter((id) => id !== warehouseId)
-        : [...prev.storage_home_ids, warehouseId];
-      let nextPrimary = prev.storage_home_id;
-      if (exists && warehouseId === prev.storage_home_id) {
-        nextPrimary = nextIds[0] ?? "";
-      } else if (!exists && !prev.storage_home_id) {
-        nextPrimary = warehouseId;
-      }
-      const mergedIds = mergeStorageHomeIds(nextPrimary, nextIds.filter((id) => id !== nextPrimary));
-      return { ...prev, storage_home_id: nextPrimary, storage_home_ids: mergedIds };
-    });
-  };
-
-  const renderStorageHomesSelect = () => {
-    const selectedValues = mergeStorageHomeIds(
-      form.storage_home_id,
-      form.storage_home_ids.filter((id) => id !== form.storage_home_id)
-    );
-    const query = storageSearch.trim().toLowerCase();
-    const filtered = warehouseOptions.filter((warehouse) =>
-      warehouse.name.toLowerCase().includes(query)
-    );
-    return (
-      <div className={styles.field}>
-        <span className={styles.label}>Storage home(s)</span>
-        <small className={styles.hint}>Select one or more warehouses. Primary is the first selected.</small>
-        <input
-          className={styles.input}
-          placeholder="Search warehouses"
-          value={storageSearch}
-          onChange={(event) => setStorageSearch(event.target.value)}
-        />
-        {query ? (
-          <div className={styles.multiSelectList}>
-            {filtered.length ? (
-              filtered.map((warehouse) => {
-                const checked = selectedValues.includes(warehouse.id);
-                return (
-                  <label key={warehouse.id} className={styles.checkbox}>
-                    <span>{warehouse.name}</span>
-                    <input
-                      className={styles.checkboxInput}
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleStorageHome(warehouse.id)}
-                    />
-                  </label>
-                );
-              })
-            ) : (
-              <p className={styles.sectionHint}>No matching warehouses.</p>
-            )}
-          </div>
-        ) : (
-          <p className={styles.sectionHint}>Type to search and select warehouses.</p>
-        )}
-      </div>
-    );
-  };
-
 
   const toNumber = (value: string, fallback: number, min = 0) => {
     const parsed = Number(value);
@@ -284,24 +163,21 @@ function VariantCreatePage() {
     setSaving(true);
     setResult(null);
     try {
-      const resolvedStorageHomeIds = mergeStorageHomeIds(
-        form.storage_home_id,
-        form.storage_home_ids.filter((id) => id !== form.storage_home_id)
-      );
       const payload = {
-        ...form,
-        units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1, 0),
-        transfer_quantity: 1,
+        item_id: form.item_id,
+        name: form.name,
+        sku: form.sku,
+        item_kind: form.item_kind,
+        consumption_uom: form.consumption_uom,
+        stocktake_uom: form.consumption_uom,
+        units_per_purchase_pack: toNumber(form.units_per_pack, 1),
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
-        storage_home_id: form.storage_home_id || null,
-        storage_home_ids: resolvedStorageHomeIds,
-        default_warehouse_id: form.storage_home_id || null,
+        outlet_order_visible: form.outlet_order_visible,
+        image_url: form.image_url,
+        active: form.active,
         supplier_sku: null,
-        purchase_pack_unit: form.purchase_pack_unit || form.consumption_uom,
-        transfer_unit: form.consumption_uom,
-        stocktake_uom: form.consumption_uom,
         ...(editingId ? { id: editingId } : {}),
       };
 
@@ -405,28 +281,22 @@ function VariantCreatePage() {
             />
             <Select
               label="How its consumed"
-              hint="Outlet sales and transfers use this unit"
+              hint="Single unit for outlet orders, stocktake counts, and POS sale deductions (e.g. g, pc, plastic)"
               value={form.consumption_uom}
               onChange={(v) => handleChange("consumption_uom", v)}
               options={uomOptions}
             />
-            <Select
-              label="How its Purchased"
-              hint="How purchases are entered (case, box, sack)"
-              value={form.purchase_pack_unit}
-              onChange={(v) => handleChange("purchase_pack_unit", v)}
-              options={uomOptions}
-            />
-            <Field
-              type="number"
-              label="Units Inside Purchase Product"
-              hint="Used to convert purchases into consumption units (e.g., 1 case = 12 bottles)"
-              value={form.units_per_purchase_pack}
-              onChange={(v) => handleChange("units_per_purchase_pack", v)}
-              step="1"
-              min="1"
-            />
-            {renderStorageHomesSelect()}
+            {isPackConsumptionUom(form.consumption_uom) && (
+              <Field
+                type="number"
+                label={packUnitsLabel(form.consumption_uom)}
+                hint="Pieces inside one pack when ordering in pack units (e.g. 30 bread per plastic)"
+                value={form.units_per_pack}
+                onChange={(v) => handleChange("units_per_pack", v)}
+                step="1"
+                min="1"
+              />
+            )}
             <Field
               label="Image URL (optional)"
               hint="Link to variant image"

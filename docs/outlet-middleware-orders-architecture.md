@@ -53,9 +53,9 @@ Example: Sandwich sold ×1 → rules deduct:
 | QC Dry Store | Bread | 1 each |
 | QC Dry Store | Chicken | 200 g |
 
-### 3. Programming deductions (backoffice)
+### 3. Programming fulfillment (backoffice)
 
-Table: **`outlet_pos_deduction_rules`**
+Table: **`outlet_pos_deduction_rules`** — one recipe drives both POS deductions and supervisor order receipts (see `outlet_fulfillment_unified.sql`).
 
 Configure per outlet + sold catalog item (+ optional variant):
 
@@ -63,6 +63,8 @@ Configure per outlet + sold catalog item (+ optional variant):
 - `warehouse_id` — must be an **outlet** warehouse for that outlet
 
 No per-outlet POS SKU mapping needed if `MenuItem.Code` = catalog SKU.
+
+Middleware **does not** need separate order-yield logic — only `sync_pos_order` + period windows. Order send runs in Supabase on `accept_order`.
 
 ---
 

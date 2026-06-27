@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export const CATALOG_CHANGE_TYPES = [
   "product_added",
   "product_deleted",
@@ -123,7 +125,7 @@ export function parseCatalogChangeActor(request: Request): CatalogChangeActor {
 }
 
 export async function recordCatalogChangeEvent(
-  supabase: { from: (table: string) => { insert: (row: unknown) => PromiseLike<{ error: { message?: string } | null }> } },
+  supabase: SupabaseClient,
   input: {
     operation: "insert" | "update" | "delete";
     entityType: CatalogEntityType;

@@ -183,6 +183,14 @@ function buildStorageHomeIds(primaryId: string | null, extraIds: string[]): stri
   return extraIds.includes(primaryId) ? extraIds : [primaryId, ...extraIds];
 }
 
+function hasStorageHomePayload(body: Record<string, unknown>): boolean {
+  return (
+    body.storage_home_id !== undefined ||
+    body.storage_home_ids !== undefined ||
+    body.default_warehouse_id !== undefined
+  );
+}
+
 async function syncBaseStorageHomes(
   supabase: ReturnType<typeof getServiceClient>,
   itemId: string,
@@ -409,11 +417,25 @@ export async function POST(request: Request) {
     const sellingPrice = toNumber(body.selling_price ?? 0, 0, -0.0001);
     if (!sellingPrice.ok) return NextResponse.json({ error: sellingPrice.error }, { status: 400 });
 
-    // Legacy-required fields: provide safe defaults to satisfy existing constraints until columns are removed
-    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit;
-    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0); // fallback default 1
-    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? consumptionUnit;
+    // Legacy DB columns: mirror consumption unit when portal no longer sends purchase fields
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? consumptionUnit;
+    const unitsPerPack = body.units_per_purchase_pack !== undefined
+      ? toNumber(body.units_per_purchase_pack, 1, 0)
+      : { ok: true as const, value: 1 };
+    const transferUnit = cleanText(body.transfer_unit) ?? consumptionUnit;
     const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
+
+    const storagePayload = hasStorageHomePayload(body as Record<string, unknown>);
+    const requestedStorageHomeId = storagePayload
+      ? cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id)
+      : null;
+    const requestedStorageHomeIds = storagePayload ? normalizeStorageHomeIds(body.storage_home_ids) : [];
+    const defaultWarehouseId = storagePayload
+      ? requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null
+      : null;
+    const resolvedStorageHomeIds = storagePayload
+      ? buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds)
+      : [];
 
     let purchaseUnitMass: number | null = null;
     if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
@@ -443,10 +465,6 @@ export async function POST(request: Request) {
       qtyDecimalPlacesValue = Math.max(0, Math.min(6, Math.round(places.value)));
     }
 
-    const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
-    const requestedStorageHomeIds = normalizeStorageHomeIds(body.storage_home_ids);
-    const defaultWarehouseId = requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null;
-    const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
     const menuGroupId = cleanUuid(body.menu_group_id);
 
     const supabase = getServiceClient();
@@ -462,7 +480,7 @@ export async function POST(request: Request) {
       item_kind: itemKind.value,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
-      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
+      stocktake_uom: cleanText(body.stocktake_uom) ?? consumptionUnit,
       qty_decimal_places: qtyDecimalPlacesValue,
       storage_unit: storageUnit,
       storage_weight: storageWeight,
@@ -472,7 +490,9 @@ export async function POST(request: Request) {
       has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: defaultWarehouseId,
+      ...(defaultWarehouseId !== undefined && defaultWarehouseId !== null
+        ? { default_warehouse_id: defaultWarehouseId }
+        : {}),
       menu_group_id: menuGroupId,
       active: cleanBoolean(body.active, true),
       // legacy columns kept filled to satisfy constraints
@@ -524,10 +544,12 @@ export async function POST(request: Request) {
     if (!data?.id) {
       throw new Error("Item insert failed to return id");
     }
-    try {
-      await syncBaseStorageHomes(supabase, data.id as string, resolvedStorageHomeIds);
-    } catch (storageError) {
-      console.error("[catalog/items] storage home upsert failed", storageError);
+    if (storagePayload) {
+      try {
+        await syncBaseStorageHomes(supabase, data.id as string, resolvedStorageHomeIds);
+      } catch (storageError) {
+        console.error("[catalog/items] storage home upsert failed", storageError);
+      }
     }
 
     const actor = parseCatalogChangeActor(request);
@@ -590,10 +612,24 @@ export async function PUT(request: Request) {
     const sellingPrice = toNumber(body.selling_price ?? 0, 0, -0.0001);
     if (!sellingPrice.ok) return NextResponse.json({ error: sellingPrice.error }, { status: 400 });
 
-    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? storageUnit ?? consumptionUnit;
-    const unitsPerPack = toNumber(body.units_per_purchase_pack, 1, 0);
-    const transferUnit = cleanText(body.transfer_unit) ?? storageUnit ?? consumptionUnit;
+    const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? consumptionUnit;
+    const unitsPerPack = body.units_per_purchase_pack !== undefined
+      ? toNumber(body.units_per_purchase_pack, 1, 0)
+      : { ok: true as const, value: 1 };
+    const transferUnit = cleanText(body.transfer_unit) ?? consumptionUnit;
     const transferQuantity = toNumber(body.transfer_quantity, 1, 0);
+
+    const storagePayload = hasStorageHomePayload(body as Record<string, unknown>);
+    const requestedStorageHomeId = storagePayload
+      ? cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id)
+      : null;
+    const requestedStorageHomeIds = storagePayload ? normalizeStorageHomeIds(body.storage_home_ids) : [];
+    const defaultWarehouseId = storagePayload
+      ? requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null
+      : undefined;
+    const resolvedStorageHomeIds = storagePayload
+      ? buildStorageHomeIds(requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null, requestedStorageHomeIds)
+      : [];
 
     let purchaseUnitMass: number | null = null;
     if (body.purchase_unit_mass !== undefined && body.purchase_unit_mass !== null && `${body.purchase_unit_mass}`.trim() !== "") {
@@ -623,10 +659,7 @@ export async function PUT(request: Request) {
       qtyDecimalPlacesValue = Math.max(0, Math.min(6, Math.round(places.value)));
     }
 
-    const requestedStorageHomeId = cleanUuid(body.storage_home_id) ?? cleanUuid(body.default_warehouse_id);
-    const requestedStorageHomeIds = normalizeStorageHomeIds(body.storage_home_ids);
-    const defaultWarehouseId = requestedStorageHomeId ?? requestedStorageHomeIds[0] ?? null;
-    const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
+
     const menuGroupId = cleanUuid(body.menu_group_id);
 
     const payload: ItemPayload = {
@@ -636,17 +669,17 @@ export async function PUT(request: Request) {
       item_kind: itemKind.value,
       consumption_unit: consumptionUnit,
       consumption_qty_per_base: consumptionQtyPerBase.value,
-      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
+      stocktake_uom: cleanText(body.stocktake_uom) ?? consumptionUnit,
       qty_decimal_places: qtyDecimalPlacesValue,
       storage_unit: storageUnit,
       storage_weight: storageWeight,
       cost: cost.value,
       selling_price: sellingPrice.value,
       has_variations: cleanBoolean(body.has_variations, false),
-      has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: defaultWarehouseId,
+      ...(defaultWarehouseId !== undefined ? { default_warehouse_id: defaultWarehouseId } : {}),
+      ...(body.has_recipe !== undefined ? { has_recipe: cleanBoolean(body.has_recipe, false) } : {}),
       menu_group_id: menuGroupId,
       active: cleanBoolean(body.active, true),
       consumption_uom: consumptionUnit,
@@ -703,14 +736,16 @@ export async function PUT(request: Request) {
 
     if (error) throw error;
 
-    const storageHomeId = defaultWarehouseId;
+    const storageHomeId = defaultWarehouseId ?? null;
     if (!data?.id) {
       throw new Error("Item update failed to return id");
     }
-    try {
-      await syncBaseStorageHomes(supabase, data.id as string, resolvedStorageHomeIds);
-    } catch (storageError) {
-      console.error("[catalog/items] storage home upsert failed", storageError);
+    if (storagePayload) {
+      try {
+        await syncBaseStorageHomes(supabase, data.id as string, resolvedStorageHomeIds);
+      } catch (storageError) {
+        console.error("[catalog/items] storage home upsert failed", storageError);
+      }
     }
 
     const actor = parseCatalogChangeActor(request);

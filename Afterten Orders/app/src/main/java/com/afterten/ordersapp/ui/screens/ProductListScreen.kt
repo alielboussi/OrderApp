@@ -108,8 +108,8 @@ fun ProductListScreen(
         error = null
         logger.state("InitialSyncStart", mapOf("hasSession" to true))
         try {
-            repo.syncProducts(currentSession.token)
-            repo.syncAllVariations(currentSession.token)
+            repo.syncProducts(currentSession.token, currentSession.outletId)
+            repo.syncAllVariations(currentSession.token, currentSession.outletId)
             logger.state("InitialSyncSuccess")
         } catch (t: Throwable) {
             error = t.message
@@ -153,8 +153,9 @@ fun ProductListScreen(
                         logger.event("ManualSyncTapped")
                         scope.launch {
                             val token = session?.token ?: return@launch
+                            val outletId = session?.outletId ?: return@launch
                             logger.state("ManualSyncStart")
-                            runCatching { repo.syncProducts(token) }
+                            runCatching { repo.syncProducts(token, outletId) }
                                 .onSuccess { logger.state("ManualSyncSuccess") }
                                 .onFailure { logger.error("ManualSyncFailed", it) }
                         }
@@ -685,7 +686,7 @@ private fun VariationsDialog(
         if (session?.token != null) {
             loading = true
             logger.state("VariationSyncStart", mapOf("productId" to product.id))
-            runCatching { repo.syncVariations(session.token, product.id) }
+            runCatching { repo.syncVariations(session.token, product.id, session.outletId) }
                 .onSuccess { logger.state("VariationSyncSuccess", mapOf("productId" to product.id)) }
                 .onFailure { logger.error("VariationSyncFailed", it, mapOf("productId" to product.id)) }
             loading = false

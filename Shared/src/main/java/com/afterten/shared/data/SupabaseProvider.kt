@@ -21,6 +21,8 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -2644,4 +2646,120 @@ class SupabaseProvider(context: Context, private val config: SupabaseConfig) {
     }
 
     // (Realtime support will be added later when toolchain is upgraded)
+
+    @Serializable
+    data class StocktakeCatalogRow(
+        @SerialName("item_id") val itemId: String,
+        @SerialName("item_name") val itemName: String,
+        @SerialName("variant_id") val variantId: String? = null,
+        @SerialName("variant_key") val variantKey: String = "base",
+        @SerialName("variant_name") val variantName: String? = null,
+        @SerialName("image_url") val imageUrl: String? = null,
+        @SerialName("stocktake_uom") val stocktakeUom: String? = null,
+        @SerialName("qty_decimal_places") val qtyDecimalPlaces: Int? = 2,
+        @SerialName("has_variations") val hasVariations: Boolean = false
+    )
+
+    @Serializable
+    data class OutletWarehouseOption(
+        @SerialName("outlet_id") val outletId: String,
+        @SerialName("outlet_name") val outletName: String,
+        @SerialName("warehouse_id") val warehouseId: String,
+        @SerialName("warehouse_name") val warehouseName: String
+    )
+
+    suspend fun listStocktakeOutletWarehouses(jwt: String): List<OutletWarehouseOption> {
+        val url = "$supabaseUrl/rest/v1/rpc/list_stocktake_outlet_warehouses"
+        val resp = http.post(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody("{}")
+        }
+        val txt = resp.bodyAsText()
+        if (resp.status.value !in 200..299) {
+            return listStocktakeOutletWarehousesFallback(jwt)
+        }
+        return runCatching {
+            relaxedJson.decodeFromString(ListSerializer(OutletWarehouseOption.serializer()), txt)
+        }.getOrElse { listStocktakeOutletWarehousesFallback(jwt) }
+    }
+
+    private suspend fun listStocktakeOutletWarehousesFallback(jwt: String): List<OutletWarehouseOption> {
+        val outlets = listOutlets(jwt)
+        val rows = mutableListOf<OutletWarehouseOption>()
+        for (outlet in outlets) {
+            val warehouseIds = listWarehouseIdsForOutlets(jwt, listOf(outlet.id), showInStocktakeOnly = true)
+            for (warehouseId in warehouseIds) {
+                val warehouses = fetchWarehousesByIds(jwt, setOf(warehouseId))
+                rows.add(
+                    OutletWarehouseOption(
+                        outletId = outlet.id,
+                        outletName = outlet.name,
+                        warehouseId = warehouseId,
+                        warehouseName = warehouses.firstOrNull()?.name ?: warehouseId
+                    )
+                )
+            }
+        }
+        return rows.distinctBy { "${it.outletId}:${it.warehouseId}" }
+    }
+
+    suspend fun listOutletStocktakeCatalog(jwt: String, outletId: String): List<StocktakeCatalogRow> {
+        val rpcUrl = "$supabaseUrl/rest/v1/rpc/list_outlet_stocktake_catalog"
+        val resp = http.post(rpcUrl) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject { put("p_outlet_id", outletId) })
+        }
+        val txt = resp.bodyAsText()
+        if (resp.status.value in 200..299 && txt.trim().startsWith("[")) {
+            return relaxedJson.decodeFromString(ListSerializer(StocktakeCatalogRow.serializer()), txt)
+        }
+        return listCatalogItemsForStocktake(jwt).map {
+            StocktakeCatalogRow(
+                itemId = it.itemId,
+                itemName = it.itemName,
+                variantKey = it.variantKey,
+                variantName = it.itemName,
+                imageUrl = it.imageUrl,
+                stocktakeUom = "each",
+                qtyDecimalPlaces = 2,
+                hasVariations = it.variantKey != "base"
+            )
+        }
+    }
+
+    suspend fun upsertOutletPeriodSummary(
+        jwt: String,
+        outletId: String,
+        warehouseId: String,
+        stockPeriodId: String,
+        status: String,
+        openingAt: String? = null,
+        closingAt: String? = null
+    ) {
+        val url = "$supabaseUrl/rest/v1/rpc/upsert_outlet_period_summary"
+        val body = buildJsonObject {
+            put("p_outlet_id", outletId)
+            put("p_warehouse_id", warehouseId)
+            put("p_stock_period_id", stockPeriodId)
+            put("p_status", status)
+            openingAt?.let { put("p_opening_at", it) }
+            closingAt?.let { put("p_closing_at", it) }
+        }
+        val resp = http.post(url) {
+            header("apikey", supabaseAnonKey)
+            header(HttpHeaders.Authorization, "Bearer $jwt")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        if (resp.status.value !in 200..299) {
+            val msg = resp.bodyAsText()
+            if (!msg.contains("upsert_outlet_period_summary")) {
+                throw IllegalStateException("upsert_outlet_period_summary failed: $msg")
+            }
+        }
+    }
 }

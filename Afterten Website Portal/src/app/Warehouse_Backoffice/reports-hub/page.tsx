@@ -8,6 +8,7 @@ const REPORT_LINKS = [
   { label: "Outlet Sales", href: "/Warehouse_Backoffice/reports", tone: "blue" as const, desc: "Filter sales by outlet, date, and product." },
   { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders", tone: "gold" as const, desc: "Filter orders by outlet and date." },
   { label: "Stock Reports", href: "/Warehouse_Backoffice/stock-reports", tone: "blue" as const, desc: "Stocktake periods for mapped warehouses." },
+  { label: "Variance Reports", href: "/Warehouse_Backoffice/reports/variance", tone: "gold" as const, desc: "Download variance PDF per closed stocktake period." },
   { label: "Movement Reports", href: "/Warehouse_Backoffice/warehouse-reports", tone: "gold" as const, desc: "Movement totals by date range." },
   { label: "Flow Traces", href: "/Warehouse_Backoffice/flow-traces", tone: "blue" as const, desc: "Audit stock deductions." },
   { label: "Negative Balances", href: "/Warehouse_Backoffice/negative-balance-reports", tone: "red" as const, desc: "Shortage alerts during deductions." },

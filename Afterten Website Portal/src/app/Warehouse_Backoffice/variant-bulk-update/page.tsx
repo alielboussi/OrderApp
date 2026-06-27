@@ -102,7 +102,7 @@ export default function VariantBulkUpdatePage() {
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [variants, setVariants] = useState<VariantSummary[]>([]);
   const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
-  const [selectedField, setSelectedField] = useState<string>("units_per_purchase_pack");
+  const [selectedField, setSelectedField] = useState<string>("consumption_uom");
   const [fieldValue, setFieldValue] = useState<string>("");
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
@@ -159,9 +159,6 @@ export default function VariantBulkUpdatePage() {
   const fieldOptions: FieldOption[] = useMemo(
     () => [
       { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
-      { value: "purchase_pack_unit", label: "How its Purchased", type: "select", options: unitOptions },
-      { value: "units_per_purchase_pack", label: "Units Inside Purchase Product", type: "number" },
-      { value: "storage_home_id", label: "Storage home(s)", type: "select-warehouse" },
       { value: "cost", label: "Cost per base unit", type: "number" },
       { value: "selling_price", label: "Selling price", type: "number" },
       { value: "outlet_order_visible", label: "Show in outlet orders", type: "boolean" },
@@ -280,6 +277,7 @@ export default function VariantBulkUpdatePage() {
               item_id: variant.item_id,
               name: variant.name,
               [fieldMeta.value]: updateValue,
+              ...(fieldMeta.value === "consumption_uom" ? { stocktake_uom: updateValue } : {}),
             }),
           });
           if (!res.ok) {

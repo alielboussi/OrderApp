@@ -4,9 +4,6 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-
-    // Force a single Kotlin toolchain version for all Kotlin-related plugins to avoid
-    // duplicate "kotlin" extension registrations when multiple versions are pulled in.
     resolutionStrategy {
         eachPlugin {
             if (requested.id.id.startsWith("org.jetbrains.kotlin")) {
@@ -20,12 +17,12 @@ pluginManagement {
 }
 
 plugins {
-    // Version catalogs
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
 }
 
 rootProject.name = "Afterten Orders"
 include(":app")
 include(":supervisor-app")
+include(":stocktake-app")
 include(":shared")
 project(":shared").projectDir = file("../Shared")

@@ -39,11 +39,49 @@ class ProductRepository(
         }
     }
 
+    private suspend fun fetchAllowlistedItemIds(jwt: String, outletId: String, forOrders: Boolean): Set<String> {
+        val flag = if (forOrders) "allow_orders" else "allow_stocktake"
+        val raw = provider.getWithJwt(
+            "/rest/v1/outlet_catalog_allowlist?outlet_id=eq.$outletId&$flag=eq.true&select=item_id",
+            jwt
+        )
+        throwIfError(raw)
+        if (raw.trim() == "[]") return emptySet()
+        return runCatching {
+            json.decodeFromString<List<Map<String, String>>>(raw)
+                .mapNotNull { it["item_id"]?.trim()?.takeIf { id -> id.isNotEmpty() } }
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    private suspend fun fetchAllowlistedVariantIds(jwt: String, outletId: String, itemId: String): Set<String> {
+        val raw = provider.getWithJwt(
+            "/rest/v1/outlet_catalog_allowlist?outlet_id=eq.$outletId&item_id=eq.$itemId&allow_orders=eq.true&select=variant_id",
+            jwt
+        )
+        throwIfError(raw)
+        if (raw.trim() == "[]") return emptySet()
+        return runCatching {
+            json.decodeFromString<List<Map<String, String?>>>(raw)
+                .mapNotNull { it["variant_id"]?.trim()?.takeIf { id -> id.isNotEmpty() } }
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
     fun listenProducts(): Flow<List<ProductEntity>> = db.productDao().listenProducts()
 
-    suspend fun syncProducts(jwt: String) = withContext(Dispatchers.IO) {
+    suspend fun syncProducts(jwt: String, outletId: String? = null) = withContext(Dispatchers.IO) {
+        val allowedItemIds = outletId?.let { fetchAllowlistedItemIds(jwt, it, forOrders = true) }.orEmpty()
+        val itemFilter =
+            if (outletId != null && allowedItemIds.isNotEmpty()) {
+                "&id=in.(${allowedItemIds.joinToString(",")})"
+            } else if (outletId != null) {
+                "&id=eq.00000000-0000-0000-0000-000000000000"
+            } else {
+                "&outlet_order_visible=eq.true"
+            }
         val raw = provider.getWithJwt(
-            "/rest/v1/catalog_items?active=eq.true&outlet_order_visible=eq.true&select=" +
+            "/rest/v1/catalog_items?active=eq.true$itemFilter&select=" +
                 "id,sku,name,image_url,item_kind,has_recipe,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
                 "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,inner_pack_unit_mass,inner_pack_unit_mass_uom,cost,has_variations,outlet_order_visible,active,default_warehouse_id",
             jwt
@@ -88,9 +126,18 @@ class ProductRepository(
     fun listenAllVariations(): Flow<List<VariationEntity>> =
         db.variationDao().listenAll()
 
-    suspend fun syncVariations(jwt: String, productId: String) = withContext(Dispatchers.IO) {
+    suspend fun syncVariations(jwt: String, productId: String, outletId: String? = null) = withContext(Dispatchers.IO) {
+        val allowedVariantIds = outletId?.let { fetchAllowlistedVariantIds(jwt, it, productId) }.orEmpty()
+        val variantFilter =
+            if (outletId != null && allowedVariantIds.isNotEmpty()) {
+                "&id=in.(${allowedVariantIds.joinToString(",")})"
+            } else if (outletId != null) {
+                "&id=eq.00000000-0000-0000-0000-000000000000"
+            } else {
+                "&outlet_order_visible=eq.true"
+            }
         val raw = provider.getWithJwt(
-            "/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true&outlet_order_visible=eq.true&select=" +
+            "/rest/v1/catalog_variants?item_id=eq.$productId&active=eq.true$variantFilter&select=" +
                 "id,item_id,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
                 "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,inner_pack_unit_mass,inner_pack_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
             jwt
@@ -123,9 +170,18 @@ class ProductRepository(
         db.variationDao().upsertAll(mapped)
     }
 
-    suspend fun syncAllVariations(jwt: String) = withContext(Dispatchers.IO) {
+    suspend fun syncAllVariations(jwt: String, outletId: String? = null) = withContext(Dispatchers.IO) {
+        val allowedItemIds = outletId?.let { fetchAllowlistedItemIds(jwt, it, forOrders = true) }.orEmpty()
+        val itemFilter =
+            if (outletId != null && allowedItemIds.isNotEmpty()) {
+                "&item_id=in.(${allowedItemIds.joinToString(",")})"
+            } else if (outletId != null) {
+                "&item_id=eq.00000000-0000-0000-0000-000000000000"
+            } else {
+                "&outlet_order_visible=eq.true"
+            }
         val raw = provider.getWithJwt(
-            "/rest/v1/catalog_variants?active=eq.true&outlet_order_visible=eq.true&select=" +
+            "/rest/v1/catalog_variants?active=eq.true$itemFilter&select=" +
                 "id,item_id,name,image_url,purchase_pack_unit,consumption_uom,units_per_purchase_pack," +
                 "transfer_unit,transfer_quantity,purchase_unit_mass,purchase_unit_mass_uom,inner_pack_unit_mass,inner_pack_unit_mass_uom,cost,active,outlet_order_visible,default_warehouse_id,sku",
             jwt

@@ -7,6 +7,7 @@ import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import { useUomOptions } from "@/lib/use-uom-options";
+import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "./product.module.css";
 
@@ -21,20 +22,11 @@ type FormState = {
   sku: string;
   item_kind: "finished" | "ingredient" | "raw";
   consumption_unit: string;
-  purchase_pack_unit: string;
-  units_per_purchase_pack: string;
-  transfer_unit: string;
-  transfer_quantity: string;
+  units_per_pack: string;
   consumption_qty_per_base: string;
-  stocktake_uom: string;
-  storage_unit: string;
-  storage_weight: string;
-  storage_home_id: string;
-  storage_home_ids: string[];
   cost: string;
   selling_price: string;
   has_variations: boolean;
-  has_recipe: boolean;
   outlet_order_visible: boolean;
   image_url: string;
   active: boolean;
@@ -46,20 +38,11 @@ const defaultForm: FormState = {
   sku: "",
   item_kind: "finished",
   consumption_unit: "pc",
-  purchase_pack_unit: "pc",
-  units_per_purchase_pack: "1",
-  transfer_unit: "pc",
-  transfer_quantity: "1",
+  units_per_pack: "1",
   consumption_qty_per_base: "1",
-  stocktake_uom: "pc",
-  storage_unit: "",
-  storage_weight: "",
-  storage_home_id: "",
-  storage_home_ids: [],
   cost: "0",
   selling_price: "0",
   has_variations: false,
-  has_recipe: false,
   outlet_order_visible: true,
   image_url: "",
   active: true,
@@ -73,11 +56,6 @@ const normalizeUomValue = (value?: string | null) => {
   return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
 };
 
-const mergeStorageHomeIds = (primaryId: string, ids: string[]) => {
-  if (!primaryId) return ids;
-  return ids.includes(primaryId) ? ids : [primaryId, ...ids];
-};
-
 function ProductCreatePage() {
   const searchParams = useSearchParams();
   const { status, readOnly, userId, userEmail } = useWarehouseAuth();
@@ -85,9 +63,7 @@ function ProductCreatePage() {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingItem] = useState(false);
-  const [warehouses, setWarehouses] = useState<{ id: string; name: string | null }[]>([]);
   const [menuGroups, setMenuGroups] = useState<{ id: string; name: string }[]>([]);
-  const [storageSearch, setStorageSearch] = useState("");
   const uomOptions = useUomOptions();
 
   const editingId = searchParams?.get("id")?.trim() || "";
@@ -142,33 +118,16 @@ function ProductCreatePage() {
         const json = await res.json();
         if (json?.item) {
           const item = json.item;
-          const storageHomeId = item.storage_home_id ?? item.default_warehouse_id ?? "";
-          const storageHomeIds = Array.isArray(item.storage_home_ids)
-            ? item.storage_home_ids.filter((id: unknown): id is string => typeof id === "string")
-            : [];
-          const mergedStorageHomeIds = mergeStorageHomeIds(
-            storageHomeId,
-            storageHomeIds.filter((id: string) => id !== storageHomeId)
-          );
           setForm({
             name: item.name ?? "",
             sku: item.sku ?? "",
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
             consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
-            purchase_pack_unit: item.purchase_pack_unit ?? normalizeUomValue(item.consumption_unit ?? item.consumption_uom) ?? "pc",
-            units_per_purchase_pack: (item.units_per_purchase_pack ?? 1).toString(),
-            transfer_unit: normalizeUomValue(item.transfer_unit) || normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
-            transfer_quantity: (item.transfer_quantity ?? 1).toString(),
+            units_per_pack: String(item.units_per_purchase_pack ?? 1),
             consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
-            stocktake_uom: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
-            storage_unit: item.storage_unit ?? "",
-            storage_weight: item.storage_weight != null ? item.storage_weight.toString() : "",
-            storage_home_id: storageHomeId,
-            storage_home_ids: mergedStorageHomeIds,
             cost: (item.cost ?? 0).toString(),
             selling_price: (item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
-            has_recipe: Boolean(item.has_recipe),
             outlet_order_visible: item.outlet_order_visible ?? true,
             image_url: item.image_url ?? "",
             active: item.active ?? true,
@@ -186,113 +145,13 @@ function ProductCreatePage() {
     if (editingId) loadItem(editingId);
   }, [editingId]);
 
-  useEffect(() => {
-    async function loadWarehouses() {
-      try {
-        const res = await fetch("/api/warehouses");
-        if (!res.ok) throw new Error("Failed to load warehouses");
-        const json = await res.json().catch(() => ({}));
-        const rows = Array.isArray(json) ? json : json.warehouses ?? json.data ?? [];
-        setWarehouses(rows.map((row: { id: string; name?: string | null }) => ({ id: row.id, name: row.name ?? null })));
-      } catch (error) {
-        console.error("warehouse load failed", error);
-      }
-    }
-    loadWarehouses();
-  }, []);
-
   const handleChange = (key: keyof FormState, value: string | boolean) => {
     setForm((prev) => {
       if (key === "has_variations") {
-        const next = Boolean(value);
-        return {
-          ...prev,
-          has_variations: next,
-        };
-      }
-      if (key === "storage_home_id") {
-        const nextId = typeof value === "string" ? value : "";
-        const nextIds = nextId
-          ? mergeStorageHomeIds(nextId, prev.storage_home_ids.filter((id) => id !== nextId))
-          : [];
-        return { ...prev, storage_home_id: nextId, storage_home_ids: nextIds };
-      }
-      if (key === "consumption_unit" && typeof value === "string") {
-        return {
-          ...prev,
-          consumption_unit: value,
-          stocktake_uom: value,
-        };
+        return { ...prev, has_variations: Boolean(value) };
       }
       return { ...prev, [key]: value };
     });
-  };
-
-  const toggleStorageHome = (warehouseId: string) => {
-    if (!warehouseId) return;
-    setForm((prev) => {
-      const exists = prev.storage_home_ids.includes(warehouseId);
-      const nextIds = exists
-        ? prev.storage_home_ids.filter((id) => id !== warehouseId)
-        : [...prev.storage_home_ids, warehouseId];
-      let nextPrimary = prev.storage_home_id;
-      if (exists && warehouseId === prev.storage_home_id) {
-        nextPrimary = nextIds[0] ?? "";
-      } else if (!exists && !prev.storage_home_id) {
-        nextPrimary = warehouseId;
-      }
-      const mergedIds = mergeStorageHomeIds(nextPrimary, nextIds.filter((id) => id !== nextPrimary));
-      return { ...prev, storage_home_id: nextPrimary, storage_home_ids: mergedIds };
-    });
-  };
-
-  const renderStorageHomesSelect = () => {
-    const selectedValues = mergeStorageHomeIds(
-      form.storage_home_id,
-      form.storage_home_ids.filter((id) => id !== form.storage_home_id)
-    );
-    const query = storageSearch.trim().toLowerCase();
-    const filtered = warehouses.filter((warehouse) => {
-      const label = (warehouse.name ?? warehouse.id).toLowerCase();
-      return label.includes(query);
-    });
-    return (
-      <div className={styles.field}>
-        <span className={styles.label}>Storage home(s)</span>
-        <small className={styles.hint}>Select one or more warehouses. Primary is the first selected.</small>
-        <input
-          className={styles.input}
-          placeholder="Search warehouses"
-          value={storageSearch}
-          onChange={(event) => setStorageSearch(event.target.value)}
-        />
-        {query ? (
-          <div className={styles.multiSelectList}>
-            {filtered.length ? (
-              filtered.map((warehouse) => {
-                const checked = selectedValues.includes(warehouse.id);
-                const label = warehouse.name ?? warehouse.id;
-                return (
-                  <label key={warehouse.id} className={styles.checkbox}>
-                    <span>{label}</span>
-                    <input
-                      className={styles.checkboxInput}
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleStorageHome(warehouse.id)}
-                    />
-                  </label>
-                );
-              })
-            ) : (
-              <p className={styles.sectionHint}>No matching warehouses.</p>
-            )}
-          </div>
-        ) : (
-          <p className={styles.sectionHint}>Type to search and select warehouses.</p>
-        )}
-      </div>
-    );
   };
 
   if (status !== "ok") return null;
@@ -311,31 +170,19 @@ function ProductCreatePage() {
     setSaving(true);
     setResult(null);
     try {
-      const resolvedStorageHomeIds = mergeStorageHomeIds(
-        form.storage_home_id,
-        form.storage_home_ids.filter((id) => id !== form.storage_home_id)
-      );
       const payload = {
         name: form.name,
         sku: form.sku,
         supplier_sku: null,
         item_kind: form.item_kind,
         consumption_unit: form.consumption_unit,
-        purchase_pack_unit: form.purchase_pack_unit || form.consumption_unit,
-        units_per_purchase_pack: toNumber(form.units_per_purchase_pack, 1),
-        transfer_unit: form.consumption_unit,
-        transfer_quantity: 1,
+        units_per_purchase_pack: toNumber(form.units_per_pack, 1),
         consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
         qty_decimal_places: 2,
         stocktake_uom: form.consumption_unit,
-        storage_unit: form.storage_unit || null,
-        storage_weight: form.storage_weight === "" ? null : toNumber(form.storage_weight, 0),
-        storage_home_id: form.storage_home_id || null,
-        storage_home_ids: resolvedStorageHomeIds,
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
         has_variations: form.has_variations,
-        has_recipe: form.has_recipe,
         outlet_order_visible: form.outlet_order_visible,
         image_url: form.image_url,
         active: form.active,
@@ -450,43 +297,33 @@ function ProductCreatePage() {
             ) : null}
             <Select
               label="How its consumed"
-              hint="Outlet sales and transfers use this unit"
+              hint="Single unit for outlet orders, stocktake counts, and POS sale deductions (e.g. g, pc, plastic)"
               value={form.consumption_unit}
               onChange={(v) => handleChange("consumption_unit", v)}
               options={uomOptions}
             />
-            {!disableVariantControlled && (
-              <>
-                {form.item_kind !== "finished" && (
-                  <Field
-                    type="number"
-                    label="How Much Is Consumed"
-                    hint="Used by recipes: how many consumption units are used per 1 finished unit"
-                    value={form.consumption_qty_per_base}
-                    onChange={(v) => handleChange("consumption_qty_per_base", v)}
-                    step="0.01"
-                    min="0"
-                  />
-                )}
-                <Select
-                  label="How its Purchased"
-                  hint="How purchases are entered (case, box, sack)"
-                  value={form.purchase_pack_unit}
-                  onChange={(v) => handleChange("purchase_pack_unit", v)}
-                  options={uomOptions}
-                />
-                <Field
-                  type="number"
-                  label="Units Inside Purchase Product"
-                  hint="Used to convert purchases into consumption units (e.g., 1 case = 12 bottles)"
-                  value={form.units_per_purchase_pack}
-                  onChange={(v) => handleChange("units_per_purchase_pack", v)}
-                  step="1"
-                  min="1"
-                />
-              </>
+            {isPackConsumptionUom(form.consumption_unit) && (
+              <Field
+                type="number"
+                label={packUnitsLabel(form.consumption_unit)}
+                hint="Pieces inside one pack when ordering in pack units (e.g. 30 bread per plastic)"
+                value={form.units_per_pack}
+                onChange={(v) => handleChange("units_per_pack", v)}
+                step="1"
+                min="1"
+              />
             )}
-            {renderStorageHomesSelect()}
+            {!disableVariantControlled && form.item_kind !== "finished" && (
+              <Field
+                type="number"
+                label="How Much Is Consumed"
+                hint="Used by recipes: how many consumption units are used per 1 finished unit"
+                value={form.consumption_qty_per_base}
+                onChange={(v) => handleChange("consumption_qty_per_base", v)}
+                step="0.01"
+                min="0"
+              />
+            )}
             <Field
               label="Image URL (optional)"
               hint="Link to product image"
@@ -536,22 +373,10 @@ function ProductCreatePage() {
 
           <div className={styles.toggleRow}>
             <Checkbox
-              label="Show in outlet orders"
-              hint="If off, this item stays hidden from outlet ordering"
-              checked={form.outlet_order_visible}
-              onChange={(checked) => handleChange("outlet_order_visible", checked)}
-            />
-            <Checkbox
               label="Product has variants"
               hint="Set true if you will add variants (sizes/flavors)"
               checked={form.has_variations}
               onChange={(checked) => handleChange("has_variations", checked)}
-            />
-            <Checkbox
-              label="Has production recipe"
-              hint="Check if this finished product is produced via a recipe/BOM"
-              checked={form.has_recipe}
-              onChange={(checked) => handleChange("has_recipe", checked)}
             />
             <Checkbox
               label="Active"

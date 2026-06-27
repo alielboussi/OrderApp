@@ -47,3 +47,36 @@ fun AppTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
+
+private val StocktakeLightColors: ColorScheme = lightColorScheme(
+    primary = BrandColors.Red,
+    onPrimary = BrandColors.OnRed,
+    primaryContainer = Color(0xFFFFEBEE),
+    onPrimaryContainer = BrandColors.RedDark,
+    secondary = BrandColors.Gold,
+    onSecondary = BrandColors.Black,
+    secondaryContainer = Color(0xFFFFF8E1),
+    onSecondaryContainer = BrandColors.GoldDark,
+    tertiary = BrandColors.Purple,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFF3E5F5),
+    onTertiaryContainer = BrandColors.Purple,
+    background = BrandColors.Background,
+    onBackground = BrandColors.Black,
+    surface = BrandColors.Background,
+    onSurface = BrandColors.Black,
+    surfaceVariant = BrandColors.Surface,
+    onSurfaceVariant = BrandColors.TextSecondary,
+    outline = BrandColors.Border,
+    outlineVariant = Color(0xFFEEEEEE),
+    error = BrandColors.Red,
+    onError = BrandColors.OnRed
+)
+
+@Composable
+fun StocktakeTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = StocktakeLightColors,
+        content = content
+    )
+}

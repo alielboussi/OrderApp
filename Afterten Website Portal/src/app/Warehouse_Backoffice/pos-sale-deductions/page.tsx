@@ -12,7 +12,14 @@ import eb from "../enterprise.module.css";
 import local from "./pos-sale-deductions.module.css";
 
 type Outlet = { id: string; name: string; default_sales_warehouse_id?: string | null };
-type CatalogItem = { id: string; name: string; sku?: string | null; item_kind?: string | null };
+type CatalogItem = {
+  id: string;
+  name: string;
+  sku?: string | null;
+  item_kind?: string | null;
+  consumption_uom?: string | null;
+  units_per_purchase_pack?: number | null;
+};
 type Variant = { id: string; item_id: string; name: string; sku?: string | null };
 type OutletWarehouse = {
   outlet_id: string;
@@ -43,6 +50,12 @@ const emptyLine = (): DeductionLine => ({
   deduct_qty_per_sale: "1",
   warehouse_id: "",
 });
+
+function consumptionUomForItem(items: CatalogItem[], itemId: string): string {
+  const item = items.find((entry) => entry.id === itemId);
+  const uom = item?.consumption_uom?.trim();
+  return uom && uom.length ? uom : "each";
+}
 
 function variantKeyFor(variant: Variant): string {
   return variant.sku?.trim() || variant.name.toLowerCase().replace(/\s+/g, "_");
@@ -251,7 +264,7 @@ export default function PosSaleDeductionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [outletId, soldItemId, soldVariantKey]);
+  }, [outletId, soldItemId, soldVariantKey, items]);
 
   useEffect(() => {
     if (status === "ok" && outlets.length) void loadAllRules();
@@ -280,14 +293,22 @@ export default function PosSaleDeductionsPage() {
           outlet_id: outletId,
           sold_item_id: soldItemId,
           sold_variant_key: soldVariantKey,
-          rules: lines.filter((l) => l.deduct_item_id && l.warehouse_id && Number(l.deduct_qty_per_sale) > 0),
+          rules: lines
+            .filter((l) => l.deduct_item_id && l.warehouse_id && Number(l.deduct_qty_per_sale) > 0)
+            .map((l) => ({
+              deduct_item_id: l.deduct_item_id,
+              deduct_variant_key: l.deduct_variant_key,
+              deduct_qty_per_sale: Number(l.deduct_qty_per_sale),
+              warehouse_id: l.warehouse_id,
+              notes: l.notes ?? null,
+            })),
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Save failed");
       setMessage({
         ok: true,
-        text: `Saved ${json.saved ?? 0} deduction line(s). Middleware applies these on each POS sale.`,
+        text: `Saved ${json.saved ?? 0} recipe line(s). POS deducts these amounts; order receipts store equivalent finished count for reporting only.`,
       });
       await loadRules();
       await loadAllRules();
@@ -318,11 +339,12 @@ export default function PosSaleDeductionsPage() {
       <section className={eb.pageCard}>
         <div className={eb.sectionHeaderBlue}>
           <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
-            POS sale deductions
+            Outlet fulfillment recipes
           </h3>
           <p className={eb.pageCardBody} style={{ marginTop: 8 }}>
-            Program what stock to deduct when middleware syncs a POS sale. Till 1, Till 2, and Quick Corner are
-            excluded — they do not use the ordering app.
+            Configure what each POS sale deducts from the outlet warehouse (e.g. 1 shawarma → 166 g chicken + 1
+            bread). Orders and stocktakes stay in ingredient UOM; the same recipe is used only to report how many
+            finished units an approved order represents. Till 1, Till 2, and Quick Corner are excluded.
           </p>
         </div>
         <div className={eb.summaryGrid}>
@@ -419,7 +441,9 @@ export default function PosSaleDeductionsPage() {
           <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
             Deduction lines
           </h3>
-          <p className={eb.pageCardBody}>Quantities are per single sale (qty × items sold).</p>
+          <p className={eb.pageCardBody}>
+            Qty per POS sale in each deduct item&apos;s catalog UOM (How its consumed on the product form).
+          </p>
         </div>
 
         {!soldItemId ? (
@@ -430,6 +454,7 @@ export default function PosSaleDeductionsPage() {
           <>
             {lines.map((line, index) => {
               const deductVariants = variantsForItem(variants, line.deduct_item_id);
+              const deductUom = consumptionUomForItem(items, line.deduct_item_id);
               return (
                 <div key={`line-${index}`} className={local.deductionLine}>
                   <div className={local.deductionLineHeader} style={{ gridColumn: "1 / -1" }}>
@@ -450,7 +475,10 @@ export default function PosSaleDeductionsPage() {
                       className={eb.fieldSelect}
                       value={line.deduct_item_id}
                       onChange={(e) =>
-                        updateLine(index, { deduct_item_id: e.target.value, deduct_variant_key: "base" })
+                        updateLine(index, {
+                          deduct_item_id: e.target.value,
+                          deduct_variant_key: "base",
+                        })
                       }
                     >
                       <option value="">Select…</option>
@@ -479,7 +507,7 @@ export default function PosSaleDeductionsPage() {
                     </select>
                   </label>
                   <label className={eb.fieldLabel}>
-                    Qty per sale
+                    Qty per sale ({deductUom})
                     <input
                       className={eb.fieldInput}
                       type="number"
@@ -546,6 +574,7 @@ export default function PosSaleDeductionsPage() {
                 <th>Deduct item</th>
                 <th>Deduct variant</th>
                 <th>Qty / sale</th>
+                <th>Catalog UOM</th>
                 <th>Warehouse</th>
               </tr>
             </thead>
@@ -571,6 +600,7 @@ export default function PosSaleDeductionsPage() {
                       <td>{deduct?.name ?? rule.deduct_item_id}</td>
                       <td>{variantLabel(rule.deduct_item_id, rule.deduct_variant_key)}</td>
                       <td>{rule.deduct_qty_per_sale}</td>
+                      <td>{consumptionUomForItem(items, rule.deduct_item_id)}</td>
                       <td>
                         {warehouseLabel(
                           rule.warehouse_id,
