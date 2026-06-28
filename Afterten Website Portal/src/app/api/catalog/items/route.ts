@@ -689,7 +689,7 @@ export async function PUT(request: Request) {
 
     const menuGroupId = cleanUuid(body.menu_group_id);
 
-    const payload: ItemPayload = {
+    const payload: Partial<ItemPayload> = {
       name,
       sku: cleanText(body.sku) ?? null,
       supplier_sku: cleanText(body.supplier_sku) ?? null,
@@ -706,7 +706,6 @@ export async function PUT(request: Request) {
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       ...(defaultWarehouseId !== undefined ? { default_warehouse_id: defaultWarehouseId } : {}),
-      ...(body.has_recipe !== undefined ? { has_recipe: cleanBoolean(body.has_recipe, false) } : {}),
       menu_group_id: menuGroupId,
       active: cleanBoolean(body.active, true),
       consumption_uom: consumptionUnit,

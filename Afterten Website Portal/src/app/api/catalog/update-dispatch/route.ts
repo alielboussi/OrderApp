@@ -142,10 +142,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No active middleware outlets found." }, { status: 400 });
     }
 
-    const requestedOutletIds = Array.isArray(body?.outlet_ids)
+    const requestedOutletIds: string[] = Array.isArray(body?.outlet_ids)
       ? body.outlet_ids
           .filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0)
-          .map((value) => value.trim())
+          .map((value: string) => value.trim())
       : [];
 
     const allowedMiddleware = new Set(allMiddlewareOutletIds);
