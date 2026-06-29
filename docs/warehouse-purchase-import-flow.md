@@ -5,7 +5,7 @@ This document describes how the Afterten stock movements API is imported into th
 ## Overview
 - Source API: Afterten stock movements endpoint (receive movements only).
 - Target: warehouse purchase receipts, stock counts, and import audit records.
-- Entry point: Afterten Website Portal API route `/api/warehouse-purchase-import`.
+- Entry point: Afterten API route `/api/warehouse-purchase-import`.
 - Mode: `dryRun` to preview without inserts or updates.
 
 ## Authentication

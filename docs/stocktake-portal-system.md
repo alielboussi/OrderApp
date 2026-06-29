@@ -242,5 +242,5 @@ Run in Supabase (in order):
 |-----------|------|
 | Stocktake APK | `Afterten Orders/stocktake-app/` |
 | Shared library | `Shared/` |
-| Portal pages | `Afterten Website Portal/src/app/Warehouse_Backoffice/outlets/` |
+| Portal pages | `Afterten/src/app/Warehouse_Backoffice/outlets/` |
 | Middleware | `pos-sync-service/` (period-aware SCPGT) |

@@ -2,7 +2,7 @@
 
 Next.js app for the AfterTen warehouse backoffice, outlet management, and supporting API routes.
 
-**Vercel:** set the project **Root Directory** to `Scanners` (symlink to this folder). Do not use `Afterten Website Portal` as the root — spaces in the path break serverless function names.
+**Vercel:** set the project **Root Directory** to **`Afterten`** (repo folder; no spaces in the path).
 
 Legacy per-storeroom transfer scanner UIs (Beverages, Coldrooms, Ingredients, etc.) have been removed. Hub inventory is handled through **Warehouse Backoffice → Purchases / Transfers / Damages**. Outlet workflows use the **Afterten Orders** Android app.
 
@@ -14,8 +14,8 @@ Legacy per-storeroom transfer scanner UIs (Beverages, Coldrooms, Ingredients, et
 ### Local setup
 
 ```bash
-cp "Afterten Website Portal/.env.example" "Afterten Website Portal/.env.local"
-cd "Afterten Website Portal"
+cp Afterten/.env.example Afterten/.env.local
+cd Afterten
 npm install
 npm run dev
 ```
@@ -34,7 +34,7 @@ Fill `.env.local` with your Supabase credentials before running `npm run dev`.
 
 ### Deploying to Vercel
 
-1. In Vercel → **Project Settings → General → Root Directory**, set **`Scanners`** (not `Afterten Website Portal`).
+1. In Vercel → **Project Settings → General → Root Directory**, set **`Afterten`**.
 2. Configure environment variables in the Vercel project settings.
 3. Connect the repo and deploy. Primary URLs:
    - `https://<vercel-domain>/` → landing page

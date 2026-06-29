@@ -29,7 +29,7 @@
 - Recipes remain RLS-protected: admins can edit, while transfer managers get read-only access for transparency when balancing stock across depots.
 
 ## Vercel Routes (replacing Supabase Edge Functions)
-The `Afterten Website Portal` Next.js app now hosts the HTTP routes that previously lived on Supabase Edge. Once deployed to Vercel, replace `<your-vercel-domain>` with the project domain (for example `afterten-transfers.vercel.app`).
+The `Afterten` Next.js app (warehouse backoffice portal) hosts the HTTP routes that previously lived on Supabase Edge. Once deployed to Vercel, replace `<your-vercel-domain>` with the project domain (for example `afterten-transfers.vercel.app`).
 
 | Route | URL template | Purpose |
 | --- | --- | --- |
