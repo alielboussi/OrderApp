@@ -1,0 +1,191 @@
+/* Outlet orders — enterprise layout */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filtersCard {
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  padding: 16px;
+  background: #fff;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.filterLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+}
+
+.select,
+.input {
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  color: #111;
+  padding: 8px 10px;
+  min-width: 200px;
+  font-size: 14px;
+  font-family: Arial, Helvetica, sans-serif;
+  min-height: 38px;
+}
+
+.select:focus,
+.input:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15);
+}
+
+.loadingTag {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  font-weight: 600;
+}
+
+.errorBanner {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tableCard {
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  padding: 16px;
+  background: #fff;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tableTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111;
+}
+
+.tableSubtitle {
+  margin: 4px 0 0;
+  color: #5c5c5c;
+  font-size: 13px;
+}
+
+.table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tableRow {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr 1.2fr 1.1fr 0.8fr 0.8fr 0.9fr 0.7fr;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  font-size: 14px;
+  align-items: center;
+  color: #111;
+}
+
+.highlightRow {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px #bfdbfe;
+}
+
+.tableHead {
+  background: #eff6ff;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.alignRight {
+  text-align: right;
+}
+
+.alignCenter {
+  text-align: center;
+}
+
+.statusTag {
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.pdfButton {
+  border-radius: 6px;
+  border: 1px solid #bbf7d0;
+  padding: 6px 12px;
+  color: #15803d;
+  background: #ecfdf3;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pdfButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.emptyState {
+  padding: 24px;
+  text-align: center;
+  color: #5c5c5c;
+  border: 1px dashed #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+@media (max-width: 1100px) {
+  .tableRow {
+    grid-template-columns: 1.2fr 1fr 1fr 1fr 0.8fr 0.8fr 0.9fr 0.7fr;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 900px) {
+  .tableRow {
+    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .tableRow span:nth-child(5),
+  .tableRow span:nth-child(6),
+  .tableRow span:nth-child(7),
+  .tableRow span:nth-child(8) {
+    display: none;
+  }
+}
