@@ -5,14 +5,16 @@ import {
   type MiddlewareSalesApiProfile,
   parseMiddlewareSalesApiProfile,
   outletIdsForMiddlewareSalesApiProfile,
+  middlewareSaleRowMatchesProfile,
 } from "@/lib/outletScope";
 
 export const API_FORMAT_VERSION = 2;
 
 const DEFAULT_LIMIT = 1000;
-const MAX_LIMIT = 5000;
+const MAX_LIMIT = 50000;
 const DEFAULT_DAYS = 7;
 const VAT_RATE = 0.16;
+const IN_CHUNK_SIZE = 100;
 
 type OutletSalesRow = {
   id: string;
@@ -135,6 +137,46 @@ function cleanUuid(value: string | null): string | null {
   return isUuid(trimmed) ? trimmed : null;
 }
 
+function chunkValues<T>(values: T[], size = IN_CHUNK_SIZE): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < values.length; i += size) {
+    chunks.push(values.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function fetchInChunks<T>(
+  ids: string[],
+  fetchChunk: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
+): Promise<T[]> {
+  if (!ids.length) return [];
+  const rows: T[] = [];
+  for (const chunk of chunkValues(ids)) {
+    const { data, error } = await fetchChunk(chunk);
+    if (error) throw error;
+    if (data?.length) rows.push(...data);
+  }
+  return rows;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
   const parsed = Date.parse(value);
@@ -195,13 +237,14 @@ function variantLookupKey(itemId: string, variantIdOrSku: string): string {
   return `${itemId.toLowerCase()}::${variantIdOrSku.toLowerCase()}`;
 }
 
-function isMiddlewareContext(context: Record<string, unknown> | null): boolean {
-  if (!context) return false;
+function isMiddlewareContext(context: unknown): boolean {
+  const record = asRecord(context);
+  if (!record) return false;
 
-  const sourceEventId = asNonEmptyText(context.source_event_id);
-  const saleId = asNonEmptyText(context.sale_id);
-  const posOrderId = asNonEmptyText(context.pos_order_id);
-  const sourceSystem = asNonEmptyText(context.source_system)?.toLowerCase() ?? null;
+  const sourceEventId = asNonEmptyText(record.source_event_id);
+  const saleId = asNonEmptyText(record.sale_id);
+  const posOrderId = asNonEmptyText(record.pos_order_id);
+  const sourceSystem = asNonEmptyText(record.source_system)?.toLowerCase() ?? null;
 
   if (sourceEventId || saleId || posOrderId) return true;
   if (sourceSystem && (sourceSystem.includes("pos") || sourceSystem.includes("afterten-pos"))) return true;
@@ -217,9 +260,10 @@ function extractPosBillId(sourceEventId: string | null, outletId: string): strin
 }
 
 function extractPaymentMethods(rawPayload: Record<string, unknown> | null): PaymentMethod[] {
-  if (!rawPayload || !Array.isArray(rawPayload.payments)) return [];
+  const payload = asRecord(rawPayload);
+  if (!payload || !Array.isArray(payload.payments)) return [];
 
-  return rawPayload.payments
+  return payload.payments
     .map((entry) => {
       if (!entry || typeof entry !== "object") return null;
       const method = asNonEmptyText((entry as Record<string, unknown>).method);
@@ -260,12 +304,13 @@ function emptyShift(): SaleShift {
 }
 
 function extractShift(rawPayload: Record<string, unknown> | null): SaleShift {
-  const fallbackTerminal = asNonEmptyText(rawPayload?.terminal);
-  if (!rawPayload || !rawPayload.shift || typeof rawPayload.shift !== "object") {
+  const payload = asRecord(rawPayload);
+  const fallbackTerminal = asNonEmptyText(payload?.terminal);
+  if (!payload || !payload.shift || typeof payload.shift !== "object") {
     return { ...emptyShift(), terminal: fallbackTerminal };
   }
 
-  const shift = rawPayload.shift as Record<string, unknown>;
+  const shift = payload.shift as Record<string, unknown>;
   return {
     shift_id: toNullableInt(shift.shift_id),
     shift_name: asNonEmptyText(shift.shift_name),
@@ -384,9 +429,16 @@ export async function handleOutletMiddlewareSalesRequest(
       throw salesError;
     }
 
+    const profileForScope = filterResult.mode === "profile" ? filterResult.profile : null;
+
     const salesRows = ((salesData ?? []) as OutletSalesRow[])
       .filter((row) => row.outlet_id && row.item_id)
       .filter((row) => isMiddlewareContext(row.context))
+      .filter((row) => {
+        if (!profileForScope) return true;
+        const sourceEventId = asNonEmptyText(asRecord(row.context)?.source_event_id);
+        return middlewareSaleRowMatchesProfile(row.outlet_id, sourceEventId, profileForScope);
+      })
       .slice(0, limit);
 
     if (salesRows.length === 0) {
@@ -394,62 +446,49 @@ export async function handleOutletMiddlewareSalesRequest(
     }
 
     const outletIds = Array.from(new Set(salesRows.map((row) => row.outlet_id)));
-    const itemIds = Array.from(new Set(salesRows.map((row) => row.item_id)));
+    const itemIds = Array.from(
+      new Set(salesRows.map((row) => cleanUuid(row.item_id)).filter((value): value is string => Boolean(value))),
+    );
     const sourceEventIds = Array.from(
       new Set(
         salesRows
-          .map((row) => asNonEmptyText(row.context?.source_event_id))
+          .map((row) => asNonEmptyText(asRecord(row.context)?.source_event_id))
           .filter((value): value is string => Boolean(value)),
       ),
     );
 
-    const ordersPromise =
+    const [outletsData, itemsData, variantsData, ordersData] = await Promise.all([
+      fetchInChunks<OutletRow>(outletIds, (chunk) => supabase.from("outlets").select("id,name").in("id", chunk)),
+      fetchInChunks<ItemRow>(itemIds, (chunk) =>
+        supabase.from("catalog_items").select("id,name,menu_group_id").in("id", chunk),
+      ),
+      fetchInChunks<VariantRow>(itemIds, (chunk) =>
+        supabase.from("catalog_variants").select("id,item_id,name,sku").in("item_id", chunk),
+      ),
       sourceEventIds.length > 0
-        ? supabase
-            .from("orders")
-            .select("source_event_id,pos_sale_id,raw_payload")
-            .in("source_event_id", sourceEventIds)
-        : Promise.resolve({ data: [], error: null });
-
-    const [outletsRes, itemsRes, variantsRes, ordersRes] = await Promise.all([
-      supabase.from("outlets").select("id,name").in("id", outletIds),
-      supabase.from("catalog_items").select("id,name,menu_group_id").in("id", itemIds),
-      supabase.from("catalog_variants").select("id,item_id,name,sku").in("item_id", itemIds),
-      ordersPromise,
+        ? fetchInChunks<OrderRow>(sourceEventIds, (chunk) =>
+            supabase.from("orders").select("source_event_id,pos_sale_id,raw_payload").in("source_event_id", chunk),
+          )
+        : Promise.resolve([] as OrderRow[]),
     ]);
 
-    if (outletsRes.error) throw outletsRes.error;
-    if (itemsRes.error) throw itemsRes.error;
-    if (variantsRes.error) throw variantsRes.error;
-    if (ordersRes.error) throw ordersRes.error;
-
-    const outletById = new Map((outletsRes.data ?? []).map((row) => [row.id, row] as const));
-    const itemById = new Map((itemsRes.data ?? []).map((row) => [row.id, row] as const));
+    const outletById = new Map(outletsData.map((row) => [row.id, row] as const));
+    const itemById = new Map(itemsData.map((row) => [row.id, row] as const));
     const menuGroupIds = Array.from(
-      new Set(
-        ((itemsRes.data ?? []) as ItemRow[])
-          .map((row) => row.menu_group_id)
-          .filter((value): value is string => Boolean(value)),
-      ),
+      new Set(itemsData.map((row) => row.menu_group_id).filter((value): value is string => Boolean(value))),
     );
 
     let menuGroupById = new Map<string, MenuGroupRow>();
     if (menuGroupIds.length > 0) {
-      const { data: menuGroupData, error: menuGroupError } = await supabase
-        .from("catalog_menu_groups")
-        .select("id,name,pos_menu_group_id")
-        .in("id", menuGroupIds);
-      if (menuGroupError) throw menuGroupError;
-      menuGroupById = new Map(
-        ((menuGroupData ?? []) as MenuGroupRow[]).map((row) => [row.id, row] as const),
+      const menuGroupData = await fetchInChunks<MenuGroupRow>(menuGroupIds, (chunk) =>
+        supabase.from("catalog_menu_groups").select("id,name,pos_menu_group_id").in("id", chunk),
       );
+      menuGroupById = new Map(menuGroupData.map((row) => [row.id, row] as const));
     }
-    const orderBySourceEventId = new Map(
-      ((ordersRes.data ?? []) as OrderRow[]).map((row) => [row.source_event_id, row] as const),
-    );
+    const orderBySourceEventId = new Map(ordersData.map((row) => [row.source_event_id, row] as const));
     const variantByItemAndIdOrSku = new Map<string, VariantRow>();
 
-    for (const row of (variantsRes.data ?? []) as VariantRow[]) {
+    for (const row of variantsData) {
       variantByItemAndIdOrSku.set(variantLookupKey(row.item_id, row.id), row);
       if (row.sku) variantByItemAndIdOrSku.set(variantLookupKey(row.item_id, row.sku), row);
     }
@@ -457,7 +496,7 @@ export async function handleOutletMiddlewareSalesRequest(
     const eventMap = new Map<string, MutableSaleEvent>();
 
     for (const row of salesRows) {
-      const context = row.context ?? {};
+      const context = asRecord(row.context) ?? {};
       const sourceEventId = asNonEmptyText(context.source_event_id);
       const fallbackSaleRef = asNonEmptyText(context.sale_id) ?? row.id;
       const saleReference = `${row.outlet_id}:${sourceEventId ?? fallbackSaleRef}`;
@@ -502,12 +541,13 @@ export async function handleOutletMiddlewareSalesRequest(
       const existing = eventMap.get(saleReference);
       if (!existing) {
         const order = sourceEventId ? orderBySourceEventId.get(sourceEventId) : undefined;
-        const paymentMethods = extractPaymentMethods(order?.raw_payload ?? null);
-        const shift = extractShift(order?.raw_payload ?? null);
+        const orderPayload = asRecord(order?.raw_payload);
+        const paymentMethods = extractPaymentMethods(orderPayload);
+        const shift = extractShift(orderPayload);
         const posSaleId =
           asNonEmptyText(order?.pos_sale_id) ??
           asNonEmptyText(context.sale_id) ??
-          asNonEmptyText(order?.raw_payload?.sale_id as string | undefined);
+          asNonEmptyText(orderPayload?.sale_id as string | undefined);
 
         eventMap.set(saleReference, {
           sale_reference: saleReference,
@@ -538,6 +578,14 @@ export async function handleOutletMiddlewareSalesRequest(
 
     const sales = Array.from(eventMap.values())
       .map(finalizeSale)
+      .filter((sale) => {
+        if (!profileForScope) return true;
+        if (!middlewareSaleRowMatchesProfile(sale.outlet_uuid, sale.source_event_id, profileForScope)) {
+          return false;
+        }
+        const allowedOutletIds = new Set(outletIdsForMiddlewareSalesApiProfile(profileForScope));
+        return sale.lines.items.every((line) => allowedOutletIds.has(line.outlet_uuid));
+      })
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 
     const outletSummaries = Array.from(

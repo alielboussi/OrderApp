@@ -83,9 +83,10 @@ OUTER APPLY (
 ) ss
 LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = ss.useridstart
 WHERE (
-    bt.uploadStatus IS NULL
-    OR bt.uploadStatus = 'Pending'
-    OR (@IncludeProcessed = 1 AND bt.uploadStatus = 'Processed')
+    -- Sale.uploadstatus is the middleware source of truth (BillType may be Processed before upload).
+    s.uploadstatus IS NULL
+    OR s.uploadstatus IN ('Pending', 'pending')
+    OR (@IncludeProcessed = 1 AND s.uploadstatus = 'Processed')
 )
     AND (
         @MinOccurredAt IS NULL
@@ -248,23 +249,95 @@ ORDER BY bt.id DESC;";
 
     public async Task MarkOrderProcessedAsync(string billId, string saleId, CancellationToken cancellationToken)
     {
-        const string sql = @"
-    UPDATE dbo.BillType    SET uploadStatus = 'Processed' WHERE id = @BillId;
-    UPDATE dbo.Sale        SET uploadstatus = 'Processed' WHERE Id = @SaleId;
-    UPDATE dbo.Saledetails SET uploadstatus = 'Processed' WHERE saleid = @SaleId;";
+        const string billSql = "UPDATE dbo.BillType SET uploadStatus = 'Processed' WHERE id = @BillId;";
+        const string saleSql = "UPDATE dbo.Sale SET uploadstatus = 'Processed' WHERE Id = @SaleId;";
+        const string linesSql = "UPDATE dbo.Saledetails SET uploadstatus = 'Processed' WHERE saleid = @SaleId;";
 
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
 
-        await using var cmd = new SqlCommand(sql, conn)
+        await using var transaction = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var billRows = await ExecuteProcessedUpdateAsync(conn, transaction, billSql, billId, saleId, cancellationToken);
+            var saleRows = await ExecuteProcessedUpdateAsync(conn, transaction, saleSql, billId, saleId, cancellationToken);
+            var lineRows = await ExecuteProcessedUpdateAsync(conn, transaction, linesSql, billId, saleId, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+
+            if (saleRows == 0 || lineRows == 0)
+            {
+                _logger.LogWarning(
+                    "Processed flags incomplete after upload bill={BillId} sale={SaleId}: billRows={BillRows} saleRows={SaleRows} lineRows={LineRows}",
+                    billId,
+                    saleId,
+                    billRows,
+                    saleRows,
+                    lineRows);
+            }
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private static async Task<int> ExecuteProcessedUpdateAsync(
+        SqlConnection conn,
+        SqlTransaction transaction,
+        string sql,
+        string billId,
+        string saleId,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqlCommand(sql, conn, transaction)
         {
             CommandType = CommandType.Text
         };
-
         cmd.Parameters.AddWithValue("@BillId", billId);
         cmd.Parameters.AddWithValue("@SaleId", saleId);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    public async Task<int> CountUnsyncedSalesAsync(CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT COUNT(*) AS Cnt
+FROM dbo.Sale s WITH (NOLOCK)
+WHERE s.uploadstatus IS NULL OR s.uploadstatus IN ('Pending', 'pending');";
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? 0 : Convert.ToInt32(result);
+    }
+
+    /// <summary>
+    /// Align MintPOS upload flags when Supabase already has the sale (Sale Processed) but lines/BillType lag.
+    /// </summary>
+    public async Task<int> RepairConsistentProcessedFlagsAsync(CancellationToken cancellationToken)
+    {
+        const string sql = @"
+UPDATE sd
+SET sd.uploadstatus = 'Processed'
+FROM dbo.Saledetails sd
+INNER JOIN dbo.Sale s ON s.Id = sd.saleid
+WHERE s.uploadstatus = 'Processed'
+  AND (sd.uploadstatus IS NULL OR sd.uploadstatus IN ('Pending', 'pending'));
+
+UPDATE bt
+SET bt.uploadStatus = 'Processed'
+FROM dbo.BillType bt
+INNER JOIN dbo.Sale s ON s.Id = bt.saleid
+WHERE s.uploadstatus = 'Processed'
+  AND (bt.uploadStatus IS NULL OR bt.uploadStatus IN ('Pending', 'pending'));";
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task MarkInventoryProcessedAsync(IEnumerable<string> inventoryIds, CancellationToken cancellationToken)

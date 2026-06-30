@@ -122,6 +122,55 @@ public sealed class SupabaseClient
         }
     }
 
+    public async Task<bool> OrderExistsAsync(string sourceEventId, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty || string.IsNullOrWhiteSpace(sourceEventId))
+        {
+            return false;
+        }
+
+        var existing = await GetExistingSourceEventIdsAsync(new[] { sourceEventId }, cancellationToken);
+        return existing.Contains(sourceEventId);
+    }
+
+    public async Task<HashSet<string>> GetExistingSourceEventIdsAsync(
+        IReadOnlyCollection<string> sourceEventIds,
+        CancellationToken cancellationToken)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_outlet.Id == Guid.Empty || sourceEventIds.Count == 0)
+        {
+            return result;
+        }
+
+        var distinct = sourceEventIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var chunk in Chunk(distinct, 40))
+        {
+            var quoted = string.Join(",", chunk.Select(id => $"\"{id.Replace("\"", "\"\"")}\""));
+            var path =
+                $"/rest/v1/orders?select=source_event_id&outlet_id=eq.{_outlet.Id}&source_event_id=in.({quoted})";
+            var rows = await GetAsync<SourceEventRow[]>(path, cancellationToken);
+            if (rows is null)
+            {
+                continue;
+            }
+
+            foreach (var row in rows)
+            {
+                if (!string.IsNullOrWhiteSpace(row.SourceEventId))
+                {
+                    result.Add(row.SourceEventId);
+                }
+            }
+        }
+
+        return result;
+    }
+
     public async Task<SupabaseResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)
@@ -765,6 +814,10 @@ public sealed class SupabaseClient
         }
     }
 
+    private sealed record SourceEventRow(
+        [property: JsonPropertyName("source_event_id")] string? SourceEventId
+    );
+
     private sealed record OutletWarehouseRow(
         [property: JsonPropertyName("warehouse_id")] string WarehouseId
     );
@@ -790,6 +843,21 @@ public sealed class SupabaseClient
     {
         var code = (int)statusCode;
         return code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
+    }
+
+    private static IEnumerable<T[]> Chunk<T>(IReadOnlyList<T> items, int size)
+    {
+        for (var i = 0; i < items.Count; i += size)
+        {
+            var length = Math.Min(size, items.Count - i);
+            var chunk = new T[length];
+            for (var j = 0; j < length; j++)
+            {
+                chunk[j] = items[i + j];
+            }
+
+            yield return chunk;
+        }
     }
 
     private object BuildPayload(PosOrder order)

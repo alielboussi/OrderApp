@@ -27,6 +27,7 @@ DECLARE @Principal sysname = N'mint';
 DECLARE @sql nvarchar(max);
 
 -- Sales sync: read pending rows + mark uploadStatus/uploadstatus = 'Processed'
+-- Middleware queues on Sale.uploadstatus (Pending); BillType may be Processed before upload completes.
 SET @sql = N'GRANT SELECT, UPDATE ON dbo.BillType TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
 

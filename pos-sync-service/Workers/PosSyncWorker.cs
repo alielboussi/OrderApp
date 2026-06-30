@@ -28,6 +28,15 @@ public sealed class PosSyncWorker(IOptions<SyncOptions> syncOptions,
             try
             {
                 var result = await _syncRunner.RunOnceAsync(stoppingToken);
+                if (result.ProcessedCount > 0 || result.ReconciledCount > 0 || result.LinesRepairedCount > 0)
+                {
+                    _logger.LogInformation(
+                        "Sync cycle summary uploaded={Uploaded} reconciled={Reconciled} lines_repaired={LinesRepaired}",
+                        result.ProcessedCount,
+                        result.ReconciledCount,
+                        result.LinesRepairedCount);
+                }
+
                 if (result.Failures.Count > 0)
                 {
                     foreach (var failure in result.Failures)

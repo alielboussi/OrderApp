@@ -61,9 +61,10 @@ public static class AppSettingsFile
         builder.AppendLine("  },");
         builder.AppendLine("  \"Sync\": {");
         builder.AppendLine("    \"PollSeconds\": 60,");
-        builder.AppendLine("    \"BatchSize\": 50,");
+        builder.AppendLine("    \"BatchSize\": 100,");
         builder.AppendLine("    \"SourceSystem\": \"afterten-pos\",");
         builder.AppendLine("    \"IncludeProcessed\": false,");
+        builder.AppendLine("    \"MaxBatchesPerCycle\": 20,");
         builder.AppendLine("    \"PosCatalogSyncMinutes\": 30");
         builder.AppendLine("  },");
         builder.AppendLine("  \"Logging\": {");

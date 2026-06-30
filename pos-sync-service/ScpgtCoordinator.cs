@@ -55,7 +55,8 @@ public sealed class ScpgtCoordinator
     {
         var syncResult = await _syncRunner.RunOnceAsync(cancellationToken);
         var status = syncResult.Failures.Count > 0 ? "Sync completed with issues." : "Sync completed.";
-        var detail = $"Processed {syncResult.ProcessedCount} orders. Failures {syncResult.Failures.Count}.";
+        var detail =
+            $"Uploaded {syncResult.ProcessedCount}, reconciled {syncResult.ReconciledCount}, lines repaired {syncResult.LinesRepairedCount}. Failures {syncResult.Failures.Count}.";
 
         return await GetStatusAsync(cancellationToken, status, detail, null);
     }

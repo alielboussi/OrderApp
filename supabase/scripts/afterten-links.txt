@@ -1,9 +1,2 @@
-AfterTen Web Entry Points (updated 2026-06-26)
-
-https://aftertentransfers.app/                      # Landing page
-https://aftertentransfers.app/Warehouse_Backoffice  # Warehouse backoffice dashboard
-https://aftertentransfers.app/api/warehouses         # JSON feed of warehouses
-https://aftertentransfers.app/api/stock              # JSON stock aggregation view
-https://aftertentransfers.app/api/catalog/changes    # Catalog change feed (products, variants, menu groups)
-https://aftertentransfers.app/api/outlet-middleware-sales/tills        # Till 1 + Till 2 sales export (both tills)
-https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner  # Quick Corner sales export (separate)
+https://aftertentransfers.app/api/outlet-middleware-sales/tills
+https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner

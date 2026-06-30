@@ -57,10 +57,12 @@ public sealed class SupabaseOptions
 public sealed class SyncOptions
 {
     public int PollSeconds { get; init; } = 60;
-    public int BatchSize { get; init; } = 50;
+    public int BatchSize { get; init; } = 100;
     public string SourceSystem { get; init; } = "afterten-pos";
     public DateTime? MinSaleDateUtc { get; init; }
     public DateTime? MaxSaleDateUtc { get; init; }
     public bool IncludeProcessed { get; init; } = false;
+    /// <summary>How many read/upload batches to run per poll cycle (clears backlogs without waiting for the next poll).</summary>
+    public int MaxBatchesPerCycle { get; init; } = 20;
     public int PosCatalogSyncMinutes { get; init; } = 30;
 }

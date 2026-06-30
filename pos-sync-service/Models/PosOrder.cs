@@ -102,4 +102,8 @@ public sealed record PosMenuGroupMapRow(
 
 public sealed record SyncFailure(string PosOrderId, string? Error);
 
-public sealed record SyncRunResult(int ProcessedCount, IReadOnlyList<SyncFailure> Failures);
+public sealed record SyncRunResult(
+    int ProcessedCount,
+    int ReconciledCount,
+    int LinesRepairedCount,
+    IReadOnlyList<SyncFailure> Failures);

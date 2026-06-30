@@ -48,6 +48,16 @@ Produces **only** `publish\SCPGT.exe` (~77 MB self-contained).
 | Wrong outlet/keys | Edit `C:\ProgramData\SCPGT\appsettings.json` → `Restart-Service SCPGT` |
 | SQL permission errors | Re-run MintPOS grants (`unified.sql`) |
 | No sales syncing | Confirm outlet `has_pos_middleware` + stocktake window open |
+| MintPOS shows pending but Supabase has sales | Deploy latest SCPGT — reconciles from Supabase and repairs line flags automatically |
+| Sales stuck (BillType Processed, not in Supabase) | `Sale.uploadstatus` must be `Processed` after sync; latest SCPGT queues by **Sale** status, not BillType |
+
+### Sales sync guarantees (2026-06+ middleware)
+
+- **Queue**: any sale where `Sale.uploadstatus` is `Pending` (ignores MintPOS marking `BillType` Processed early).
+- **No duplicates**: Supabase `sync_pos_order` skips existing `source_event_id`; middleware also reconciles if already in `orders`.
+- **Backlog**: up to `BatchSize` × `MaxBatchesPerCycle` sales per poll (default 100 × 20 = 2000).
+- **Line flags**: after each cycle, repairs `Saledetails` / `BillType` when `Sale` is already `Processed`.
+- **One-time SQL** (optional): `scripts/repair-mintpos-upload-flags.sql` on MINTPOS.
 
 Sales export API (same JSON on both routes):
 
