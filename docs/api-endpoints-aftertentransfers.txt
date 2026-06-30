@@ -29,11 +29,11 @@ GET  https://aftertentransfers.app/api/outlet-middleware-sales/tills
 GET  https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner
      Quick Corner only. Query: since, until, limit.
 
---- Legacy / all outlets ---
+--- Legacy (profile or single outlet only; does not return all outlets) ---
 
 GET  https://aftertentransfers.app/api/outlet-middleware-sales
-     All middleware outlets. Query: outletId, since, until, limit,
-     profile (till | quick_corner).
+     Requires profile=till | quick_corner OR outletId=<uuid>.
+     Without those, returns 400 — use /tills or /quick-corner instead.
 
 Response fields (all routes): api_format_version (2), since, until, limit,
 sales_count, grouping ("by_outlet"), middleware_api_profile, outlet_ids,
