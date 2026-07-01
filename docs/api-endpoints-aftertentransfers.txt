@@ -21,13 +21,14 @@ Outlet mapping (middleware_sales_api_profile in Supabase):
 --- Till 1 + Till 2 (one shared route) ---
 
 GET  https://aftertentransfers.app/api/outlet-middleware-sales/tills
-     Both Till 1 and Till 2 in one response. Query: since, until, limit
-     (default 1000, max 50000). Optional outletId to filter one till only.
+     Both Till 1 and Till 2 in one response. Optional query: since, until.
+     All matching sales returned (no row limit). Optional outletId to filter one till.
 
 --- Quick Corner (separate route) ---
 
 GET  https://aftertentransfers.app/api/outlet-middleware-sales/quick-corner
-     Quick Corner only. Query: since, until, limit (default 1000, max 50000).
+     Quick Corner only. All matching sales returned (no row limit).
+     Optional query: since, until (ISO timestamps; omit since for full history).
 
 --- Legacy (profile or single outlet only; does not return all outlets) ---
 

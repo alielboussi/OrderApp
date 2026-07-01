@@ -70,13 +70,12 @@ public sealed class SyncRunner
 
         if (!syncContext.SyncOpeningUtc.HasValue)
         {
-            _logger.LogInformation(
-                "Sales sync skipped: no pos_sync_opening counter — open a stocktake period or set counter_values in Supabase.");
-            return new SyncRunResult(0, 0, 0, failures);
+            _logger.LogWarning(
+                "No pos_sync_opening counter — uploading Pending sales anyway (open a stocktake period for inventory deduction).");
         }
 
         var syncOptions = _syncOptions.CurrentValue;
-        var (minUtc, maxUtc) = PosSyncWindow.Compute(
+        var (minUtc, maxUtc) = PosSyncWindow.ComputePendingQueue(
             syncContext.SyncOpeningUtc,
             syncContext.SyncCutoffUtc,
             syncOptions.MinSaleDateUtc,
@@ -110,7 +109,7 @@ public sealed class SyncRunner
                 unsyncedBefore,
                 pending.Count);
 
-            var existingInSupabase = await _supabaseClient.GetExistingSourceEventIdsAsync(
+            var existingInSupabase = await _supabaseClient.GetSourceEventIdsWithOutletSalesAsync(
                 pending.Select(order => order.SourceEventId).ToArray(),
                 cancellationToken);
 
@@ -123,7 +122,7 @@ public sealed class SyncRunner
                         await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
                         reconciled++;
                         _logger.LogInformation(
-                            "Sale reconciled from Supabase (already synced) bill={BillId} sale={SaleId} source={SourceEventId}",
+                            "Sale reconciled from Supabase (already has API lines) bill={BillId} sale={SaleId} source={SourceEventId}",
                             order.PosOrderId,
                             order.PosSaleId,
                             order.SourceEventId);
@@ -133,42 +132,52 @@ public sealed class SyncRunner
                     LogSaleUploadAttempt(order);
 
                     var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
+                    var uploadDespiteValidation = false;
+
                     if (!validation.IsSuccess)
                     {
-                        if (IsIgnorableValidationFailure(validation.ErrorMessage))
+                        if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
                         {
-                            if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
-                            {
-                                _logger.LogInformation(
-                                    "Sale skipped bill={BillId} sale={SaleId} source={SourceEventId}: no mappable POS SKUs.",
-                                    order.PosOrderId,
-                                    order.PosSaleId,
-                                    order.SourceEventId);
-                                await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
-                                processed++;
-                            }
-                            else
-                            {
-                                _logger.LogInformation(
-                                    "Sale deferred bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
-                                    order.PosOrderId,
-                                    order.PosSaleId,
-                                    order.SourceEventId,
-                                    validation.ErrorMessage ?? "Outside sync window");
-                            }
-
+                            _logger.LogWarning(
+                                "Sale has no mappable catalog SKUs bill={BillId} sale={SaleId} source={SourceEventId} — fix MenuItem.Code / catalog mapping; leaving Pending.",
+                                order.PosOrderId,
+                                order.PosSaleId,
+                                order.SourceEventId);
+                            await _supabaseClient.LogFailureAsync(
+                                order,
+                                "validation",
+                                validation.ErrorMessage ?? "no_mappable_items",
+                                null,
+                                cancellationToken);
                             continue;
                         }
 
-                        var failure = new SyncFailure(order.PosOrderId, validation.ErrorMessage);
-                        failures.Add(failure);
-                        _logger.LogWarning(
-                            "Sale validation failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
-                            order.PosOrderId,
-                            order.PosSaleId,
-                            order.SourceEventId,
-                            validation.ErrorMessage ?? "Unknown error");
-                        await _supabaseClient.LogFailureAsync(order, "validation", validation.ErrorMessage ?? "Validation failed", null, cancellationToken);
+                        if (ShouldAttemptUploadDespiteValidation(validation.ErrorMessage))
+                        {
+                            uploadDespiteValidation = true;
+                            _logger.LogInformation(
+                                "Validation reported sync window issue bill={BillId} sale={SaleId} source={SourceEventId}; attempting API upload anyway.",
+                                order.PosOrderId,
+                                order.PosSaleId,
+                                order.SourceEventId);
+                        }
+                        else
+                        {
+                            var failure = new SyncFailure(order.PosOrderId, validation.ErrorMessage);
+                            failures.Add(failure);
+                            _logger.LogWarning(
+                                "Sale validation failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
+                                order.PosOrderId,
+                                order.PosSaleId,
+                                order.SourceEventId,
+                                validation.ErrorMessage ?? "Unknown error");
+                            await _supabaseClient.LogFailureAsync(order, "validation", validation.ErrorMessage ?? "Validation failed", null, cancellationToken);
+                            continue;
+                        }
+                    }
+
+                    if (!validation.IsSuccess && !uploadDespiteValidation)
+                    {
                         continue;
                     }
 
@@ -315,15 +324,14 @@ public sealed class SyncRunner
         }
     }
 
-    private static bool IsIgnorableValidationFailure(string? errorMessage)
+    private static bool ShouldAttemptUploadDespiteValidation(string? errorMessage)
     {
         if (string.IsNullOrWhiteSpace(errorMessage))
         {
             return false;
         }
 
-        return errorMessage.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase)
-            || errorMessage.Contains("outside_sync_window", StringComparison.OrdinalIgnoreCase);
+        return errorMessage.Contains("outside_sync_window", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task TrySyncPosCatalogMapAsync(bool force, CatalogSyncPayload? syncOptions, CancellationToken cancellationToken)

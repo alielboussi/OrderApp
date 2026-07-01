@@ -10,11 +10,9 @@ import {
 
 export const API_FORMAT_VERSION = 2;
 
-const DEFAULT_LIMIT = 1000;
-const MAX_LIMIT = 50000;
-const DEFAULT_DAYS = 7;
-const VAT_RATE = 0.16;
+const FETCH_PAGE_SIZE = 10_000;
 const IN_CHUNK_SIZE = 100;
+const VAT_RATE = 0.16;
 
 type OutletSalesRow = {
   id: string;
@@ -128,6 +126,53 @@ type SalesFilter =
   | { mode: "all"; outletId: string | null }
   | { mode: "profile"; profile: MiddlewareSalesApiProfile; outletIds: string[] };
 
+type SupabaseServiceClient = ReturnType<typeof getServiceClient>;
+
+const OUTLET_SALES_SELECT =
+  "id,outlet_id,item_id,variant_key,flavour_id,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,context";
+
+async function fetchAllOutletSalesRows(
+  supabase: SupabaseServiceClient,
+  filterResult: SalesFilter,
+  since: Date | null,
+  until: Date,
+): Promise<OutletSalesRow[]> {
+  const rows: OutletSalesRow[] = [];
+  let offset = 0;
+
+  while (true) {
+    let query = supabase
+      .from("outlet_sales")
+      .select(OUTLET_SALES_SELECT)
+      .lte("sold_at", until.toISOString())
+      .order("sold_at", { ascending: false });
+
+    if (since) {
+      query = query.gte("sold_at", since.toISOString());
+    }
+
+    if (filterResult.mode === "all") {
+      if (filterResult.outletId) {
+        query = query.eq("outlet_id", filterResult.outletId);
+      }
+    } else if (filterResult.outletIds.length === 1) {
+      query = query.eq("outlet_id", filterResult.outletIds[0]);
+    } else {
+      query = query.in("outlet_id", filterResult.outletIds);
+    }
+
+    const { data, error } = await query.range(offset, offset + FETCH_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = (data ?? []) as OutletSalesRow[];
+    rows.push(...page);
+    if (page.length < FETCH_PAGE_SIZE) break;
+    offset += FETCH_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
 const isUuid = (value: string) =>
   /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value.trim());
 
@@ -182,13 +227,6 @@ function parseDate(value: string | null): Date | null {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed);
-}
-
-function parseLimit(value: string | null): number {
-  if (!value) return DEFAULT_LIMIT;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LIMIT;
-  return Math.min(Math.floor(parsed), MAX_LIMIT);
 }
 
 function toNumber(value: unknown): number {
@@ -340,17 +378,15 @@ function resolveSalesFilter(
 }
 
 function emptyPayload(
-  effectiveSince: Date,
-  effectiveUntil: Date,
-  limit: number,
+  since: string | null,
+  until: string,
   filter: SalesFilter,
   warning?: string,
 ) {
   return {
     api_format_version: API_FORMAT_VERSION,
-    since: effectiveSince.toISOString(),
-    until: effectiveUntil.toISOString(),
-    limit,
+    since,
+    until,
     sales_count: 0,
     grouping: "by_outlet" as const,
     middleware_api_profile: filter.mode === "profile" ? filter.profile : null,
@@ -386,41 +422,24 @@ export async function handleOutletMiddlewareSalesRequest(
     if (untilParam && !until) return NextResponse.json({ error: "Invalid until timestamp" }, { status: 400 });
 
     const now = new Date();
-    const effectiveSince = since ?? new Date(now.getTime() - DEFAULT_DAYS * 24 * 60 * 60 * 1000);
     const effectiveUntil = until ?? now;
-    if (effectiveSince > effectiveUntil) {
+    if (since && since > effectiveUntil) {
       return NextResponse.json({ error: "since must be before until" }, { status: 400 });
     }
 
-    const limit = parseLimit(url.searchParams.get("limit"));
+    const sinceIso = since?.toISOString() ?? null;
+    const untilIso = effectiveUntil.toISOString();
     const supabase = getServiceClient();
 
-    let salesQuery = supabase
-      .from("outlet_sales")
-      .select("id,outlet_id,item_id,variant_key,flavour_id,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,context")
-      .gte("sold_at", effectiveSince.toISOString())
-      .lte("sold_at", effectiveUntil.toISOString())
-      .order("sold_at", { ascending: false })
-      .limit(Math.min(limit * 3, MAX_LIMIT));
-
-    if (filterResult.mode === "all") {
-      if (filterResult.outletId) {
-        salesQuery = salesQuery.eq("outlet_id", filterResult.outletId);
-      }
-    } else if (filterResult.outletIds.length === 1) {
-      salesQuery = salesQuery.eq("outlet_id", filterResult.outletIds[0]);
-    } else {
-      salesQuery = salesQuery.in("outlet_id", filterResult.outletIds);
-    }
-
-    const { data: salesData, error: salesError } = await salesQuery;
-    if (salesError) {
-      if (isMissingRelationError(salesError, "outlet_sales")) {
+    let salesData: OutletSalesRow[];
+    try {
+      salesData = await fetchAllOutletSalesRows(supabase, filterResult, since, effectiveUntil);
+    } catch (salesError: unknown) {
+      if (isMissingRelationError(salesError as { code?: string | null; message?: string | null }, "outlet_sales")) {
         return NextResponse.json(
           emptyPayload(
-            effectiveSince,
-            effectiveUntil,
-            limit,
+            sinceIso,
+            untilIso,
             filterResult,
             "outlet_sales table missing — apply outlet_sales schema in Supabase",
           ),
@@ -431,18 +450,17 @@ export async function handleOutletMiddlewareSalesRequest(
 
     const profileForScope = filterResult.mode === "profile" ? filterResult.profile : null;
 
-    const salesRows = ((salesData ?? []) as OutletSalesRow[])
+    const salesRows = salesData
       .filter((row) => row.outlet_id && row.item_id)
       .filter((row) => isMiddlewareContext(row.context))
       .filter((row) => {
         if (!profileForScope) return true;
         const sourceEventId = asNonEmptyText(asRecord(row.context)?.source_event_id);
         return middlewareSaleRowMatchesProfile(row.outlet_id, sourceEventId, profileForScope);
-      })
-      .slice(0, limit);
+      });
 
     if (salesRows.length === 0) {
-      return NextResponse.json(emptyPayload(effectiveSince, effectiveUntil, limit, filterResult));
+      return NextResponse.json(emptyPayload(sinceIso, untilIso, filterResult));
     }
 
     const outletIds = Array.from(new Set(salesRows.map((row) => row.outlet_id)));
@@ -608,9 +626,8 @@ export async function handleOutletMiddlewareSalesRequest(
     return NextResponse.json(
       {
         api_format_version: API_FORMAT_VERSION,
-        since: effectiveSince.toISOString(),
-        until: effectiveUntil.toISOString(),
-        limit,
+        since: sinceIso,
+        until: untilIso,
         sales_count: sales.length,
         grouping: "by_outlet",
         middleware_api_profile: filterResult.mode === "profile" ? filterResult.profile : null,

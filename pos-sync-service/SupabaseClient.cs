@@ -129,8 +129,46 @@ public sealed class SupabaseClient
             return false;
         }
 
-        var existing = await GetExistingSourceEventIdsAsync(new[] { sourceEventId }, cancellationToken);
+        var existing = await GetSourceEventIdsWithOutletSalesAsync(new[] { sourceEventId }, cancellationToken);
         return existing.Contains(sourceEventId);
+    }
+
+    public async Task<HashSet<string>> GetSourceEventIdsWithOutletSalesAsync(
+        IReadOnlyCollection<string> sourceEventIds,
+        CancellationToken cancellationToken)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_outlet.Id == Guid.Empty || sourceEventIds.Count == 0)
+        {
+            return result;
+        }
+
+        var distinct = sourceEventIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var chunk in Chunk(distinct, 40))
+        {
+            var quoted = string.Join(",", chunk.Select(id => $"\"{id.Replace("\"", "\"\"")}\""));
+            var path =
+                $"/rest/v1/outlet_sales?select=source_event_id:context->>source_event_id&outlet_id=eq.{_outlet.Id}&context->>source_event_id=in.({quoted})";
+            var rows = await GetAsync<SourceEventRow[]>(path, cancellationToken);
+            if (rows is null)
+            {
+                continue;
+            }
+
+            foreach (var row in rows)
+            {
+                if (!string.IsNullOrWhiteSpace(row.SourceEventId))
+                {
+                    result.Add(row.SourceEventId);
+                }
+            }
+        }
+
+        return result;
     }
 
     public async Task<HashSet<string>> GetExistingSourceEventIdsAsync(

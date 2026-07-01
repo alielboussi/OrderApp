@@ -54,8 +54,9 @@ Produces **only** `publish\SCPGT.exe` (~77 MB self-contained).
 ### Sales sync guarantees (2026-06+ middleware)
 
 - **Queue**: any sale where `Sale.uploadstatus` is `Pending` (ignores MintPOS marking `BillType` Processed early).
-- **No duplicates**: Supabase `sync_pos_order` skips existing `source_event_id`; middleware also reconciles if already in `orders`.
-- **Backlog**: up to `BatchSize` × `MaxBatchesPerCycle` sales per poll (default 100 × 20 = 2000).
+- **No duplicates**: Supabase `sync_pos_order` skips when `outlet_sales` already exist; middleware reconciles on **`outlet_sales`**, not empty `orders` headers.
+- **Backlog**: up to `BatchSize` × `MaxBatchesPerCycle` sales per poll (default 200 × 50 = 10,000).
+- **Historical backfill**: pending MintPOS queue is **not** filtered by stocktake opening date (all `Pending` sales upload); Supabase `validate_pos_order` + `sync_pos_order` (12a+) handle API lines.
 - **Line flags**: after each cycle, repairs `Saledetails` / `BillType` when `Sale` is already `Processed`.
 - **One-time SQL** (optional): `scripts/repair-mintpos-upload-flags.sql` on MINTPOS.
 
