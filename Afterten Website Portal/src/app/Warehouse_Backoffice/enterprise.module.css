@@ -856,7 +856,13 @@ button:disabled {
   border: 1px solid var(--eb-border);
   background: #fff;
   padding: 20px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.15);
+}
+
+.syncDialogCardWide {
+  width: min(920px, 100%);
+  max-height: min(90vh, 900px);
+  overflow: auto;
 }
 
 .syncDialogTitle {

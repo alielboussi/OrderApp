@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { parseCatalogDeliveryTiming } from "@/lib/catalog-sync-schedule";
-import {  buildCatalogPushCandidates,
+import {
+  buildCatalogPushCandidates,
   buildCatalogRemoveCandidates,
+  loadCatalogPushPickerCatalog,
   loadMenuGroupPushSummaries,
   pushCatalogCandidatesToOutlets,
   removeCatalogCandidatesFromOutlets,
+  type CatalogPushScope,
 } from "@/lib/catalog-outlet-push";
 
 function parseUuidList(values: unknown): string[] {
@@ -41,11 +44,28 @@ async function middlewareOutletIds(requestedIds: string[]) {
   return outletIds;
 }
 
+function parseCatalogPushScope(body: Record<string, unknown>): CatalogPushScope | { error: string } {
+  const raw = body.sync_scope;
+  if (!raw || typeof raw !== "object") {
+    return { sync_menu_groups: true, sync_products: true, sync_variants: true };
+  }
+  const scope = raw as Record<string, unknown>;
+  const parsed: CatalogPushScope = {
+    sync_menu_groups: scope.sync_menu_groups === true,
+    sync_products: scope.sync_products === true,
+    sync_variants: scope.sync_variants === true,
+  };
+  if (!parsed.sync_menu_groups && !parsed.sync_products && !parsed.sync_variants) {
+    return { error: "Select at least one sync scope: menu groups, products, or variants." };
+  }
+  return parsed;
+}
+
 export async function GET() {
   try {
     const supabase = getServiceClient();
-    const groups = await loadMenuGroupPushSummaries(supabase);
-    return NextResponse.json({ groups });
+    const catalog = await loadCatalogPushPickerCatalog(supabase);
+    return NextResponse.json(catalog);
   } catch (error) {
     console.error("[catalog/outlet-catalog-push] GET failed", error);
     return NextResponse.json({ error: "Unable to load menu groups for outlet push" }, { status: 500 });
@@ -58,8 +78,39 @@ export async function POST(request: Request) {
     const actionRaw = typeof body?.action === "string" ? body.action.trim().toLowerCase() : "push";
     const action = actionRaw === "remove" ? "remove" : "push";
     const menuGroupIds = parseUuidList(body?.menu_group_ids);
-    if (!menuGroupIds.length) {
+    const itemIds = parseUuidList(body?.item_ids);
+    const variantIds = parseUuidList(body?.variant_ids);
+    const scopeResult = parseCatalogPushScope(body as Record<string, unknown>);
+    if ("error" in scopeResult) {
+      return NextResponse.json({ error: scopeResult.error }, { status: 400 });
+    }
+    const scope = scopeResult;
+
+    const menuGroupOnly =
+      scope.sync_menu_groups && !scope.sync_products && !scope.sync_variants;
+
+    if (menuGroupOnly && !menuGroupIds.length) {
       return NextResponse.json({ error: "Select at least one menu group." }, { status: 400 });
+    }
+
+    if (
+      !menuGroupOnly &&
+      !menuGroupIds.length &&
+      !itemIds.length &&
+      !variantIds.length
+    ) {
+      return NextResponse.json(
+        { error: "Select at least one menu group, product, or variant." },
+        { status: 400 }
+      );
+    }
+
+    if (!menuGroupOnly && scope.sync_products && !scope.sync_menu_groups && !itemIds.length && !menuGroupIds.length) {
+      return NextResponse.json({ error: "Select products or a menu group to sync products." }, { status: 400 });
+    }
+
+    if (!menuGroupOnly && scope.sync_variants && !scope.sync_menu_groups && !variantIds.length && !itemIds.length && !menuGroupIds.length) {
+      return NextResponse.json({ error: "Select variants, products, or a menu group to sync variants." }, { status: 400 });
     }
 
     const requestedOutletIds = parseUuidList(body?.outlet_ids);
@@ -116,6 +167,9 @@ export async function POST(request: Request) {
 
     const candidates = await buildCatalogPushCandidates(supabase, menuGroupIds, {
       includeEmptyGroups,
+      scope,
+      item_ids: itemIds,
+      variant_ids: variantIds,
     });
 
     if (!candidates.length) {
@@ -139,9 +193,13 @@ export async function POST(request: Request) {
         action: "push",
         delivery: deliveryTiming.delivery,
         scheduled_at: deliveryTiming.scheduledAt,
-        sync_mode: syncMode,      outlets: outletIds.length,
+        sync_mode: syncMode,
+        sync_scope: scope,
+      outlets: outletIds.length,
       outlet_ids: outletIds,
       menu_group_ids: menuGroupIds,
+      item_ids: itemIds,
+      variant_ids: variantIds,
       sent: {
         menu_groups: groupCount,
         items: itemCount,

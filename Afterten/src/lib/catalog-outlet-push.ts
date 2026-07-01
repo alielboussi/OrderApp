@@ -18,6 +18,36 @@ export type MenuGroupPushSummary = {
   variant_count: number;
 };
 
+export type CatalogPushScope = {
+  sync_menu_groups: boolean;
+  sync_products: boolean;
+  sync_variants: boolean;
+};
+
+export type CatalogPushPickerItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  menu_group_id: string | null;
+  menu_group_name: string | null;
+  variant_count: number;
+};
+
+export type CatalogPushPickerVariant = {
+  id: string;
+  item_id: string;
+  item_name: string;
+  name: string;
+  sku: string | null;
+  menu_group_id: string | null;
+};
+
+export type CatalogPushPickerCatalog = {
+  groups: MenuGroupPushSummary[];
+  items: CatalogPushPickerItem[];
+  variants: CatalogPushPickerVariant[];
+};
+
 export type CatalogPushCandidate = {
   entity_type: "menu_group" | "item" | "variant";
   entity_id: string;
@@ -320,16 +350,202 @@ export async function loadMenuGroupPushSummaries(supabase: SupabaseClient): Prom
   }));
 }
 
+function defaultCatalogPushScope(): CatalogPushScope {
+  return { sync_menu_groups: true, sync_products: true, sync_variants: true };
+}
+
+function menuGroupOnlyExpansion(scope: CatalogPushScope): boolean {
+  return scope.sync_menu_groups && !scope.sync_products && !scope.sync_variants;
+}
+
+export async function loadCatalogPushPickerCatalog(
+  supabase: SupabaseClient
+): Promise<CatalogPushPickerCatalog> {
+  const groups = await loadMenuGroupPushSummaries(supabase);
+  const groupsById = new Map(groups.map((group) => [group.id, group.name] as const));
+
+  const { data: itemsData, error: itemsError } = await supabase
+    .from("catalog_items")
+    .select("id,name,sku,menu_group_id,item_kind,active")
+    .eq("item_kind", "finished")
+    .order("name", { ascending: true });
+  if (itemsError) throw itemsError;
+
+  const items = ((itemsData ?? []) as ItemRow[]).filter(
+    (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+  );
+
+  const itemIds = items.map((item) => item.id);
+  let variants: VariantRow[] = [];
+  if (itemIds.length) {
+    const { data: variantsData, error: variantsError } = await supabase
+      .from("catalog_variants")
+      .select("id,item_id,name,sku,active")
+      .in("item_id", itemIds)
+      .order("name", { ascending: true });
+    if (variantsError) throw variantsError;
+    variants = ((variantsData ?? []) as VariantRow[]).filter(
+      (variant) => variant.active !== false && variant.sku?.trim()
+    );
+  }
+
+  const variantCountByItem = new Map<string, number>();
+  for (const variant of variants) {
+    variantCountByItem.set(variant.item_id, (variantCountByItem.get(variant.item_id) ?? 0) + 1);
+  }
+
+  const itemsById = new Map(items.map((item) => [item.id, item] as const));
+
+  return {
+    groups,
+    items: items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      sku: item.sku,
+      menu_group_id: item.menu_group_id,
+      menu_group_name: item.menu_group_id ? groupsById.get(item.menu_group_id) ?? null : null,
+      variant_count: variantCountByItem.get(item.id) ?? 0,
+    })),
+    variants: variants.map((variant) => {
+      const parent = itemsById.get(variant.item_id);
+      return {
+        id: variant.id,
+        item_id: variant.item_id,
+        item_name: parent?.name ?? "",
+        name: variant.name,
+        sku: variant.sku,
+        menu_group_id: parent?.menu_group_id ?? null,
+      };
+    }),
+  };
+}
+
+async function loadItemsAndVariantsForPush(
+  supabase: SupabaseClient,
+  menuGroupIds: string[],
+  itemIds: string[],
+  variantIds: string[]
+): Promise<LoadedGroupCatalog> {
+  const uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
+  if (uniqueGroupIds.length) {
+    return loadGroupCatalogData(supabase, uniqueGroupIds);
+  }
+
+  const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
+  const uniqueVariantIds = Array.from(new Set(variantIds.filter(Boolean)));
+
+  if (!uniqueItemIds.length && uniqueVariantIds.length) {
+    const { data: variantRows, error: variantLookupError } = await supabase
+      .from("catalog_variants")
+      .select("item_id")
+      .in("id", uniqueVariantIds);
+    if (variantLookupError) throw variantLookupError;
+    for (const row of variantRows ?? []) {
+      const itemId = (row as { item_id?: string }).item_id;
+      if (itemId) uniqueItemIds.push(itemId);
+    }
+  }
+
+  if (!uniqueItemIds.length) {
+    return { groups: [], items: [], variants: [], variantsByItemId: new Map() };
+  }
+
+  const { data: itemsData, error: itemsError } = await supabase
+    .from("catalog_items")
+    .select("id,name,sku,selling_price,menu_group_id,item_kind,active")
+    .in("id", Array.from(new Set(uniqueItemIds)))
+    .eq("item_kind", "finished");
+  if (itemsError) throw itemsError;
+
+  const items = ((itemsData ?? []) as ItemRow[]).filter(
+    (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+  );
+  const groupIds = Array.from(
+    new Set(items.map((item) => item.menu_group_id).filter((id): id is string => Boolean(id)))
+  );
+
+  const { data: groupsData, error: groupsError } = groupIds.length
+    ? await supabase
+        .from("catalog_menu_groups")
+        .select("id,name,pos_menu_group_id,active")
+        .in("id", groupIds)
+    : { data: [], error: null };
+  if (groupsError) throw groupsError;
+
+  const groups = ((groupsData ?? []) as MenuGroupRow[]).filter((group) => group.active !== false);
+
+  let variants: VariantRow[] = [];
+  const variantQueryIds = uniqueVariantIds.length
+    ? uniqueVariantIds
+    : items.map((item) => item.id);
+  if (variantQueryIds.length) {
+    const variantsRes = uniqueVariantIds.length
+      ? await supabase
+          .from("catalog_variants")
+          .select("id,item_id,name,sku,selling_price,active")
+          .in("id", uniqueVariantIds)
+      : await supabase
+          .from("catalog_variants")
+          .select("id,item_id,name,sku,selling_price,active")
+          .in("item_id", items.map((item) => item.id));
+    if (variantsRes.error) throw variantsRes.error;
+    variants = ((variantsRes.data ?? []) as VariantRow[]).filter(
+      (variant) => variant.active !== false && variant.sku?.trim()
+    );
+  }
+
+  const variantsByItemId = new Map<string, VariantRow[]>();
+  for (const variant of variants) {
+    const current = variantsByItemId.get(variant.item_id) ?? [];
+    current.push(variant);
+    variantsByItemId.set(variant.item_id, current);
+  }
+
+  return { groups, items, variants, variantsByItemId };
+}
+
 export async function buildCatalogPushCandidates(
   supabase: SupabaseClient,
   menuGroupIds: string[],
-  options?: { includeEmptyGroups?: boolean }
+  options?: {
+    includeEmptyGroups?: boolean;
+    scope?: CatalogPushScope;
+    item_ids?: string[];
+    variant_ids?: string[];
+  }
 ): Promise<CatalogPushCandidate[]> {
-  const uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
-  if (!uniqueGroupIds.length) return [];
+  const scope = options?.scope ?? defaultCatalogPushScope();
+  let uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
+  const itemIdFilter = new Set((options?.item_ids ?? []).filter(Boolean));
+  const variantIdFilter = new Set((options?.variant_ids ?? []).filter(Boolean));
+  const hasItemFilter = itemIdFilter.size > 0;
+  const hasVariantFilter = variantIdFilter.size > 0;
+
+  if (!scope.sync_menu_groups && !scope.sync_products && !scope.sync_variants) {
+    return [];
+  }
+
+  const expandGroupContents = menuGroupOnlyExpansion(scope);
+  if (expandGroupContents && !uniqueGroupIds.length) {
+    return [];
+  }
+
+  if (
+    !expandGroupContents &&
+    !uniqueGroupIds.length &&
+    !hasItemFilter &&
+    !hasVariantFilter
+  ) {
+    return [];
+  }
 
   const includeEmptyGroups = options?.includeEmptyGroups === true;
-  const { groups, items, variants } = await loadGroupCatalogData(supabase, uniqueGroupIds);
+  const { groups, items, variants } = await loadItemsAndVariantsForPush(
+    supabase,
+    uniqueGroupIds,
+    Array.from(itemIdFilter),
+    Array.from(variantIdFilter)
+  );
 
   const itemCountByGroup = new Map<string, number>();
   for (const item of items) {
@@ -338,68 +554,93 @@ export async function buildCatalogPushCandidates(
   }
 
   const groupsById = new Map(groups.map((group) => [group.id, group] as const));
-  const itemsById = new Map(items.map((item) => [item.id, item] as const));
+  const allowedGroupIds = new Set(
+    uniqueGroupIds.length
+      ? uniqueGroupIds
+      : groups.map((group) => group.id)
+  );
 
   const candidates: CatalogPushCandidate[] = [];
+  const includeGroups = scope.sync_menu_groups || expandGroupContents;
+  const includeProducts = scope.sync_products || expandGroupContents;
+  const includeVariants = scope.sync_variants || expandGroupContents;
 
-  for (const groupId of uniqueGroupIds) {
-    const group = groupsById.get(groupId);
-    if (!group) continue;
-    const itemCount = itemCountByGroup.get(groupId) ?? 0;
-    if (!includeEmptyGroups && itemCount === 0) continue;
+  if (includeGroups) {
+    for (const groupId of allowedGroupIds) {
+      const group = groupsById.get(groupId);
+      if (!group) continue;
+      const itemCount = itemCountByGroup.get(groupId) ?? 0;
+      if (!includeEmptyGroups && itemCount === 0) continue;
 
-    candidates.push({
-      entity_type: "menu_group",
-      entity_id: group.id,
-      menu_group_id: group.id,
-      payload: {
-        change_type: "upsert_menu_group",
-        name: group.name,
-        pos_menu_group_id: group.pos_menu_group_id,
+      candidates.push({
+        entity_type: "menu_group",
+        entity_id: group.id,
         menu_group_id: group.id,
-        menu_group_name: group.name,
-      },
-    });
+        payload: {
+          change_type: "upsert_menu_group",
+          name: group.name,
+          pos_menu_group_id: group.pos_menu_group_id,
+          menu_group_id: group.id,
+          menu_group_name: group.name,
+        },
+      });
+    }
   }
 
-  for (const item of items) {
-    if (!item.menu_group_id) continue;
-    const group = groupsById.get(item.menu_group_id);
-    if (!group) continue;
-    if (!includeEmptyGroups && (itemCountByGroup.get(item.menu_group_id) ?? 0) === 0) continue;
+  if (includeProducts) {
+    for (const item of items) {
+      if (!item.menu_group_id) continue;
+      if (allowedGroupIds.size && !allowedGroupIds.has(item.menu_group_id)) continue;
+      const group = groupsById.get(item.menu_group_id);
+      if (!group) continue;
+      if (!includeEmptyGroups && (itemCountByGroup.get(item.menu_group_id) ?? 0) === 0) continue;
+      if (!expandGroupContents && hasItemFilter && !itemIdFilter.has(item.id)) continue;
 
-    candidates.push({
-      entity_type: "item",
-      entity_id: item.id,
-      menu_group_id: item.menu_group_id,
-      payload: buildItemMiddlewarePayload({
-        sku: item.sku,
-        name: item.name,
-        sellingPrice: item.selling_price,
-        groupFields: groupFieldsFromRow(group),
-      }),
-    });
+      candidates.push({
+        entity_type: "item",
+        entity_id: item.id,
+        menu_group_id: item.menu_group_id,
+        payload: buildItemMiddlewarePayload({
+          sku: item.sku,
+          name: item.name,
+          sellingPrice: item.selling_price,
+          groupFields: groupFieldsFromRow(group),
+        }),
+      });
+    }
   }
 
-  for (const variant of variants) {
-    const parent = itemsById.get(variant.item_id);
-    if (!parent?.menu_group_id) continue;
-    const group = groupsById.get(parent.menu_group_id);
-    if (!group) continue;
+  if (includeVariants) {
+    for (const variant of variants) {
+      const parent = items.find((item) => item.id === variant.item_id);
+      if (!parent?.menu_group_id) continue;
+      if (allowedGroupIds.size && !allowedGroupIds.has(parent.menu_group_id)) continue;
+      const group = groupsById.get(parent.menu_group_id);
+      if (!group) continue;
+      if (!expandGroupContents && hasVariantFilter && !variantIdFilter.has(variant.id)) continue;
+      if (
+        !expandGroupContents &&
+        hasItemFilter &&
+        !hasVariantFilter &&
+        !itemIdFilter.has(parent.id)
+      ) {
+        continue;
+      }
 
-    candidates.push({
-      entity_type: "variant",
-      entity_id: variant.id,
-      menu_group_id: parent.menu_group_id,
-      payload: buildVariantMiddlewarePayload({
-        itemSku: parent.sku,
-        variantSku: variant.sku,
-        variantName: variant.name,
-        sellingPrice: variant.selling_price,
-        posFlavourId: variant.id,
-        groupFields: groupFieldsFromRow(group),
-      }),
-    });
+      candidates.push({
+        entity_type: "variant",
+        entity_id: variant.id,
+        menu_group_id: parent.menu_group_id,
+        payload: buildVariantMiddlewarePayload({
+          itemSku: parent.sku,
+          variantSku: variant.sku,
+          variantName: variant.name,
+          sellingPrice: variant.selling_price,
+          posFlavourId: variant.id,
+          groupFields: groupFieldsFromRow(group),
+        }),
+      });
+    }
   }
 
   return sortPushCandidates(candidates);
