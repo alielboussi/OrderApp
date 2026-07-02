@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -429,19 +430,53 @@ public sealed class SupabaseClient
         }
     }
 
-    public async Task SendHeartbeatAsync(CancellationToken cancellationToken)
+    public async Task<SupabaseResult> PatchOrderPayloadAsync(PosOrder order, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return new SupabaseResult(false, "Outlet Id is not configured");
+        }
+
+        var payload = BuildPayload(order);
+
+        try
+        {
+            return await PostRpcAsync("/rest/v1/rpc/patch_pos_order_payload", new { payload }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calling patch_pos_order_payload RPC");
+            return new SupabaseResult(false, ex.Message);
+        }
+    }
+
+    public async Task SendHeartbeatAsync(HeartbeatMetrics? metrics, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)
         {
             return;
         }
 
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            outlet_id = _outlet.Id,
-            middleware_version = typeof(SupabaseClient).Assembly.GetName().Version?.ToString() ?? "1.0",
-            host_name = Environment.MachineName
+            ["outlet_id"] = _outlet.Id,
+            ["middleware_version"] = typeof(SupabaseClient).Assembly.GetName().Version?.ToString() ?? "1.0",
+            ["host_name"] = Environment.MachineName
         };
+
+        if (metrics is not null)
+        {
+            payload["pending_sales_count"] = metrics.PendingSalesCount;
+            if (!string.IsNullOrWhiteSpace(metrics.LastSyncError))
+            {
+                payload["last_sync_error"] = metrics.LastSyncError;
+            }
+
+            if (metrics.LastSaleUploadedUtc.HasValue)
+            {
+                payload["last_sale_uploaded_at"] = metrics.LastSaleUploadedUtc.Value.UtcDateTime;
+            }
+        }
 
         try
         {

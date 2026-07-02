@@ -16,7 +16,9 @@ export async function GET() {
     const [hbRes, outRes, catalogSyncRes, linkRes] = await Promise.all([
       supabase
         .from("outlet_pos_heartbeats")
-        .select("outlet_id,last_seen_at,middleware_version,host_name")
+        .select(
+          "outlet_id,last_seen_at,middleware_version,host_name,pending_sales_count,unmapped_pos_skus_count,last_sync_error,last_sale_uploaded_at",
+        )
         .order("last_seen_at", { ascending: false }),
       supabase.from("outlets").select("id,name,code,active,has_pos_middleware,channel").order("name"),
       supabase
@@ -59,22 +61,33 @@ export async function GET() {
       const hb = hbByOutlet.get(outlet.id);
       const lastSeen = hb?.last_seen_at ?? null;
       const offline = !lastSeen || Date.now() - new Date(lastSeen).getTime() > OFFLINE_MS;
+      const pendingSales = hb?.pending_sales_count ?? null;
+      const syncUnhealthy =
+        !offline &&
+        ((typeof pendingSales === "number" && pendingSales > 0) ||
+          Boolean(hb?.last_sync_error));
       return {
         outlet,
         last_seen_at: lastSeen,
         last_catalog_sync_at: lastCatalogSyncByOutlet[outlet.id] ?? null,
         host_name: hb?.host_name ?? null,
         middleware_version: hb?.middleware_version ?? null,
+        pending_sales_count: pendingSales,
+        last_sync_error: hb?.last_sync_error ?? null,
+        last_sale_uploaded_at: hb?.last_sale_uploaded_at ?? null,
         offline,
+        sync_unhealthy: syncUnhealthy,
       };
     });
 
     const offlineCount = merged.filter((m) => m.offline).length;
     const onlineCount = merged.length - offlineCount;
+    const syncUnhealthyCount = merged.filter((m) => m.sync_unhealthy).length;
 
     return NextResponse.json({
       online_count: onlineCount,
       offline_count: offlineCount,
+      sync_unhealthy_count: syncUnhealthyCount,
       outlets: merged,
       debug: {
         total_outlets: allOutlets.length,

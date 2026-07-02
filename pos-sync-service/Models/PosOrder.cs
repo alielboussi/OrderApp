@@ -107,3 +107,8 @@ public sealed record SyncRunResult(
     int ReconciledCount,
     int LinesRepairedCount,
     IReadOnlyList<SyncFailure> Failures);
+
+public sealed record HeartbeatMetrics(
+    int PendingSalesCount,
+    string? LastSyncError = null,
+    DateTimeOffset? LastSaleUploadedUtc = null);

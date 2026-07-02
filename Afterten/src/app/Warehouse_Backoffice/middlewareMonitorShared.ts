@@ -3,6 +3,10 @@ export type HeartbeatRow = {
   last_seen_at: string;
   middleware_version: string | null;
   host_name: string | null;
+  pending_sales_count?: number | null;
+  unmapped_pos_skus_count?: number | null;
+  last_sync_error?: string | null;
+  last_sale_uploaded_at?: string | null;
   outlets: Array<{ id: string; name: string; code?: string | null }> | null;
 };
 

@@ -16,6 +16,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     items: [
       { label: "Dashboard", href: "/Warehouse_Backoffice" },
       { label: "Middleware Connectivity", href: "/Warehouse_Backoffice/middleware-heartbeat" },
+      { label: "POS Sync Failures", href: "/Warehouse_Backoffice/pos-sync-failures" },
       { label: "Portal/Mintpos Sync", href: "/Warehouse_Backoffice/pos-catalog-sync" },
       { label: "Send to Middleware", href: "/Warehouse_Backoffice/catalog/outlet-push" },
       { label: "Outlet Live Balances", href: "/Warehouse_Backoffice/outlet-live-balances" },

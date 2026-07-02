@@ -64,5 +64,6 @@ public sealed class SyncOptions
     public bool IncludeProcessed { get; init; } = false;
     /// <summary>How many read/upload batches to run per poll cycle (clears backlogs without waiting for the next poll).</summary>
     public int MaxBatchesPerCycle { get; init; } = 20;
-    public int PosCatalogSyncMinutes { get; init; } = 30;
+    /// <summary>How often to pull MintPOS SKUs into Supabase catalog (same poll loop as heartbeat).</summary>
+    public int PosCatalogSyncMinutes { get; init; } = 5;
 }

@@ -20,3 +20,15 @@ export function parseDateRangeParam(value: string | null, endOfDay: boolean): Da
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
+
+/** Calendar-day bounds in East Africa Time (matches MintPOS business days). */
+export function parseBusinessDateRangeParam(value: string | null, endOfDay: boolean): Date | null {
+  if (!value) return null;
+
+  const ymd = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return endOfDay ? new Date(`${ymd}T23:59:59.999+03:00`) : new Date(`${ymd}T00:00:00+03:00`);
+  }
+
+  return parseDateRangeParam(value, endOfDay);
+}

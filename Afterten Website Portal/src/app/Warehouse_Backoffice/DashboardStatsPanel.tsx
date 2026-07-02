@@ -19,6 +19,8 @@ type DashboardStats = {
   sales: {
     total_qty: number;
     total_revenue: number;
+    bill_count: number;
+    line_count: number;
     most_sold: ProductStat;
     least_sold: ProductStat;
   };
@@ -332,13 +334,20 @@ export default function DashboardStatsPanel() {
               />
             </div>
             <p className={styles.dashboardStatValue}>
-              {statsLoading ? "…" : selectedSalesOutletIds.length === 0 ? "—" : formatQty(stats?.sales.total_qty ?? 0)}
+              {statsLoading
+                ? "…"
+                : selectedSalesOutletIds.length === 0
+                  ? "—"
+                  : formatQty(stats?.sales.total_qty ?? 0)}
             </p>
             <p className={styles.dashboardStatMeta}>
               {selectedSalesOutletIds.length === 0
                 ? "Select at least one outlet"
-                : `Revenue ${statsLoading ? "…" : formatMoney(stats?.sales.total_revenue ?? 0)} · ${selectedSalesOutletIds.length} outlet${selectedSalesOutletIds.length === 1 ? "" : "s"}`}
+                : statsLoading
+                  ? "Loading…"
+                  : `${formatQty(stats?.sales.bill_count ?? 0)} bills · Revenue ${formatMoney(stats?.sales.total_revenue ?? 0)} · ${selectedSalesOutletIds.length} outlet${selectedSalesOutletIds.length === 1 ? "" : "s"}`}
             </p>
+            <p className={styles.dashboardStatHint}>Units sold · dates use East Africa business day (EAT)</p>
           </StatCard>
 
           <StatCard tone="green" label="Most sold product">

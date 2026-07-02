@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseDateRangeParam } from "@/lib/dateRangeParam";
+import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
+import { fetchOutletSalesPage } from "@/lib/fetchOutletSalesPage";
 import { getServiceClient } from "@/lib/supabase-server";
 import { isMissingRelationError } from "@/lib/supabase-errors";
 
@@ -15,6 +16,7 @@ type SalesRow = {
   sale_price: number | null;
   vat_exc_price: number | null;
   flavour_price: number | null;
+  context: Record<string, unknown> | null;
   catalog_items: { name: string | null } | { name: string | null }[] | null;
 };
 
@@ -23,7 +25,7 @@ type OrderItemRow = {
   qty: number | null;
 };
 
-const MAX_ROWS = 8000;
+const MAX_ORDER_ROWS = 8000;
 const DEFAULT_DAYS = 7;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -51,6 +53,23 @@ function relName(value: { name: string | null } | { name: string | null }[] | nu
   if (!value) return "Unknown";
   const row = Array.isArray(value) ? value[0] : value;
   return (row?.name ?? "Unknown").trim() || "Unknown";
+}
+
+function productNameFromRow(row: SalesRow): string {
+  const fromCatalog = relName(row.catalog_items);
+  if (fromCatalog !== "Unknown") return fromCatalog;
+
+  const ctx = row.context ?? {};
+  const fromContext =
+    (typeof ctx.catalog_item_name === "string" && ctx.catalog_item_name.trim()) ||
+    (typeof ctx.name === "string" && ctx.name.trim()) ||
+    "";
+  return fromContext || "Unknown";
+}
+
+function sourceEventIdFromRow(row: SalesRow): string | null {
+  const value = row.context?.source_event_id;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function toNumber(value: unknown): number {
@@ -91,10 +110,10 @@ export async function GET(request: NextRequest) {
     const salesOutletFilterActive = url.searchParams.has("sales_outlet_ids");
     const salesOutletIds = parseSalesOutletIds(url);
 
-    const salesFrom = parseDateRangeParam(url.searchParams.get("sales_from"), false);
-    const salesTo = parseDateRangeParam(url.searchParams.get("sales_to"), true);
-    const ordersFrom = parseDateRangeParam(url.searchParams.get("orders_from"), false);
-    const ordersTo = parseDateRangeParam(url.searchParams.get("orders_to"), true);
+    const salesFrom = parseBusinessDateRangeParam(url.searchParams.get("sales_from"), false);
+    const salesTo = parseBusinessDateRangeParam(url.searchParams.get("sales_to"), true);
+    const ordersFrom = parseBusinessDateRangeParam(url.searchParams.get("orders_from"), false);
+    const ordersTo = parseBusinessDateRangeParam(url.searchParams.get("orders_to"), true);
 
     const salesRange = {
       from: salesFrom ?? defaultRange().from,
@@ -116,22 +135,18 @@ export async function GET(request: NextRequest) {
     if (salesOutletFilterActive && salesOutletIds.length === 0) {
       salesRows = [];
     } else {
-      let salesQuery = supabase
-        .from("outlet_sales")
-        .select("item_id,variant_key,qty_units,sale_price,vat_exc_price,flavour_price,catalog_items(name)")
-        .gte("sold_at", salesRange.from.toISOString())
-        .lte("sold_at", salesRange.to.toISOString())
-        .limit(MAX_ROWS);
-
-      if (salesOutletIds.length > 0) {
-        salesQuery = salesQuery.in("outlet_id", salesOutletIds);
-      }
-
-      const salesRes = await salesQuery;
-      if (salesRes.error) {
-        if (!isMissingRelationError(salesRes.error, "outlet_sales")) throw salesRes.error;
-      } else {
-        salesRows = (salesRes.data as SalesRow[]) ?? [];
+      try {
+        salesRows = await fetchOutletSalesPage<SalesRow>(supabase, {
+          outletIds: salesOutletIds,
+          fromIso: salesRange.from.toISOString(),
+          toIso: salesRange.to.toISOString(),
+          select:
+            "item_id,variant_key,qty_units,sale_price,vat_exc_price,flavour_price,context,catalog_items(name)",
+        });
+      } catch (salesError) {
+        if (!isMissingRelationError(salesError as { code?: string; message?: string }, "outlet_sales")) {
+          throw salesError;
+        }
       }
     }
 
@@ -141,7 +156,7 @@ export async function GET(request: NextRequest) {
       .is("source_event_id", null)
       .gte("created_at", ordersRange.from.toISOString())
       .lte("created_at", ordersRange.to.toISOString())
-      .limit(500);
+      .limit(MAX_ORDER_ROWS);
 
     const ordersRes = await ordersQuery;
 
@@ -150,6 +165,7 @@ export async function GET(request: NextRequest) {
     let salesQty = 0;
     let salesRevenue = 0;
     const salesByProduct: Array<{ name: string; qty: number }> = [];
+    const billIds = new Set<string>();
 
     for (const row of salesRows) {
       const qty = toNumber(row.qty_units);
@@ -158,7 +174,10 @@ export async function GET(request: NextRequest) {
         toNumber(row.sale_price) || toNumber(row.vat_exc_price) || toNumber(row.flavour_price);
       salesQty += qty;
       salesRevenue += unitPrice * qty;
-      salesByProduct.push({ name: relName(row.catalog_items), qty });
+      salesByProduct.push({ name: productNameFromRow(row), qty });
+
+      const billId = sourceEventIdFromRow(row);
+      if (billId) billIds.add(billId);
     }
 
     const salesAgg = aggregateByName(salesByProduct);
@@ -172,7 +191,7 @@ export async function GET(request: NextRequest) {
         .from("order_items")
         .select("name,qty")
         .in("order_id", orderIds)
-        .limit(MAX_ROWS);
+        .limit(MAX_ORDER_ROWS);
       if (orderItemsError) throw orderItemsError;
 
       for (const row of (orderItems as OrderItemRow[]) ?? []) {
@@ -189,9 +208,10 @@ export async function GET(request: NextRequest) {
       sales: {
         total_qty: salesQty,
         total_revenue: Math.round(salesRevenue * 100) / 100,
+        bill_count: billIds.size,
+        line_count: salesRows.length,
         most_sold: mostSold,
         least_sold: leastSold,
-        row_count: salesRows.length,
       },
       outlet_orders: {
         order_count: orderIds.length,

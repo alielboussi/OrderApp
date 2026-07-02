@@ -14,12 +14,17 @@ type MiddlewareOutletRow = {
   last_catalog_sync_at: string | null;
   host_name: string | null;
   middleware_version: string | null;
+  pending_sales_count: number | null;
+  last_sync_error: string | null;
+  last_sale_uploaded_at: string | null;
   offline: boolean;
+  sync_unhealthy: boolean;
 };
 
 type MiddlewareStatusResponse = {
   online_count: number;
   offline_count: number;
+  sync_unhealthy_count?: number;
   outlets: MiddlewareOutletRow[];
 };
 
@@ -61,6 +66,7 @@ export default function MiddlewareStatusPanel() {
   const offlineCount = merged.filter((m) => m.offline).length;
   const onlineCount = merged.length - offlineCount;
   const offlineOutlets = merged.filter((m) => m.offline);
+  const syncUnhealthyOutlets = merged.filter((m) => m.sync_unhealthy);
 
   return (
     <div>
@@ -72,6 +78,30 @@ export default function MiddlewareStatusPanel() {
             </strong>
             <div style={{ marginTop: 6, fontSize: 13 }}>
               {offlineOutlets.map((m) => m.outlet.name).join(", ")}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {syncUnhealthyOutlets.length > 0 ? (
+        <div className={`${styles.alertBanner} ${styles.alertRed}`} style={{ marginBottom: 16 }}>
+          <div>
+            <strong>
+              {syncUnhealthyOutlets.length} outlet{syncUnhealthyOutlets.length > 1 ? "s" : ""} with sync backlog or errors
+            </strong>
+            <div style={{ marginTop: 6, fontSize: 13 }}>
+              {syncUnhealthyOutlets.map((m) => {
+                const detail =
+                  typeof m.pending_sales_count === "number" && m.pending_sales_count > 0
+                    ? `${m.pending_sales_count} pending`
+                    : m.last_sync_error
+                      ? "sync error"
+                      : "check queue";
+                return `${m.outlet.name} (${detail})`;
+              }).join(", ")}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 13 }}>
+              Review <a href="/Warehouse_Backoffice/pos-sync-failures">POS sync failures</a> and confirm each outlet PC runs the latest SCPGT.
             </div>
           </div>
         </div>
@@ -120,27 +150,50 @@ export default function MiddlewareStatusPanel() {
                 <tr>
                   <th>Outlet</th>
                   <th>Status</th>
+                  <th>Pending sales</th>
                   <th>Last seen</th>
-                  <th>Last synced at</th>
+                  <th>Last sale upload</th>
+                  <th>Last catalog pull</th>
                   <th>Host</th>
                   <th>Version</th>
                 </tr>
               </thead>
               <tbody>
-                {merged.map(({ outlet, last_seen_at, offline, last_catalog_sync_at, host_name, middleware_version }) => (
+                {merged.map(
+                  ({
+                    outlet,
+                    last_seen_at,
+                    offline,
+                    sync_unhealthy,
+                    last_catalog_sync_at,
+                    host_name,
+                    middleware_version,
+                    pending_sales_count,
+                    last_sync_error,
+                    last_sale_uploaded_at,
+                  }) => (
                   <tr key={outlet.id}>
                     <td>
                       <strong>{outlet.name}</strong>
                       {outlet.code ? <div style={{ fontSize: 12, color: "#5c5c5c" }}>{outlet.code}</div> : null}
+                      {last_sync_error ? (
+                        <div style={{ fontSize: 12, color: "#b42318", marginTop: 4 }} title={last_sync_error}>
+                          Sync error
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       {offline ? (
                         <span className={styles.pillOffline}>Offline</span>
+                      ) : sync_unhealthy ? (
+                        <span className={styles.pillOffline}>Sync backlog</span>
                       ) : (
-                        <span className={styles.pillLive}>Online</span>
+                        <span className={styles.pillLive}>Healthy</span>
                       )}
                     </td>
+                    <td>{typeof pending_sales_count === "number" ? pending_sales_count : "—"}</td>
                     <td>{formatStamp(last_seen_at)}</td>
+                    <td>{formatStamp(last_sale_uploaded_at)}</td>
                     <td>{formatStamp(last_catalog_sync_at)}</td>
                     <td>{host_name ?? "—"}</td>
                     <td>{middleware_version ?? "—"}</td>

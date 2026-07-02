@@ -22,8 +22,9 @@ export async function GET(request: NextRequest) {
         routes: {
           till_1_and_till_2: "/api/outlet-middleware-sales/tills",
           quick_corner: "/api/outlet-middleware-sales/quick-corner",
+          any_pos_outlet: "/api/outlet-middleware-sales?outletId=<outlet-uuid>",
         },
-        legacy_query: "Optional: ?profile=till or ?profile=quick_corner, or ?outletId=<uuid>",
+        note: "Each POS outlet runs its own SCPGT install with Outlet:Id set to that outlet UUID.",
       },
       { status: 400 },
     );
