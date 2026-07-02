@@ -35,7 +35,7 @@ export async function fetchOutletSalesPage<T extends Record<string, unknown>>(
     const { data, error } = await request;
     if (error) throw error;
 
-    const batch = (data as T[]) ?? [];
+    const batch = (data as unknown as T[]) ?? [];
     rows.push(...batch);
     if (batch.length < PAGE_SIZE) break;
   }
