@@ -55,33 +55,9 @@ SELECT TOP (@Batch)
     s.Customer    AS CustomerName,
     s.phone       AS CustomerPhone,
     s.branchid    AS BranchId,
-    s.Shiftid     AS ShiftId,
-    s.Terminal    AS Terminal,
-    sh.Name       AS ShiftName,
-    ss.id         AS ShiftSessionId,
-    ss.status     AS ShiftSessionStatus,
-    ss.Starttime  AS ShiftSessionStart,
-    ss.EndTime    AS ShiftSessionEnd,
-    uStart.Name   AS ShiftOpenedBy
+    s.Terminal    AS Terminal
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
-LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = s.Shiftid
-OUTER APPLY (
-    SELECT TOP 1
-        ss2.id,
-        ss2.status,
-        ss2.Starttime,
-        ss2.EndTime,
-        ss2.useridstart
-    FROM dbo.ShiftStart ss2 WITH (NOLOCK)
-    WHERE ss2.shiftid = s.Shiftid
-      AND ss2.Date = s.Date
-      AND (ss2.Terminal = s.Terminal OR ss2.Terminal IS NULL OR s.Terminal IS NULL)
-      AND s.time >= ss2.Starttime
-      AND (ss2.EndTime IS NULL OR s.time <= ss2.EndTime)
-    ORDER BY ss2.Starttime DESC
-) ss
-LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = ss.useridstart
 WHERE (
     -- Sale.uploadstatus is the middleware source of truth (BillType may be Processed before upload).
     s.uploadstatus IS NULL
@@ -178,7 +154,7 @@ ORDER BY bt.id ASC;";
                 Payments: payments,
                 Customer: BuildCustomer(reader),
                 Inventory: inventory,
-                Shift: BuildShift(reader)
+                Terminal: TryGetString(reader, "Terminal")
             );
 
             orders.Add(order);
@@ -609,37 +585,6 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
                                Email: null);
     }
 
-    private static PosShift? BuildShift(SqlDataReader reader)
-    {
-        var shiftId = TryGetInt32(reader, "ShiftId");
-        var shiftName = TryGetString(reader, "ShiftName");
-        var terminal = TryGetString(reader, "Terminal");
-        var sessionId = TryGetInt32(reader, "ShiftSessionId");
-        var sessionStatus = TryGetString(reader, "ShiftSessionStatus");
-        var sessionStart = TryGetDateTimeOffset(reader, "ShiftSessionStart");
-        var sessionEnd = TryGetDateTimeOffset(reader, "ShiftSessionEnd");
-        var openedBy = TryGetString(reader, "ShiftOpenedBy");
-
-        if (shiftId is null
-            && string.IsNullOrWhiteSpace(shiftName)
-            && string.IsNullOrWhiteSpace(terminal)
-            && sessionId is null)
-        {
-            return null;
-        }
-
-        return new PosShift(
-            ShiftId: shiftId,
-            ShiftName: shiftName,
-            Terminal: terminal,
-            SessionId: sessionId,
-            SessionStatus: sessionStatus,
-            SessionStart: sessionStart,
-            SessionEnd: sessionEnd,
-            OpenedBy: openedBy
-        );
-    }
-
     private static string? TryGetString(SqlDataReader reader, string columnName)
     {
         var ordinal = TryGetOrdinal(reader, columnName);
@@ -650,29 +595,6 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
 
         var value = reader.GetValue(ordinal.Value)?.ToString()?.Trim();
         return string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    private static int? TryGetInt32(SqlDataReader reader, string columnName)
-    {
-        var ordinal = TryGetOrdinal(reader, columnName);
-        if (ordinal is null || reader.IsDBNull(ordinal.Value))
-        {
-            return null;
-        }
-
-        return Convert.ToInt32(reader.GetValue(ordinal.Value));
-    }
-
-    private static DateTimeOffset? TryGetDateTimeOffset(SqlDataReader reader, string columnName)
-    {
-        var ordinal = TryGetOrdinal(reader, columnName);
-        if (ordinal is null || reader.IsDBNull(ordinal.Value))
-        {
-            return null;
-        }
-
-        var value = reader.GetDateTime(ordinal.Value);
-        return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Unspecified), TimeSpan.Zero);
     }
 
     private static int? TryGetOrdinal(SqlDataReader reader, string columnName)

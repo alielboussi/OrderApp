@@ -6,6 +6,7 @@ import {
   parseMiddlewareSalesApiProfile,
   outletIdsForMiddlewareSalesApiProfile,
 } from "@/lib/outletScope";
+import { applyPosShiftFromSoldAt } from "@/lib/posShiftFromSoldAt";
 
 export const API_FORMAT_VERSION = 2;
 
@@ -503,7 +504,11 @@ export async function handleOutletMiddlewareSalesRequest(
       if (!existing) {
         const order = sourceEventId ? orderBySourceEventId.get(sourceEventId) : undefined;
         const paymentMethods = extractPaymentMethods(order?.raw_payload ?? null);
-        const shift = extractShift(order?.raw_payload ?? null);
+        const shift = applyPosShiftFromSoldAt(
+          extractShift(order?.raw_payload ?? null),
+          row.outlet_id,
+          row.sold_at,
+        );
         const posSaleId =
           asNonEmptyText(order?.pos_sale_id) ??
           asNonEmptyText(context.sale_id) ??
