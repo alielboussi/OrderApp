@@ -21,7 +21,19 @@ public sealed record PosOrder(
     IReadOnlyList<PosPayment> Payments,
     PosCustomer? Customer,
     IReadOnlyList<PosInventoryConsumed> Inventory,
-    string? Terminal
+    PosShift? Shift
+);
+
+public sealed record PosShift(
+    int? ShiftId,
+    string? ShiftName,
+    string? Terminal,
+    int? SessionId,
+    string? SessionStatus,
+    DateTimeOffset? SessionStart,
+    DateTimeOffset? SessionEnd,
+    string? OpenedBy,
+    string? ShiftSource
 );
 
 public sealed record PosLineItem(

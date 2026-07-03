@@ -967,7 +967,19 @@ public sealed class SupabaseClient
                 modifier_id = i.ModifierId
             }).ToList(),
             payments = order.Payments.Select(p => new { method = p.Method, amount = p.Amount }).ToList(),
-            terminal = order.Terminal,
+            terminal = order.Shift?.Terminal,
+            shift = order.Shift is null ? null : new
+            {
+                shift_id = order.Shift.ShiftId,
+                shift_name = order.Shift.ShiftName,
+                shift_session_id = order.Shift.SessionId,
+                terminal = order.Shift.Terminal,
+                session_start = order.Shift.SessionStart,
+                session_end = order.Shift.SessionEnd,
+                session_status = order.Shift.SessionStatus,
+                opened_by = order.Shift.OpenedBy,
+                shift_source = order.Shift.ShiftSource
+            },
             customer = order.Customer is null ? null : new
             {
                 name = order.Customer.Name,

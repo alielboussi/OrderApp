@@ -55,9 +55,35 @@ SELECT TOP (@Batch)
     s.Customer    AS CustomerName,
     s.phone       AS CustomerPhone,
     s.branchid    AS BranchId,
-    s.Terminal    AS Terminal
+    s.Shiftid     AS SaleShiftId,
+    s.Terminal    AS Terminal,
+    sess.id         AS ShiftSessionId,
+    sess.shiftid    AS SessionShiftId,
+    sess.status     AS ShiftSessionStatus,
+    sess.Starttime  AS ShiftSessionStart,
+    sess.EndTime    AS ShiftSessionEnd,
+    sh.Id           AS ResolvedShiftId,
+    sh.Name         AS ShiftName,
+    uStart.Name     AS ShiftOpenedBy
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
+OUTER APPLY (
+    SELECT TOP 1
+        ss2.id,
+        ss2.shiftid,
+        ss2.status,
+        ss2.Starttime,
+        ss2.EndTime,
+        ss2.useridstart
+    FROM dbo.ShiftStart ss2 WITH (NOLOCK)
+    WHERE ss2.Date = s.Date
+      AND (ss2.Terminal = s.Terminal OR ss2.Terminal IS NULL OR s.Terminal IS NULL)
+      AND s.time >= ss2.Starttime
+      AND (ss2.EndTime IS NULL OR s.time <= ss2.EndTime)
+    ORDER BY ss2.Starttime DESC
+) sess
+LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = COALESCE(sess.shiftid, s.Shiftid)
+LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = sess.useridstart
 WHERE (
     -- Sale.uploadstatus is the middleware source of truth (BillType may be Processed before upload).
     s.uploadstatus IS NULL
@@ -154,7 +180,7 @@ ORDER BY bt.id ASC;";
                 Payments: payments,
                 Customer: BuildCustomer(reader),
                 Inventory: inventory,
-                Terminal: TryGetString(reader, "Terminal")
+                Shift: BuildShift(reader)
             );
 
             orders.Add(order);
@@ -595,6 +621,69 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
 
         var value = reader.GetValue(ordinal.Value)?.ToString()?.Trim();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static PosShift? BuildShift(SqlDataReader reader)
+    {
+        var sessionShiftId = TryGetInt32(reader, "SessionShiftId");
+        var saleShiftId = TryGetInt32(reader, "SaleShiftId");
+        var shiftId = TryGetInt32(reader, "ResolvedShiftId") ?? sessionShiftId ?? saleShiftId;
+        var shiftName = TryGetString(reader, "ShiftName");
+        var terminal = TryGetString(reader, "Terminal");
+        var sessionId = TryGetInt32(reader, "ShiftSessionId");
+        var sessionStatus = TryGetString(reader, "ShiftSessionStatus");
+        var sessionStart = TryGetDateTimeOffset(reader, "ShiftSessionStart");
+        var sessionEnd = TryGetDateTimeOffset(reader, "ShiftSessionEnd");
+        var openedBy = TryGetString(reader, "ShiftOpenedBy");
+
+        if (shiftId is null
+            && string.IsNullOrWhiteSpace(shiftName)
+            && string.IsNullOrWhiteSpace(terminal)
+            && sessionId is null)
+        {
+            return null;
+        }
+
+        var shiftSource = sessionShiftId.HasValue
+            ? "shift_start_session"
+            : saleShiftId.HasValue
+                ? "sale_shift_id"
+                : null;
+
+        return new PosShift(
+            ShiftId: shiftId,
+            ShiftName: shiftName,
+            Terminal: terminal,
+            SessionId: sessionId,
+            SessionStatus: sessionStatus,
+            SessionStart: sessionStart,
+            SessionEnd: sessionEnd,
+            OpenedBy: openedBy,
+            ShiftSource: shiftSource
+        );
+    }
+
+    private static int? TryGetInt32(SqlDataReader reader, string columnName)
+    {
+        var ordinal = TryGetOrdinal(reader, columnName);
+        if (ordinal is null || reader.IsDBNull(ordinal.Value))
+        {
+            return null;
+        }
+
+        return Convert.ToInt32(reader.GetValue(ordinal.Value));
+    }
+
+    private static DateTimeOffset? TryGetDateTimeOffset(SqlDataReader reader, string columnName)
+    {
+        var ordinal = TryGetOrdinal(reader, columnName);
+        if (ordinal is null || reader.IsDBNull(ordinal.Value))
+        {
+            return null;
+        }
+
+        var value = reader.GetDateTime(ordinal.Value);
+        return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Unspecified), TimeSpan.Zero);
     }
 
     private static int? TryGetOrdinal(SqlDataReader reader, string columnName)
