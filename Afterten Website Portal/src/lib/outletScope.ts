@@ -40,6 +40,29 @@ export function outletIdsForMiddlewareSalesApiProfile(profile: MiddlewareSalesAp
   return [QUICK_CORNER_OUTLET_ID];
 }
 
+export function sourceEventIdBelongsToOutlet(sourceEventId: string, outletId: string): boolean {
+  return sourceEventId.startsWith(`${outletId}-`);
+}
+
+/** Outlet row + optional POS source_event_id must match a middleware sales API profile. */
+export function middlewareSaleRowMatchesProfile(
+  outletId: string,
+  sourceEventId: string | null | undefined,
+  profile: MiddlewareSalesApiProfile,
+): boolean {
+  const allowedOutletIds = outletIdsForMiddlewareSalesApiProfile(profile);
+  if (!allowedOutletIds.includes(outletId)) return false;
+
+  const trimmedSourceEventId = sourceEventId?.trim();
+  if (!trimmedSourceEventId) return true;
+
+  if (!allowedOutletIds.some((id) => sourceEventIdBelongsToOutlet(trimmedSourceEventId, id))) {
+    return false;
+  }
+
+  return sourceEventIdBelongsToOutlet(trimmedSourceEventId, outletId);
+}
+
 export function parseMiddlewareSalesApiProfile(value: string | null | undefined): MiddlewareSalesApiProfile | null {
   const normalized = value?.trim().toLowerCase().replace(/-/g, "_");
   if (!normalized) return null;

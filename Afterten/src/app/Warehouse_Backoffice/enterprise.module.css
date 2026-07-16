@@ -723,6 +723,15 @@
   padding: 6px 8px;
 }
 
+.dashboardStatsFilterHeading {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, 0.55);
+}
+
 .dashboardStatsOutletSelectAll {
   display: flex;
   align-items: center;

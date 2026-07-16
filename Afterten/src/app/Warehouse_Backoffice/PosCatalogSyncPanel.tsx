@@ -92,7 +92,7 @@ export default function PosCatalogSyncPanel() {
   const [selectedMenuGroupIds, setSelectedMenuGroupIds] = useState<string[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
-  const [updateExisting, setUpdateExisting] = useState(false);
+  const [updateExisting, setUpdateExisting] = useState(true);
   const [includeEmptyGroups, setIncludeEmptyGroups] = useState(false);
   const [importScope, setImportScope] = useState<ImportSyncPrefs>(defaultImportSyncPrefs);
   const [importExcludeItemSkus, setImportExcludeItemSkus] = useState("");

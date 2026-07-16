@@ -78,8 +78,43 @@ type VariantRow = {
   name: string;
   sku: string | null;
   selling_price: number | null;
+  item_kind: string | null;
   active: boolean | null;
 };
+
+const MIDDLEWARE_SELLABLE_ITEM_KIND = "finished";
+
+function normalizeItemKind(kind: string | null | undefined): string {
+  const normalized = (kind ?? MIDDLEWARE_SELLABLE_ITEM_KIND).trim().toLowerCase();
+  return normalized === "product" ? MIDDLEWARE_SELLABLE_ITEM_KIND : normalized;
+}
+
+function isMiddlewareSellableItemKind(kind: string | null | undefined): boolean {
+  return normalizeItemKind(kind) === MIDDLEWARE_SELLABLE_ITEM_KIND;
+}
+
+function isSellableCatalogItem(item: Pick<ItemRow, "item_kind">): boolean {
+  return isMiddlewareSellableItemKind(item.item_kind);
+}
+
+function isSellableCatalogVariant(
+  variant: Pick<VariantRow, "item_kind">,
+  parent?: Pick<ItemRow, "item_kind"> | null
+): boolean {
+  const kind = variant.item_kind ?? parent?.item_kind ?? MIDDLEWARE_SELLABLE_ITEM_KIND;
+  return isMiddlewareSellableItemKind(kind);
+}
+
+function filterSellableItems(items: ItemRow[]): ItemRow[] {
+  return items.filter((item) => isSellableCatalogItem(item));
+}
+
+function filterSellableVariants(variants: VariantRow[], itemsById: Map<string, ItemRow>): VariantRow[] {
+  return variants.filter((variant) => {
+    const parent = itemsById.get(variant.item_id);
+    return parent ? isSellableCatalogVariant(variant, parent) : false;
+  });
+}
 
 function groupFieldsFromRow(group: MenuGroupRow): MenuGroupSyncFields {
   return {
@@ -129,20 +164,26 @@ async function loadGroupCatalogData(
   if (itemsRes.error) throw itemsRes.error;
 
   const groups = ((groupsRes.data ?? []) as MenuGroupRow[]).filter((group) => group.active !== false);
-  const items = ((itemsRes.data ?? []) as ItemRow[]).filter(
-    (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+  const items = filterSellableItems(
+    ((itemsRes.data ?? []) as ItemRow[]).filter(
+      (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+    )
   );
 
   const itemIds = items.map((item) => item.id);
+  const itemsById = new Map(items.map((item) => [item.id, item] as const));
   let variants: VariantRow[] = [];
   if (itemIds.length) {
     const variantsRes = await supabase
       .from("catalog_variants")
-      .select("id,item_id,name,sku,selling_price,active")
+      .select("id,item_id,name,sku,selling_price,item_kind,active")
       .in("item_id", itemIds);
     if (variantsRes.error) throw variantsRes.error;
-    variants = ((variantsRes.data ?? []) as VariantRow[]).filter(
-      (variant) => variant.active !== false && variant.sku?.trim()
+    variants = filterSellableVariants(
+      ((variantsRes.data ?? []) as VariantRow[]).filter(
+        (variant) => variant.active !== false && variant.sku?.trim()
+      ),
+      itemsById
     );
   }
 
@@ -309,18 +350,19 @@ export async function loadMenuGroupPushSummaries(supabase: SupabaseClient): Prom
       .from("catalog_items")
       .select("id,menu_group_id,item_kind,active")
       .eq("item_kind", "finished"),
-    supabase.from("catalog_variants").select("id,item_id,active"),
+    supabase.from("catalog_variants").select("id,item_id,item_kind,active"),
   ]);
 
   if (groupsRes.error) throw groupsRes.error;
   if (itemsRes.error) throw itemsRes.error;
   if (variantsRes.error) throw variantsRes.error;
 
-  const items = (itemsRes.data ?? []) as ItemRow[];
-  const variants = (variantsRes.data ?? []) as VariantRow[];
+  const items = filterSellableItems((itemsRes.data ?? []) as ItemRow[]);
+  const variants = ((variantsRes.data ?? []) as VariantRow[]).filter((variant) => variant.active !== false);
   const activeItemIds = new Set(
     items.filter((item) => item.active !== false && item.menu_group_id).map((item) => item.id)
   );
+  const itemsById = new Map(items.map((item) => [item.id, item] as const));
 
   const itemCountByGroup = new Map<string, number>();
   const variantCountByGroup = new Map<string, number>();
@@ -332,8 +374,8 @@ export async function loadMenuGroupPushSummaries(supabase: SupabaseClient): Prom
 
   for (const variant of variants) {
     if (variant.active === false || !activeItemIds.has(variant.item_id)) continue;
-    const parent = items.find((item) => item.id === variant.item_id);
-    if (!parent?.menu_group_id) continue;
+    const parent = itemsById.get(variant.item_id);
+    if (!parent?.menu_group_id || !isSellableCatalogVariant(variant, parent)) continue;
     variantCountByGroup.set(
       parent.menu_group_id,
       (variantCountByGroup.get(parent.menu_group_id) ?? 0) + 1
@@ -371,21 +413,27 @@ export async function loadCatalogPushPickerCatalog(
     .order("name", { ascending: true });
   if (itemsError) throw itemsError;
 
-  const items = ((itemsData ?? []) as ItemRow[]).filter(
-    (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+  const items = filterSellableItems(
+    ((itemsData ?? []) as ItemRow[]).filter(
+      (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+    )
   );
 
   const itemIds = items.map((item) => item.id);
+  const itemsById = new Map(items.map((item) => [item.id, item] as const));
   let variants: VariantRow[] = [];
   if (itemIds.length) {
     const { data: variantsData, error: variantsError } = await supabase
       .from("catalog_variants")
-      .select("id,item_id,name,sku,active")
+      .select("id,item_id,name,sku,item_kind,active")
       .in("item_id", itemIds)
       .order("name", { ascending: true });
     if (variantsError) throw variantsError;
-    variants = ((variantsData ?? []) as VariantRow[]).filter(
-      (variant) => variant.active !== false && variant.sku?.trim()
+    variants = filterSellableVariants(
+      ((variantsData ?? []) as VariantRow[]).filter(
+        (variant) => variant.active !== false && variant.sku?.trim()
+      ),
+      itemsById
     );
   }
 
@@ -393,8 +441,6 @@ export async function loadCatalogPushPickerCatalog(
   for (const variant of variants) {
     variantCountByItem.set(variant.item_id, (variantCountByItem.get(variant.item_id) ?? 0) + 1);
   }
-
-  const itemsById = new Map(items.map((item) => [item.id, item] as const));
 
   return {
     groups,
@@ -457,9 +503,12 @@ async function loadItemsAndVariantsForPush(
     .eq("item_kind", "finished");
   if (itemsError) throw itemsError;
 
-  const items = ((itemsData ?? []) as ItemRow[]).filter(
-    (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+  const items = filterSellableItems(
+    ((itemsData ?? []) as ItemRow[]).filter(
+      (item) => item.active !== false && item.menu_group_id && item.sku?.trim()
+    )
   );
+  const itemsById = new Map(items.map((item) => [item.id, item] as const));
   const groupIds = Array.from(
     new Set(items.map((item) => item.menu_group_id).filter((id): id is string => Boolean(id)))
   );
@@ -482,15 +531,18 @@ async function loadItemsAndVariantsForPush(
     const variantsRes = uniqueVariantIds.length
       ? await supabase
           .from("catalog_variants")
-          .select("id,item_id,name,sku,selling_price,active")
+          .select("id,item_id,name,sku,selling_price,item_kind,active")
           .in("id", uniqueVariantIds)
       : await supabase
           .from("catalog_variants")
-          .select("id,item_id,name,sku,selling_price,active")
+          .select("id,item_id,name,sku,selling_price,item_kind,active")
           .in("item_id", items.map((item) => item.id));
     if (variantsRes.error) throw variantsRes.error;
-    variants = ((variantsRes.data ?? []) as VariantRow[]).filter(
-      (variant) => variant.active !== false && variant.sku?.trim()
+    variants = filterSellableVariants(
+      ((variantsRes.data ?? []) as VariantRow[]).filter(
+        (variant) => variant.active !== false && variant.sku?.trim()
+      ),
+      itemsById
     );
   }
 
@@ -589,6 +641,7 @@ export async function buildCatalogPushCandidates(
 
   if (includeProducts) {
     for (const item of items) {
+      if (!isSellableCatalogItem(item)) continue;
       if (!item.menu_group_id) continue;
       if (allowedGroupIds.size && !allowedGroupIds.has(item.menu_group_id)) continue;
       const group = groupsById.get(item.menu_group_id);
@@ -613,6 +666,7 @@ export async function buildCatalogPushCandidates(
   if (includeVariants) {
     for (const variant of variants) {
       const parent = items.find((item) => item.id === variant.item_id);
+      if (!parent || !isSellableCatalogVariant(variant, parent)) continue;
       if (!parent?.menu_group_id) continue;
       if (allowedGroupIds.size && !allowedGroupIds.has(parent.menu_group_id)) continue;
       const group = groupsById.get(parent.menu_group_id);

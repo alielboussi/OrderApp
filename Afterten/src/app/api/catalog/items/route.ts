@@ -63,7 +63,7 @@ type RecipeRow = {
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const CORE_FIELDS =
-  "id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,cost,outlet_order_visible,image_url";
+  "id,name,sku,item_kind,has_variations,active,consumption_uom,purchase_pack_unit,units_per_purchase_pack,cost,selling_price,menu_group_id,outlet_order_visible,image_url";
 
 const OPTIONAL_COLUMNS = [
   "consumption_unit",
@@ -78,14 +78,12 @@ const OPTIONAL_COLUMNS = [
   "locked_from_warehouse_id",
   "default_warehouse_id",
   "supplier_sku",
-  "selling_price",
   "has_recipe",
   "consumption_unit_mass",
   "consumption_unit_mass_uom",
   "inner_pack_unit_mass",
   "inner_pack_unit_mass_uom",
   "qty_decimal_places",
-  "menu_group_id",
 ] as const;
 
 function selectFields(optional: string[]) {
@@ -152,10 +150,49 @@ function cleanUuid(value: unknown): string | null {
   return null;
 }
 
+function missingColumnFrom42703(error: SupabaseError): string | null {
+  if (!error) return null;
+  const blob = `${error.message ?? ""} ${error.details ?? ""}`;
+  const quoted =
+    blob.match(/column "([^"]+)" of relation/i) ?? blob.match(/column "([^"]+)" does not exist/i);
+  if (quoted?.[1]) return quoted[1];
+  const bare = blob.match(/column catalog_items\.(\w+) does not exist/i);
+  return bare?.[1] ?? null;
+}
+
+function stripMissingOptionalField<T extends Record<string, unknown>>(
+  payload: T,
+  error: SupabaseError,
+  optionalKeys: string[]
+): { payload: Partial<T>; optionalKeys: string[] } | null {
+  const missing = missingColumnFrom42703(error);
+  if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+    const { [missing]: removed, ...rest } = payload;
+    void removed;
+    return {
+      payload: rest as Partial<T>,
+      optionalKeys: optionalKeys.filter((key) => key !== missing),
+    };
+  }
+  if (!optionalKeys.length) return null;
+  const [removeKey, ...restKeys] = optionalKeys;
+  if (!Object.prototype.hasOwnProperty.call(payload, removeKey)) {
+    return { payload, optionalKeys: restKeys };
+  }
+  const { [removeKey]: removed, ...rest } = payload;
+  void removed;
+  return { payload: rest as Partial<T>, optionalKeys: restKeys };
+}
+
 function uniqueViolationMessage(error: { message?: string; details?: string; hint?: string }): string | null {
   const blob = `${error.details ?? ""} ${error.message ?? ""} ${error.hint ?? ""}`.toLowerCase();
-  if (blob.includes("idx_catalog_items_name_unique") || blob.includes("key (name)") || blob.includes("(lower(name))")) {
-    return "A product with this name already exists. Use a different name.";
+  if (
+    blob.includes("idx_catalog_items_name_item_kind_unique") ||
+    blob.includes("idx_catalog_items_name_unique") ||
+    blob.includes("key (name)") ||
+    blob.includes("(lower(name))")
+  ) {
+    return "A product with this name already exists for this type (finished, ingredient, or raw). If you are adding a finished product and only an ingredient has this name, run supabase/migrations/20260706_catalog_name_unique_per_item_kind.sql in Supabase SQL Editor, then try again.";
   }
   if (blob.includes("idx_catalog_items_sku_unique") || blob.includes("key (sku)") || blob.includes("(lower(sku))")) {
     return "That SKU is already in use. Leave the SKU blank to auto-assign the next ID on save.";
@@ -182,6 +219,29 @@ function toErrorResponse(error: unknown, fallback: string) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ error: fallback }, { status: 500 });
+}
+
+async function findSameKindNameConflict(
+  supabase: ReturnType<typeof getServiceClient>,
+  name: string,
+  itemKind: ItemKind,
+  excludeId: string | null
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("catalog_items")
+    .select("id, name, item_kind, sku")
+    .ilike("name", name)
+    .eq("item_kind", itemKind);
+
+  if (error) return null;
+
+  const conflict = (Array.isArray(data) ? data : []).find(
+    (row) => typeof row?.id === "string" && row.id !== excludeId
+  );
+  if (!conflict) return null;
+
+  const sku = typeof conflict.sku === "string" ? conflict.sku : "—";
+  return `A ${itemKind} product named "${name}" already exists (SKU ${sku}). Edit that product or use a different name.`;
 }
 
 function normalizeStorageHomeIds(value: unknown): string[] {
@@ -304,6 +364,11 @@ export async function GET(request: Request) {
       }
 
       if (error?.code === "42703" && optional.length) {
+        const missing = missingColumnFrom42703(error);
+        if (missing && optional.includes(missing)) {
+          optional = optional.filter((col) => col !== missing);
+          continue;
+        }
         optional.pop();
         continue;
       }
@@ -477,9 +542,15 @@ export async function POST(request: Request) {
       qtyDecimalPlacesValue = Math.max(0, Math.min(6, Math.round(places.value)));
     }
 
-    const menuGroupId = cleanUuid(body.menu_group_id);
+    const menuGroupId = itemKind.value === "finished" ? cleanUuid(body.menu_group_id) : null;
 
     const supabase = getServiceClient();
+
+    const sameKindConflict = await findSameKindNameConflict(supabase, name, itemKind.value, null);
+    if (sameKindConflict) {
+      return NextResponse.json({ error: sameKindConflict }, { status: 409 });
+    }
+
     let resolvedSku = cleanText(body.sku) ?? null;
     if (itemKind.value === "finished") {
       resolvedSku = await allocatePosItemSku(supabase, resolvedSku);
@@ -534,7 +605,7 @@ export async function POST(request: Request) {
       const result = await supabase
         .from("catalog_items")
         .insert([attemptPayload])
-        .select("id,name,sku,item_kind")
+        .select("id,name,sku,item_kind,selling_price,cost,menu_group_id,active")
         .single();
       data = (result.data as { id?: string; sku?: string | null } | null) ?? null;
       error = (result.error as SupabaseError) ?? null;
@@ -542,6 +613,7 @@ export async function POST(request: Request) {
       if (error?.code === "23505" && itemKind.value === "finished" && skuRetries < 5) {
         const blob = `${error.details ?? ""} ${error.message ?? ""} ${error.hint ?? ""}`.toLowerCase();
         const isNameConflict =
+          blob.includes("idx_catalog_items_name_item_kind_unique") ||
           blob.includes("idx_catalog_items_name_unique") ||
           blob.includes("key (name)") ||
           blob.includes("(lower(name))");
@@ -554,11 +626,10 @@ export async function POST(request: Request) {
       }
 
       if (error?.code === "42703" && optionalKeys.length) {
-        const removeKey = optionalKeys.shift();
-        if (removeKey) {
-          const { [removeKey]: removed, ...rest } = attemptPayload as Record<string, unknown>;
-          void removed;
-          attemptPayload = rest as Partial<ItemPayload>;
+        const stripped = stripMissingOptionalField(attemptPayload as Record<string, unknown>, error, optionalKeys);
+        if (stripped) {
+          attemptPayload = stripped.payload as Partial<ItemPayload>;
+          optionalKeys = stripped.optionalKeys;
           continue;
         }
       }
@@ -596,6 +667,9 @@ export async function POST(request: Request) {
       item: {
         ...data,
         sku: resolvedSku ?? data.sku ?? null,
+        selling_price: sellingPrice.value,
+        cost: cost.value,
+        menu_group_id: menuGroupId,
         storage_home_id: storageHomeId,
         storage_home_ids: resolvedStorageHomeIds,
       },
@@ -687,7 +761,7 @@ export async function PUT(request: Request) {
     }
 
 
-    const menuGroupId = cleanUuid(body.menu_group_id);
+    const menuGroupId = itemKind.value === "finished" ? cleanUuid(body.menu_group_id) : null;
 
     const payload: Partial<ItemPayload> = {
       name,
@@ -733,6 +807,11 @@ export async function PUT(request: Request) {
     if (existingError) throw existingError;
     if (!existingRow) return NextResponse.json({ error: "Item not found" }, { status: 404 });
 
+    const sameKindConflict = await findSameKindNameConflict(supabase, name, itemKind.value, id);
+    if (sameKindConflict) {
+      return NextResponse.json({ error: sameKindConflict }, { status: 409 });
+    }
+
     let attemptPayload: Partial<ItemPayload> = payload;
     const optionalKeys = [...OPTIONAL_COLUMNS];
     let data: { id?: string; name?: string; sku?: string | null } | null = null;
@@ -749,11 +828,10 @@ export async function PUT(request: Request) {
       error = (result.error as SupabaseError) ?? null;
 
       if (error?.code === "42703" && optionalKeys.length) {
-        const removeKey = optionalKeys.shift();
-        if (removeKey) {
-          const { [removeKey]: removed, ...rest } = attemptPayload as Record<string, unknown>;
-          void removed;
-          attemptPayload = rest as Partial<ItemPayload>;
+        const stripped = stripMissingOptionalField(attemptPayload as Record<string, unknown>, error, optionalKeys);
+        if (stripped) {
+          attemptPayload = stripped.payload as Partial<ItemPayload>;
+          optionalKeys = stripped.optionalKeys;
           continue;
         }
       }

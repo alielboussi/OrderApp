@@ -65,7 +65,9 @@ public static class AppSettingsFile
         builder.AppendLine("    \"SourceSystem\": \"afterten-pos\",");
         builder.AppendLine("    \"IncludeProcessed\": false,");
         builder.AppendLine("    \"MaxBatchesPerCycle\": 20,");
-        builder.AppendLine("    \"PosCatalogSyncMinutes\": 30");
+        builder.AppendLine("    \"PosCatalogSyncMinutes\": 30,");
+        builder.AppendLine("    \"ReclaimProcessedLookbackDays\": 3,");
+        builder.AppendLine("    \"ReclaimProcessedBatchSize\": 400");
         builder.AppendLine("  },");
         builder.AppendLine("  \"Logging\": {");
         builder.AppendLine("    \"LogLevel\": {");

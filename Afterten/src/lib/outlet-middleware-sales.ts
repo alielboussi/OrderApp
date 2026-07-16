@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
 import { getServiceClient } from "@/lib/supabase-server";
 import { isMissingRelationError } from "@/lib/supabase-errors";
 import {
@@ -7,12 +8,19 @@ import {
   outletIdsForMiddlewareSalesApiProfile,
   middlewareSaleRowMatchesProfile,
 } from "@/lib/outletScope";
+import { parseShiftFilterFromUrl } from "@/lib/posSalesStats";
+import { shiftFilterIsAllInclusive } from "@/lib/posShift";
 
 export const API_FORMAT_VERSION = 2;
 
 const FETCH_PAGE_SIZE = 10_000;
 const IN_CHUNK_SIZE = 100;
 const VAT_RATE = 0.16;
+const MINTPOS_SHIFT_NAMES: Record<number, string> = {
+  1: "Day",
+  2: "Night",
+  3: "Midnight",
+};
 
 type OutletSalesRow = {
   id: string;
@@ -229,6 +237,15 @@ function parseDate(value: string | null): Date | null {
   return new Date(parsed);
 }
 
+/** YYYY-MM-DD → EAT business day; otherwise ISO/timestamp. */
+function parseSalesBound(value: string | null, endOfDay: boolean): Date | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return parseBusinessDateRangeParam(value, endOfDay);
+  }
+  return parseDate(value);
+}
+
 function toNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -349,9 +366,12 @@ function extractShift(rawPayload: Record<string, unknown> | null): SaleShift {
   }
 
   const shift = payload.shift as Record<string, unknown>;
+  const shiftId = toNullableInt(shift.shift_id);
   return {
-    shift_id: toNullableInt(shift.shift_id),
-    shift_name: asNonEmptyText(shift.shift_name),
+    shift_id: shiftId,
+    shift_name:
+      asNonEmptyText(shift.shift_name) ??
+      (shiftId != null ? MINTPOS_SHIFT_NAMES[shiftId] ?? null : null),
     shift_session_id: toNullableInt(shift.shift_session_id),
     terminal: asNonEmptyText(shift.terminal) ?? fallbackTerminal,
     shift_session_start: toIsoTimestamp(shift.session_start),
@@ -416,8 +436,8 @@ export async function handleOutletMiddlewareSalesRequest(
 
     const sinceParam = url.searchParams.get("since");
     const untilParam = url.searchParams.get("until");
-    const since = parseDate(sinceParam);
-    const until = parseDate(untilParam);
+    const since = parseSalesBound(sinceParam, false);
+    const until = parseSalesBound(untilParam, true);
     if (sinceParam && !since) return NextResponse.json({ error: "Invalid since timestamp" }, { status: 400 });
     if (untilParam && !until) return NextResponse.json({ error: "Invalid until timestamp" }, { status: 400 });
 
@@ -426,6 +446,11 @@ export async function handleOutletMiddlewareSalesRequest(
     if (since && since > effectiveUntil) {
       return NextResponse.json({ error: "since must be before until" }, { status: 400 });
     }
+
+    const { shiftIds, includeUnknownShift } = parseShiftFilterFromUrl(url);
+    const applyShiftFilter =
+      shiftIds != null && !shiftFilterIsAllInclusive(shiftIds, includeUnknownShift);
+    const selectedShiftIds = new Set(shiftIds ?? []);
 
     const sinceIso = since?.toISOString() ?? null;
     const untilIso = effectiveUntil.toISOString();
@@ -450,7 +475,7 @@ export async function handleOutletMiddlewareSalesRequest(
 
     const profileForScope = filterResult.mode === "profile" ? filterResult.profile : null;
 
-    const salesRows = salesData
+    let salesRows = salesData
       .filter((row) => row.outlet_id && row.item_id)
       .filter((row) => isMiddlewareContext(row.context))
       .filter((row) => {
@@ -458,6 +483,10 @@ export async function handleOutletMiddlewareSalesRequest(
         const sourceEventId = asNonEmptyText(asRecord(row.context)?.source_event_id);
         return middlewareSaleRowMatchesProfile(row.outlet_id, sourceEventId, profileForScope);
       });
+
+    if (applyShiftFilter && selectedShiftIds.size === 0 && !includeUnknownShift) {
+      salesRows = [];
+    }
 
     if (salesRows.length === 0) {
       return NextResponse.json(emptyPayload(sinceIso, untilIso, filterResult));
@@ -603,6 +632,11 @@ export async function handleOutletMiddlewareSalesRequest(
         }
         const allowedOutletIds = new Set(outletIdsForMiddlewareSalesApiProfile(profileForScope));
         return sale.lines.items.every((line) => allowedOutletIds.has(line.outlet_uuid));
+      })
+      .filter((sale) => {
+        if (!applyShiftFilter) return true;
+        if (sale.shift_id == null) return includeUnknownShift;
+        return selectedShiftIds.has(sale.shift_id);
       })
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 

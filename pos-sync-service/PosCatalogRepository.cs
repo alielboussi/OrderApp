@@ -78,10 +78,14 @@ public sealed class PosCatalogRepository
                 return;
             }
 
+            // Match upsert keys: ModifierFlavour.Name2 (SKU), not identity Id.
             await ExecuteDeleteBySkusAsync(
                 conn,
                 tx,
-                "DELETE FROM dbo.SaleDetails WHERE FlavourId IN ({0});",
+                @"DELETE sd
+FROM dbo.SaleDetails sd
+INNER JOIN dbo.ModifierFlavour mf ON mf.Id = sd.FlavourId
+WHERE mf.Name2 IN ({0});",
                 "@flavourSku",
                 variantSkus,
                 cancellationToken
@@ -90,7 +94,7 @@ public sealed class PosCatalogRepository
             await ExecuteDeleteBySkusAsync(
                 conn,
                 tx,
-                "DELETE FROM dbo.ModifierFlavour WHERE Id IN ({0});",
+                "DELETE FROM dbo.ModifierFlavour WHERE Name2 IN ({0});",
                 "@variantSku",
                 variantSkus,
                 cancellationToken
@@ -137,7 +141,10 @@ WHERE (@PosMenuGroupId IS NOT NULL AND Id = @PosMenuGroupId)
                     await ExecuteDeleteBySkusAsync(
                         conn,
                         tx,
-                        "DELETE FROM dbo.SaleDetails WHERE FlavourId IN ({0});",
+                        @"DELETE sd
+FROM dbo.SaleDetails sd
+INNER JOIN dbo.ModifierFlavour mf ON mf.Id = sd.FlavourId
+WHERE mf.Name2 IN ({0});",
                         "@flavourSku",
                         variantSkus,
                         cancellationToken
@@ -146,7 +153,7 @@ WHERE (@PosMenuGroupId IS NOT NULL AND Id = @PosMenuGroupId)
                     await ExecuteDeleteBySkusAsync(
                         conn,
                         tx,
-                        "DELETE FROM dbo.ModifierFlavour WHERE Id IN ({0});",
+                        "DELETE FROM dbo.ModifierFlavour WHERE Name2 IN ({0});",
                         "@variantSku",
                         variantSkus,
                         cancellationToken
@@ -154,11 +161,27 @@ WHERE (@PosMenuGroupId IS NOT NULL AND Id = @PosMenuGroupId)
                 }
                 else
                 {
+                    // Match upsert keys: MenuItem.Code (SKU).
                     await ExecuteDeleteBySkusAsync(
                         conn,
                         tx,
-                        "DELETE FROM dbo.SaleDetails WHERE MenuItemId IN ({0});",
+                        @"DELETE sd
+FROM dbo.SaleDetails sd
+INNER JOIN dbo.MenuItem mi ON mi.Id = sd.MenuItemId
+WHERE mi.Code IN ({0});",
                         "@itemSku",
+                        itemSkus,
+                        cancellationToken
+                    );
+
+                    await ExecuteDeleteBySkusAsync(
+                        conn,
+                        tx,
+                        @"DELETE mf
+FROM dbo.ModifierFlavour mf
+INNER JOIN dbo.MenuItem mi ON mi.Id = mf.MenuItemId
+WHERE mi.Code IN ({0});",
+                        "@itemFlavourSku",
                         itemSkus,
                         cancellationToken
                     );
@@ -167,7 +190,7 @@ WHERE (@PosMenuGroupId IS NOT NULL AND Id = @PosMenuGroupId)
                 await ExecuteDeleteBySkusAsync(
                     conn,
                     tx,
-                    "DELETE FROM dbo.MenuItem WHERE Id IN ({0});",
+                    "DELETE FROM dbo.MenuItem WHERE Code IN ({0});",
                     "@menuItemSku",
                     itemSkus,
                     cancellationToken
@@ -277,14 +300,25 @@ VALUES (@Name, 'Active', 'Pending');";
 UPDATE dbo.MenuItem
 SET Name = COALESCE(@Name, Name),
     Code = @Sku,
-    Price = COALESCE(@Price, Price),
+    Price = COALESCE(@NetPrice, Price),
+    GrossPrice = COALESCE(@GrossPrice, GrossPrice),
     MenuGroupId = COALESCE(@MenuGroupId, MenuGroupId),
     uploadstatus = 'Pending'
 WHERE Code = @Sku OR Id = TRY_CAST(@PosItemId AS int);";
 
+        // MintPOS MenuItem.Id is NOT NULL and not always IDENTITY — use numeric POS id / SKU.
         const string insertSql = @"
-INSERT INTO dbo.MenuItem (Code, Name, Price, Status, uploadstatus, MenuGroupId)
-VALUES (@Sku, @Name, @Price, 'Active', 'Pending', @MenuGroupId);";
+INSERT INTO dbo.MenuItem (Id, Code, Name, Price, GrossPrice, Status, uploadstatus, MenuGroupId)
+VALUES (
+  COALESCE(TRY_CAST(@PosItemId AS int), TRY_CAST(@Sku AS int)),
+  @Sku,
+  @Name,
+  @NetPrice,
+  @GrossPrice,
+  'Active',
+  'Pending',
+  @MenuGroupId
+);";
 
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
@@ -294,17 +328,39 @@ VALUES (@Sku, @Name, @Price, 'Active', 'Pending', @MenuGroupId);";
         {
             if (await MenuItemExistsByCodeAsync(conn, sku, cancellationToken))
             {
+                _logger.LogInformation(
+                    "Catalog item SKU {Sku} already exists on till; insert_only skipped item upsert.",
+                    sku);
+                await EnsureDefaultFlavourForItemAsync(conn, sku, evt.Payload, menuGroupId, cancellationToken);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(evt.Payload.Name))
             {
+                _logger.LogWarning("Catalog item SKU {Sku} skipped: name is required.", sku);
+                return;
+            }
+
+            if (!TryResolveMenuItemId(evt.Payload.PosItemId, sku, out _))
+            {
+                _logger.LogWarning(
+                    "Catalog item SKU {Sku} skipped: MenuItem.Id requires a numeric PosItemId or SKU.",
+                    sku);
                 return;
             }
 
             await using var insertCmd = new SqlCommand(insertSql, conn);
             BindItemParams(insertCmd, evt, sku, menuGroupId);
-            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            var inserted = await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            if (inserted == 0)
+            {
+                _logger.LogWarning("Catalog item SKU {Sku} insert affected 0 rows.", sku);
+            }
+            else
+            {
+                await EnsureDefaultFlavourForItemAsync(conn, sku, evt.Payload, menuGroupId, cancellationToken);
+            }
+
             return;
         }
 
@@ -314,10 +370,21 @@ VALUES (@Sku, @Name, @Price, 'Active', 'Pending', @MenuGroupId);";
 
         if (updated == 0 && !string.IsNullOrWhiteSpace(evt.Payload.Name))
         {
-            await using var insertCmd = new SqlCommand(insertSql, conn);
-            BindItemParams(insertCmd, evt, sku, menuGroupId);
-            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            if (!TryResolveMenuItemId(evt.Payload.PosItemId, sku, out _))
+            {
+                _logger.LogWarning(
+                    "Catalog item SKU {Sku} insert skipped: MenuItem.Id requires a numeric PosItemId or SKU.",
+                    sku);
+            }
+            else
+            {
+                await using var insertCmd = new SqlCommand(insertSql, conn);
+                BindItemParams(insertCmd, evt, sku, menuGroupId);
+                await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
+
+        await EnsureDefaultFlavourForItemAsync(conn, sku, evt.Payload, menuGroupId, cancellationToken);
     }
 
     private async Task UpsertVariantAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
@@ -333,18 +400,30 @@ VALUES (@Sku, @Name, @Price, 'Active', 'Pending', @MenuGroupId);";
 UPDATE mf
 SET mf.name = COALESCE(@VariantName, mf.name),
     mf.Name2 = @VariantSku,
-    mf.price = COALESCE(@Price, mf.price),
+    mf.price = COALESCE(@NetPrice, mf.price),
+    mf.GrossPrice = COALESCE(@GrossPrice, mf.GrossPrice),
     mf.MenuGroupId = COALESCE(@MenuGroupId, mf.MenuGroupId, mi.MenuGroupId),
     mf.UploadStatus = 'Pending'
 FROM dbo.ModifierFlavour mf
 JOIN dbo.MenuItem mi ON mi.Id = mf.MenuItemId
 WHERE mi.Code = @ItemSku AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int));";
 
+        // Include Id when MintPOS ModifierFlavour.Id is NOT NULL / non-identity.
         const string insertSql = @"
-INSERT INTO dbo.ModifierFlavour (MenuItemId, MenuGroupId, name, Name2, price, Status, UploadStatus)
-SELECT mi.Id, COALESCE(@MenuGroupId, mi.MenuGroupId), @VariantName, @VariantSku, @Price, 'Active', 'Pending'
+INSERT INTO dbo.ModifierFlavour (Id, MenuItemId, MenuGroupId, name, Name2, price, GrossPrice, Status, UploadStatus)
+SELECT
+  COALESCE(TRY_CAST(@PosFlavourId AS int), TRY_CAST(@VariantSku AS int), mi.Id),
+  mi.Id,
+  COALESCE(@MenuGroupId, mi.MenuGroupId),
+  @VariantName,
+  @VariantSku,
+  @NetPrice,
+  @GrossPrice,
+  'Active',
+  'Pending'
 FROM dbo.MenuItem mi
 WHERE mi.Code = @ItemSku
+  AND COALESCE(TRY_CAST(@PosFlavourId AS int), TRY_CAST(@VariantSku AS int), mi.Id) IS NOT NULL
   AND NOT EXISTS (
       SELECT 1
       FROM dbo.ModifierFlavour mf
@@ -360,11 +439,19 @@ WHERE mi.Code = @ItemSku
         {
             if (await VariantExistsBySkuAsync(conn, itemSku, variantSku, evt.Payload.PosFlavourId, cancellationToken))
             {
+                _logger.LogInformation(
+                    "Catalog variant SKU {VariantSku} for item {ItemSku} already exists; insert_only skipped.",
+                    variantSku,
+                    itemSku);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(evt.Payload.VariantName))
             {
+                _logger.LogWarning(
+                    "Catalog variant SKU {VariantSku} for item {ItemSku} skipped: variant name is required.",
+                    variantSku,
+                    itemSku);
                 return;
             }
 
@@ -375,7 +462,15 @@ WHERE mi.Code = @ItemSku
             BindVariantPriceParams(insertCmd, evt.Payload);
             insertCmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
             insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
-            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            var inserted = await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            if (inserted == 0)
+            {
+                _logger.LogWarning(
+                    "Catalog variant SKU {VariantSku} for item {ItemSku} insert affected 0 rows; parent item may be missing on till.",
+                    variantSku,
+                    itemSku);
+            }
+
             return;
         }
 
@@ -417,33 +512,109 @@ WHERE mi.Code = @ItemSku
         await UpsertMenuItemAsync(evt, cancellationToken);
     }
 
-    private static decimal? ResolveVariantPosPrice(CatalogSyncPayload payload)
+    private static (decimal? NetPrice, decimal? GrossPrice) ResolveItemPosPrices(CatalogSyncPayload payload)
     {
-        if (payload.VatExcPrice is > 0)
+        decimal? gross = payload.Price is > 0 ? payload.Price : null;
+        decimal? net = payload.VatExcPrice is > 0 ? payload.VatExcPrice : null;
+
+        if (net is null && gross is > 0)
         {
-            return payload.VatExcPrice;
+            net = Math.Round(gross.Value / 1.16m, 2, MidpointRounding.AwayFromZero);
         }
 
-        if (payload.Price is > 0)
+        if (gross is null && net is > 0)
         {
-            return Math.Round(payload.Price.Value / 1.16m, 2, MidpointRounding.AwayFromZero);
+            gross = Math.Round(net.Value * 1.16m, 2, MidpointRounding.AwayFromZero);
         }
 
-        return null;
+        return (net, gross);
+    }
+
+    private static (decimal? NetPrice, decimal? GrossPrice) ResolveVariantPosPrices(CatalogSyncPayload payload)
+    {
+        return ResolveItemPosPrices(payload);
     }
 
     private static void BindItemParams(SqlCommand cmd, CatalogSyncEvent evt, string sku, int? menuGroupId)
     {
+        var prices = ResolveItemPosPrices(evt.Payload);
         cmd.Parameters.AddWithValue("@Sku", sku);
         cmd.Parameters.AddWithValue("@Name", (object?)evt.Payload.Name ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@Price", (object?)evt.Payload.Price ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@NetPrice", (object?)prices.NetPrice ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@GrossPrice", (object?)prices.GrossPrice ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@PosItemId", (object?)evt.Payload.PosItemId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
     }
 
+    /// <summary>
+    /// MintPOS MenuItem.Id is required and usually equals the numeric POS code/SKU.
+    /// </summary>
+    private static bool TryResolveMenuItemId(string? posItemId, string sku, out int menuItemId)
+    {
+        if (!string.IsNullOrWhiteSpace(posItemId) && int.TryParse(posItemId.Trim(), out menuItemId) && menuItemId > 0)
+        {
+            return true;
+        }
+
+        if (int.TryParse(sku.Trim(), out menuItemId) && menuItemId > 0)
+        {
+            return true;
+        }
+
+        menuItemId = 0;
+        return false;
+    }
+
     private static void BindVariantPriceParams(SqlCommand cmd, CatalogSyncPayload payload)
     {
-        cmd.Parameters.AddWithValue("@Price", (object?)ResolveVariantPosPrice(payload) ?? DBNull.Value);
+        var prices = ResolveVariantPosPrices(payload);
+        cmd.Parameters.AddWithValue("@NetPrice", (object?)prices.NetPrice ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@GrossPrice", (object?)prices.GrossPrice ?? DBNull.Value);
+    }
+
+    private async Task EnsureDefaultFlavourForItemAsync(
+        SqlConnection conn,
+        string itemSku,
+        CatalogSyncPayload payload,
+        int? menuGroupId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+INSERT INTO dbo.ModifierFlavour (Id, MenuItemId, MenuGroupId, name, Name2, price, GrossPrice, Status, UploadStatus)
+SELECT
+    COALESCE(TRY_CAST(@VariantSku AS int), mi.Id),
+    mi.Id,
+    COALESCE(@MenuGroupId, mi.MenuGroupId),
+    COALESCE(@VariantName, mi.Name),
+    COALESCE(NULLIF(LTRIM(RTRIM(@VariantSku)), ''), mi.Code),
+    COALESCE(@NetPrice, mi.Price),
+    COALESCE(@GrossPrice, mi.GrossPrice),
+    'Active',
+    'Pending'
+FROM dbo.MenuItem mi
+WHERE mi.Code = @ItemSku
+  AND COALESCE(TRY_CAST(@VariantSku AS int), mi.Id) IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM dbo.ModifierFlavour mf
+      WHERE mf.MenuItemId = mi.Id
+  );";
+
+        var prices = ResolveItemPosPrices(payload);
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@ItemSku", itemSku.Trim());
+        cmd.Parameters.AddWithValue("@VariantSku", itemSku.Trim());
+        cmd.Parameters.AddWithValue("@VariantName", (object?)payload.Name ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@NetPrice", (object?)prices.NetPrice ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@GrossPrice", (object?)prices.GrossPrice ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
+        var inserted = await cmd.ExecuteNonQueryAsync(cancellationToken);
+        if (inserted > 0)
+        {
+            _logger.LogInformation(
+                "Created default ModifierFlavour for item SKU {ItemSku} so it is sellable on till.",
+                itemSku);
+        }
     }
 
     private static async Task<bool> MenuItemExistsByCodeAsync(

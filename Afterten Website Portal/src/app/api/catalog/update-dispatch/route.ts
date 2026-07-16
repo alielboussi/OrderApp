@@ -46,8 +46,8 @@ async function middlewareOutletIds() {
 async function loadDeleteCandidates(): Promise<CandidateRow[]> {
   const supabase = getServiceClient();
   const [itemsRes, variantsRes] = await Promise.all([
-    supabase.from("catalog_items").select("id,name,sku").order("name"),
-    supabase.from("catalog_variants").select("id,item_id,name,sku").order("name"),
+    supabase.from("catalog_items").select("id,name,sku,item_kind").eq("item_kind", "finished").order("name"),
+    supabase.from("catalog_variants").select("id,item_id,name,sku,item_kind").eq("item_kind", "finished").order("name"),
   ]);
   if (itemsRes.error) throw itemsRes.error;
   if (variantsRes.error) throw variantsRes.error;

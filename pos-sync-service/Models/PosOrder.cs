@@ -80,6 +80,12 @@ public sealed record PosInventoryConsumed(
 
 public sealed record SupabaseResult(bool IsSuccess, string? ErrorMessage = null);
 
+public sealed record PosValidationResult(
+    bool IsSuccess,
+    string? ErrorMessage = null,
+    bool IsDuplicate = false,
+    bool IsEmptyBill = false);
+
 public sealed record PosSentSummary(
     string BillId,
     string SaleId,

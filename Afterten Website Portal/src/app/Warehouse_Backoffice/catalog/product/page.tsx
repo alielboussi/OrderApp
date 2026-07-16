@@ -261,7 +261,31 @@ function ProductCreatePage() {
 
       const successMessage = editingId ? "Product updated" : "Product saved";
       setResult({ ok: true, message: successMessage });
-      if (!editingId) {
+
+      if (editingId) {
+        const reloadRes = await fetch(`/api/catalog/items?id=${encodeURIComponent(editingId)}`);
+        if (reloadRes.ok) {
+          const reloadJson = await reloadRes.json();
+          const item = reloadJson?.item;
+          if (item) {
+            setForm({
+              name: item.name ?? "",
+              sku: item.sku ?? "",
+              item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
+              consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
+              units_per_pack: String(item.units_per_purchase_pack ?? 1),
+              consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
+              cost: (item.cost ?? 0).toString(),
+              selling_price: (item.selling_price ?? 0).toString(),
+              has_variations: Boolean(item.has_variations),
+              outlet_order_visible: item.outlet_order_visible ?? true,
+              image_url: item.image_url ?? "",
+              active: item.active ?? true,
+              menu_group_id: item.menu_group_id ?? "",
+            });
+          }
+        }
+      } else {
         setForm(defaultForm);
         setSkuManual(false);
         setSuggestedSku("");

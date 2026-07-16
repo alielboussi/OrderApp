@@ -38,15 +38,14 @@ public sealed class SupabaseClient
         _logger = logger;
     }
 
-    public async Task<SupabaseResult> ValidateOrderAsync(PosOrder order, CancellationToken cancellationToken)
+    public async Task<PosValidationResult> ValidateOrderAsync(PosOrder order, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)
         {
             _logger.LogError("Outlet Id is not configured; set Outlet:Id to the outlet UUID in Supabase");
-            return new SupabaseResult(false, "Outlet Id is not configured");
+            return new PosValidationResult(false, "Outlet Id is not configured");
         }
 
-        var client = CreateClient();
         var payload = BuildPayload(order);
 
         try
@@ -62,25 +61,27 @@ public sealed class SupabaseClient
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogError("Supabase validation RPC failed {Status}: {Body}", (int)response.StatusCode, body);
-                return new SupabaseResult(false, $"Validation RPC failed {(int)response.StatusCode}: {body}");
+                return new PosValidationResult(false, $"Validation RPC failed {(int)response.StatusCode}: {body}");
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             var ok = root.TryGetProperty("ok", out var okProp) && okProp.GetBoolean();
+            var isDuplicate = root.TryGetProperty("duplicate", out var dupProp) && dupProp.GetBoolean();
+            var isEmptyBill = root.TryGetProperty("empty_bill", out var emptyProp) && emptyProp.GetBoolean();
             if (ok)
             {
-                return new SupabaseResult(true);
+                return new PosValidationResult(true, IsDuplicate: isDuplicate, IsEmptyBill: isEmptyBill);
             }
 
             var errors = root.TryGetProperty("errors", out var errorsProp) ? errorsProp.ToString() : "Unknown validation error";
-            return new SupabaseResult(false, errors);
+            return new PosValidationResult(false, errors);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error calling Supabase validation RPC");
-            return new SupabaseResult(false, ex.Message);
+            return new PosValidationResult(false, ex.Message);
         }
     }
 
@@ -123,7 +124,27 @@ public sealed class SupabaseClient
         }
     }
 
-    public async Task<bool> OrderExistsAsync(string sourceEventId, CancellationToken cancellationToken)
+    public async Task ClearSyncFailureAsync(PosOrder order, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty || string.IsNullOrWhiteSpace(order.SourceEventId))
+        {
+            return;
+        }
+
+        try
+        {
+            await PostRpcAsync(
+                "/rest/v1/rpc/clear_pos_sync_failure",
+                new { p_outlet_id = _outlet.Id, p_source_event_id = order.SourceEventId },
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear sync failure for source={SourceEventId}", order.SourceEventId);
+        }
+    }
+
+    public async Task<bool> HasOutletSalesAsync(string sourceEventId, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty || string.IsNullOrWhiteSpace(sourceEventId))
         {
@@ -132,6 +153,40 @@ public sealed class SupabaseClient
 
         var existing = await GetSourceEventIdsWithOutletSalesAsync(new[] { sourceEventId }, cancellationToken);
         return existing.Contains(sourceEventId);
+    }
+
+    public async Task<bool> OrderExistsAsync(string sourceEventId, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty || string.IsNullOrWhiteSpace(sourceEventId))
+        {
+            return false;
+        }
+
+        var existing = await GetExistingSourceEventIdsAsync(new[] { sourceEventId }, cancellationToken);
+        return existing.Contains(sourceEventId);
+    }
+
+    public async Task<Dictionary<string, PosOrderSyncState>> GetOrderSyncStatesAsync(
+        IReadOnlyCollection<string> sourceEventIds,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, PosOrderSyncState>(StringComparer.OrdinalIgnoreCase);
+        if (_outlet.Id == Guid.Empty || sourceEventIds.Count == 0)
+        {
+            return result;
+        }
+
+        var withLines = await GetSourceEventIdsWithOutletSalesAsync(sourceEventIds, cancellationToken);
+        var withOrders = await GetExistingSourceEventIdsAsync(sourceEventIds, cancellationToken);
+
+        foreach (var id in sourceEventIds.Where(id => !string.IsNullOrWhiteSpace(id)))
+        {
+            result[id] = new PosOrderSyncState(
+                withOrders.Contains(id),
+                withLines.Contains(id));
+        }
+
+        return result;
     }
 
     public async Task<HashSet<string>> GetSourceEventIdsWithOutletSalesAsync(
@@ -507,7 +562,7 @@ public sealed class SupabaseClient
             var client = CreateClient();
             var response = await client.PostAsync(
                 "/rest/v1/rpc/fetch_outlet_catalog_sync",
-                JsonContent.Create(new { p_outlet_id = _outlet.Id, p_limit = 50 }, options: JsonOptions),
+                JsonContent.Create(new { p_outlet_id = _outlet.Id, p_limit = 200 }, options: JsonOptions),
                 cancellationToken
             );
             if (!response.IsSuccessStatusCode)
@@ -887,9 +942,54 @@ public sealed class SupabaseClient
         }
     }
 
+    public async Task<IReadOnlyList<string>> FetchOrdersMissingShiftAsync(int limit, CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var response = await SendWithRetryAsync(
+                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/list_orders_missing_shift")
+                {
+                    Content = JsonContent.Create(
+                        new { p_outlet_id = _outlet.Id, p_limit = limit },
+                        options: JsonOptions)
+                },
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "list_orders_missing_shift failed {Status}: {Body}",
+                    (int)response.StatusCode,
+                    body);
+                return Array.Empty<string>();
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var rows = JsonSerializer.Deserialize<MissingShiftRow[]>(json, JsonOptions) ?? Array.Empty<MissingShiftRow>();
+            return rows
+                .Select(row => row.SourceEventId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToArray()!;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch orders missing shift");
+            return Array.Empty<string>();
+        }
+    }
+
     private sealed record SourceEventRow(
         [property: JsonPropertyName("source_event_id")] string? SourceEventId
     );
+
+    private sealed record MissingShiftRow(
+        [property: JsonPropertyName("source_event_id")] string? SourceEventId);
 
     private sealed record OutletWarehouseRow(
         [property: JsonPropertyName("warehouse_id")] string WarehouseId

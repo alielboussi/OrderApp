@@ -1,24 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
-import { fetchOutletSalesPage } from "@/lib/fetchOutletSalesPage";
+import { loadPosSalesStats, parseShiftFilterFromUrl } from "@/lib/posSalesStats";
 import { getServiceClient } from "@/lib/supabase-server";
 import { isMissingRelationError } from "@/lib/supabase-errors";
-
-type ProductQty = {
-  name: string;
-  qty: number;
-};
-
-type SalesRow = {
-  item_id: string;
-  variant_key: string | null;
-  qty_units: number | null;
-  sale_price: number | null;
-  vat_exc_price: number | null;
-  flavour_price: number | null;
-  context: Record<string, unknown> | null;
-  catalog_items: { name: string | null } | { name: string | null }[] | null;
-};
 
 type OrderItemRow = {
   name: string | null;
@@ -49,35 +33,12 @@ function parseSalesOutletIds(url: URL): string[] {
   return Array.from(ids);
 }
 
-function relName(value: { name: string | null } | { name: string | null }[] | null | undefined): string {
-  if (!value) return "Unknown";
-  const row = Array.isArray(value) ? value[0] : value;
-  return (row?.name ?? "Unknown").trim() || "Unknown";
-}
-
-function productNameFromRow(row: SalesRow): string {
-  const fromCatalog = relName(row.catalog_items);
-  if (fromCatalog !== "Unknown") return fromCatalog;
-
-  const ctx = row.context ?? {};
-  const fromContext =
-    (typeof ctx.catalog_item_name === "string" && ctx.catalog_item_name.trim()) ||
-    (typeof ctx.name === "string" && ctx.name.trim()) ||
-    "";
-  return fromContext || "Unknown";
-}
-
-function sourceEventIdFromRow(row: SalesRow): string | null {
-  const value = row.context?.source_event_id;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 function toNumber(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
 }
 
-function aggregateByName(rows: Array<{ name: string; qty: number }>): ProductQty[] {
+function aggregateByName(rows: Array<{ name: string; qty: number }>): Array<{ name: string; qty: number }> {
   const map = new Map<string, number>();
   for (const row of rows) {
     map.set(row.name, (map.get(row.name) ?? 0) + row.qty);
@@ -87,7 +48,10 @@ function aggregateByName(rows: Array<{ name: string; qty: number }>): ProductQty
     .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
 }
 
-function pickMostLeast(items: ProductQty[]): { most: ProductQty | null; least: ProductQty | null } {
+function pickMostLeast(items: Array<{ name: string; qty: number }>): {
+  most: { name: string; qty: number } | null;
+  least: { name: string; qty: number } | null;
+} {
   if (items.length === 0) return { most: null, least: null };
   const positive = items.filter((row) => row.qty > 0);
   if (positive.length === 0) return { most: null, least: null };
@@ -109,6 +73,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const salesOutletFilterActive = url.searchParams.has("sales_outlet_ids");
     const salesOutletIds = parseSalesOutletIds(url);
+    const { shiftIds, includeUnknownShift } = parseShiftFilterFromUrl(url);
 
     const salesFrom = parseBusinessDateRangeParam(url.searchParams.get("sales_from"), false);
     const salesTo = parseBusinessDateRangeParam(url.searchParams.get("sales_to"), true);
@@ -130,18 +95,23 @@ export async function GET(request: NextRequest) {
 
     const supabase = getServiceClient();
 
-    let salesRows: SalesRow[] = [];
+    let sales = {
+      total_qty: 0,
+      total_revenue: 0,
+      bill_count: 0,
+      line_count: 0,
+      most_sold: null as { name: string; qty: number } | null,
+      least_sold: null as { name: string; qty: number } | null,
+    };
 
-    if (salesOutletFilterActive && salesOutletIds.length === 0) {
-      salesRows = [];
-    } else {
+    if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
       try {
-        salesRows = await fetchOutletSalesPage<SalesRow>(supabase, {
+        sales = await loadPosSalesStats(supabase, {
           outletIds: salesOutletIds,
           fromIso: salesRange.from.toISOString(),
           toIso: salesRange.to.toISOString(),
-          select:
-            "item_id,variant_key,qty_units,sale_price,vat_exc_price,flavour_price,context,catalog_items(name)",
+          shiftIds,
+          includeUnknownShift,
         });
       } catch (salesError) {
         if (!isMissingRelationError(salesError as { code?: string; message?: string }, "outlet_sales")) {
@@ -150,7 +120,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let ordersQuery = supabase
+    const ordersRes = await supabase
       .from("orders")
       .select("id")
       .is("source_event_id", null)
@@ -158,30 +128,7 @@ export async function GET(request: NextRequest) {
       .lte("created_at", ordersRange.to.toISOString())
       .limit(MAX_ORDER_ROWS);
 
-    const ordersRes = await ordersQuery;
-
     if (ordersRes.error) throw ordersRes.error;
-
-    let salesQty = 0;
-    let salesRevenue = 0;
-    const salesByProduct: Array<{ name: string; qty: number }> = [];
-    const billIds = new Set<string>();
-
-    for (const row of salesRows) {
-      const qty = toNumber(row.qty_units);
-      if (qty <= 0) continue;
-      const unitPrice =
-        toNumber(row.sale_price) || toNumber(row.vat_exc_price) || toNumber(row.flavour_price);
-      salesQty += qty;
-      salesRevenue += unitPrice * qty;
-      salesByProduct.push({ name: productNameFromRow(row), qty });
-
-      const billId = sourceEventIdFromRow(row);
-      if (billId) billIds.add(billId);
-    }
-
-    const salesAgg = aggregateByName(salesByProduct);
-    const { most: mostSold, least: leastSold } = pickMostLeast(salesAgg);
 
     const orderIds = ((ordersRes.data as Array<{ id: string }>) ?? []).map((row) => row.id).filter(Boolean);
     const ordersByProduct: Array<{ name: string; qty: number }> = [];
@@ -205,14 +152,7 @@ export async function GET(request: NextRequest) {
     const { most: mostOrdered, least: leastOrdered } = pickMostLeast(ordersAgg);
 
     return NextResponse.json({
-      sales: {
-        total_qty: salesQty,
-        total_revenue: Math.round(salesRevenue * 100) / 100,
-        bill_count: billIds.size,
-        line_count: salesRows.length,
-        most_sold: mostSold,
-        least_sold: leastSold,
-      },
+      sales,
       outlet_orders: {
         order_count: orderIds.length,
         most_ordered: mostOrdered,

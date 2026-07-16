@@ -12,6 +12,7 @@ namespace PosSyncService;
 public sealed class SyncRunner
 {
     private readonly IOptionsMonitor<SyncOptions> _syncOptions;
+    private readonly OutletOptions _outlet;
     private readonly PosRepository _repository;
     private readonly PosCatalogRepository _catalogRepository;
     private readonly SupabaseClient _supabaseClient;
@@ -21,12 +22,14 @@ public sealed class SyncRunner
     private DateTimeOffset? _lastSaleUploadedUtc;
 
     public SyncRunner(IOptionsMonitor<SyncOptions> syncOptions,
+                      IOptions<OutletOptions> outlet,
                       PosRepository repository,
                       PosCatalogRepository catalogRepository,
                       SupabaseClient supabaseClient,
                       ILogger<SyncRunner> logger)
     {
         _syncOptions = syncOptions;
+        _outlet = outlet.Value;
         _repository = repository;
         _catalogRepository = catalogRepository;
         _supabaseClient = supabaseClient;
@@ -99,7 +102,13 @@ public sealed class SyncRunner
             syncOptions.MinSaleDateUtc,
             syncOptions.MaxSaleDateUtc);
 
-        var unsyncedBefore = await _repository.CountUnsyncedSalesAsync(cancellationToken);
+        var zeroLineClosed = await _repository.AutoMarkZeroLinePendingProcessedAsync(cancellationToken);
+        if (zeroLineClosed > 0)
+        {
+            _logger.LogInformation("Auto-marked {Count} zero-line pending bills Processed.", zeroLineClosed);
+        }
+
+        var unsyncedBefore = await _repository.CountExportableUnsyncedSalesAsync(cancellationToken);
         var maxBatches = Math.Max(1, syncOptions.MaxBatchesPerCycle);
         var batchSize = Math.Max(1, syncOptions.BatchSize);
 
@@ -127,7 +136,7 @@ public sealed class SyncRunner
                 unsyncedBefore,
                 pending.Count);
 
-            var existingInSupabase = await _supabaseClient.GetSourceEventIdsWithOutletSalesAsync(
+            var syncStates = await _supabaseClient.GetOrderSyncStatesAsync(
                 pending.Select(order => order.SourceEventId).ToArray(),
                 cancellationToken);
 
@@ -135,139 +144,17 @@ public sealed class SyncRunner
             {
                 try
                 {
-                    if (existingInSupabase.Contains(order.SourceEventId))
+                    syncStates.TryGetValue(order.SourceEventId, out var state);
+                    state ??= new PosOrderSyncState(false, false);
+
+                    var outcome = await ProcessOrderAsync(order, state, cancellationToken);
+                    if (outcome.Failure is not null)
                     {
-                        if (!await _supabaseClient.OrderExistsAsync(order.SourceEventId, cancellationToken))
-                        {
-                            _logger.LogWarning(
-                                "Reconcile skipped — batch listed Supabase lines but bill={BillId} source={SourceEventId} has none now; leaving Pending.",
-                                order.PosOrderId,
-                                order.SourceEventId);
-                            continue;
-                        }
-
-                        var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
-                        if (!patchResult.IsSuccess)
-                        {
-                            _logger.LogWarning(
-                                "Sale metadata patch failed bill={BillId} source={SourceEventId}: {Error}",
-                                order.PosOrderId,
-                                order.SourceEventId,
-                                patchResult.ErrorMessage ?? "Unknown error");
-                        }
-
-                        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
-                        reconciled++;
-                        _logger.LogInformation(
-                            "Sale reconciled from Supabase (already has API lines) bill={BillId} sale={SaleId} source={SourceEventId} patched={Patched}",
-                            order.PosOrderId,
-                            order.PosSaleId,
-                            order.SourceEventId,
-                            patchResult.IsSuccess);
-                        continue;
+                        failures.Add(outcome.Failure);
                     }
 
-                    LogSaleUploadAttempt(order);
-
-                    var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
-                    var uploadDespiteValidation = false;
-
-                    if (!validation.IsSuccess)
-                    {
-                        if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
-                        {
-                            _logger.LogWarning(
-                                "Sale has no mappable catalog SKUs bill={BillId} sale={SaleId} source={SourceEventId} — fix MenuItem.Code / catalog mapping; leaving Pending.",
-                                order.PosOrderId,
-                                order.PosSaleId,
-                                order.SourceEventId);
-                            await _supabaseClient.LogFailureAsync(
-                                order,
-                                "validation",
-                                validation.ErrorMessage ?? "no_mappable_items",
-                                null,
-                                cancellationToken);
-                            continue;
-                        }
-
-                        if (ShouldAttemptUploadDespiteValidation(validation.ErrorMessage))
-                        {
-                            uploadDespiteValidation = true;
-                            _logger.LogInformation(
-                                "Validation reported sync window issue bill={BillId} sale={SaleId} source={SourceEventId}; attempting API upload anyway.",
-                                order.PosOrderId,
-                                order.PosSaleId,
-                                order.SourceEventId);
-                        }
-                        else
-                        {
-                            var failure = new SyncFailure(order.PosOrderId, validation.ErrorMessage);
-                            failures.Add(failure);
-                            _logger.LogWarning(
-                                "Sale validation failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
-                                order.PosOrderId,
-                                order.PosSaleId,
-                                order.SourceEventId,
-                                validation.ErrorMessage ?? "Unknown error");
-                            await _supabaseClient.LogFailureAsync(order, "validation", validation.ErrorMessage ?? "Validation failed", null, cancellationToken);
-                            continue;
-                        }
-                    }
-
-                    if (!validation.IsSuccess && !uploadDespiteValidation)
-                    {
-                        continue;
-                    }
-
-                    var result = await _supabaseClient.SendOrderAsync(order, cancellationToken);
-                    if (result.IsSuccess)
-                    {
-                        if (!await _supabaseClient.OrderExistsAsync(order.SourceEventId, cancellationToken))
-                        {
-                            _logger.LogWarning(
-                                "Supabase sync_pos_order returned OK but outlet_sales missing bill={BillId} sale={SaleId} source={SourceEventId} — leaving Pending (no phantom Processed).",
-                                order.PosOrderId,
-                                order.PosSaleId,
-                                order.SourceEventId);
-                            await _supabaseClient.LogFailureAsync(
-                                order,
-                                "verify",
-                                "rpc_ok_but_no_outlet_sales",
-                                null,
-                                cancellationToken);
-                            continue;
-                        }
-
-                        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
-
-                        var inventoryIds = order.Inventory.Select(ic => ic.PosId).ToArray();
-                        if (inventoryIds.Length > 0)
-                        {
-                            await _repository.MarkInventoryProcessedAsync(inventoryIds, cancellationToken);
-                        }
-
-                        _logger.LogInformation(
-                            "Sale uploaded bill={BillId} sale={SaleId} source={SourceEventId} occurred={OccurredAt:o} lines={LineCount}",
-                            order.PosOrderId,
-                            order.PosSaleId,
-                            order.SourceEventId,
-                            order.OccurredAt,
-                            order.Items.Count);
-
-                        processed++;
-                    }
-                    else
-                    {
-                        var failure = new SyncFailure(order.PosOrderId, result.ErrorMessage);
-                        failures.Add(failure);
-                        _logger.LogWarning(
-                            "Sale upload failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
-                            order.PosOrderId,
-                            order.PosSaleId,
-                            order.SourceEventId,
-                            result.ErrorMessage ?? "Unknown error");
-                        await _supabaseClient.LogFailureAsync(order, "sync", result.ErrorMessage ?? "Sync failed", null, cancellationToken);
-                    }
+                    processed += outcome.Processed;
+                    reconciled += outcome.Reconciled;
                 }
                 catch (Exception ex)
                 {
@@ -289,22 +176,397 @@ public sealed class SyncRunner
             }
         }
 
+        var shiftBackfilled = await BackfillMissingShiftsAsync(cancellationToken);
+
+        var reclaimed = await ReclaimProcessedMissingFromSupabaseAsync(
+            syncContext.SyncOpeningUtc,
+            cancellationToken);
+        if (reclaimed > 0)
+        {
+            // Pull reclaimed bills in the same cycle when possible.
+            for (var batchIndex = 0; batchIndex < maxBatches && reclaimed > 0; batchIndex++)
+            {
+                var pending = await _repository.ReadPendingOrdersAsync(
+                    batchSize,
+                    minUtc,
+                    maxUtc,
+                    cancellationToken);
+                if (pending.Count == 0)
+                {
+                    break;
+                }
+
+                var syncStates = await _supabaseClient.GetOrderSyncStatesAsync(
+                    pending.Select(order => order.SourceEventId).ToArray(),
+                    cancellationToken);
+
+                foreach (var order in pending)
+                {
+                    try
+                    {
+                        syncStates.TryGetValue(order.SourceEventId, out var state);
+                        state ??= new PosOrderSyncState(false, false);
+                        var outcome = await ProcessOrderAsync(order, state, cancellationToken);
+                        if (outcome.Failure is not null)
+                        {
+                            failures.Add(outcome.Failure);
+                        }
+
+                        processed += outcome.Processed;
+                        reconciled += outcome.Reconciled;
+                    }
+                    catch (Exception ex)
+                    {
+                        failures.Add(new SyncFailure(order.PosOrderId, ex.Message));
+                        _logger.LogError(
+                            ex,
+                            "Sale reclaim upload exception bill={BillId} sale={SaleId} source={SourceEventId}",
+                            order.PosOrderId,
+                            order.PosSaleId,
+                            order.SourceEventId);
+                    }
+                }
+
+                if (pending.Count < batchSize)
+                {
+                    break;
+                }
+            }
+        }
+
         var linesRepaired = await _repository.RepairConsistentProcessedFlagsAsync(cancellationToken);
         if (linesRepaired > 0)
         {
             _logger.LogInformation("Repaired {Count} stale MintPOS upload flags (Sale already Processed).", linesRepaired);
         }
 
-        var unsyncedAfter = await _repository.CountUnsyncedSalesAsync(cancellationToken);
+        var unsyncedAfter = await _repository.CountExportableUnsyncedSalesAsync(cancellationToken);
         _logger.LogInformation(
-            "Sales sync cycle finished: uploaded={UploadedCount} reconciled={ReconciledCount} failures={FailureCount} lines_repaired={LinesRepaired} unsynced_remaining={UnsyncedRemaining}",
+            "Sales sync cycle finished: uploaded={UploadedCount} reconciled={ReconciledCount} shift_backfilled={ShiftBackfilled} reclaimed={ReclaimedCount} failures={FailureCount} lines_repaired={LinesRepaired} unsynced_remaining={UnsyncedRemaining}",
             processed,
             reconciled,
+            shiftBackfilled,
+            reclaimed,
             failures.Count,
             linesRepaired,
             unsyncedAfter);
 
         return new SyncRunResult(processed, reconciled, linesRepaired, failures);
+    }
+
+    private sealed record OrderProcessOutcome(int Processed, int Reconciled, SyncFailure? Failure);
+
+    private async Task<OrderProcessOutcome> ProcessOrderAsync(
+        PosOrder order,
+        PosOrderSyncState state,
+        CancellationToken cancellationToken)
+    {
+        if (order.Items.Count == 0)
+        {
+            await _repository.MarkOrderProcessedAsync(
+                order.PosOrderId,
+                order.PosSaleId,
+                cancellationToken,
+                allowZeroLines: true);
+            await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+            _logger.LogInformation(
+                "Zero-line bill marked Processed bill={BillId} source={SourceEventId}",
+                order.PosOrderId,
+                order.SourceEventId);
+            return new OrderProcessOutcome(0, 0, null);
+        }
+
+        // Never trust a cached "complete" flag across shift open/close — re-verify outlet_sales.
+        if (state.IsComplete)
+        {
+            if (await _supabaseClient.HasOutletSalesAsync(order.SourceEventId, cancellationToken))
+            {
+                return await ReconcileAndMarkProcessedAsync(order, cancellationToken);
+            }
+
+            _logger.LogWarning(
+                "Sale looked complete but outlet_sales missing — forcing re-upload bill={BillId} source={SourceEventId}",
+                order.PosOrderId,
+                order.SourceEventId);
+            var hasOrder = await _supabaseClient.OrderExistsAsync(order.SourceEventId, cancellationToken);
+            state = new PosOrderSyncState(hasOrder, false);
+        }
+
+        if (state.NeedsLineBackfill)
+        {
+            _logger.LogInformation(
+                "Backfilling outlet_sales for existing order bill={BillId} source={SourceEventId}",
+                order.PosOrderId,
+                order.SourceEventId);
+        }
+        else
+        {
+            LogSaleUploadAttempt(order);
+        }
+
+        var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
+        if (!validation.IsSuccess)
+        {
+            if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                _logger.LogWarning(
+                    "Sale has no mappable catalog SKUs bill={BillId} sale={SaleId} source={SourceEventId} — fix MenuItem.Code / catalog mapping; leaving Pending.",
+                    order.PosOrderId,
+                    order.PosSaleId,
+                    order.SourceEventId);
+                await _supabaseClient.LogFailureAsync(
+                    order,
+                    "validation",
+                    validation.ErrorMessage ?? "no_mappable_items",
+                    null,
+                    cancellationToken);
+                return new OrderProcessOutcome(0, 0, null);
+            }
+
+            if (!ShouldAttemptUploadDespiteValidation(validation.ErrorMessage))
+            {
+                _logger.LogWarning(
+                    "Sale validation failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
+                    order.PosOrderId,
+                    order.PosSaleId,
+                    order.SourceEventId,
+                    validation.ErrorMessage ?? "Unknown error");
+                await _supabaseClient.LogFailureAsync(
+                    order,
+                    "validation",
+                    validation.ErrorMessage ?? "Validation failed",
+                    null,
+                    cancellationToken);
+                return new OrderProcessOutcome(0, 0, new SyncFailure(order.PosOrderId, validation.ErrorMessage));
+            }
+
+            _logger.LogInformation(
+                "Validation reported sync window issue bill={BillId} source={SourceEventId}; attempting sync anyway.",
+                order.PosOrderId,
+                order.SourceEventId);
+        }
+
+        var syncResult = await _supabaseClient.SendOrderAsync(order, cancellationToken);
+        if (!syncResult.IsSuccess && !IsDuplicateSourceEventError(syncResult.ErrorMessage))
+        {
+            _logger.LogWarning(
+                "Sale upload failed bill={BillId} sale={SaleId} source={SourceEventId}: {Error}",
+                order.PosOrderId,
+                order.PosSaleId,
+                order.SourceEventId,
+                syncResult.ErrorMessage ?? "Unknown error");
+            await _supabaseClient.LogFailureAsync(
+                order,
+                "sync",
+                syncResult.ErrorMessage ?? "Sync failed",
+                null,
+                cancellationToken);
+            return new OrderProcessOutcome(0, 0, new SyncFailure(order.PosOrderId, syncResult.ErrorMessage));
+        }
+
+        if (!await TryMarkProcessedOnlyIfInSupabaseAsync(order, cancellationToken))
+        {
+            await _supabaseClient.LogFailureAsync(
+                order,
+                "verify",
+                "rpc_ok_but_no_outlet_sales",
+                null,
+                cancellationToken);
+            return new OrderProcessOutcome(0, 0, null);
+        }
+
+        var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
+        if (!patchResult.IsSuccess)
+        {
+            _logger.LogWarning(
+                "Sale metadata patch failed bill={BillId} source={SourceEventId}: {Error}",
+                order.PosOrderId,
+                order.SourceEventId,
+                patchResult.ErrorMessage ?? "Unknown error");
+        }
+
+        await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+
+        var inventoryIds = order.Inventory.Select(ic => ic.PosId).ToArray();
+        if (inventoryIds.Length > 0)
+        {
+            await _repository.MarkInventoryProcessedAsync(inventoryIds, cancellationToken);
+        }
+
+        if (state.NeedsLineBackfill || validation.IsDuplicate || IsDuplicateSourceEventError(syncResult.ErrorMessage))
+        {
+            _logger.LogInformation(
+                "Sale reconciled bill={BillId} sale={SaleId} source={SourceEventId} patched={Patched}",
+                order.PosOrderId,
+                order.PosSaleId,
+                order.SourceEventId,
+                patchResult.IsSuccess);
+            return new OrderProcessOutcome(0, 1, null);
+        }
+
+        _logger.LogInformation(
+            "Sale uploaded bill={BillId} sale={SaleId} source={SourceEventId} occurred={OccurredAt:o} lines={LineCount}",
+            order.PosOrderId,
+            order.PosSaleId,
+            order.SourceEventId,
+            order.OccurredAt,
+            order.Items.Count);
+        return new OrderProcessOutcome(1, 0, null);
+    }
+
+    private async Task<OrderProcessOutcome> ReconcileAndMarkProcessedAsync(
+        PosOrder order,
+        CancellationToken cancellationToken)
+    {
+        // Hard gate: never mark Processed on reconcile unless lines exist in Supabase.
+        if (!await TryMarkProcessedOnlyIfInSupabaseAsync(order, cancellationToken))
+        {
+            return new OrderProcessOutcome(0, 0, null);
+        }
+
+        var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
+        if (!patchResult.IsSuccess)
+        {
+            _logger.LogWarning(
+                "Sale metadata patch failed bill={BillId} source={SourceEventId}: {Error}",
+                order.PosOrderId,
+                order.SourceEventId,
+                patchResult.ErrorMessage ?? "Unknown error");
+        }
+
+        await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+
+        _logger.LogInformation(
+            "Sale reconciled (Supabase complete) bill={BillId} sale={SaleId} source={SourceEventId} patched={Patched}",
+            order.PosOrderId,
+            order.PosSaleId,
+            order.SourceEventId,
+            patchResult.IsSuccess);
+        return new OrderProcessOutcome(0, 1, null);
+    }
+
+    /// <summary>
+    /// Marks MintPOS Processed only after a live Supabase outlet_sales check.
+    /// Shift start/stop must never bypass this.
+    /// </summary>
+    private async Task<bool> TryMarkProcessedOnlyIfInSupabaseAsync(
+        PosOrder order,
+        CancellationToken cancellationToken)
+    {
+        if (!await _supabaseClient.HasOutletSalesAsync(order.SourceEventId, cancellationToken))
+        {
+            _logger.LogWarning(
+                "Refusing Processed flag — no outlet_sales in Supabase bill={BillId} source={SourceEventId}",
+                order.PosOrderId,
+                order.SourceEventId);
+            return false;
+        }
+
+        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Finds MintPOS Processed bills missing from Supabase and re-queues them as Pending.
+    /// </summary>
+    private async Task<int> ReclaimProcessedMissingFromSupabaseAsync(
+        DateTime? syncOpeningUtc,
+        CancellationToken cancellationToken)
+    {
+        var options = _syncOptions.CurrentValue;
+        var lookbackDays = Math.Max(1, options.ReclaimProcessedLookbackDays);
+        var batchSize = Math.Max(1, options.ReclaimProcessedBatchSize);
+
+        var minDate = DateTime.UtcNow.Date.AddDays(-lookbackDays);
+        if (syncOpeningUtc.HasValue && syncOpeningUtc.Value.Date < minDate)
+        {
+            minDate = syncOpeningUtc.Value.Date;
+        }
+
+        var candidates = await _repository.ReadRecentProcessedBillsAsync(minDate, batchSize, cancellationToken);
+        if (candidates.Count == 0)
+        {
+            return 0;
+        }
+
+        var sourceByBill = candidates.ToDictionary(
+            row => $"{_outlet.Id}-{row.BillId}",
+            row => row.BillId,
+            StringComparer.OrdinalIgnoreCase);
+
+        var present = await _supabaseClient.GetSourceEventIdsWithOutletSalesAsync(
+            sourceByBill.Keys.ToArray(),
+            cancellationToken);
+
+        var missingBillIds = sourceByBill
+            .Where(pair => !present.Contains(pair.Key))
+            .Select(pair => pair.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (missingBillIds.Length == 0)
+        {
+            return 0;
+        }
+
+        var affected = await _repository.RequeueBillsAsPendingAsync(missingBillIds, cancellationToken);
+        _logger.LogWarning(
+            "Reclaimed {MissingCount} Processed bills missing from Supabase (MintPOS rows touched={AffectedRows}). Sample bill_ids={Sample}",
+            missingBillIds.Length,
+            affected,
+            string.Join(",", missingBillIds.Take(10)));
+        return missingBillIds.Length;
+    }
+
+    private async Task<int> BackfillMissingShiftsAsync(CancellationToken cancellationToken)
+    {
+        var batchSize = Math.Max(1, _syncOptions.CurrentValue.BatchSize);
+        var missing = await _supabaseClient.FetchOrdersMissingShiftAsync(batchSize, cancellationToken);
+        if (missing.Count == 0)
+        {
+            return 0;
+        }
+
+        var outletPrefix = $"{_outlet.Id}-";
+        var billIds = missing
+            .Select(source =>
+                source.StartsWith(outletPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? source[outletPrefix.Length..]
+                    : null)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (billIds.Length == 0)
+        {
+            return 0;
+        }
+
+        var orders = await _repository.ReadOrdersByBillIdsAsync(billIds, cancellationToken);
+        var patched = 0;
+
+        foreach (var order in orders)
+        {
+            if (order.Shift is null)
+            {
+                continue;
+            }
+
+            var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
+            if (patchResult.IsSuccess)
+            {
+                patched++;
+                await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+            }
+        }
+
+        if (patched > 0)
+        {
+            _logger.LogInformation("Shift backfill patched {Count}/{Total} orders missing shift metadata.", patched, missing.Count);
+        }
+
+        return patched;
     }
 
     private async Task ApplyCatalogSyncAsync(CancellationToken cancellationToken)
@@ -386,6 +648,17 @@ public sealed class SyncRunner
         }
 
         return errorMessage.Contains("outside_sync_window", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDuplicateSourceEventError(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return false;
+        }
+
+        return errorMessage.Contains("23505", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("already exists", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task TrySyncPosCatalogMapAsync(bool force, CatalogSyncPayload? syncOptions, CancellationToken cancellationToken)

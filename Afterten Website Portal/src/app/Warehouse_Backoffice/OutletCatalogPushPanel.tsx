@@ -44,7 +44,8 @@ export default function OutletCatalogPushPanel() {
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [includeEmptyGroups, setIncludeEmptyGroups] = useState(false);
-  const [updateExisting, setUpdateExisting] = useState(false);
+  // Default on: group send must refresh names/prices for items already on the till.
+  const [updateExisting, setUpdateExisting] = useState(true);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);

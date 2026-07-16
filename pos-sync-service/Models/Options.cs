@@ -66,4 +66,11 @@ public sealed class SyncOptions
     public int MaxBatchesPerCycle { get; init; } = 20;
     /// <summary>How often to pull MintPOS SKUs into Supabase catalog (same poll loop as heartbeat).</summary>
     public int PosCatalogSyncMinutes { get; init; } = 5;
+    /// <summary>
+    /// Re-check recent MintPOS Processed bills against Supabase and re-queue any missing as Pending.
+    /// Covers false Processed after shift changes / failed verifies.
+    /// </summary>
+    public int ReclaimProcessedLookbackDays { get; init; } = 3;
+    /// <summary>Max Processed bills to verify against Supabase per reclaim pass.</summary>
+    public int ReclaimProcessedBatchSize { get; init; } = 400;
 }

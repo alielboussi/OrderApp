@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
 import { getServiceClient } from "@/lib/supabase-server";
 import { isMissingRelationError } from "@/lib/supabase-errors";
 import {
   type MiddlewareSalesApiProfile,
   parseMiddlewareSalesApiProfile,
   outletIdsForMiddlewareSalesApiProfile,
+  middlewareSaleRowMatchesProfile,
 } from "@/lib/outletScope";
+import { parseShiftFilterFromUrl } from "@/lib/posSalesStats";
+import { shiftFilterIsAllInclusive } from "@/lib/posShift";
 
 export const API_FORMAT_VERSION = 2;
 
-const DEFAULT_LIMIT = 1000;
-const MAX_LIMIT = 5000;
-const DEFAULT_DAYS = 7;
+const FETCH_PAGE_SIZE = 10_000;
+const IN_CHUNK_SIZE = 100;
 const VAT_RATE = 0.16;
+const MINTPOS_SHIFT_NAMES: Record<number, string> = {
+  1: "Day",
+  2: "Night",
+  3: "Midnight",
+};
 
 type OutletSalesRow = {
   id: string;
@@ -126,6 +134,53 @@ type SalesFilter =
   | { mode: "all"; outletId: string | null }
   | { mode: "profile"; profile: MiddlewareSalesApiProfile; outletIds: string[] };
 
+type SupabaseServiceClient = ReturnType<typeof getServiceClient>;
+
+const OUTLET_SALES_SELECT =
+  "id,outlet_id,item_id,variant_key,flavour_id,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,context";
+
+async function fetchAllOutletSalesRows(
+  supabase: SupabaseServiceClient,
+  filterResult: SalesFilter,
+  since: Date | null,
+  until: Date,
+): Promise<OutletSalesRow[]> {
+  const rows: OutletSalesRow[] = [];
+  let offset = 0;
+
+  while (true) {
+    let query = supabase
+      .from("outlet_sales")
+      .select(OUTLET_SALES_SELECT)
+      .lte("sold_at", until.toISOString())
+      .order("sold_at", { ascending: false });
+
+    if (since) {
+      query = query.gte("sold_at", since.toISOString());
+    }
+
+    if (filterResult.mode === "all") {
+      if (filterResult.outletId) {
+        query = query.eq("outlet_id", filterResult.outletId);
+      }
+    } else if (filterResult.outletIds.length === 1) {
+      query = query.eq("outlet_id", filterResult.outletIds[0]);
+    } else {
+      query = query.in("outlet_id", filterResult.outletIds);
+    }
+
+    const { data, error } = await query.range(offset, offset + FETCH_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = (data ?? []) as OutletSalesRow[];
+    rows.push(...page);
+    if (page.length < FETCH_PAGE_SIZE) break;
+    offset += FETCH_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
 const isUuid = (value: string) =>
   /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value.trim());
 
@@ -135,6 +190,46 @@ function cleanUuid(value: string | null): string | null {
   return isUuid(trimmed) ? trimmed : null;
 }
 
+function chunkValues<T>(values: T[], size = IN_CHUNK_SIZE): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < values.length; i += size) {
+    chunks.push(values.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function fetchInChunks<T>(
+  ids: string[],
+  fetchChunk: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
+): Promise<T[]> {
+  if (!ids.length) return [];
+  const rows: T[] = [];
+  for (const chunk of chunkValues(ids)) {
+    const { data, error } = await fetchChunk(chunk);
+    if (error) throw error;
+    if (data?.length) rows.push(...data);
+  }
+  return rows;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
   const parsed = Date.parse(value);
@@ -142,11 +237,13 @@ function parseDate(value: string | null): Date | null {
   return new Date(parsed);
 }
 
-function parseLimit(value: string | null): number {
-  if (!value) return DEFAULT_LIMIT;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LIMIT;
-  return Math.min(Math.floor(parsed), MAX_LIMIT);
+/** YYYY-MM-DD → EAT business day; otherwise ISO/timestamp. */
+function parseSalesBound(value: string | null, endOfDay: boolean): Date | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return parseBusinessDateRangeParam(value, endOfDay);
+  }
+  return parseDate(value);
 }
 
 function toNumber(value: unknown): number {
@@ -195,13 +292,14 @@ function variantLookupKey(itemId: string, variantIdOrSku: string): string {
   return `${itemId.toLowerCase()}::${variantIdOrSku.toLowerCase()}`;
 }
 
-function isMiddlewareContext(context: Record<string, unknown> | null): boolean {
-  if (!context) return false;
+function isMiddlewareContext(context: unknown): boolean {
+  const record = asRecord(context);
+  if (!record) return false;
 
-  const sourceEventId = asNonEmptyText(context.source_event_id);
-  const saleId = asNonEmptyText(context.sale_id);
-  const posOrderId = asNonEmptyText(context.pos_order_id);
-  const sourceSystem = asNonEmptyText(context.source_system)?.toLowerCase() ?? null;
+  const sourceEventId = asNonEmptyText(record.source_event_id);
+  const saleId = asNonEmptyText(record.sale_id);
+  const posOrderId = asNonEmptyText(record.pos_order_id);
+  const sourceSystem = asNonEmptyText(record.source_system)?.toLowerCase() ?? null;
 
   if (sourceEventId || saleId || posOrderId) return true;
   if (sourceSystem && (sourceSystem.includes("pos") || sourceSystem.includes("afterten-pos"))) return true;
@@ -217,9 +315,10 @@ function extractPosBillId(sourceEventId: string | null, outletId: string): strin
 }
 
 function extractPaymentMethods(rawPayload: Record<string, unknown> | null): PaymentMethod[] {
-  if (!rawPayload || !Array.isArray(rawPayload.payments)) return [];
+  const payload = asRecord(rawPayload);
+  if (!payload || !Array.isArray(payload.payments)) return [];
 
-  return rawPayload.payments
+  return payload.payments
     .map((entry) => {
       if (!entry || typeof entry !== "object") return null;
       const method = asNonEmptyText((entry as Record<string, unknown>).method);
@@ -260,15 +359,19 @@ function emptyShift(): SaleShift {
 }
 
 function extractShift(rawPayload: Record<string, unknown> | null): SaleShift {
-  const fallbackTerminal = asNonEmptyText(rawPayload?.terminal);
-  if (!rawPayload || !rawPayload.shift || typeof rawPayload.shift !== "object") {
+  const payload = asRecord(rawPayload);
+  const fallbackTerminal = asNonEmptyText(payload?.terminal);
+  if (!payload || !payload.shift || typeof payload.shift !== "object") {
     return { ...emptyShift(), terminal: fallbackTerminal };
   }
 
-  const shift = rawPayload.shift as Record<string, unknown>;
+  const shift = payload.shift as Record<string, unknown>;
+  const shiftId = toNullableInt(shift.shift_id);
   return {
-    shift_id: toNullableInt(shift.shift_id),
-    shift_name: asNonEmptyText(shift.shift_name),
+    shift_id: shiftId,
+    shift_name:
+      asNonEmptyText(shift.shift_name) ??
+      (shiftId != null ? MINTPOS_SHIFT_NAMES[shiftId] ?? null : null),
     shift_session_id: toNullableInt(shift.shift_session_id),
     terminal: asNonEmptyText(shift.terminal) ?? fallbackTerminal,
     shift_session_start: toIsoTimestamp(shift.session_start),
@@ -295,17 +398,15 @@ function resolveSalesFilter(
 }
 
 function emptyPayload(
-  effectiveSince: Date,
-  effectiveUntil: Date,
-  limit: number,
+  since: string | null,
+  until: string,
   filter: SalesFilter,
   warning?: string,
 ) {
   return {
     api_format_version: API_FORMAT_VERSION,
-    since: effectiveSince.toISOString(),
-    until: effectiveUntil.toISOString(),
-    limit,
+    since,
+    until,
     sales_count: 0,
     grouping: "by_outlet" as const,
     middleware_api_profile: filter.mode === "profile" ? filter.profile : null,
@@ -335,47 +436,35 @@ export async function handleOutletMiddlewareSalesRequest(
 
     const sinceParam = url.searchParams.get("since");
     const untilParam = url.searchParams.get("until");
-    const since = parseDate(sinceParam);
-    const until = parseDate(untilParam);
+    const since = parseSalesBound(sinceParam, false);
+    const until = parseSalesBound(untilParam, true);
     if (sinceParam && !since) return NextResponse.json({ error: "Invalid since timestamp" }, { status: 400 });
     if (untilParam && !until) return NextResponse.json({ error: "Invalid until timestamp" }, { status: 400 });
 
     const now = new Date();
-    const effectiveSince = since ?? new Date(now.getTime() - DEFAULT_DAYS * 24 * 60 * 60 * 1000);
     const effectiveUntil = until ?? now;
-    if (effectiveSince > effectiveUntil) {
+    if (since && since > effectiveUntil) {
       return NextResponse.json({ error: "since must be before until" }, { status: 400 });
     }
 
-    const limit = parseLimit(url.searchParams.get("limit"));
+    const { shiftIds, includeUnknownShift } = parseShiftFilterFromUrl(url);
+    const applyShiftFilter =
+      shiftIds != null && !shiftFilterIsAllInclusive(shiftIds, includeUnknownShift);
+    const selectedShiftIds = new Set(shiftIds ?? []);
+
+    const sinceIso = since?.toISOString() ?? null;
+    const untilIso = effectiveUntil.toISOString();
     const supabase = getServiceClient();
 
-    let salesQuery = supabase
-      .from("outlet_sales")
-      .select("id,outlet_id,item_id,variant_key,flavour_id,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,context")
-      .gte("sold_at", effectiveSince.toISOString())
-      .lte("sold_at", effectiveUntil.toISOString())
-      .order("sold_at", { ascending: false })
-      .limit(Math.min(limit * 3, MAX_LIMIT));
-
-    if (filterResult.mode === "all") {
-      if (filterResult.outletId) {
-        salesQuery = salesQuery.eq("outlet_id", filterResult.outletId);
-      }
-    } else if (filterResult.outletIds.length === 1) {
-      salesQuery = salesQuery.eq("outlet_id", filterResult.outletIds[0]);
-    } else {
-      salesQuery = salesQuery.in("outlet_id", filterResult.outletIds);
-    }
-
-    const { data: salesData, error: salesError } = await salesQuery;
-    if (salesError) {
-      if (isMissingRelationError(salesError, "outlet_sales")) {
+    let salesData: OutletSalesRow[];
+    try {
+      salesData = await fetchAllOutletSalesRows(supabase, filterResult, since, effectiveUntil);
+    } catch (salesError: unknown) {
+      if (isMissingRelationError(salesError as { code?: string | null; message?: string | null }, "outlet_sales")) {
         return NextResponse.json(
           emptyPayload(
-            effectiveSince,
-            effectiveUntil,
-            limit,
+            sinceIso,
+            untilIso,
             filterResult,
             "outlet_sales table missing — apply outlet_sales schema in Supabase",
           ),
@@ -384,72 +473,69 @@ export async function handleOutletMiddlewareSalesRequest(
       throw salesError;
     }
 
-    const salesRows = ((salesData ?? []) as OutletSalesRow[])
+    const profileForScope = filterResult.mode === "profile" ? filterResult.profile : null;
+
+    let salesRows = salesData
       .filter((row) => row.outlet_id && row.item_id)
       .filter((row) => isMiddlewareContext(row.context))
-      .slice(0, limit);
+      .filter((row) => {
+        if (!profileForScope) return true;
+        const sourceEventId = asNonEmptyText(asRecord(row.context)?.source_event_id);
+        return middlewareSaleRowMatchesProfile(row.outlet_id, sourceEventId, profileForScope);
+      });
+
+    if (applyShiftFilter && selectedShiftIds.size === 0 && !includeUnknownShift) {
+      salesRows = [];
+    }
 
     if (salesRows.length === 0) {
-      return NextResponse.json(emptyPayload(effectiveSince, effectiveUntil, limit, filterResult));
+      return NextResponse.json(emptyPayload(sinceIso, untilIso, filterResult));
     }
 
     const outletIds = Array.from(new Set(salesRows.map((row) => row.outlet_id)));
-    const itemIds = Array.from(new Set(salesRows.map((row) => row.item_id)));
+    const itemIds = Array.from(
+      new Set(salesRows.map((row) => cleanUuid(row.item_id)).filter((value): value is string => Boolean(value))),
+    );
     const sourceEventIds = Array.from(
       new Set(
         salesRows
-          .map((row) => asNonEmptyText(row.context?.source_event_id))
+          .map((row) => asNonEmptyText(asRecord(row.context)?.source_event_id))
           .filter((value): value is string => Boolean(value)),
       ),
     );
 
-    const ordersPromise =
+    const [outletsData, itemsData, variantsData, ordersData] = await Promise.all([
+      fetchInChunks<OutletRow>(outletIds, (chunk) => supabase.from("outlets").select("id,name").in("id", chunk)),
+      fetchInChunks<ItemRow>(itemIds, (chunk) =>
+        supabase.from("catalog_items").select("id,name,menu_group_id").in("id", chunk),
+      ),
+      fetchInChunks<VariantRow>(itemIds, (chunk) =>
+        supabase.from("catalog_variants").select("id,item_id,name,sku").in("item_id", chunk),
+      ),
       sourceEventIds.length > 0
-        ? supabase
-            .from("orders")
-            .select("source_event_id,pos_sale_id,raw_payload")
-            .in("source_event_id", sourceEventIds)
-        : Promise.resolve({ data: [], error: null });
-
-    const [outletsRes, itemsRes, variantsRes, ordersRes] = await Promise.all([
-      supabase.from("outlets").select("id,name").in("id", outletIds),
-      supabase.from("catalog_items").select("id,name,menu_group_id").in("id", itemIds),
-      supabase.from("catalog_variants").select("id,item_id,name,sku").in("item_id", itemIds),
-      ordersPromise,
+        ? fetchInChunks<OrderRow>(sourceEventIds, (chunk) =>
+            supabase.from("orders").select("source_event_id,pos_sale_id,raw_payload").in("source_event_id", chunk),
+          )
+        : Promise.resolve([] as OrderRow[]),
     ]);
 
-    if (outletsRes.error) throw outletsRes.error;
-    if (itemsRes.error) throw itemsRes.error;
-    if (variantsRes.error) throw variantsRes.error;
-    if (ordersRes.error) throw ordersRes.error;
-
-    const outletById = new Map((outletsRes.data ?? []).map((row) => [row.id, row] as const));
-    const itemById = new Map((itemsRes.data ?? []).map((row) => [row.id, row] as const));
+    const outletById = new Map(outletsData.map((row) => [row.id, row] as const));
+    const itemById = new Map(itemsData.map((row) => [row.id, row] as const));
     const menuGroupIds = Array.from(
-      new Set(
-        ((itemsRes.data ?? []) as ItemRow[])
-          .map((row) => row.menu_group_id)
-          .filter((value): value is string => Boolean(value)),
-      ),
+      new Set(itemsData.map((row) => row.menu_group_id).filter((value): value is string => Boolean(value))),
     );
 
     let menuGroupById = new Map<string, MenuGroupRow>();
     if (menuGroupIds.length > 0) {
-      const { data: menuGroupData, error: menuGroupError } = await supabase
-        .from("catalog_menu_groups")
-        .select("id,name,pos_menu_group_id")
-        .in("id", menuGroupIds);
-      if (menuGroupError) throw menuGroupError;
-      menuGroupById = new Map(
-        ((menuGroupData ?? []) as MenuGroupRow[]).map((row) => [row.id, row] as const),
+      const menuGroupData = await fetchInChunks<MenuGroupRow>(menuGroupIds, (chunk) =>
+        supabase.from("catalog_menu_groups").select("id,name,pos_menu_group_id").in("id", chunk),
       );
+      menuGroupById = new Map(menuGroupData.map((row) => [row.id, row] as const));
     }
-    const orderBySourceEventId = new Map(
-      ((ordersRes.data ?? []) as OrderRow[]).map((row) => [row.source_event_id, row] as const),
-    );
+    const orderBySourceEventId = new Map(ordersData.map((row) => [row.source_event_id, row] as const));
     const variantByItemAndIdOrSku = new Map<string, VariantRow>();
 
-    for (const row of (variantsRes.data ?? []) as VariantRow[]) {
+    for (const row of variantsData) {
       variantByItemAndIdOrSku.set(variantLookupKey(row.item_id, row.id), row);
       if (row.sku) variantByItemAndIdOrSku.set(variantLookupKey(row.item_id, row.sku), row);
     }
@@ -457,7 +543,7 @@ export async function handleOutletMiddlewareSalesRequest(
     const eventMap = new Map<string, MutableSaleEvent>();
 
     for (const row of salesRows) {
-      const context = row.context ?? {};
+      const context = asRecord(row.context) ?? {};
       const sourceEventId = asNonEmptyText(context.source_event_id);
       const fallbackSaleRef = asNonEmptyText(context.sale_id) ?? row.id;
       const saleReference = `${row.outlet_id}:${sourceEventId ?? fallbackSaleRef}`;
@@ -502,12 +588,13 @@ export async function handleOutletMiddlewareSalesRequest(
       const existing = eventMap.get(saleReference);
       if (!existing) {
         const order = sourceEventId ? orderBySourceEventId.get(sourceEventId) : undefined;
-        const paymentMethods = extractPaymentMethods(order?.raw_payload ?? null);
-        const shift = extractShift(order?.raw_payload ?? null);
+        const orderPayload = asRecord(order?.raw_payload);
+        const paymentMethods = extractPaymentMethods(orderPayload);
+        const shift = extractShift(orderPayload);
         const posSaleId =
           asNonEmptyText(order?.pos_sale_id) ??
           asNonEmptyText(context.sale_id) ??
-          asNonEmptyText(order?.raw_payload?.sale_id as string | undefined);
+          asNonEmptyText(orderPayload?.sale_id as string | undefined);
 
         eventMap.set(saleReference, {
           sale_reference: saleReference,
@@ -538,6 +625,19 @@ export async function handleOutletMiddlewareSalesRequest(
 
     const sales = Array.from(eventMap.values())
       .map(finalizeSale)
+      .filter((sale) => {
+        if (!profileForScope) return true;
+        if (!middlewareSaleRowMatchesProfile(sale.outlet_uuid, sale.source_event_id, profileForScope)) {
+          return false;
+        }
+        const allowedOutletIds = new Set(outletIdsForMiddlewareSalesApiProfile(profileForScope));
+        return sale.lines.items.every((line) => allowedOutletIds.has(line.outlet_uuid));
+      })
+      .filter((sale) => {
+        if (!applyShiftFilter) return true;
+        if (sale.shift_id == null) return includeUnknownShift;
+        return selectedShiftIds.has(sale.shift_id);
+      })
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 
     const outletSummaries = Array.from(
@@ -560,9 +660,8 @@ export async function handleOutletMiddlewareSalesRequest(
     return NextResponse.json(
       {
         api_format_version: API_FORMAT_VERSION,
-        since: effectiveSince.toISOString(),
-        until: effectiveUntil.toISOString(),
-        limit,
+        since: sinceIso,
+        until: untilIso,
         sales_count: sales.length,
         grouping: "by_outlet",
         middleware_api_profile: filterResult.mode === "profile" ? filterResult.profile : null,

@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchSellingOutlets, type SellingOutlet } from "@/lib/sellingOutlets";
 import {
+  MINTPOS_SHIFT_IDS,
+  MINTPOS_SHIFT_NAMES,
+  formatSelectedShiftHint,
+  type MintposShiftId,
+} from "@/lib/posShift";
+import {
   type MiddlewareScheduleRow,
   formatCountdown,
   formatStamp,
@@ -116,6 +122,8 @@ export default function DashboardStatsPanel() {
   const [outlets, setOutlets] = useState<SellingOutlet[]>([]);
   const [selectedSalesOutletIds, setSelectedSalesOutletIds] = useState<string[]>([]);
   const [salesOutletsInitialized, setSalesOutletsInitialized] = useState(false);
+  const [selectedShiftIds, setSelectedShiftIds] = useState<MintposShiftId[]>([...MINTPOS_SHIFT_IDS]);
+  const [includeUnknownShift, setIncludeUnknownShift] = useState(true);
   const [salesFrom, setSalesFrom] = useState(toDateInputValue(weekAgo));
   const [salesTo, setSalesTo] = useState(toDateInputValue(today));
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -190,6 +198,11 @@ export default function DashboardStatsPanel() {
   const allSalesOutletsSelected =
     outlets.length > 0 && outlets.every((outlet) => selectedSalesOutletIds.includes(outlet.id));
 
+  const allShiftsSelected =
+    MINTPOS_SHIFT_IDS.every((id) => selectedShiftIds.includes(id)) && includeUnknownShift;
+
+  const shiftHint = formatSelectedShiftHint(selectedShiftIds, includeUnknownShift);
+
   const toggleSalesOutlet = (outletId: string) => {
     setSelectedSalesOutletIds((prev) =>
       prev.includes(outletId) ? prev.filter((id) => id !== outletId) : [...prev, outletId],
@@ -200,7 +213,23 @@ export default function DashboardStatsPanel() {
     setSelectedSalesOutletIds(checked ? outlets.map((outlet) => outlet.id) : []);
   };
 
-  const loadStats = useCallback(async () => {
+  const toggleShift = (shiftId: MintposShiftId) => {
+    setSelectedShiftIds((prev) =>
+      prev.includes(shiftId) ? prev.filter((id) => id !== shiftId) : [...prev, shiftId],
+    );
+  };
+
+  const toggleAllShifts = (checked: boolean) => {
+    setSelectedShiftIds(checked ? [...MINTPOS_SHIFT_IDS] : []);
+    setIncludeUnknownShift(checked);
+  };
+
+  const appendShiftParams = (params: URLSearchParams) => {
+    params.set("shift_ids", selectedShiftIds.join(","));
+    if (includeUnknownShift) params.set("include_unknown_shift", "1");
+  };
+
+  const loadStats = useCallback(async (signal?: AbortSignal) => {
     setStatsLoading(true);
     setStatsError(null);
     try {
@@ -211,24 +240,32 @@ export default function DashboardStatsPanel() {
         orders_to: salesTo,
       });
       params.set("sales_outlet_ids", selectedSalesOutletIds.join(","));
+      appendShiftParams(params);
 
-      const res = await fetch(`/api/dashboard/stats?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/dashboard/stats?${params.toString()}`, {
+        cache: "no-store",
+        signal,
+      });
       const json = await res.json().catch(() => ({}));
+      if (signal?.aborted) return;
       if (!res.ok) throw new Error(json.error || "Unable to load stats");
       setStats(json as DashboardStats);
     } catch (error) {
+      if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       setStats(null);
       setStatsError(error instanceof Error ? error.message : "Unable to load stats");
     } finally {
-      setStatsLoading(false);
+      if (!signal?.aborted) setStatsLoading(false);
     }
-  }, [salesFrom, salesTo, selectedSalesOutletIds]);
+  }, [salesFrom, salesTo, selectedSalesOutletIds, selectedShiftIds, includeUnknownShift]);
 
   useEffect(() => {
-    void loadStats();
+    const controller = new AbortController();
+    void loadStats(controller.signal);
+    return () => controller.abort();
   }, [loadStats]);
 
-  const loadOutletLeaderStats = useCallback(async () => {
+  const loadOutletLeaderStats = useCallback(async (signal?: AbortSignal) => {
     if (!outletLeaderId) {
       setOutletLeaderStats(null);
       return;
@@ -243,20 +280,28 @@ export default function DashboardStatsPanel() {
         orders_from: salesFrom,
         orders_to: salesTo,
       });
+      appendShiftParams(params);
 
-      const res = await fetch(`/api/dashboard/stats?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/dashboard/stats?${params.toString()}`, {
+        cache: "no-store",
+        signal,
+      });
       const json = await res.json().catch(() => ({}));
+      if (signal?.aborted) return;
       if (!res.ok) throw new Error(json.error || "Unable to load outlet sales");
       setOutletLeaderStats((json as DashboardStats).sales);
-    } catch {
+    } catch (error) {
+      if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       setOutletLeaderStats(null);
     } finally {
-      setOutletLeaderLoading(false);
+      if (!signal?.aborted) setOutletLeaderLoading(false);
     }
-  }, [outletLeaderId, salesFrom, salesTo]);
+  }, [outletLeaderId, salesFrom, salesTo, selectedShiftIds, includeUnknownShift]);
 
   useEffect(() => {
-    void loadOutletLeaderStats();
+    const controller = new AbortController();
+    void loadOutletLeaderStats(controller.signal);
+    return () => controller.abort();
   }, [loadOutletLeaderStats]);
 
   const countdown = formatCountdown(schedule?.scheduled_at ?? null, nowMs);
@@ -292,6 +337,7 @@ export default function DashboardStatsPanel() {
           <StatCard tone="green" label="Sales">
             <div className={styles.dashboardStatsFilters}>
               <div className={styles.dashboardStatsOutletPanel}>
+                <p className={styles.dashboardStatsFilterHeading}>Outlets</p>
                 <label className={styles.dashboardStatsOutletSelectAll}>
                   <input
                     type="checkbox"
@@ -318,6 +364,37 @@ export default function DashboardStatsPanel() {
                   )}
                 </div>
               </div>
+              <div className={styles.dashboardStatsOutletPanel}>
+                <p className={styles.dashboardStatsFilterHeading}>Filter by shift</p>
+                <label className={styles.dashboardStatsOutletSelectAll}>
+                  <input
+                    type="checkbox"
+                    checked={allShiftsSelected}
+                    onChange={(event) => toggleAllShifts(event.target.checked)}
+                  />
+                  <span>Select all shifts</span>
+                </label>
+                <div className={styles.dashboardStatsOutletList}>
+                  {MINTPOS_SHIFT_IDS.map((shiftId) => (
+                    <label key={shiftId} className={styles.dashboardStatsOutletRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedShiftIds.includes(shiftId)}
+                        onChange={() => toggleShift(shiftId)}
+                      />
+                      <span>{MINTPOS_SHIFT_NAMES[shiftId]}</span>
+                    </label>
+                  ))}
+                  <label className={styles.dashboardStatsOutletRow}>
+                    <input
+                      type="checkbox"
+                      checked={includeUnknownShift}
+                      onChange={(event) => setIncludeUnknownShift(event.target.checked)}
+                    />
+                    <span>Unknown shift</span>
+                  </label>
+                </div>
+              </div>
               <input
                 type="date"
                 className={styles.fieldInput}
@@ -336,18 +413,23 @@ export default function DashboardStatsPanel() {
             <p className={styles.dashboardStatValue}>
               {statsLoading
                 ? "…"
-                : selectedSalesOutletIds.length === 0
+                : selectedSalesOutletIds.length === 0 ||
+                    (selectedShiftIds.length === 0 && !includeUnknownShift)
                   ? "—"
                   : formatQty(stats?.sales.total_qty ?? 0)}
             </p>
             <p className={styles.dashboardStatMeta}>
               {selectedSalesOutletIds.length === 0
                 ? "Select at least one outlet"
-                : statsLoading
-                  ? "Loading…"
-                  : `${formatQty(stats?.sales.bill_count ?? 0)} bills · Revenue ${formatMoney(stats?.sales.total_revenue ?? 0)} · ${selectedSalesOutletIds.length} outlet${selectedSalesOutletIds.length === 1 ? "" : "s"}`}
+                : selectedShiftIds.length === 0 && !includeUnknownShift
+                  ? "Select at least one shift"
+                  : statsLoading
+                    ? "Loading…"
+                    : `${formatQty(stats?.sales.bill_count ?? 0)} bills · Revenue ${formatMoney(stats?.sales.total_revenue ?? 0)} · ${selectedSalesOutletIds.length} outlet${selectedSalesOutletIds.length === 1 ? "" : "s"}`}
             </p>
-            <p className={styles.dashboardStatHint}>Units sold · dates use East Africa business day (EAT)</p>
+            <p className={styles.dashboardStatHint}>
+              Units sold · {shiftHint} · dates use East Africa business day (EAT)
+            </p>
           </StatCard>
 
           <StatCard tone="green" label="Most sold product">
@@ -355,7 +437,7 @@ export default function DashboardStatsPanel() {
               {statsLoading ? "…" : productLine(stats?.sales.most_sold ?? null)}
             </p>
             <p className={styles.dashboardStatHint}>
-              Selected outlets · {salesFrom} to {salesTo}
+              Selected outlets · {shiftHint} · {salesFrom} to {salesTo}
             </p>
           </StatCard>
 
@@ -364,7 +446,7 @@ export default function DashboardStatsPanel() {
               {statsLoading ? "…" : productLine(stats?.sales.least_sold ?? null)}
             </p>
             <p className={styles.dashboardStatHint}>
-              Selected outlets · {salesFrom} to {salesTo}
+              Selected outlets · {shiftHint} · {salesFrom} to {salesTo}
             </p>
           </StatCard>
 
@@ -403,7 +485,7 @@ export default function DashboardStatsPanel() {
                   {outletLeaderLoading ? "…" : productLine(outletLeaderStats?.least_sold ?? null)}
                 </p>
                 <p className={styles.dashboardStatHint}>
-                  {selectedLeaderOutlet?.name ?? "Outlet"} · {salesFrom} to {salesTo}
+                  {selectedLeaderOutlet?.name ?? "Outlet"} · {shiftHint} · {salesFrom} to {salesTo}
                 </p>
               </>
             )}

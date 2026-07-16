@@ -82,7 +82,7 @@ OUTER APPLY (
       AND (ss2.EndTime IS NULL OR s.time <= ss2.EndTime)
     ORDER BY ss2.Starttime DESC
 ) sess
-LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = COALESCE(sess.shiftid, s.Shiftid)
+LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = COALESCE(s.Shiftid, sess.shiftid)
 LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = sess.useridstart
 WHERE (
     -- Sale.uploadstatus is the middleware source of truth (BillType may be Processed before upload).
@@ -189,6 +189,142 @@ ORDER BY bt.id ASC;";
         return orders;
     }
 
+    public async Task<IReadOnlyList<PosOrder>> ReadOrdersByBillIdsAsync(
+        IReadOnlyCollection<string> billIds,
+        CancellationToken cancellationToken)
+    {
+        if (billIds.Count == 0)
+        {
+            return Array.Empty<PosOrder>();
+        }
+
+        const string headerSql = @"
+SELECT
+    bt.id         AS BillId,
+    bt.saleid     AS SaleId,
+    bt.type       AS PaymentType,
+    bt.Amount     AS PaymentAmount,
+    s.Date        AS SaleDate,
+    s.time        AS SaleTime,
+    s.OrderType   AS OrderType,
+    s.BillType    AS BillType,
+    s.Discount    AS SaleDiscount,
+    s.DiscountAmount AS SaleDiscountAmount,
+    s.GST         AS SaleGst,
+    s.servicecharges AS ServiceCharges,
+    s.DeliveryCharges AS DeliveryCharges,
+    s.Tip         AS Tip,
+    s.POSFee      AS PosFee,
+    s.PriceType   AS PriceType,
+    s.Customer    AS CustomerName,
+    s.phone       AS CustomerPhone,
+    s.branchid    AS BranchId,
+    s.Shiftid     AS SaleShiftId,
+    s.Terminal    AS Terminal,
+    sess.id         AS ShiftSessionId,
+    sess.shiftid    AS SessionShiftId,
+    sess.status     AS ShiftSessionStatus,
+    sess.Starttime  AS ShiftSessionStart,
+    sess.EndTime    AS ShiftSessionEnd,
+    sh.Id           AS ResolvedShiftId,
+    sh.Name         AS ShiftName,
+    uStart.Name     AS ShiftOpenedBy
+FROM dbo.BillType bt WITH (NOLOCK)
+JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
+OUTER APPLY (
+    SELECT TOP 1
+        ss2.id,
+        ss2.shiftid,
+        ss2.status,
+        ss2.Starttime,
+        ss2.EndTime,
+        ss2.useridstart
+    FROM dbo.ShiftStart ss2 WITH (NOLOCK)
+    WHERE ss2.Date = s.Date
+      AND (ss2.Terminal = s.Terminal OR ss2.Terminal IS NULL OR s.Terminal IS NULL)
+      AND s.time >= ss2.Starttime
+      AND (ss2.EndTime IS NULL OR s.time <= ss2.EndTime)
+    ORDER BY ss2.Starttime DESC
+) sess
+LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = COALESCE(s.Shiftid, sess.shiftid)
+LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = sess.useridstart
+WHERE bt.id IN ({0});";
+
+        var paramNames = billIds.Select((_, idx) => "@b" + idx).ToArray();
+        var sql = string.Format(headerSql, string.Join(",", paramNames));
+        var orders = new List<PosOrder>();
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn) { CommandType = CommandType.Text };
+        var index = 0;
+        foreach (var billId in billIds)
+        {
+            cmd.Parameters.AddWithValue(paramNames[index++], billId);
+        }
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var billId = reader["BillId"].ToString() ?? string.Empty;
+            var saleId = reader["SaleId"].ToString() ?? string.Empty;
+
+            var saleDate = reader.IsDBNull(reader.GetOrdinal("SaleDate"))
+                ? DateTime.UtcNow
+                : reader.GetDateTime(reader.GetOrdinal("SaleDate"));
+
+            int? branchId = null;
+            if (!reader.IsDBNull(reader.GetOrdinal("BranchId")))
+            {
+                branchId = reader.GetInt32(reader.GetOrdinal("BranchId"));
+            }
+
+            DateTime occurredAt;
+            if (!reader.IsDBNull(reader.GetOrdinal("SaleTime")))
+            {
+                var saleTime = reader.GetDateTime(reader.GetOrdinal("SaleTime"));
+                occurredAt = saleDate.Date + saleTime.TimeOfDay;
+            }
+            else
+            {
+                occurredAt = saleDate;
+            }
+
+            var payments = new List<PosPayment>();
+            if (!reader.IsDBNull(reader.GetOrdinal("PaymentAmount")))
+            {
+                var paymentAmount = Convert.ToDecimal(reader["PaymentAmount"]);
+                payments.Add(new PosPayment(Method: reader["PaymentType"]?.ToString() ?? "Unknown", Amount: paymentAmount));
+            }
+
+            orders.Add(new PosOrder(
+                PosOrderId: billId,
+                PosSaleId: saleId,
+                OccurredAt: occurredAt,
+                OutletId: _outlet.Id,
+                SourceEventId: $"{_outlet.Id}-{billId}",
+                OrderType: reader["OrderType"]?.ToString(),
+                BillType: reader["BillType"]?.ToString(),
+                TotalDiscount: reader.IsDBNull(reader.GetOrdinal("SaleDiscount")) ? null : Convert.ToDecimal(reader["SaleDiscount"]),
+                TotalDiscountAmount: reader.IsDBNull(reader.GetOrdinal("SaleDiscountAmount")) ? null : Convert.ToDecimal(reader["SaleDiscountAmount"]),
+                TotalGst: reader.IsDBNull(reader.GetOrdinal("SaleGst")) ? null : Convert.ToDecimal(reader["SaleGst"]),
+                ServiceCharges: reader.IsDBNull(reader.GetOrdinal("ServiceCharges")) ? null : Convert.ToDecimal(reader["ServiceCharges"]),
+                DeliveryCharges: reader.IsDBNull(reader.GetOrdinal("DeliveryCharges")) ? null : Convert.ToDecimal(reader["DeliveryCharges"]),
+                Tip: reader.IsDBNull(reader.GetOrdinal("Tip")) ? null : Convert.ToDecimal(reader["Tip"]),
+                PosFee: reader.IsDBNull(reader.GetOrdinal("PosFee")) ? null : Convert.ToDecimal(reader["PosFee"]),
+                PriceType: reader["PriceType"]?.ToString(),
+                BranchId: branchId,
+                Items: Array.Empty<PosLineItem>(),
+                Payments: payments,
+                Customer: BuildCustomer(reader),
+                Inventory: Array.Empty<PosInventoryConsumed>(),
+                Shift: BuildShift(reader)
+            ));
+        }
+
+        return orders;
+    }
+
     public async Task<IReadOnlyList<PosSentSummary>> ReadRecentProcessedAsync(int take, CancellationToken cancellationToken)
     {
         const string sql = @"
@@ -249,7 +385,11 @@ ORDER BY bt.id DESC;";
         return recent;
     }
 
-    public async Task MarkOrderProcessedAsync(string billId, string saleId, CancellationToken cancellationToken)
+    public async Task MarkOrderProcessedAsync(
+        string billId,
+        string saleId,
+        CancellationToken cancellationToken,
+        bool allowZeroLines = false)
     {
         const string billSql = "UPDATE dbo.BillType SET uploadStatus = 'Processed' WHERE id = @BillId;";
         const string saleSql = "UPDATE dbo.Sale SET uploadstatus = 'Processed' WHERE Id = @SaleId;";
@@ -267,7 +407,7 @@ ORDER BY bt.id DESC;";
 
             await transaction.CommitAsync(cancellationToken);
 
-            if (saleRows == 0 || lineRows == 0)
+            if (saleRows == 0 || (!allowZeroLines && lineRows == 0))
             {
                 _logger.LogWarning(
                     "Processed flags incomplete after upload bill={BillId} sale={SaleId}: billRows={BillRows} saleRows={SaleRows} lineRows={LineRows}",
@@ -304,16 +444,170 @@ ORDER BY bt.id DESC;";
 
     public async Task<int> CountUnsyncedSalesAsync(CancellationToken cancellationToken)
     {
+        return await CountExportableUnsyncedSalesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Pending bills that have at least one Saledetails row (excludes zero-line noise).
+    /// </summary>
+    public async Task<int> CountExportableUnsyncedSalesAsync(CancellationToken cancellationToken)
+    {
         const string sql = @"
-SELECT COUNT(*) AS Cnt
+SELECT COUNT(DISTINCT s.Id) AS Cnt
 FROM dbo.Sale s WITH (NOLOCK)
-WHERE s.uploadstatus IS NULL OR s.uploadstatus IN ('Pending', 'pending');";
+INNER JOIN dbo.BillType bt WITH (NOLOCK) ON bt.saleid = s.Id
+WHERE (s.uploadstatus IS NULL OR s.uploadstatus IN ('Pending', 'pending'))
+  AND EXISTS (
+    SELECT 1 FROM dbo.Saledetails sd WITH (NOLOCK) WHERE sd.saleid = s.Id
+  );";
 
         await using var conn = new SqlConnection(ConnectionString);
         await conn.OpenAsync(cancellationToken);
         await using var cmd = new SqlCommand(sql, conn);
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is null or DBNull ? 0 : Convert.ToInt32(result);
+    }
+
+    /// <summary>
+    /// Zero-line pending bills cannot sync outlet_sales; mark Processed so the queue drains.
+    /// </summary>
+    public async Task<int> AutoMarkZeroLinePendingProcessedAsync(CancellationToken cancellationToken)
+    {
+        const string sql = @"
+UPDATE s
+SET s.uploadstatus = 'Processed'
+FROM dbo.Sale s
+WHERE (s.uploadstatus IS NULL OR s.uploadstatus IN ('Pending', 'pending'))
+  AND NOT EXISTS (SELECT 1 FROM dbo.Saledetails sd WHERE sd.saleid = s.Id);
+
+UPDATE bt
+SET bt.uploadStatus = 'Processed'
+FROM dbo.BillType bt
+INNER JOIN dbo.Sale s ON s.Id = bt.saleid
+WHERE s.uploadstatus = 'Processed'
+  AND (bt.uploadStatus IS NULL OR bt.uploadStatus IN ('Pending', 'pending'))
+  AND NOT EXISTS (SELECT 1 FROM dbo.Saledetails sd WHERE sd.saleid = s.Id);";
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public sealed record ProcessedBillRef(string BillId, string SaleId);
+
+    /// <summary>
+    /// Recent Processed bills that have product lines — candidates for Supabase orphan reclaim.
+    /// </summary>
+    public async Task<IReadOnlyList<ProcessedBillRef>> ReadRecentProcessedBillsAsync(
+        DateTime? minSaleDate,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT TOP (@Limit)
+    CAST(bt.id AS nvarchar(64)) AS BillId,
+    CAST(s.Id AS nvarchar(64)) AS SaleId
+FROM dbo.Sale s WITH (NOLOCK)
+INNER JOIN dbo.BillType bt WITH (NOLOCK) ON bt.saleid = s.Id
+WHERE s.uploadstatus = 'Processed'
+  AND EXISTS (SELECT 1 FROM dbo.Saledetails sd WITH (NOLOCK) WHERE sd.saleid = s.Id)
+  AND (@MinSaleDate IS NULL OR CAST(s.Date AS date) >= CAST(@MinSaleDate AS date))
+ORDER BY s.Date DESC, s.Id DESC;";
+
+        var rows = new List<ProcessedBillRef>();
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@Limit", Math.Max(1, limit));
+        cmd.Parameters.AddWithValue("@MinSaleDate", (object?)minSaleDate?.Date ?? DBNull.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var billId = reader["BillId"]?.ToString();
+            var saleId = reader["SaleId"]?.ToString();
+            if (string.IsNullOrWhiteSpace(billId) || string.IsNullOrWhiteSpace(saleId))
+            {
+                continue;
+            }
+
+            rows.Add(new ProcessedBillRef(billId, saleId));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Force-requeue Processed bills as Pending so they upload again (orphan reclaim).
+    /// </summary>
+    public async Task<int> RequeueBillsAsPendingAsync(
+        IReadOnlyCollection<string> billIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = billIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return 0;
+        }
+
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var affected = 0;
+            foreach (var chunk in ids.Chunk(50))
+            {
+                var paramNames = new string[chunk.Length];
+                await using var saleCmd = new SqlCommand(string.Empty, conn, tx);
+                await using var billCmd = new SqlCommand(string.Empty, conn, tx);
+                await using var lineCmd = new SqlCommand(string.Empty, conn, tx);
+
+                for (var i = 0; i < chunk.Length; i++)
+                {
+                    var name = $"@b{i}";
+                    paramNames[i] = name;
+                    saleCmd.Parameters.Add(name, SqlDbType.NVarChar, 64).Value = chunk[i];
+                    billCmd.Parameters.Add(name, SqlDbType.NVarChar, 64).Value = chunk[i];
+                    lineCmd.Parameters.Add(name, SqlDbType.NVarChar, 64).Value = chunk[i];
+                }
+
+                var inList = string.Join(", ", paramNames);
+                saleCmd.CommandText = $@"
+UPDATE s
+SET s.uploadstatus = 'Pending'
+FROM dbo.Sale s
+INNER JOIN dbo.BillType bt ON bt.saleid = s.Id
+WHERE CAST(bt.id AS nvarchar(64)) IN ({inList});";
+                billCmd.CommandText = $@"
+UPDATE dbo.BillType
+SET uploadStatus = 'Pending'
+WHERE CAST(id AS nvarchar(64)) IN ({inList});";
+                lineCmd.CommandText = $@"
+UPDATE sd
+SET sd.uploadstatus = 'Pending'
+FROM dbo.Saledetails sd
+INNER JOIN dbo.BillType bt ON bt.saleid = sd.saleid
+WHERE CAST(bt.id AS nvarchar(64)) IN ({inList});";
+
+                affected += await saleCmd.ExecuteNonQueryAsync(cancellationToken);
+                affected += await billCmd.ExecuteNonQueryAsync(cancellationToken);
+                affected += await lineCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+            return affected;
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     /// <summary>
@@ -623,12 +917,37 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
+    private static readonly IReadOnlyDictionary<int, string> MintPosShiftNames =
+        new Dictionary<int, string>
+        {
+            [1] = "Day",
+            [2] = "Night",
+            [3] = "Midnight",
+        };
+
+    private static string? ResolveShiftName(int? shiftId, string? shiftName)
+    {
+        if (!string.IsNullOrWhiteSpace(shiftName))
+        {
+            return shiftName;
+        }
+
+        if (shiftId.HasValue && MintPosShiftNames.TryGetValue(shiftId.Value, out var fallback))
+        {
+            return fallback;
+        }
+
+        return null;
+    }
+
     private static PosShift? BuildShift(SqlDataReader reader)
     {
         var sessionShiftId = TryGetInt32(reader, "SessionShiftId");
         var saleShiftId = TryGetInt32(reader, "SaleShiftId");
-        var shiftId = TryGetInt32(reader, "ResolvedShiftId") ?? sessionShiftId ?? saleShiftId;
-        var shiftName = TryGetString(reader, "ShiftName");
+        var shiftId = TryGetInt32(reader, "SaleShiftId")
+            ?? TryGetInt32(reader, "SessionShiftId")
+            ?? TryGetInt32(reader, "ResolvedShiftId");
+        var shiftName = ResolveShiftName(shiftId, TryGetString(reader, "ShiftName"));
         var terminal = TryGetString(reader, "Terminal");
         var sessionId = TryGetInt32(reader, "ShiftSessionId");
         var sessionStatus = TryGetString(reader, "ShiftSessionStatus");
@@ -644,10 +963,10 @@ WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
             return null;
         }
 
-        var shiftSource = sessionShiftId.HasValue
-            ? "shift_start_session"
-            : saleShiftId.HasValue
-                ? "sale_shift_id"
+        var shiftSource = saleShiftId.HasValue
+            ? "sale_shift_id"
+            : sessionShiftId.HasValue
+                ? "shift_start_session"
                 : null;
 
         return new PosShift(
