@@ -1,12 +1,5 @@
-"use client";
-
-import { useWarehouseAuth } from "../../useWarehouseAuth";
-import OutletCatalogPushPanel from "../../OutletCatalogPushPanel";
+import RedirectToMiddlewareTab from "../../RedirectToMiddlewareTab";
 
 export default function OutletCatalogPushPage() {
-  const { status } = useWarehouseAuth();
-
-  if (status !== "ok") return null;
-
-  return <OutletCatalogPushPanel />;
+  return <RedirectToMiddlewareTab tab="outlet-push" />;
 }

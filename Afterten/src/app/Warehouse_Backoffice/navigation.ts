@@ -1,3 +1,5 @@
+import { MIDDLEWARE_HUB_PATH, middlewareTabTitle } from "./middlewareHub";
+
 export type NavItem = {
   label: string;
   href: string;
@@ -15,11 +17,8 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Overview",
     items: [
       { label: "Dashboard", href: "/Warehouse_Backoffice" },
-      { label: "Middleware Connectivity", href: "/Warehouse_Backoffice/middleware-heartbeat" },
-      { label: "POS Sync Failures", href: "/Warehouse_Backoffice/pos-sync-failures" },
-      { label: "Portal/Mintpos Sync", href: "/Warehouse_Backoffice/pos-catalog-sync" },
-      { label: "Send to Middleware", href: "/Warehouse_Backoffice/catalog/outlet-push" },
-      { label: "Outlet Live Balances", href: "/Warehouse_Backoffice/outlet-live-balances" },
+      { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders" },
+      { label: "Middleware", href: MIDDLEWARE_HUB_PATH },
     ],
     tone: "system",
   },
@@ -27,8 +26,8 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Products",
     items: [
       { label: "View Products & Variants", href: "/Warehouse_Backoffice/catalog/menu" },
-      { label: "Add Product", href: "/Warehouse_Backoffice/catalog/product" },
       { label: "Add Groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
+      { label: "Add Product", href: "/Warehouse_Backoffice/catalog/product" },
       { label: "Add Variants", href: "/Warehouse_Backoffice/catalog/variants" },
       { label: "Bulk Updates", href: "/Warehouse_Backoffice/variant-bulk-update" },
     ],
@@ -38,10 +37,6 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Outlets",
     items: [
       { label: "Outlet Catalog Access", href: "/Warehouse_Backoffice/outlets/catalog-access" },
-      { label: "Stocktake Corrections", href: "/Warehouse_Backoffice/outlets/stocktake-corrections" },
-      { label: "Outlet Orders", href: "/Warehouse_Backoffice/outlet-orders" },
-      { label: "Fulfillment recipes", href: "/Warehouse_Backoffice/pos-sale-deductions" },
-      { label: "Stocktakes", href: "/Warehouse_Backoffice/stocktakes" },
     ],
     tone: "outlets",
   },
@@ -49,7 +44,6 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Reports",
     items: [
       { label: "Reports Hub", href: "/Warehouse_Backoffice/reports-hub" },
-      { label: "Variance Reports", href: "/Warehouse_Backoffice/reports/variance" },
     ],
     tone: "default",
   },
@@ -62,6 +56,13 @@ export const BACKOFFICE_NAV: NavGroup[] = [
 
 export function pageTitleForPath(pathname: string, hash?: string): string {
   const normalizedHash = hash?.replace(/^#/, "") ?? "";
+  if (pathname === MIDDLEWARE_HUB_PATH) {
+    if (normalizedHash) {
+      const tabTitle = middlewareTabTitle(normalizedHash);
+      if (tabTitle) return tabTitle;
+    }
+    return "Middleware";
+  }
   for (const group of BACKOFFICE_NAV) {
     for (const item of group.items) {
       const itemPath = item.href.split("#")[0];

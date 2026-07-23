@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import {
   isMiddlewareCatalogSyncOutlet,
-  isPosDeductionProgrammingOutlet,
   isPosMiddlewareOutlet,
   middlewareSalesApiProfileForOutletId,
   MIDDLEWARE_SALES_API_PATHS,
@@ -66,8 +65,6 @@ export async function GET(request: Request) {
 
     if (scope === "selling") {
       outlets = outlets.filter((outlet) => isPosMiddlewareOutlet(outlet));
-    } else if (scope === "pos-deductions") {
-      outlets = outlets.filter((outlet) => isPosDeductionProgrammingOutlet(outlet));
     } else if (scope === "middleware" || scope === "catalog-sync") {
       outlets = outlets.filter((outlet) => isMiddlewareCatalogSyncOutlet(outlet));
     } else if (scope === "heartbeat") {

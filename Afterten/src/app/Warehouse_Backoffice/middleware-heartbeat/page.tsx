@@ -1,12 +1,5 @@
-"use client";
-
-import { useWarehouseAuth } from "../useWarehouseAuth";
-import MiddlewareStatusPanel from "../MiddlewareStatusPanel";
+import RedirectToMiddlewareTab from "../RedirectToMiddlewareTab";
 
 export default function MiddlewareHeartbeatPage() {
-  const { status } = useWarehouseAuth();
-
-  if (status !== "ok") return null;
-
-  return <MiddlewareStatusPanel />;
+  return <RedirectToMiddlewareTab tab="connectivity" />;
 }

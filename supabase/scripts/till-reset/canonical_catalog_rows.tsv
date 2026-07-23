@@ -1,0 +1,240 @@
+mintpos_group_id	menu_group_name	row_type	mintpos_sku	parent_item_sku	product_name	variant_name
+2	Alcohol	product	245	NULL	Alcohols	NULL
+2	Alcohol	variant	6001108028044	245	Alcohols	Savanna
+2	Alcohol	variant	6001108055187	245	Alcohols	Hunters Dry
+2	Alcohol	variant	6003326015721	245	Alcohols	Castle Light
+2	Alcohol	variant	6003326015790	245	Alcohols	Black Label
+2	Alcohol	variant	6009801472102	245	Alcohols	Heineken
+2	Alcohol	variant	88	245	Alcohols	Hunters Gold
+3	Main Meals	product	103	NULL	Chicken Pieces	NULL
+3	Main Meals	product	104	NULL	Chicken Wings	NULL
+3	Main Meals	product	105	NULL	Family Pack (25 Wings)	NULL
+3	Main Meals	product	149	NULL	Bream Fish (350g)	NULL
+3	Main Meals	product	150	NULL	T-Bone	NULL
+3	Main Meals	product	151	NULL	Nshima	NULL
+3	Main Meals	product	152	NULL	Side Vegetables	NULL
+3	Main Meals	product	153	NULL	Ifibombo	NULL
+3	Main Meals	product	154	NULL	Offals	NULL
+3	Main Meals	product	155	NULL	Spaghetti Bolognes	NULL
+3	Main Meals	product	156	NULL	Fillet Fish	NULL
+3	Main Meals	product	157	NULL	Plain Spaghetti	NULL
+3	Main Meals	product	158	NULL	Fillet Steak	NULL
+3	Main Meals	product	159	NULL	Gizzards	NULL
+3	Main Meals	product	160	NULL	Oxtail	NULL
+3	Main Meals	product	162	NULL	Fillet Fish (150g) + Chips	NULL
+3	Main Meals	product	176	NULL	Meat Pie	NULL
+3	Main Meals	product	179	NULL	Chips	NULL
+3	Main Meals	product	220	NULL	Plain Sausage	NULL
+3	Main Meals	product	299	NULL	Beef Stew	NULL
+3	Main Meals	product	337	NULL	Fried Chicken Crispy Piece	NULL
+3	Main Meals	product	39	NULL	Chicken Stew	NULL
+3	Main Meals	product	44	NULL	Quarter Chicken	NULL
+3	Main Meals	product	45	NULL	Half Chicken	NULL
+4	Bread	product	258	NULL	Bread /Piece	NULL
+4	Bread	product	259	NULL	Pita Bread (Each)	NULL
+4	Bread	product	260	NULL	Burger Bread (Each)	NULL
+4	Bread	product	261	NULL	Long Bread (Each)	NULL
+5	Breakfast	product	17	NULL	Omelet	NULL
+5	Breakfast	product	18	NULL	English Breakfast + Hot Beverage	NULL
+5	Breakfast	product	19	NULL	Mankushi	NULL
+5	Breakfast	product	20	NULL	Scrambled Eggs	NULL
+5	Breakfast	product	241	NULL	Sausage & Eggs	NULL
+5	Breakfast	product	242	NULL	Cheese Omlette	NULL
+5	Breakfast	product	38	NULL	Laahm Baagen	NULL
+6	Burgers	product	244	NULL	Burger	NULL
+6	Burgers	variant	47	244	Burger	Supreme Beef Burger
+6	Burgers	variant	49	244	Burger	Chicken Burger
+6	Burgers	variant	52	244	Burger	Mini Burger
+7	Cakes	product	243	NULL	Cake	NULL
+7	Cakes	variant	100	243	Cake	Cake 60*60
+7	Cakes	variant	29	243	Cake	15cm*15cm Cake
+7	Cakes	variant	30	243	Cake	19cm*25cm Cake
+7	Cakes	variant	34	243	Cake	30cm Cake
+7	Cakes	variant	35	243	Cake	35cm Cake
+7	Cakes	variant	95	243	Cake	Cake 19cm
+7	Cakes	variant	96	243	Cake	Cake 25cm
+7	Cakes	variant	97	243	Cake	Cake 30*30
+7	Cakes	variant	98	243	Cake	Cake 40*40
+7	Cakes	variant	99	243	Cake	Cake 50*50
+8	Indian Cuisine	product	121	NULL	Chicken Lollipop (Each)	NULL
+8	Indian Cuisine	product	123	NULL	Plain Curry	NULL
+8	Indian Cuisine	product	41	NULL	Chicken Hong Kong	NULL
+9	Raw Vegetables	product	300	NULL	Cabbage(/Kg)	NULL
+9	Raw Vegetables	product	301	NULL	Lettuce(/Kg)	NULL
+10	Commodities	product	302	NULL	Sugar(/Kg)	NULL
+10	Commodities	product	303	NULL	Cream(/Kg)	NULL
+10	Commodities	product	304	NULL	Eggs(/Egg)	NULL
+10	Commodities	product	305	NULL	Bread Flour(/Kg)	NULL
+10	Commodities	product	306	NULL	Cake Flour(/Kg)	NULL
+10	Commodities	product	307	NULL	Yeast(/Kg)	NULL
+10	Commodities	product	308	NULL	Empty Containers	NULL
+10	Commodities	product	309	NULL	Used Oil(/20L)	NULL
+10	Commodities	product	310	NULL	Cinnamon Powder(/Kg)	NULL
+10	Commodities	product	311	NULL	Mop	NULL
+10	Commodities	product	312	NULL	Broom	NULL
+10	Commodities	product	313	NULL	Mozzarella Cheese(/Kg)	NULL
+10	Commodities	product	314	NULL	Salt(/Kg)	NULL
+10	Commodities	product	315	NULL	Brown Flour(/Kg)	NULL
+10	Commodities	product	316	NULL	Cumin Spice(/Kg)	NULL
+10	Commodities	product	317	NULL	Charcoal(/Sack)	NULL
+10	Commodities	product	319	NULL	Paprika Spice(/Kg)	NULL
+10	Commodities	product	320	NULL	Oil(/Ltr)	NULL
+10	Commodities	product	321	NULL	Black Pepper(/Bottle)	NULL
+10	Commodities	product	322	NULL	Boom Paste(/Box)	NULL
+10	Commodities	product	323	NULL	Hand Wash(/Dispenser)	NULL
+10	Commodities	product	324	NULL	Jik Detergent(/Bottle)	NULL
+10	Commodities	product	325	NULL	Milk(/Ltr)	NULL
+10	Commodities	product	326	NULL	Nescafe(/Stick)	NULL
+10	Commodities	product	327	NULL	Omo Washing Powder	NULL
+10	Commodities	product	328	NULL	Raw Rice(/Kg)	NULL
+10	Commodities	product	329	NULL	Sweet Corn(/Can)	NULL
+10	Commodities	product	330	NULL	Teabags(/Box)	NULL
+10	Commodities	product	331	NULL	Chicken Spice Powder(/Kg)	NULL
+10	Commodities	product	332	NULL	Chips Spice(/Kg)	NULL
+10	Commodities	product	333	NULL	White Pepper(/Kg)	NULL
+10	Commodities	product	334	NULL	Foil Paper(/Roll)	NULL
+10	Commodities	product	335	NULL	Curry Powder(/Kg)	NULL
+10	Commodities	product	336	NULL	Aromat(/Bottle)	NULL
+10	Commodities	product	343	NULL	Tissue Paper	NULL
+10	Commodities	product	344	NULL	Ajax Bottle	NULL
+10	Commodities	product	345	NULL	Serviette Packets	NULL
+10	Commodities	product	346	NULL	Millimeal(/Kg)	NULL
+11	Beverages	product	62	NULL	Mineral Water	NULL
+11	Beverages	product	66	NULL	Fruiticana	NULL
+11	Beverages	product	68	NULL	Sugarcane Juice 500mls	NULL
+11	Beverages	product	70	NULL	Minute Maid	NULL
+11	Beverages	product	72	NULL	Disposable Drink 500mls	NULL
+11	Beverages	variant	56	72	Disposable Drink 500mls	Fanta Orange
+11	Beverages	variant	57	72	Disposable Drink 500mls	Fanta Grape
+11	Beverages	variant	58	72	Disposable Drink 500mls	Fanta Pineapple
+11	Beverages	variant	59	72	Disposable Drink 500mls	Fanta Apple
+11	Beverages	variant	60	72	Disposable Drink 500mls	Sprite
+11	Beverages	variant	61	72	Disposable Drink 500mls	Coke Zero
+11	Beverages	variant	62	72	Disposable Drink 500mls	Coca Cola
+11	Beverages	variant	63	72	Disposable Drink 500mls	Mirinda Orange
+11	Beverages	variant	64	72	Disposable Drink 500mls	Mirinda Grape
+11	Beverages	variant	65	72	Disposable Drink 500mls	Mirinda Apple
+11	Beverages	variant	66	72	Disposable Drink 500mls	Mirinda Raspberyy
+11	Beverages	variant	67	72	Disposable Drink 500mls	Mountain Dew
+11	Beverages	variant	68	72	Disposable Drink 500mls	7-Up
+11	Beverages	variant	69	72	Disposable Drink 500mls	Pepsi
+11	Beverages	variant	70	72	Disposable Drink 500mls	Pepsi Max
+11	Beverages	variant	71	66	Fruiticana	Mango
+11	Beverages	variant	72	66	Fruiticana	Orange
+11	Beverages	variant	73	66	Fruiticana	Mixed Berry
+11	Beverages	variant	74	66	Fruiticana	Mixed Fruit
+11	Beverages	variant	75	66	Fruiticana	Tamarind
+11	Beverages	variant	76	66	Fruiticana	Pineapple
+11	Beverages	variant	77	66	Fruiticana	Guava
+11	Beverages	variant	78	66	Fruiticana	Exotic
+11	Beverages	variant	79	70	Minute Maid	Mango
+11	Beverages	variant	80	70	Minute Maid	Tropical
+11	Beverages	variant	91	72	Disposable Drink 500mls	Embe Mango Juice
+11	Beverages	variant	92	62	Mineral Water	Vatra 500mls
+11	Beverages	variant	93	62	Mineral Water	Afterten 500mls
+12	Sauces	product	255	NULL	Side Sauce	NULL
+12	Sauces	variant	23	255	Side Sauce	Large Chilli
+12	Sauces	variant	24	255	Side Sauce	Medium Chilli
+12	Sauces	variant	25	255	Side Sauce	Small Chilli
+12	Sauces	variant	26	255	Side Sauce	Large Garlic
+12	Sauces	variant	27	255	Side Sauce	Medium Garlic
+12	Sauces	variant	28	255	Side Sauce	Small Garlic
+12	Sauces	variant	98	255	Side Sauce	Small Garlic Sauce
+16	Ice	product	119	NULL	4 Kg Ice Cubes	NULL
+16	Ice	product	120	NULL	Ice Block	NULL
+16	Ice	product	355	NULL	2 Kg Ice Cubes	NULL
+19	Pizza	product	177	NULL	Pizza	NULL
+19	Pizza	variant	39	177	Pizza	Family Donner Pizza
+19	Pizza	variant	40	177	Pizza	Family Donner Pizza + Extra Cheese
+19	Pizza	variant	41	177	Pizza	Mini Pizza
+19	Pizza	variant	42	177	Pizza	Small Donner Pizza (23cm)
+19	Pizza	variant	43	177	Pizza	Small Donner Pizza (23cm) + Extra Cheese
+19	Pizza	variant	44	177	Pizza	Standard Donner Pizza
+19	Pizza	variant	45	177	Pizza	Standard Donner Pizza + Extra Cheese
+36	Packaging	product	184	NULL	Plastic Bag	NULL
+36	Packaging	product	349	NULL	Small Styroform Packer	NULL
+36	Packaging	product	350	NULL	Large Styroform Packer	NULL
+36	Packaging	product	352	NULL	Small Paper Packers	NULL
+21	Rice	product	200	NULL	Fried Rice	NULL
+21	Rice	product	202	NULL	Rice	NULL
+22	Salads	product	204	NULL	Coleslaw Salad	NULL
+22	Salads	product	205	NULL	Green Salad	NULL
+23	Sandwiches	product	206	NULL	Chicken Shawarma	NULL
+23	Sandwiches	product	207	NULL	Vegetarian Shawarma	NULL
+23	Sandwiches	product	208	NULL	Cheddar Sandwich	NULL
+23	Sandwiches	product	209	NULL	Falafel Sandwich	NULL
+23	Sandwiches	product	210	NULL	Fajita Sandwich	NULL
+23	Sandwiches	product	211	NULL	Polo Alfredo Sandwich	NULL
+23	Sandwiches	product	212	NULL	Beef Kebab	NULL
+23	Sandwiches	product	213	NULL	Chicken Twister Sandwich	NULL
+23	Sandwiches	product	214	NULL	Chicken Arabian Sandwhich	NULL
+23	Sandwiches	product	215	NULL	Beef Shawarma Sandwich	NULL
+23	Sandwiches	product	216	NULL	Chicken Crunch	NULL
+23	Sandwiches	product	217	NULL	Special Shawarma Sandwich	NULL
+23	Sandwiches	product	218	NULL	Chicken Kebab	NULL
+23	Sandwiches	product	219	NULL	Philadelphia Sandwich	NULL
+23	Sandwiches	product	231	NULL	Small Shawarma	NULL
+25	Snacks	product	228	NULL	Small Sausage Rolls	NULL
+25	Snacks	product	229	NULL	Small Pies	NULL
+25	Snacks	product	230	NULL	Small Donner Kebab	NULL
+25	Snacks	product	232	NULL	Confectionaries	NULL
+25	Snacks	product	233	NULL	Muffin	NULL
+25	Snacks	product	234	NULL	Samoosa (Each)	NULL
+25	Snacks	product	235	NULL	Spring Roll (Each)	NULL
+25	Snacks	product	237	NULL	Mini Mankushi (Each)	NULL
+25	Snacks	product	238	NULL	Mini Laahm Baagen (Each)	NULL
+26	Todays Special	product	226	NULL	Chicken Liver With Rice	NULL
+26	Todays Special	product	227	NULL	Chicken Liver Shawarma	NULL
+28	Dough	product	256	NULL	Bread Dough (/Kg)	NULL
+28	Dough	product	257	NULL	Mankushi Dough (/Kg)	NULL
+29	Ingredients	product	262	NULL	Tomatoes(/Kg)	NULL
+29	Ingredients	product	263	NULL	Onions(/Kg)	NULL
+29	Ingredients	product	264	NULL	Green Pepper(/Kg)	NULL
+29	Ingredients	product	265	NULL	Green Beans(/Kg)	NULL
+29	Ingredients	product	266	NULL	Ginger(/Kg)	NULL
+29	Ingredients	product	267	NULL	Garlic(/Kg)	NULL
+29	Ingredients	product	268	NULL	Potatoes(/Kg)	NULL
+29	Ingredients	product	269	NULL	Carrots(/Kg)	NULL
+29	Ingredients	product	270	NULL	Mushrooms(/Kg)	NULL
+29	Ingredients	product	340	NULL	Cabbage(/Head)	NULL
+29	Ingredients	product	341	NULL	Lettuce	NULL
+29	Ingredients	product	342	NULL	Raw Frozen Chips(/Kg)	NULL
+30	Raw Poultry	product	271	NULL	Raw Chicken Bones(/Kg)	NULL
+30	Raw Poultry	product	272	NULL	Raw Chicken(/Kg)	NULL
+30	Raw Poultry	product	273	NULL	Raw Chicken Breast(/Kg)	NULL
+30	Raw Poultry	product	274	NULL	Raw Minced Chicken(/Kg)	NULL
+30	Raw Poultry	product	275	NULL	Raw Chicken Liver(/Kg)	NULL
+30	Raw Poultry	product	276	NULL	Raw Chicken Gizzards(/Kg)	NULL
+30	Raw Poultry	product	277	NULL	Raw Boneless Chicken(/Kg)	NULL
+30	Raw Poultry	product	278	NULL	Raw Chicken Pieces(/Kg)	NULL
+30	Raw Poultry	product	279	NULL	Raw Chicken Wings(/Kg)	NULL
+30	Raw Poultry	product	280	NULL	Raw Chicken Burger(/Kg)	NULL
+30	Raw Poultry	product	281	NULL	Raw Chicken Shawarma(/Kg)	NULL
+30	Raw Poultry	product	282	NULL	Raw Chicken Giblets(/500g)	NULL
+30	Raw Poultry	product	283	NULL	Raw Leg & Neck(/500g)	NULL
+30	Raw Poultry	product	284	NULL	Raw Chicken Liver(/300G)	NULL
+30	Raw Poultry	product	285	NULL	Raw Chicken Lolipop(/Kg)	NULL
+30	Raw Poultry	product	339	NULL	Raw Boerewors(/Kg)	NULL
+31	Raw Beef	product	286	NULL	Raw Minced Meat(/Kg)	NULL
+31	Raw Beef	product	287	NULL	Raw Fillet Steak(/Kg)	NULL
+31	Raw Beef	product	288	NULL	Raw T.Bone(/Kg)	NULL
+31	Raw Beef	product	289	NULL	Raw Beef Sausage(/Kg)	NULL
+31	Raw Beef	product	290	NULL	Raw Hungarian Sausage(/Kg)	NULL
+31	Raw Beef	product	291	NULL	Raw Minced Steak(/Kg)	NULL
+31	Raw Beef	product	292	NULL	Raw Beef Burger(/Kg)	NULL
+31	Raw Beef	product	293	NULL	Raw Beef Shawarma(/Kg)	NULL
+31	Raw Beef	product	294	NULL	Raw Mixed Cut(/Kg)	NULL
+31	Raw Beef	product	295	NULL	Raw Beef Kebab(/Kg)	NULL
+31	Raw Beef	product	296	NULL	Raw Laahm Baagen(/Kg)	NULL
+31	Raw Beef	product	297	NULL	Raw Steak On Bone(/Kg)	NULL
+33	Dip'd Wings	product	357	NULL	Dipd Wings (10 Pcs)	NULL
+33	Dip'd Wings	variant	53	357	Dipd Wings (10 Pcs)	Regular
+33	Dip'd Wings	variant	54	357	Dipd Wings (10 Pcs)	Hot
+33	Dip'd Wings	variant	55	357	Dipd Wings (10 Pcs)	Mixed
+35	Energy Drinks	product	364	NULL	Energy Drinks	NULL
+35	Energy Drinks	variant	81	364	Energy Drinks	Kung Fu Energy Drink
+35	Energy Drinks	variant	82	364	Energy Drinks	Combat Energy Drink
+35	Energy Drinks	variant	89	364	Energy Drinks	Mojo Energy Drink
+35	Energy Drinks	variant	90	364	Energy Drinks	Wildcat Energy Drink
+35	Energy Drinks	variant	94	364	Energy Drinks	Kung Fu Mango Loco
+35	Energy Drinks	variant	95	364	Energy Drinks	Kung Fu Mixed Berry

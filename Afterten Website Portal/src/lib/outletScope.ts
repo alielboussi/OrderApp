@@ -8,7 +8,7 @@ export type MiddlewareOutletCandidate = {
   code?: string | null;
 };
 
-/** POS-only tills — no ordering-app deductions; excluded from POS deduction programming UI. */
+/** POS-only tills — excluded from certain outlet programming UIs. */
 export const TILL_OUTLET_IDS = new Set([
   "648e949d-8648-4c43-80d4-f08feb7bdd04", // Till 1
   "a655b0a1-a37a-43d6-aa55-7f97377b2660", // Till 2
@@ -122,15 +122,6 @@ export function isPosMiddlewareOutlet(outlet: MiddlewareOutletCandidate): boolea
   if (isStoreroomLabel(label)) return false;
 
   return true;
-}
-
-/** Outlets eligible for POS sale deduction programming (all active except POS-only tills). */
-export function isPosDeductionProgrammingOutlet(outlet: {
-  id?: string | null;
-  active?: boolean | null;
-}): boolean {
-  if (!outlet.id || POS_ONLY_OUTLET_IDS.has(outlet.id)) return false;
-  return outlet.active !== false;
 }
 
 export function isStoreroomLabel(label: string): boolean {

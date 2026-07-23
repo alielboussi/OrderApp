@@ -11,6 +11,10 @@
 
 .heroBody {
   padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .modeTabs {
@@ -19,6 +23,19 @@
   border-radius: 8px;
   overflow: hidden;
   background: #f6f8fa;
+}
+
+.heroToolbar {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.heroMessage {
+  margin: 12px 0 0;
+  text-align: center;
 }
 
 .modeTab {
@@ -218,6 +235,7 @@
   font-size: 14px;
   font-weight: 600;
   color: #24292f;
+  text-align: center;
 }
 
 .optionsGrid {
@@ -260,6 +278,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 12px 14px;
   background: #f6f8fa;
@@ -287,6 +306,13 @@
   margin-top: 20px;
   padding-top: 20px;
   border-top: 1px solid #e8e8e8;
+  justify-content: center;
+}
+
+.formFeedback {
+  margin-top: 16px;
+  margin-bottom: 0;
+  text-align: center;
 }
 
 .removeAction {

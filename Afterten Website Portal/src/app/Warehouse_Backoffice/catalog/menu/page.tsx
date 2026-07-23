@@ -79,7 +79,7 @@ function ProductCard({
   onDeleteItem: (item: Item) => void;
   readOnly: boolean;
 }) {
-  const hasVariants = itemVariants.length > 0;
+  const hasVariants = Boolean(item.has_variations) || itemVariants.length > 0;
 
   return (
     <article className={styles.card}>
@@ -173,7 +173,10 @@ function VariantsPopup({
           {item.sku ? ` · Product SKU: ${item.sku}` : ""}
         </p>
         <ul className={styles.variantList}>
-          {itemVariants.map((variant) => (
+          {itemVariants.length === 0 ? (
+            <li className={styles.dialogEmpty}>No variants yet for this product.</li>
+          ) : (
+            itemVariants.map((variant) => (
             <li key={variant.id} className={styles.variantRow}>
               <div className={styles.variantMeta}>
                 <p className={styles.variantName}>{variant.name}</p>
@@ -182,7 +185,7 @@ function VariantsPopup({
               <div className={styles.rowActions}>
                 <a
                   className={styles.iconButton}
-                  href={`/Warehouse_Backoffice/catalog/variant?id=${variant.id}&item_id=${variant.item_id}`}
+                  href={`/Warehouse_Backoffice/catalog/variants?id=${variant.id}&item_id=${variant.item_id}`}
                   aria-label={`Edit ${variant.name}`}
                   title="Edit variant"
                 >
@@ -206,9 +209,13 @@ function VariantsPopup({
                 </button>
               </div>
             </li>
-          ))}
+            ))
+          )}
         </ul>
         <div className={styles.dialogFooter}>
+          <a className={eb.btnAdd} href={`/Warehouse_Backoffice/catalog/variants?item_id=${item.id}`}>
+            Add variant
+          </a>
           <button type="button" className={eb.btnSecondary} onClick={onClose}>
             Close
           </button>
@@ -536,7 +543,7 @@ export default function CatalogMenuPage() {
             {loading ? "Refreshing…" : "Refresh"}
           </button>
         </div>
-        <div className={eb.summaryGrid} style={{ marginTop: 16 }}>
+        <div className={eb.summaryGrid} style={{ marginTop: 10 }}>
           <div className={`${eb.summaryCard} ${eb.summaryCardBlue}`}>
             <p className={eb.summaryLabel}>Products</p>
             <p className={eb.summaryValue}>{items.length}</p>
@@ -549,8 +556,8 @@ export default function CatalogMenuPage() {
       </section>
 
       <section className={eb.pageCard}>
-        <div className={eb.filterBar}>
-          <label className={eb.fieldLabel}>
+        <div className={`${eb.filterBar} ${styles.catalogFilterBar}`}>
+          <label className={`${eb.fieldLabel} ${styles.catalogFilterSearch}`}>
             Search
             <input
               id="catalog-search"
@@ -560,7 +567,7 @@ export default function CatalogMenuPage() {
               className={eb.fieldInput}
             />
           </label>
-          <label className={eb.fieldLabel}>
+          <label className={`${eb.fieldLabel} ${styles.catalogFilterType}`}>
             Product type
             <select
               id="product-type-filter"

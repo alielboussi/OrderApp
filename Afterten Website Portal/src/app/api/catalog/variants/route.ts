@@ -23,7 +23,6 @@ type VariantPayload = {
   supplier_sku?: string | null;
   item_kind: ItemKind;
   consumption_uom: string;
-  stocktake_uom?: string | null;
   purchase_pack_unit: string;
   units_per_purchase_pack: number;
   purchase_unit_mass?: number | null;
@@ -136,7 +135,6 @@ const VARIANT_CORE_FIELDS =
 const VARIANT_OPTIONAL_FIELDS = [
   "sku",
   "supplier_sku",
-  "stocktake_uom",
   "transfer_unit",
   "transfer_quantity",
   "purchase_unit_mass",
@@ -166,7 +164,6 @@ function normalizeVariantRow(row: Partial<CatalogVariantRow>) {
     supplier_sku: row.supplier_sku ?? null,
     item_kind: row.item_kind ?? "finished",
     consumption_uom: row.consumption_uom ?? "each",
-    stocktake_uom: row.stocktake_uom ?? null,
     purchase_pack_unit: row.purchase_pack_unit ?? "each",
     units_per_purchase_pack: row.units_per_purchase_pack ?? 1,
     purchase_unit_mass: row.purchase_unit_mass ?? null,
@@ -286,7 +283,6 @@ function toVariantResponse(variantId: string, payload: VariantPayload) {
     supplier_sku: payload.supplier_sku ?? null,
     item_kind: payload.item_kind ?? "finished",
     consumption_uom: payload.consumption_uom ?? "each",
-    stocktake_uom: payload.stocktake_uom ?? null,
     purchase_pack_unit: payload.purchase_pack_unit ?? "each",
     units_per_purchase_pack: payload.units_per_purchase_pack ?? 1,
     purchase_unit_mass: payload.purchase_unit_mass ?? null,
@@ -588,6 +584,9 @@ export async function POST(request: Request) {
     const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
 
     let resolvedVariantSku = cleanText(body.sku) ?? null;
+    if (!resolvedVariantSku) {
+      return NextResponse.json({ error: "Variant SKU is required" }, { status: 400 });
+    }
     resolvedVariantSku = await allocatePosVariantSku(supabase, resolvedVariantSku);
 
     const payload: VariantPayload = {
@@ -597,7 +596,6 @@ export async function POST(request: Request) {
       supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
       consumption_uom: consumptionUom,
-      stocktake_uom: cleanText(body.stocktake_uom) ?? null,
       purchase_pack_unit: purchasePackUnit,
       units_per_purchase_pack: unitsPerPack.value,
       purchase_unit_mass: purchaseUnitMass,
@@ -682,7 +680,7 @@ export async function PUT(request: Request) {
     const { data: existing, error: existingError } = await supabase
       .from("catalog_variants")
       .select(
-        "id,item_id,name,sku,supplier_sku,item_kind,consumption_uom,stocktake_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,qty_decimal_places,cost,selling_price,outlet_order_visible,image_url,default_warehouse_id,active"
+        "id,item_id,name,sku,supplier_sku,item_kind,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,qty_decimal_places,cost,selling_price,outlet_order_visible,image_url,default_warehouse_id,active"
       )
       .eq("id", id)
       .maybeSingle();
@@ -728,7 +726,6 @@ export async function PUT(request: Request) {
     if (body.consumption_uom !== undefined) {
       update.consumption_uom = cleanText(body.consumption_uom) ?? "each";
     }
-    if (body.stocktake_uom !== undefined) update.stocktake_uom = cleanText(body.stocktake_uom) ?? null;
     if (body.purchase_pack_unit !== undefined) {
       update.purchase_pack_unit = cleanText(body.purchase_pack_unit) ?? "each";
     }

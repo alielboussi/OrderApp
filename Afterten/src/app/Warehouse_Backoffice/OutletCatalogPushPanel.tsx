@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
+import type {
+  CatalogPushPickerItem,
+  CatalogPushPickerVariant,
+  CatalogPushScope,
+  MenuGroupPushSummary,
+} from "@/lib/catalog-outlet-push";
 import {
   defaultScheduledLocalValue,
   formatScheduleLabel,
@@ -10,6 +16,7 @@ import {
 } from "@/lib/catalog-sync-schedule";
 import CatalogEntityMultiSelect from "./CatalogEntityMultiSelect";
 import { logWarehouseAction } from "./logging";
+import { formatStamp } from "./middlewareMonitorShared";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import eb from "./enterprise.module.css";
 import styles from "./outletCatalogPush.module.css";
@@ -23,32 +30,35 @@ type OutletRow = {
   channel?: string | null;
 };
 
-type MenuGroupRow = {
-  id: string;
-  name: string;
-  pos_menu_group_id: number | null;
-  active: boolean;
-  item_count: number;
-  variant_count: number;
-};
-
 type PanelMode = "push" | "remove";
 type DeliveryMode = "now" | "schedule";
+
+function defaultPushScope(): CatalogPushScope {
+  return { sync_menu_groups: true, sync_products: true, sync_variants: true };
+}
 
 export default function OutletCatalogPushPanel() {
   const [mode, setMode] = useState<PanelMode>("push");
   const [delivery, setDelivery] = useState<DeliveryMode>("now");
   const [scheduledAtLocal, setScheduledAtLocal] = useState(defaultScheduledLocalValue);
   const [outlets, setOutlets] = useState<OutletRow[]>([]);
-  const [groups, setGroups] = useState<MenuGroupRow[]>([]);
+  const [groups, setGroups] = useState<MenuGroupPushSummary[]>([]);
+  const [items, setItems] = useState<CatalogPushPickerItem[]>([]);
+  const [variants, setVariants] = useState<CatalogPushPickerVariant[]>([]);
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
   const [includeEmptyGroups, setIncludeEmptyGroups] = useState(false);
-  // Default on: group send must refresh names/prices for items already on the till.
   const [updateExisting, setUpdateExisting] = useState(true);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
+  const [cancelOfflineBusy, setCancelOfflineBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cancelOfflineResult, setCancelOfflineResult] = useState<{
+    removed: number;
+    offline_outlets: Array<{ outlet_id: string; outlet_name: string }>;
+  } | null>(null);
   const [result, setResult] = useState<{
     action: PanelMode;
     delivery: DeliveryMode;
@@ -62,24 +72,28 @@ export default function OutletCatalogPushPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [outletsRes, groupsRes] = await Promise.all([
+      const [outletsRes, catalogRes] = await Promise.all([
         fetch("/api/outlets?scope=middleware", { cache: "no-store" }),
         fetch("/api/catalog/outlet-catalog-push", { cache: "no-store" }),
       ]);
       const outletsJson = await outletsRes.json().catch(() => ({}));
-      const groupsJson = await groupsRes.json().catch(() => ({}));
+      const catalogJson = await catalogRes.json().catch(() => ({}));
       if (!outletsRes.ok) {
         throw new Error(outletsJson.error || "Unable to load middleware outlets");
       }
-      if (!groupsRes.ok) {
-        throw new Error(groupsJson.error || "Unable to load menu groups");
+      if (!catalogRes.ok) {
+        throw new Error(catalogJson.error || "Unable to load catalog");
       }
       setOutlets((outletsJson.outlets as OutletRow[]) ?? []);
-      setGroups((groupsJson.groups as MenuGroupRow[]) ?? []);
+      setGroups((catalogJson.groups as MenuGroupPushSummary[]) ?? []);
+      setItems((catalogJson.items as CatalogPushPickerItem[]) ?? []);
+      setVariants((catalogJson.variants as CatalogPushPickerVariant[]) ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load push settings");
       setOutlets([]);
       setGroups([]);
+      setItems([]);
+      setVariants([]);
     } finally {
       setLoading(false);
     }
@@ -102,21 +116,98 @@ export default function OutletCatalogPushPanel() {
     [groups, includeEmptyGroups]
   );
 
+  const visibleItems = useMemo(() => {
+    if (!selectedGroupIds.length) return items;
+    const allowed = new Set(selectedGroupIds);
+    return items.filter((item) => item.menu_group_id && allowed.has(item.menu_group_id));
+  }, [items, selectedGroupIds]);
+
+  const visibleVariants = useMemo(() => {
+    const allowedItems = new Set(
+      selectedItemIds.length ? selectedItemIds : visibleItems.map((item) => item.id)
+    );
+    return variants.filter((variant) => {
+      if (selectedGroupIds.length) {
+        const groupAllowed = variant.menu_group_id && selectedGroupIds.includes(variant.menu_group_id);
+        if (!groupAllowed) return false;
+      }
+      if (selectedItemIds.length) {
+        return allowedItems.has(variant.item_id);
+      }
+      return true;
+    });
+  }, [variants, selectedItemIds, selectedGroupIds, visibleItems]);
+
   const preview = useMemo(() => {
-    const selectedGroups = groups.filter((group) => selectedGroupIds.includes(group.id));
+    if (mode === "remove") {
+      const selectedGroups = groups.filter((group) => selectedGroupIds.includes(group.id));
+      return {
+        groups: selectedGroups.length,
+        items: selectedGroups.reduce((sum, group) => sum + group.item_count, 0),
+        variants: selectedGroups.reduce((sum, group) => sum + group.variant_count, 0),
+      };
+    }
+
+    const selectedItems =
+      selectedItemIds.length > 0
+        ? visibleItems.filter((item) => selectedItemIds.includes(item.id))
+        : visibleItems;
+    const selectedVariants =
+      selectedVariantIds.length > 0
+        ? visibleVariants.filter((variant) => selectedVariantIds.includes(variant.id))
+        : visibleVariants;
+
     return {
-      groups: selectedGroups.length,
-      items: selectedGroups.reduce((sum, group) => sum + group.item_count, 0),
-      variants: selectedGroups.reduce((sum, group) => sum + group.variant_count, 0),
+      groups: selectedGroupIds.length,
+      items: selectedItems.length,
+      variants: selectedVariants.length,
     };
-  }, [groups, selectedGroupIds]);
+  }, [
+    mode,
+    groups,
+    selectedGroupIds,
+    selectedItemIds,
+    selectedVariantIds,
+    visibleItems,
+    visibleVariants,
+  ]);
+
+  const validatePushSelection = (): string | null => {
+    if (!selectedGroupIds.length && !selectedItemIds.length && !selectedVariantIds.length) {
+      return "Select at least one menu group, product, or variant.";
+    }
+    return null;
+  };
+
+  const cancelOfflinePendingSync = async () => {
+    setCancelOfflineBusy(true);
+    setError(null);
+    setCancelOfflineResult(null);
+    try {
+      const res = await fetch("/api/catalog/cancel-offline-pending-sync", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to clear pending sync for offline outlets");
+      setCancelOfflineResult(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear pending sync for offline outlets");
+    } finally {
+      setCancelOfflineBusy(false);
+    }
+  };
 
   const runAction = async () => {
     if (!selectedOutletIds.length) {
       setError("Select at least one outlet.");
       return;
     }
-    if (!selectedGroupIds.length) {
+
+    if (mode === "push") {
+      const validationError = validatePushSelection();
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+    } else if (!selectedGroupIds.length) {
       setError("Select at least one menu group.");
       return;
     }
@@ -166,7 +257,10 @@ export default function OutletCatalogPushPanel() {
           update_existing: mode === "push" ? updateExisting : false,
           outlet_ids: selectedOutletIds,
           menu_group_ids: selectedGroupIds,
+          item_ids: mode === "push" ? selectedItemIds : [],
+          variant_ids: mode === "push" ? selectedVariantIds : [],
           include_empty_groups: includeEmptyGroups,
+          sync_scope: mode === "push" ? defaultPushScope() : undefined,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -192,19 +286,22 @@ export default function OutletCatalogPushPanel() {
 
       await logWarehouseAction({
         action: WAREHOUSE_AUDIT_ACTIONS.SEND_TO_MIDDLEWARE,
-        page: "/Warehouse_Backoffice/catalog/outlet-push",
+        page: "/Warehouse_Backoffice/middleware",
         method: "POST",
         entity_type: "catalog",
-        entity_name: mode === "remove" ? "Menu group catalog remove" : "Menu group catalog push",
+        entity_name: mode === "remove" ? "Menu group catalog remove" : "Catalog push to middleware",
         details: {
-          mode: mode === "remove" ? "remove_by_groups" : "push_by_groups",
+          mode: mode === "remove" ? "remove_by_groups" : "push",
           delivery,
           scheduled_at: delivery === "schedule" ? normalizeScheduleInput(scheduledAtLocal) : null,
           sync_mode: mode === "push" && updateExisting ? "upsert" : "insert_only",
+          sync_scope: mode === "push" ? defaultPushScope() : null,
           outlet_ids: selectedOutletIds,
           outlet_names: selectedOutletNames,
           menu_group_ids: selectedGroupIds,
           menu_group_names: selectedGroupNames,
+          item_ids: mode === "push" ? selectedItemIds : [],
+          variant_ids: mode === "push" ? selectedVariantIds : [],
           sent: json.sent,
         },
       });
@@ -245,9 +342,8 @@ export default function OutletCatalogPushPanel() {
             Send to Middleware
           </h3>
           <p className={eb.pageCardBody} style={{ marginTop: 8, marginBottom: 0 }}>
-            {mode === "push"
-              ? "Push menu groups, products, and variants to selected tills. New SKUs are added by default; existing till items stay unchanged unless you enable a full refresh."
-              : "Remove selected groups from chosen tills. Central catalog is not changed."}
+            Push portal catalog updates (menu groups, products, variants, prices) to selected tills, or remove
+            groups from a till. Send immediately or schedule a date and time.
           </p>
         </div>
 
@@ -283,6 +379,27 @@ export default function OutletCatalogPushPanel() {
               Remove from outlets
             </button>
           </div>
+
+          <div className={styles.heroToolbar}>
+            <button
+              type="button"
+              className={eb.btnSecondary}
+              onClick={() => void cancelOfflinePendingSync()}
+              disabled={cancelOfflineBusy || pushing}
+            >
+              {cancelOfflineBusy ? "Clearing…" : "Clear pending sync for offline outlets"}
+            </button>
+          </div>
+
+          {cancelOfflineResult ? (
+            <p className={`${eb.pageCardBody} ${styles.heroMessage}`}>
+              <strong>Offline queue cleared.</strong> Removed {cancelOfflineResult.removed} pending event
+              {cancelOfflineResult.removed === 1 ? "" : "s"}
+              {cancelOfflineResult.offline_outlets.length > 0
+                ? ` for ${cancelOfflineResult.offline_outlets.map((row) => row.outlet_name).join(", ")}.`
+                : "."}
+            </p>
+          ) : null}
         </div>
       </section>
 
@@ -303,7 +420,11 @@ export default function OutletCatalogPushPanel() {
 
           <CatalogEntityMultiSelect
             label="Menu groups"
-            hint="Finished products and variants in these groups are included."
+            hint={
+              mode === "remove"
+                ? "Groups to remove from the selected tills."
+                : "Optional filter — limits products and variants below."
+            }
             placeholder={loading ? "Loading groups…" : "Select menu groups…"}
             items={visibleGroups}
             selectedIds={selectedGroupIds}
@@ -333,19 +454,62 @@ export default function OutletCatalogPushPanel() {
               </label>
             }
           />
+
+          {mode === "push" ? (
+            <>
+              <CatalogEntityMultiSelect
+                label="Products"
+                hint="Leave empty to include all products in the selected menu groups."
+                placeholder={loading ? "Loading…" : "All products in scope"}
+                items={visibleItems}
+                selectedIds={selectedItemIds}
+                onChange={setSelectedItemIds}
+                disabled={loading || pushing}
+                searchable
+                searchPlaceholder="Search products…"
+                emptyMessage="No products in scope."
+                getItemLabel={(item) => item.name}
+                renderMeta={(item) => (
+                  <>
+                    SKU {item.sku ?? "—"}
+                    {item.menu_group_name ? ` · ${item.menu_group_name}` : ""}
+                  </>
+                )}
+              />
+
+              <CatalogEntityMultiSelect
+                label="Variants"
+                hint="Leave empty to include all variants for the selected products or groups."
+                placeholder={loading ? "Loading…" : "All variants in scope"}
+                items={visibleVariants}
+                selectedIds={selectedVariantIds}
+                onChange={setSelectedVariantIds}
+                disabled={loading || pushing}
+                searchable
+                searchPlaceholder="Search variants…"
+                emptyMessage="No variants in scope."
+                getItemLabel={(variant) => `${variant.item_name} · ${variant.name}`}
+                renderMeta={(variant) => <>SKU {variant.sku ?? "—"}</>}
+              />
+            </>
+          ) : null}
         </div>
 
-        {preview.groups > 0 ? (
+        {preview.groups + preview.items + preview.variants > 0 ? (
           <div className={styles.summaryBar}>
             <span>
               {mode === "remove" ? "Will remove" : delivery === "schedule" ? "Will schedule" : "Ready to send"}:
             </span>
-            <span className={styles.summaryChip}>
-              {preview.groups} group{preview.groups === 1 ? "" : "s"}
-            </span>
-            <span className={styles.summaryChip}>
-              {preview.items} product{preview.items === 1 ? "" : "s"}
-            </span>
+            {preview.groups > 0 ? (
+              <span className={styles.summaryChip}>
+                {preview.groups} group{preview.groups === 1 ? "" : "s"}
+              </span>
+            ) : null}
+            {preview.items > 0 ? (
+              <span className={styles.summaryChip}>
+                {preview.items} product{preview.items === 1 ? "" : "s"}
+              </span>
+            ) : null}
             {preview.variants > 0 ? (
               <span className={styles.summaryChip}>
                 {preview.variants} variant{preview.variants === 1 ? "" : "s"}
@@ -369,7 +533,7 @@ export default function OutletCatalogPushPanel() {
         ) : null}
 
         <div className={styles.optionsSection}>
-          <h4 className={styles.optionsTitle}>Options</h4>
+          <h4 className={styles.optionsTitle}>Delivery</h4>
           <div className={styles.optionsGrid}>
             <label className={styles.optionRow}>
               <input
@@ -379,7 +543,7 @@ export default function OutletCatalogPushPanel() {
                 onChange={() => setDelivery("now")}
                 disabled={pushing}
               />
-              <span>Apply immediately</span>
+              <span>Send immediately</span>
             </label>
             <label className={styles.optionRow}>
               <input
@@ -389,17 +553,20 @@ export default function OutletCatalogPushPanel() {
                 onChange={() => setDelivery("schedule")}
                 disabled={pushing}
               />
-              <span>
-                Schedule for
+              <span>Schedule for date &amp; time</span>
+            </label>
+            {delivery === "schedule" ? (
+              <label className={styles.optionRow} style={{ gridColumn: "1 / -1" }}>
+                <span className={styles.fieldLabel}>Scheduled release (local time)</span>
                 <input
                   type="datetime-local"
                   className={styles.scheduleInput}
                   value={scheduledAtLocal}
                   onChange={(event) => setScheduledAtLocal(event.target.value)}
-                  disabled={pushing || delivery !== "schedule"}
+                  disabled={pushing}
                 />
-              </span>
-            </label>
+              </label>
+            ) : null}
             {mode === "push" ? (
               <label className={styles.optionRow}>
                 <input
@@ -411,7 +578,7 @@ export default function OutletCatalogPushPanel() {
                 <span>
                   Update existing products on tills
                   <span className={styles.optionHint}>
-                    Refresh names and prices for all products in the selected groups.
+                    Refresh names and prices for products already on the till.
                   </span>
                 </span>
               </label>
@@ -420,13 +587,13 @@ export default function OutletCatalogPushPanel() {
         </div>
 
         {error ? (
-          <div className={eb.alertBanner} style={{ marginTop: 16 }}>
+          <div className={`${eb.alertBanner} ${eb.alertRed} ${styles.formFeedback}`}>
             <strong>{mode === "remove" ? "Remove failed:" : "Push failed:"}</strong> {error}
           </div>
         ) : null}
 
         {result ? (
-          <div className={eb.pageCardBody} style={{ marginTop: 16, marginBottom: 0 }}>
+          <div className={`${eb.pageCardBody} ${styles.formFeedback}`}>
             <strong>
               {result.delivery === "schedule"
                 ? result.action === "remove"
@@ -441,7 +608,7 @@ export default function OutletCatalogPushPanel() {
             {result.action === "remove" ? "from" : "to"} {result.outlets} outlet
             {result.outlets === 1 ? "" : "s"}
             {result.delivery === "schedule" && result.scheduledAt
-              ? ` for ${formatScheduleLabel(result.scheduledAt)}.`
+              ? ` for ${formatStamp(result.scheduledAt)}.`
               : "."}
           </div>
         ) : null}

@@ -5,7 +5,6 @@ export type AllowlistEntry = {
   item_id: string;
   variant_id: string | null;
   allow_orders: boolean;
-  allow_stocktake: boolean;
   item_name?: string;
   variant_name?: string | null;
   sku?: string | null;
@@ -34,10 +33,7 @@ export async function fetchOutletCatalogAccess(outletId: string) {
       .select("id,item_id,name,sku,active")
       .eq("active", true)
       .order("name"),
-    supabase
-      .from("outlet_catalog_allowlist")
-      .select("id,item_id,variant_id,allow_orders,allow_stocktake")
-      .eq("outlet_id", outletId),
+    supabase.from("outlet_catalog_allowlist").select("id,item_id,variant_id,allow_orders").eq("outlet_id", outletId),
     supabase
       .from("outlet_auth_assignments")
       .select("outlet_id,auth_user_id,assignment_role,active")
@@ -76,14 +72,12 @@ export async function fetchOutletCatalogAccess(outletId: string) {
     return {
       ...item,
       allow_orders: itemAllow?.allow_orders ?? false,
-      allow_stocktake: itemAllow?.allow_stocktake ?? false,
       variants: variants.map((variant) => {
         const variantKey = `${item.id}:${variant.id}`;
         const variantAllow = allowByKey.get(variantKey);
         return {
           ...variant,
           allow_orders: variantAllow?.allow_orders ?? false,
-          allow_stocktake: variantAllow?.allow_stocktake ?? false,
         };
       }),
     };
@@ -105,20 +99,18 @@ export async function saveOutletCatalogAccess(input: {
     item_id: string;
     variant_id?: string | null;
     allow_orders: boolean;
-    allow_stocktake: boolean;
   }>;
 }) {
   const supabase = getServiceClient();
   const outletId = input.outlet_id;
 
   const rows = input.entries
-    .filter((entry) => entry.allow_orders || entry.allow_stocktake)
+    .filter((entry) => entry.allow_orders)
     .map((entry) => ({
       outlet_id: outletId,
       item_id: entry.item_id,
       variant_id: entry.variant_id ?? null,
       allow_orders: entry.allow_orders,
-      allow_stocktake: entry.allow_stocktake,
       updated_at: new Date().toISOString(),
     }));
 
@@ -136,7 +128,7 @@ export async function saveOutletCatalogAccess(input: {
         {
           outlet_id: outletId,
           auth_user_id: input.auth_user_id,
-          assignment_role: input.assignment_role ?? "both",
+          assignment_role: input.assignment_role ?? "orders",
           active: true,
           updated_at: new Date().toISOString(),
         },

@@ -19,13 +19,17 @@ function maxPosNumericSku(rows: Array<{ sku?: string | null }> | null | undefine
   return max;
 }
 
-function maxPosMenuGroupId(rows: Array<{ pos_menu_group_id?: number | null }> | null | undefined): number {
-  let max = 0;
+function firstMissingPosMenuGroupId(
+  rows: Array<{ pos_menu_group_id?: number | null }> | null | undefined
+): number {
+  const used = new Set<number>();
   for (const row of rows ?? []) {
     const id = row.pos_menu_group_id;
-    if (typeof id === "number" && Number.isFinite(id) && id > max) max = id;
+    if (typeof id === "number" && Number.isFinite(id) && id > 0) used.add(id);
   }
-  return max;
+  let candidate = 1;
+  while (used.has(candidate)) candidate += 1;
+  return candidate;
 }
 
 async function fetchAllSkuRows(
@@ -61,8 +65,10 @@ export async function nextPosVariantSku(supabase: SupabaseClient): Promise<strin
 export async function nextPosMenuGroupId(supabase: SupabaseClient): Promise<number> {
   const { data, error } = await supabase.from("catalog_menu_groups").select("pos_menu_group_id");
   if (error) throw error;
-  return maxPosMenuGroupId(data) + 1;
+  return firstMissingPosMenuGroupId(data);
 }
+
+export { firstMissingPosMenuGroupId };
 
 export async function allocatePosItemSku(
   supabase: SupabaseClient,

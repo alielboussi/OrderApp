@@ -26,6 +26,8 @@ const DEFAULT_UOM_VALUES = [
   "plastic",
   "Packet",
   "Box",
+  "Roll",
+  "Bundle",
 ] as const;
 
 export const formatUomLabel = (unit: string) => {

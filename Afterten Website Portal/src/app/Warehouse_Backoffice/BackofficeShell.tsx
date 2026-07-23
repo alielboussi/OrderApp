@@ -109,10 +109,11 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
       </aside>
       <div className={styles.main}>
         <header className={styles.header}>
-          <div>
-            <h2 className={styles.headerTitle}>{pageTitle}</h2>
+          <div className={styles.headerSide} aria-hidden="true" />
+          <h2 className={styles.headerTitle}>{pageTitle}</h2>
+          <div className={styles.headerSide}>
+            <MiddlewareStatusBadge />
           </div>
-          <MiddlewareStatusBadge />
         </header>
         <div className={styles.welcomeBanner}>
           Welcome to the Afterten Portal, {emailUsername}

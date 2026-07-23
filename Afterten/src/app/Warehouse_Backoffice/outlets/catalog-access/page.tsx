@@ -11,7 +11,6 @@ type CatalogVariant = {
   name: string;
   sku?: string | null;
   allow_orders: boolean;
-  allow_stocktake: boolean;
 };
 type CatalogItem = {
   id: string;
@@ -19,7 +18,6 @@ type CatalogItem = {
   sku?: string | null;
   has_variations?: boolean;
   allow_orders: boolean;
-  allow_stocktake: boolean;
   variants: CatalogVariant[];
 };
 
@@ -82,23 +80,16 @@ export default function OutletCatalogAccessPage() {
     );
   }, [catalog, search]);
 
-  const toggleItem = (itemId: string, field: "allow_orders" | "allow_stocktake", value: boolean) => {
+  const toggleItem = (itemId: string, value: boolean) => {
     setCatalog((prev) =>
       prev.map((item) => {
         if (item.id !== itemId) return item;
-        const next = { ...item, [field]: value };
-        if (item.has_variations) return next;
-        return next;
+        return { ...item, allow_orders: value };
       })
     );
   };
 
-  const toggleVariant = (
-    itemId: string,
-    variantId: string,
-    field: "allow_orders" | "allow_stocktake",
-    value: boolean
-  ) => {
+  const toggleVariant = (itemId: string, variantId: string, value: boolean) => {
     setCatalog((prev) =>
       prev.map((item) =>
         item.id !== itemId
@@ -106,7 +97,7 @@ export default function OutletCatalogAccessPage() {
           : {
               ...item,
               variants: item.variants.map((variant) =>
-                variant.id === variantId ? { ...variant, [field]: value } : variant
+                variant.id === variantId ? { ...variant, allow_orders: value } : variant
               ),
             }
       )
@@ -122,26 +113,23 @@ export default function OutletCatalogAccessPage() {
         item_id: string;
         variant_id?: string | null;
         allow_orders: boolean;
-        allow_stocktake: boolean;
       }> = [];
       for (const item of catalog) {
         if (item.has_variations) {
           for (const variant of item.variants) {
-            if (variant.allow_orders || variant.allow_stocktake) {
+            if (variant.allow_orders) {
               entries.push({
                 item_id: item.id,
                 variant_id: variant.id,
                 allow_orders: variant.allow_orders,
-                allow_stocktake: variant.allow_stocktake,
               });
             }
           }
-        } else if (item.allow_orders || item.allow_stocktake) {
+        } else if (item.allow_orders) {
           entries.push({
             item_id: item.id,
             variant_id: null,
             allow_orders: item.allow_orders,
-            allow_stocktake: item.allow_stocktake,
           });
         }
       }
@@ -151,7 +139,7 @@ export default function OutletCatalogAccessPage() {
         body: JSON.stringify({
           outlet_id: outletId,
           auth_user_id: authUserId.trim() || null,
-          assignment_role: "both",
+          assignment_role: "orders",
           entries,
         }),
       });
@@ -174,7 +162,7 @@ export default function OutletCatalogAccessPage() {
         <h3 className={eb.pageCardTitle}>Outlet Catalog Access</h3>
         <p className={eb.pageCardBody}>
           Select an outlet, link its Supabase Auth user, and choose which products and variants appear in the
-          Afterten Orders app and Stocktake app for that outlet.
+          Afterten Orders app for that outlet.
         </p>
       </section>
 
@@ -233,49 +221,27 @@ export default function OutletCatalogAccessPage() {
                 <div style={{ fontWeight: 600 }}>{item.name}</div>
                 <div style={{ fontSize: 13, color: "#57606a" }}>{item.sku ?? "—"}</div>
                 {!item.has_variations ? (
-                  <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={item.allow_orders}
-                        onChange={(e) => toggleItem(item.id, "allow_orders", e.target.checked)}
-                      />{" "}
-                      Orders app
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={item.allow_stocktake}
-                        onChange={(e) => toggleItem(item.id, "allow_stocktake", e.target.checked)}
-                      />{" "}
-                      Stocktake app
-                    </label>
-                  </div>
+                  <label style={{ display: "block", marginTop: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={item.allow_orders}
+                      onChange={(e) => toggleItem(item.id, e.target.checked)}
+                    />{" "}
+                    Orders app
+                  </label>
                 ) : (
                   <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                     {item.variants.map((variant) => (
                       <div key={variant.id} style={{ paddingLeft: 12, borderLeft: "3px solid #d4af37" }}>
                         <div>{variant.name}</div>
-                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={variant.allow_orders}
-                              onChange={(e) => toggleVariant(item.id, variant.id, "allow_orders", e.target.checked)}
-                            />{" "}
-                            Orders
-                          </label>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={variant.allow_stocktake}
-                              onChange={(e) =>
-                                toggleVariant(item.id, variant.id, "allow_stocktake", e.target.checked)
-                              }
-                            />{" "}
-                            Stocktake
-                          </label>
-                        </div>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={variant.allow_orders}
+                            onChange={(e) => toggleVariant(item.id, variant.id, e.target.checked)}
+                          />{" "}
+                          Orders app
+                        </label>
                       </div>
                     ))}
                   </div>

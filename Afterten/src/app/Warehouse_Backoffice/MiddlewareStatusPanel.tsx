@@ -65,48 +65,9 @@ export default function MiddlewareStatusPanel() {
 
   const offlineCount = merged.filter((m) => m.offline).length;
   const onlineCount = merged.length - offlineCount;
-  const offlineOutlets = merged.filter((m) => m.offline);
-  const syncUnhealthyOutlets = merged.filter((m) => m.sync_unhealthy);
 
   return (
     <div>
-      {offlineCount > 0 ? (
-        <div className={`${styles.alertBanner} ${styles.alertRed}`} style={{ marginBottom: 16 }}>
-          <div>
-            <strong>
-              {offlineCount} outlet{offlineCount > 1 ? "s" : ""} offline
-            </strong>
-            <div style={{ marginTop: 6, fontSize: 13 }}>
-              {offlineOutlets.map((m) => m.outlet.name).join(", ")}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {syncUnhealthyOutlets.length > 0 ? (
-        <div className={`${styles.alertBanner} ${styles.alertRed}`} style={{ marginBottom: 16 }}>
-          <div>
-            <strong>
-              {syncUnhealthyOutlets.length} outlet{syncUnhealthyOutlets.length > 1 ? "s" : ""} with sync backlog or errors
-            </strong>
-            <div style={{ marginTop: 6, fontSize: 13 }}>
-              {syncUnhealthyOutlets.map((m) => {
-                const detail =
-                  typeof m.pending_sales_count === "number" && m.pending_sales_count > 0
-                    ? `${m.pending_sales_count} pending`
-                    : m.last_sync_error
-                      ? "sync error"
-                      : "check queue";
-                return `${m.outlet.name} (${detail})`;
-              }).join(", ")}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 13 }}>
-              Review <a href="/Warehouse_Backoffice/pos-sync-failures">POS sync failures</a> and confirm each outlet PC runs the latest SCPGT.
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <section className={styles.pageCard}>
         <div className={styles.sectionHeaderBlue}>
           <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>

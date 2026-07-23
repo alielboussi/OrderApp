@@ -1,4 +1,4 @@
-/** Shared client helpers — same outlet list as POS deductions / stocktakes / live balances. */
+/** Shared client helpers for selling-outlet pickers in reports and warehouse tools. */
 
 export type SellingOutlet = {
   id: string;
@@ -16,7 +16,7 @@ export type SellingOutletWarehouse = {
   display_name: string;
 };
 
-/** One row per selling outlet — same labels on POS deductions, stocktakes, and live balances. */
+/** One row per selling outlet for outlet-scoped reports and filters. */
 export type SellingOutletOption = {
   outlet_id: string;
   outlet_name: string;
@@ -65,25 +65,8 @@ export async function fetchSellingOutlets(): Promise<SellingOutlet[]> {
   return (json.outlets as SellingOutlet[]) ?? [];
 }
 
-/** Active outlets for POS deduction programming (excludes Till 1, Till 2, Quick Corner). */
-export async function fetchPosDeductionOutlets(): Promise<SellingOutlet[]> {
-  const res = await fetch("/api/outlets?scope=pos-deductions", { cache: "no-store" });
-  if (!res.ok) throw new Error("Unable to load outlets");
-  const json = await res.json();
-  return (json.outlets as SellingOutlet[]) ?? [];
-}
-
 export async function fetchSellingOutletWarehouses(outletId?: string): Promise<SellingOutletWarehouse[]> {
   const params = new URLSearchParams({ scope: "outlet" });
-  if (outletId) params.set("outlet_id", outletId);
-  const res = await fetch(`/api/outlet-warehouses?${params}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Unable to load outlet warehouses");
-  const json = await res.json();
-  return (json.links as SellingOutletWarehouse[]) ?? [];
-}
-
-export async function fetchPosDeductionOutletWarehouses(outletId?: string): Promise<SellingOutletWarehouse[]> {
-  const params = new URLSearchParams({ scope: "pos-deductions" });
   if (outletId) params.set("outlet_id", outletId);
   const res = await fetch(`/api/outlet-warehouses?${params}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Unable to load outlet warehouses");

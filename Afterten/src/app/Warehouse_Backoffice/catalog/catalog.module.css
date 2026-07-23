@@ -23,9 +23,10 @@
 }
 
 .hero {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 24px;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -34,9 +35,13 @@
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  text-align: center;
 }
 
 .headerButtons {
+  position: absolute;
+  top: 26px;
+  right: 26px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -44,6 +49,7 @@
 
 .grow {
   flex: 1;
+  max-width: 100%;
 }
 
 .kicker {
@@ -52,6 +58,7 @@
   letter-spacing: 3px;
   text-transform: uppercase;
   color: #8da2ff;
+  text-align: center;
 }
 
 .title {
@@ -59,13 +66,15 @@
   font-size: 40px;
   letter-spacing: -0.5px;
   font-weight: 700;
+  text-align: center;
 }
 
 .subtitle {
-  margin: 0;
+  margin: 0 auto;
   color: #97a7c6;
   max-width: 560px;
   line-height: 1.55;
+  text-align: center;
 }
 
 .backButton {

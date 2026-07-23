@@ -26,8 +26,6 @@ type ItemPayload = {
   supplier_sku?: string | null;
   item_kind: ItemKind;
   consumption_unit: string;
-  consumption_qty_per_base: number;
-  stocktake_uom?: string | null;
   qty_decimal_places?: number | null;
   storage_unit?: string | null;
   storage_weight?: number | null;
@@ -67,8 +65,6 @@ const CORE_FIELDS =
 
 const OPTIONAL_COLUMNS = [
   "consumption_unit",
-  "consumption_qty_per_base",
-  "stocktake_uom",
   "storage_unit",
   "storage_weight",
   "purchase_unit_mass",
@@ -334,7 +330,7 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim() || null;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
     const supabase = getServiceClient();
-    const optional = [...OPTIONAL_COLUMNS];
+    let optional: string[] = [...OPTIONAL_COLUMNS];
     let data: unknown;
     let error: SupabaseError = null;
     let single = false;
@@ -475,11 +471,6 @@ export async function POST(request: Request) {
 
     const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
 
-    const consumptionQtyPerBase = toNumber(body.consumption_qty_per_base, 0, 0);
-    if (!consumptionQtyPerBase.ok || consumptionQtyPerBase.value <= 0) {
-      return NextResponse.json({ error: "consumption_qty_per_base must be greater than 0" }, { status: 400 });
-    }
-
     const storageUnit = cleanText(body.storage_unit) ?? null;
     let storageWeight: number | null = null;
     if (body.storage_weight !== undefined && body.storage_weight !== null && `${body.storage_weight}`.trim() !== "") {
@@ -562,8 +553,6 @@ export async function POST(request: Request) {
       supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: itemKind.value,
       consumption_unit: consumptionUnit,
-      consumption_qty_per_base: consumptionQtyPerBase.value,
-      stocktake_uom: cleanText(body.stocktake_uom) ?? consumptionUnit,
       qty_decimal_places: qtyDecimalPlacesValue,
       storage_unit: storageUnit,
       storage_weight: storageWeight,
@@ -596,7 +585,7 @@ export async function POST(request: Request) {
     };
 
     let attemptPayload: Partial<ItemPayload> = payload;
-    const optionalKeys = [...OPTIONAL_COLUMNS];
+    let optionalKeys: string[] = [...OPTIONAL_COLUMNS];
     let data: { id?: string; sku?: string | null } | null = null;
     let error: SupabaseError = null;
     let skuRetries = 0;
@@ -694,11 +683,6 @@ export async function PUT(request: Request) {
 
     const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
 
-    const consumptionQtyPerBase = toNumber(body.consumption_qty_per_base, 0, 0);
-    if (!consumptionQtyPerBase.ok || consumptionQtyPerBase.value <= 0) {
-      return NextResponse.json({ error: "consumption_qty_per_base must be greater than 0" }, { status: 400 });
-    }
-
     const storageUnit = cleanText(body.storage_unit) ?? null;
     let storageWeight: number | null = null;
     if (body.storage_weight !== undefined && body.storage_weight !== null && `${body.storage_weight}`.trim() !== "") {
@@ -769,8 +753,6 @@ export async function PUT(request: Request) {
       supplier_sku: cleanText(body.supplier_sku) ?? null,
       item_kind: itemKind.value,
       consumption_unit: consumptionUnit,
-      consumption_qty_per_base: consumptionQtyPerBase.value,
-      stocktake_uom: cleanText(body.stocktake_uom) ?? consumptionUnit,
       qty_decimal_places: qtyDecimalPlacesValue,
       storage_unit: storageUnit,
       storage_weight: storageWeight,
@@ -813,7 +795,7 @@ export async function PUT(request: Request) {
     }
 
     let attemptPayload: Partial<ItemPayload> = payload;
-    const optionalKeys = [...OPTIONAL_COLUMNS];
+    let optionalKeys: string[] = [...OPTIONAL_COLUMNS];
     let data: { id?: string; name?: string; sku?: string | null } | null = null;
     let error: SupabaseError = null;
 

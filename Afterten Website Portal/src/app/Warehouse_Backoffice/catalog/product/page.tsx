@@ -23,7 +23,6 @@ type FormState = {
   item_kind: "finished" | "ingredient" | "raw";
   consumption_unit: string;
   units_per_pack: string;
-  consumption_qty_per_base: string;
   cost: string;
   selling_price: string;
   has_variations: boolean;
@@ -39,7 +38,6 @@ const defaultForm: FormState = {
   item_kind: "finished",
   consumption_unit: "pc",
   units_per_pack: "1",
-  consumption_qty_per_base: "1",
   cost: "0",
   selling_price: "0",
   has_variations: false,
@@ -83,7 +81,6 @@ function ProductCreatePage() {
     }
   }, []);
 
-  const disableVariantControlled = form.has_variations;
   const vatExcludedPrice = useMemo(() => {
     const parsed = Number(form.selling_price);
     if (!Number.isFinite(parsed) || parsed <= 0) return "";
@@ -126,7 +123,6 @@ function ProductCreatePage() {
             item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
             consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
             units_per_pack: String(item.units_per_purchase_pack ?? 1),
-            consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
             cost: (item.cost ?? 0).toString(),
             selling_price: (item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
@@ -192,9 +188,7 @@ function ProductCreatePage() {
         item_kind: form.item_kind,
         consumption_unit: form.consumption_unit,
         units_per_purchase_pack: toNumber(form.units_per_pack, 1),
-        consumption_qty_per_base: toNumber(form.consumption_qty_per_base, 1),
         qty_decimal_places: 2,
-        stocktake_uom: form.consumption_unit,
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
         has_variations: form.has_variations,
@@ -274,7 +268,6 @@ function ProductCreatePage() {
               item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
               consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
               units_per_pack: String(item.units_per_purchase_pack ?? 1),
-              consumption_qty_per_base: (item.consumption_qty_per_base ?? 1).toString(),
               cost: (item.cost ?? 0).toString(),
               selling_price: (item.selling_price ?? 0).toString(),
               has_variations: Boolean(item.has_variations),
@@ -339,7 +332,7 @@ function ProductCreatePage() {
             ) : null}
             <Select
               label="How its consumed"
-              hint="Single unit for outlet orders, stocktake counts, and POS sale deductions (e.g. g, pc, plastic)"
+              hint="Unit used for outlet orders (e.g. Bag, kg, pc)"
               value={form.consumption_unit}
               onChange={(v) => handleChange("consumption_unit", v)}
               options={uomOptions}
@@ -353,17 +346,6 @@ function ProductCreatePage() {
                 onChange={(v) => handleChange("units_per_pack", v)}
                 step="1"
                 min="1"
-              />
-            )}
-            {!disableVariantControlled && form.item_kind !== "finished" && (
-              <Field
-                type="number"
-                label="How Much Is Consumed"
-                hint="Used by recipes: how many consumption units are used per 1 finished unit"
-                value={form.consumption_qty_per_base}
-                onChange={(v) => handleChange("consumption_qty_per_base", v)}
-                step="0.01"
-                min="0"
               />
             )}
             <Field

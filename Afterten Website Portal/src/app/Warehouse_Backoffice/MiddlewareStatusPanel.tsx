@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import styles from "./enterprise.module.css";
 import { formatStamp, MIDDLEWARE_POLL_MS, OFFLINE_MS } from "./middlewareMonitorShared";
 
@@ -60,23 +60,9 @@ export default function MiddlewareStatusPanel() {
 
   const offlineCount = merged.filter((m) => m.offline).length;
   const onlineCount = merged.length - offlineCount;
-  const offlineOutlets = merged.filter((m) => m.offline);
 
   return (
     <div>
-      {offlineCount > 0 ? (
-        <div className={`${styles.alertBanner} ${styles.alertRed}`} style={{ marginBottom: 16 }}>
-          <div>
-            <strong>
-              {offlineCount} outlet{offlineCount > 1 ? "s" : ""} offline
-            </strong>
-            <div style={{ marginTop: 6, fontSize: 13 }}>
-              {offlineOutlets.map((m) => m.outlet.name).join(", ")}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <section className={styles.pageCard}>
         <div className={styles.sectionHeaderBlue}>
           <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>

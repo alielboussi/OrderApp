@@ -23,6 +23,7 @@
 }
 
 .hero {
+  position: relative;
   display: flex;
   gap: 24px;
   border-radius: 28px;
@@ -33,13 +34,15 @@
   backdrop-filter: blur(16px);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   flex-wrap: wrap;
+  text-align: center;
 }
 
 .grow {
   flex: 1;
   min-width: 240px;
+  max-width: 100%;
 }
 
 .kicker {
@@ -48,6 +51,7 @@
   letter-spacing: 4px;
   text-transform: uppercase;
   color: #8da2ff;
+  text-align: center;
 }
 
 .title {
@@ -55,16 +59,21 @@
   font-size: 40px;
   letter-spacing: -1px;
   font-weight: 700;
+  text-align: center;
 }
 
 .subtitle {
-  margin: 0;
+  margin: 0 auto;
   color: #97a7c6;
   max-width: 640px;
   line-height: 1.6;
+  text-align: center;
 }
 
 .headerButtons {
+  position: absolute;
+  top: 28px;
+  right: 28px;
   display: flex;
   gap: 12px;
   flex-wrap: wrap;

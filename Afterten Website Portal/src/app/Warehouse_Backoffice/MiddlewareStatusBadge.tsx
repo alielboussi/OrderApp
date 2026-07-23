@@ -60,7 +60,7 @@ export default function MiddlewareStatusBadge() {
         : styles.middlewareBadgeOk;
 
   return (
-    <Link href="/Warehouse_Backoffice/middleware-heartbeat" className={`${styles.middlewareBadge} ${tone}`}>
+    <Link href="/Warehouse_Backoffice/middleware" className={`${styles.middlewareBadge} ${tone}`}>
       {label}
     </Link>
   );

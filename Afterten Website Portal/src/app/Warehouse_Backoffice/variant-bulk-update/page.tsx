@@ -19,7 +19,6 @@ type VariantSummary = {
   supplier_sku?: string | null;
   item_kind: string;
   consumption_uom: string;
-  stocktake_uom?: string | null;
   purchase_pack_unit: string;
   units_per_purchase_pack: number;
   purchase_unit_mass?: number | null;
@@ -277,7 +276,6 @@ export default function VariantBulkUpdatePage() {
               item_id: variant.item_id,
               name: variant.name,
               [fieldMeta.value]: updateValue,
-              ...(fieldMeta.value === "consumption_uom" ? { stocktake_uom: updateValue } : {}),
             }),
           });
           if (!res.ok) {

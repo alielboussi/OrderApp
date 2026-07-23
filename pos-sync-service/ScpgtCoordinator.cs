@@ -93,32 +93,14 @@ public sealed class ScpgtCoordinator
                 null);
         }
 
-        if (!context.SyncOpeningUtc.HasValue)
-        {
-            return BuildSnapshot(
-                overrideTitle ?? "Waiting for stocktake period.",
-                overrideDetail ?? "Open a period in Afterten Orders → Outlet Stocktake.",
-                context,
-                false,
-                null);
-        }
-
-        SupabaseClient.WarehousePeriodRow? openPeriod = null;
-        if (!string.IsNullOrWhiteSpace(context.WarehouseId))
-        {
-            openPeriod = await _supabase.GetOpenStockPeriodAsync(context.WarehouseId, cancellationToken);
-        }
-
         var lastHeartbeatUtc = await _supabase.GetLastHeartbeatUtcAsync(cancellationToken);
 
-        var syncActive = openPeriod is not null;
+        var syncActive = true;
         return BuildSnapshot(
-            overrideTitle ?? (syncActive ? "Sync active." : "No open stocktake period."),
-            overrideDetail ?? (syncActive
-                ? "Sales upload uses the POS sync window from stocktake open/close."
-                : "Start Outlet Stocktake in the Android app."),
+            overrideTitle ?? "Sync active.",
+            overrideDetail ?? "POS sales upload to Supabase (no stocktake window required).",
             context,
-            syncActive && overrideTitle is null,
+            overrideTitle is null,
             lastHeartbeatUtc);
     }
 
@@ -142,7 +124,7 @@ public sealed class ScpgtCoordinator
             : "Last cutoff: None";
 
         var ordersAppLabel = context?.UsesOrdersApp == true
-            ? "Orders app outlet: Yes (POS deductions enabled)"
+            ? "Orders app outlet: Yes"
             : "Orders app outlet: No (sales audit only)";
 
         var minUtc = ConfigStore.LoadMinSaleDateUtc(_contentRoot);
@@ -179,7 +161,7 @@ public sealed class ScpgtCoordinator
 
         if (!effectiveMin.HasValue && !effectiveMax.HasValue)
         {
-            return "Effective window: Waiting for stocktake open";
+            return "Effective window: All pending sales";
         }
 
         var minLabel = effectiveMin.HasValue

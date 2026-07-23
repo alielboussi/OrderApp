@@ -1,10 +1,12 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
-import styles from "../../enterprise.module.css";
+import eb from "../../enterprise.module.css";
+import pageStyles from "./menu-groups.module.css";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
+import { firstMissingPosMenuGroupId } from "@/lib/pos-catalog-ids";
+import { findDuplicateMenuGroupSets } from "@/lib/menu-group-dedup";
 
 type MenuGroup = {
   id: string;
@@ -22,13 +24,20 @@ const emptyForm = {
   active: true,
 };
 
+function newGroupForm(groups: MenuGroup[]) {
+  return {
+    ...emptyForm,
+    pos_menu_group_id: String(firstMissingPosMenuGroupId(groups)),
+  };
+}
+
 export default function CatalogMenuGroupsPage() {
-  const router = useRouter();
   const { status, readOnly, userId, userEmail } = useWarehouseAuth();
   const [groups, setGroups] = useState<MenuGroup[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deduping, setDeduping] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -38,7 +47,9 @@ export default function CatalogMenuGroupsPage() {
       const res = await fetch("/api/catalog/menu-groups");
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Unable to load menu groups");
-      setGroups(Array.isArray(json.groups) ? json.groups : []);
+      const nextGroups = Array.isArray(json.groups) ? json.groups : [];
+      setGroups(nextGroups);
+      setForm((prev) => (prev.id ? prev : newGroupForm(nextGroups)));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load menu groups");
     } finally {
@@ -46,28 +57,9 @@ export default function CatalogMenuGroupsPage() {
     }
   }, []);
 
-  const fetchNextMenuGroupId = useCallback(async () => {
-    try {
-      const res = await fetch("/api/catalog/next-pos-ids");
-      if (!res.ok) return;
-      const json = await res.json();
-      if (typeof json.next_menu_group_id === "number") {
-        setForm((prev) =>
-          prev.id ? prev : { ...prev, pos_menu_group_id: String(json.next_menu_group_id) }
-        );
-      }
-    } catch (error) {
-      console.error("Failed to load next MintPOS menu group ID", error);
-    }
-  }, []);
-
   useEffect(() => {
     if (status === "ok") load();
   }, [status, load]);
-
-  useEffect(() => {
-    if (status === "ok" && !form.id) void fetchNextMenuGroupId();
-  }, [status, form.id, fetchNextMenuGroupId]);
 
   const startEdit = (group: MenuGroup) => {
     setForm({
@@ -80,8 +72,55 @@ export default function CatalogMenuGroupsPage() {
   };
 
   const resetForm = () => {
-    setForm(emptyForm);
-    void fetchNextMenuGroupId();
+    setForm(newGroupForm(groups));
+  };
+
+  const duplicateSets = findDuplicateMenuGroupSets(groups);
+  const duplicateCount = duplicateSets.reduce((sum, set) => sum + set.length - 1, 0);
+
+  const removeDuplicates = async () => {
+    if (readOnly) {
+      setMessage("Read-only access: removing duplicates is disabled.");
+      return;
+    }
+    if (!duplicateCount) return;
+
+    const preview = duplicateSets
+      .map((set) => {
+        const names = set.map((group) => group.name).join(" / ");
+        const posId = set[0]?.pos_menu_group_id;
+        return `MintPOS ID ${posId}: ${names}`;
+      })
+      .join("\n");
+
+    const confirmed = window.confirm(
+      `Remove ${duplicateCount} duplicate menu group${duplicateCount === 1 ? "" : "s"}?\n\n` +
+        `${preview}\n\n` +
+        "Products in removed groups will be moved to the kept group for each MintPOS ID."
+    );
+    if (!confirmed) return;
+
+    setDeduping(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/catalog/menu-groups/dedupe", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Unable to remove duplicate menu groups");
+
+      const removedCount = Array.isArray(json.removed) ? json.removed.length : 0;
+      const relinked = typeof json.items_relinked === "number" ? json.items_relinked : 0;
+      setMessage(
+        removedCount
+          ? `Removed ${removedCount} duplicate group${removedCount === 1 ? "" : "s"} and relinked ${relinked} product${relinked === 1 ? "" : "s"}.`
+          : "No duplicate menu groups found."
+      );
+      resetForm();
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to remove duplicate menu groups");
+    } finally {
+      setDeduping(false);
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -97,7 +136,6 @@ export default function CatalogMenuGroupsPage() {
       const payload = {
         ...(form.id ? { id: form.id } : {}),
         name: form.name.trim(),
-        pos_menu_group_id: form.pos_menu_group_id.trim() ? Number(form.pos_menu_group_id) : null,
         sort_order: Number(form.sort_order) || 0,
         active: form.active,
       };
@@ -123,81 +161,67 @@ export default function CatalogMenuGroupsPage() {
   if (status !== "ok") return null;
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section className={styles.pageCard}>
-        <div className={styles.sectionHeaderBlue}>
-          <h3 className={styles.pageCardTitle} style={{ margin: 0 }}>
+    <div className={pageStyles.pageStack}>
+      <section className={eb.pageCard}>
+        <div className={eb.sectionHeaderBlue}>
+          <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
             POS Menu Groups
           </h3>
-          <p className={styles.pageCardBody}>
+          <p className={eb.pageCardBody}>
             MintPOS only shows products when they are linked to a menu group. Create groups here, assign them on finished products, then send updates from Products.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button type="button" className={styles.btnSecondary} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu")}>
-            Products
-          </button>
-          <button type="button" className={styles.btnSecondary} onClick={() => router.push("/Warehouse_Backoffice")}>
-            Dashboard
-          </button>
-        </div>
       </section>
 
-      {message ? (
-        <p className={styles.pageCardBody} style={{ margin: 0, color: "#1a7f37" }}>
-          {message}
-        </p>
-      ) : null}
+      {message ? <p className={pageStyles.message}>{message}</p> : null}
 
-      <section className={styles.pageCard}>
-        <h3 className={styles.pageCardTitle}>{form.id ? "Edit menu group" : "New menu group"}</h3>
-        <form onSubmit={submit} style={{ display: "grid", gap: 12, maxWidth: 520 }}>
-          <label className={styles.pageCardBody} style={{ margin: 0 }}>
+      <section className={eb.pageCard}>
+        <h3 className={eb.pageCardTitle}>{form.id ? "Edit menu group" : "New menu group"}</h3>
+        <form onSubmit={submit} className={pageStyles.menuGroupForm}>
+          <label className={`${eb.pageCardBody} ${pageStyles.formField}`}>
             Name
             <input
-              className={styles.fieldInput}
+              className={eb.fieldInput}
               value={form.name}
               onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
               required
-              style={{ display: "block", marginTop: 6 }}
             />
           </label>
-          <label className={styles.pageCardBody} style={{ margin: 0 }}>
+          <label className={`${eb.pageCardBody} ${pageStyles.formField}`}>
             MintPOS group ID
             <input
-              className={styles.fieldInput}
+              className={eb.fieldInput}
+              type="number"
+              min={1}
               value={form.pos_menu_group_id}
-              onChange={(e) => setForm((prev) => ({ ...prev, pos_menu_group_id: e.target.value }))}
-              placeholder="Auto-assigned on create"
-              readOnly={!form.id}
-              style={{ display: "block", marginTop: 6 }}
+              readOnly
+              aria-readonly
             />
-            {!form.id ? (
-              <small style={{ display: "block", marginTop: 4, color: "#57606a" }}>
-                Next available ID from catalog_menu_groups (used when syncing to MintPOS).
-              </small>
-            ) : null}
+            <small>
+              {form.id
+                ? "Assigned automatically when this group was created and cannot be changed."
+                : "Will use the lowest missing number in the current MintPOS group ID sequence."}
+            </small>
           </label>
-          <label className={styles.pageCardBody} style={{ margin: 0 }}>
+          <label className={`${eb.pageCardBody} ${pageStyles.formField}`}>
             Sort order
             <input
-              className={styles.fieldInput}
+              className={eb.fieldInput}
               type="number"
               value={form.sort_order}
               onChange={(e) => setForm((prev) => ({ ...prev, sort_order: e.target.value }))}
-              style={{ display: "block", marginTop: 6 }}
             />
           </label>
-          <label className={styles.pageCardBody} style={{ margin: 0, display: "flex", gap: 8, alignItems: "center" }}>
+          <label className={`${eb.pageCardBody} ${pageStyles.formCheckbox}`}>
             <input type="checkbox" checked={form.active} onChange={(e) => setForm((prev) => ({ ...prev, active: e.target.checked }))} />
             Active
           </label>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button type="submit" className={styles.btnAdd} disabled={saving}>
+          <div className={pageStyles.formActions}>
+            <button type="submit" className={eb.btnAdd} disabled={saving}>
               {saving ? "Saving..." : form.id ? "Update group" : "Create group"}
             </button>
             {form.id ? (
-              <button type="button" className={styles.btnSecondary} onClick={resetForm}>
+              <button type="button" className={eb.btnSecondary} onClick={resetForm}>
                 Cancel edit
               </button>
             ) : null}
@@ -205,18 +229,24 @@ export default function CatalogMenuGroupsPage() {
         </form>
       </section>
 
-      <section className={styles.pageCard}>
-        <h3 className={styles.pageCardTitle}>Existing groups</h3>
-        {loading ? <p className={styles.pageCardBody}>Loading...</p> : null}
-        {!loading && groups.length === 0 ? <p className={styles.pageCardBody}>No menu groups yet.</p> : null}
+      <section className={eb.pageCard}>
+        <h3 className={eb.pageCardTitle}>Existing groups</h3>
+        {!readOnly && duplicateCount > 0 ? (
+          <div className={pageStyles.tableActions}>
+            <button type="button" className={eb.btnSecondary} onClick={() => void removeDuplicates()} disabled={deduping || loading}>
+              {deduping ? "Removing duplicates…" : `Remove ${duplicateCount} duplicate group${duplicateCount === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        ) : null}
+        {loading ? <p className={eb.pageCardBody}>Loading...</p> : null}
+        {!loading && groups.length === 0 ? <p className={eb.pageCardBody}>No menu groups yet.</p> : null}
         {!loading && groups.length > 0 ? (
-          <div className={styles.tableWrap}>
-            <table className={styles.dataTable}>
+          <div className={eb.tableWrap}>
+            <table className={eb.dataTable}>
               <thead>
                 <tr>
                   <th>Name</th>
                   <th style={{ whiteSpace: "nowrap" }}>MintPOS ID</th>
-                  <th style={{ whiteSpace: "nowrap" }}>Sort</th>
                   <th style={{ whiteSpace: "nowrap" }}>Status</th>
                   <th style={{ whiteSpace: "nowrap", width: 88 }}>Actions</th>
                 </tr>
@@ -226,10 +256,9 @@ export default function CatalogMenuGroupsPage() {
                   <tr key={group.id}>
                     <td>{group.name}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{group.pos_menu_group_id ?? "—"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{group.sort_order}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{group.active ? "Active" : "Inactive"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      <button type="button" className={styles.btnSecondary} onClick={() => startEdit(group)}>
+                      <button type="button" className={eb.btnSecondary} onClick={() => startEdit(group)}>
                         Edit
                       </button>
                     </td>

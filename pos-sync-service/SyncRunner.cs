@@ -91,8 +91,8 @@ public sealed class SyncRunner
 
         if (!syncContext.SyncOpeningUtc.HasValue)
         {
-            _logger.LogWarning(
-                "No pos_sync_opening counter — uploading Pending sales anyway (open a stocktake period for inventory deduction).");
+            _logger.LogInformation(
+                "No pos_sync_opening counter — uploading Pending sales without a sync window filter.");
         }
 
         var syncOptions = _syncOptions.CurrentValue;

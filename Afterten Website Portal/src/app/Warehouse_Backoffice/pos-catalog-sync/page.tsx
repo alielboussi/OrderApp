@@ -1,16 +1,5 @@
-"use client";
-
-import { useWarehouseAuth } from "../useWarehouseAuth";
-import PosCatalogSyncPanel from "../PosCatalogSyncPanel";
+import RedirectToMiddlewareTab from "../RedirectToMiddlewareTab";
 
 export default function PosCatalogSyncPage() {
-  const { status } = useWarehouseAuth();
-
-  if (status !== "ok") return null;
-
-  return (
-    <div>
-      <PosCatalogSyncPanel />
-    </div>
-  );
+  return <RedirectToMiddlewareTab tab="outlet-push" />;
 }

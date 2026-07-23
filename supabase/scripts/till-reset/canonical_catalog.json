@@ -1,0 +1,35 @@
+{
+  "source": "Till 1 MintPOS export",
+  "menu_groups": [
+    { "pos_menu_group_id": 2, "name": "Alcohol" },
+    { "pos_menu_group_id": 3, "name": "Main Meals" },
+    { "pos_menu_group_id": 4, "name": "Bread" },
+    { "pos_menu_group_id": 5, "name": "Breakfast" },
+    { "pos_menu_group_id": 6, "name": "Burgers" },
+    { "pos_menu_group_id": 7, "name": "Cakes" },
+    { "pos_menu_group_id": 8, "name": "Indian Cuisine" },
+    { "pos_menu_group_id": 9, "name": "Raw Vegetables" },
+    { "pos_menu_group_id": 10, "name": "Commodities" },
+    { "pos_menu_group_id": 11, "name": "Beverages" },
+    { "pos_menu_group_id": 12, "name": "Sauces" },
+    { "pos_menu_group_id": 16, "name": "Ice" },
+    { "pos_menu_group_id": 19, "name": "Pizza" },
+    { "pos_menu_group_id": 21, "name": "Rice" },
+    { "pos_menu_group_id": 22, "name": "Salads" },
+    { "pos_menu_group_id": 23, "name": "Sandwiches" },
+    { "pos_menu_group_id": 25, "name": "Snacks" },
+    { "pos_menu_group_id": 26, "name": "Todays Special" },
+    { "pos_menu_group_id": 28, "name": "Dough" },
+    { "pos_menu_group_id": 29, "name": "Ingredients" },
+    { "pos_menu_group_id": 30, "name": "Raw Poultry" },
+    { "pos_menu_group_id": 31, "name": "Raw Beef" },
+    { "pos_menu_group_id": 33, "name": "Dip'd Wings" },
+    { "pos_menu_group_id": 35, "name": "Energy Drinks" },
+    { "pos_menu_group_id": 36, "name": "Packaging" }
+  ],
+  "notes": [
+    "Till 1 is the reference. Supabase aligns to Till 1 group IDs first.",
+    "Till 2 and Quick Corner MintPOS are remapped to these IDs before portal push.",
+    "Packaging uses group 36 on Till 1 (not 20)."
+  ]
+}

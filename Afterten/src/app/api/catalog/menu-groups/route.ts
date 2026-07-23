@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-import { allocatePosMenuGroupId } from "@/lib/pos-catalog-ids";
+import { nextPosMenuGroupId } from "@/lib/pos-catalog-ids";
 import {
   MENU_GROUP_TRACKED_FIELDS,
   parseCatalogChangeActor,
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("catalog_menu_groups")
       .select("id,name,pos_menu_group_id,active,sort_order,created_at,updated_at")
-      .order("sort_order", { ascending: true })
+      .order("pos_menu_group_id", { ascending: true })
       .order("name", { ascending: true });
     if (error) throw error;
 
@@ -67,19 +67,11 @@ export async function POST(request: Request) {
     const name = cleanText(body.name);
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-    const posMenuGroupId =
-      body.pos_menu_group_id === null || body.pos_menu_group_id === undefined || body.pos_menu_group_id === ""
-        ? null
-        : Number(body.pos_menu_group_id);
-    if (posMenuGroupId !== null && !Number.isFinite(posMenuGroupId)) {
-      return NextResponse.json({ error: "pos_menu_group_id must be numeric" }, { status: 400 });
-    }
-
     const sortOrder = Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : 0;
     const active = body.active !== false;
 
     const supabase = getServiceClient();
-    const resolvedPosMenuGroupId = await allocatePosMenuGroupId(supabase, posMenuGroupId);
+    const resolvedPosMenuGroupId = await nextPosMenuGroupId(supabase);
 
     const { data, error } = await supabase
       .from("catalog_menu_groups")
@@ -131,14 +123,6 @@ export async function PUT(request: Request) {
     const name = cleanText(body.name);
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-    const posMenuGroupId =
-      body.pos_menu_group_id === null || body.pos_menu_group_id === undefined || body.pos_menu_group_id === ""
-        ? null
-        : Number(body.pos_menu_group_id);
-    if (posMenuGroupId !== null && !Number.isFinite(posMenuGroupId)) {
-      return NextResponse.json({ error: "pos_menu_group_id must be numeric" }, { status: 400 });
-    }
-
     const sortOrder = Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : 0;
     const active = body.active !== false;
 
@@ -155,7 +139,7 @@ export async function PUT(request: Request) {
       .from("catalog_menu_groups")
       .update({
         name,
-        pos_menu_group_id: posMenuGroupId,
+        pos_menu_group_id: existingRow.pos_menu_group_id,
         sort_order: sortOrder,
         active,
         updated_at: new Date().toISOString(),
@@ -176,7 +160,7 @@ export async function PUT(request: Request) {
       before: existingRow as Record<string, unknown>,
       after: {
         name,
-        pos_menu_group_id: posMenuGroupId,
+        pos_menu_group_id: existingRow.pos_menu_group_id,
         active,
         sort_order: sortOrder,
       },

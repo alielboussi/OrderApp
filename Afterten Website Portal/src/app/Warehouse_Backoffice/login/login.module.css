@@ -34,12 +34,14 @@
   margin: 0 0 8px;
   font-size: 20px;
   font-weight: 700;
+  text-align: center;
 }
 
 .subtitle {
   margin: 0 0 20px;
   color: #5c5c5c;
   line-height: 1.45;
+  text-align: center;
 }
 
 .googleButton {

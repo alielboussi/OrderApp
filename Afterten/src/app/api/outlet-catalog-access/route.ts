@@ -40,12 +40,11 @@ export async function PUT(request: Request) {
     const payload = await saveOutletCatalogAccess({
       outlet_id: outletId,
       auth_user_id: typeof body.auth_user_id === "string" ? body.auth_user_id.trim() : null,
-      assignment_role: body.assignment_role === "orders" || body.assignment_role === "stocktake" ? body.assignment_role : "both",
+      assignment_role: body.assignment_role === "orders" || body.assignment_role === "stocktake" ? body.assignment_role : "orders",
       entries: entries.map((entry: Record<string, unknown>) => ({
         item_id: String(entry.item_id ?? ""),
         variant_id: entry.variant_id ? String(entry.variant_id) : null,
         allow_orders: entry.allow_orders === true,
-        allow_stocktake: entry.allow_stocktake === true,
       })),
     });
 

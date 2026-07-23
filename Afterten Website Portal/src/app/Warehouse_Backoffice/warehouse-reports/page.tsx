@@ -179,8 +179,7 @@ export default function WarehouseReportsPage() {
         const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
           .from("outlet_warehouses")
           .select("warehouse_id")
-          .in("outlet_id", outletIds)
-          .eq("show_in_stocktake", true);
+          .in("outlet_id", outletIds);
 
         if (outletWarehouseError) throw outletWarehouseError;
 

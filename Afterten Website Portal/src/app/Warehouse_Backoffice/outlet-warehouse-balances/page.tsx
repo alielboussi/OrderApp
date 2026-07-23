@@ -174,7 +174,6 @@ export default function OutletWarehouseBalancesPage() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [variantNames, setVariantNames] = useState<Record<string, string>>({});
   const [itemUoms, setItemUoms] = useState<Record<string, string>>({});
-  const [itemConsumption, setItemConsumption] = useState<Record<string, { uom: string; perBase: number }>>({});
   const [variantUoms, setVariantUoms] = useState<Record<string, string>>({});
   const [itemPackMass, setItemPackMass] = useState<Record<string, { mass: number | null; uom: string | null }>>({});
   const [loading, setLoading] = useState(false);
@@ -560,7 +559,7 @@ export default function OutletWarehouseBalancesPage() {
           supabase
             .from("catalog_items")
             .select(
-              "id,consumption_unit,consumption_uom,consumption_qty_per_base,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom"
+              "id,consumption_unit,consumption_uom,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom"
             )
             .in("id", ids),
           supabase
@@ -575,17 +574,12 @@ export default function OutletWarehouseBalancesPage() {
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
-        const consumptionMap: Record<string, { uom: string; perBase: number }> = {};
         const variantUomMap: Record<string, string> = {};
         const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
         (itemData || []).forEach((row) => {
           const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? row.purchase_pack_unit ?? "each";
-          const perBase = typeof row.consumption_qty_per_base === "number" && row.consumption_qty_per_base > 0
-            ? row.consumption_qty_per_base
-            : 1;
           if (row.id) {
             uomMap[row.id] = fallbackUom;
-            consumptionMap[row.id] = { uom: fallbackUom, perBase };
           }
           if (row.id) {
             packMap[row.id] = {
@@ -615,14 +609,12 @@ export default function OutletWarehouseBalancesPage() {
 
         setVariantNames(map);
         setItemUoms(uomMap);
-        setItemConsumption(consumptionMap);
         setVariantUoms(variantUomMap);
         setItemPackMass(packMap);
       } catch {
         if (active) {
           setVariantNames({});
           setItemUoms({});
-          setItemConsumption({});
           setVariantUoms({});
           setItemPackMass({});
         }
@@ -815,16 +807,8 @@ export default function OutletWarehouseBalancesPage() {
                 <span className={`${styles.alignRight} ${item.net_units !== null && item.net_units < 0 ? styles.negative : ""}`}>
                   {(() => {
                     const variantKey = normalizeVariantKey(item.variant_key);
-                    const consumption = itemConsumption[item.item_id];
-                    const perBase = consumption?.perBase ?? 1;
-                    const uom = variantUoms[variantKey] || consumption?.uom || itemUoms[item.item_id];
-                    const displayQty =
-                      item.net_units == null
-                        ? null
-                        : perBase > 0
-                          ? item.net_units / perBase
-                          : item.net_units;
-                    const formatted = formatQtyWithUom(displayQty, uom);
+                    const uom = variantUoms[variantKey] || itemUoms[item.item_id];
+                    const formatted = formatQtyWithUom(item.net_units, uom);
                     return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                   })()}
                 </span>
@@ -833,10 +817,7 @@ export default function OutletWarehouseBalancesPage() {
                     {(() => {
                       const packInfo = itemPackMass[item.item_id];
                       if (!packInfo || packInfo.mass == null || item.net_units == null) return "-";
-                      const consumption = itemConsumption[item.item_id];
-                      const perBase = consumption?.perBase ?? 1;
-                      const baseQty = perBase > 0 ? item.net_units / perBase : item.net_units;
-                      const total = baseQty * packInfo.mass;
+                      const total = item.net_units * packInfo.mass;
                       const formatted = formatQtyWithUom(total, packInfo.uom ?? undefined);
                       return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                     })()}

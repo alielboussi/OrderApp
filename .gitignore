@@ -33,6 +33,10 @@ pos-sync-service/installation.rar
 *.ap_
 *.aab
 *.aar
+*.exe
+*.rar
+*.xlsx
+pos-sync-service/publish/
 
 # Logs and dumps
 *.hprof

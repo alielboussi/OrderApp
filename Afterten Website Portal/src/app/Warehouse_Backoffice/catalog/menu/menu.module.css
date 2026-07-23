@@ -319,11 +319,44 @@
   font-size: 14px;
 }
 
+.variantCard .cardMain {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  min-height: 42px;
+}
+
+.variantCard .cardTitleBlock {
+  width: 100%;
+}
+
+.variantCard .itemName {
+  min-height: calc(1.3em * 2);
+}
+
 .headerActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
+  justify-content: center;
+}
+
+.catalogFilterBar {
+  justify-content: center;
+  gap: 12px;
+}
+
+.catalogFilterSearch {
+  flex: 1 1 480px;
+  max-width: 640px;
+  min-width: 320px;
+  text-align: center;
+}
+
+.catalogFilterType {
+  flex: 0 0 200px;
+  text-align: center;
 }
 
 .dialogOverlay {
