@@ -46,7 +46,7 @@ type RecipeRow = {
   finished_variant_key: string | null;
 };
 
-type SupabaseError = { code?: string; message?: string } | null;
+type SupabaseError = { code?: string; message?: string; details?: string; hint?: string } | null;
 
 type CleanResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -672,7 +672,7 @@ export async function POST(request: Request) {
     }
 
     let attemptInsert: Record<string, unknown> = { id: variantId, ...payload };
-    let optionalKeys = [...VARIANT_OPTIONAL_FIELDS];
+    let optionalKeys: string[] = [...VARIANT_OPTIONAL_FIELDS];
     let insertError: SupabaseError = null;
     let skuRetries = 0;
 
