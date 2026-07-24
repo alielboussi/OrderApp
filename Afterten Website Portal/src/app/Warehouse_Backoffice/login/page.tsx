@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import { requireActiveWarehouseAccount } from "@/lib/warehouse-account";
+import { WAREHOUSE_PENDING_APPROVAL_MESSAGE, requireActiveWarehouseAccount } from "@/lib/warehouse-account";
 import styles from "./login.module.css";
 
 function getOAuthCallbackUrl(): string {
@@ -70,6 +70,7 @@ export default function WarehouseBackofficeLogin() {
   };
 
   const busy = loading || googleLoading;
+  const pendingApproval = error === WAREHOUSE_PENDING_APPROVAL_MESSAGE;
 
   return (
     <div className={styles.page}>
@@ -88,6 +89,15 @@ export default function WarehouseBackofficeLogin() {
             <span className={styles.googleIcon} aria-hidden="true" />
             {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
           </button>
+          <p className={styles.googleNote}>
+            First-time Google sign-in creates your account, then an administrator must approve access.
+          </p>
+
+          {error ? (
+            <p className={pendingApproval ? styles.pendingApproval : styles.error} role="alert">
+              {error}
+            </p>
+          ) : null}
 
           <div className={styles.divider} role="separator" aria-label="or">
             <span>or</span>
@@ -114,7 +124,7 @@ export default function WarehouseBackofficeLogin() {
                 required
               />
             </label>
-            {error ? <p className={styles.error}>{error}</p> : null}
+            {error && !pendingApproval ? <p className={styles.error}>{error}</p> : null}
             <button className={styles.submit} type="submit" disabled={busy}>
               {loading ? "Signing in..." : "Enter backoffice"}
             </button>

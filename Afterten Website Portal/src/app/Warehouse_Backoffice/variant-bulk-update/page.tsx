@@ -160,7 +160,6 @@ export default function VariantBulkUpdatePage() {
       { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
       { value: "cost", label: "Cost per base unit", type: "number" },
       { value: "selling_price", label: "Selling price", type: "number" },
-      { value: "outlet_order_visible", label: "Show in outlet orders", type: "boolean" },
       { value: "active", label: "Active", type: "boolean" },
     ],
     [unitOptions]

@@ -12,7 +12,11 @@ export async function GET() {
       .eq("active", true)
       .order("sort_order", { ascending: true })
       .order("label", { ascending: true });
-    if (error) throw error;
+
+    if (error) {
+      console.warn("[api/uoms] uom_options unavailable, client will use defaults", error.message);
+      return NextResponse.json({ ok: true, items: [] });
+    }
 
     const rows = (data as UomRow[] | null) ?? [];
     const items = rows
@@ -25,6 +29,6 @@ export async function GET() {
     return NextResponse.json({ ok: true, items });
   } catch (error) {
     console.error("uom options load failed", error);
-    return NextResponse.json({ ok: false, error: "Unable to load uoms" }, { status: 500 });
+    return NextResponse.json({ ok: true, items: [] });
   }
 }

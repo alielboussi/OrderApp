@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServiceClient } from "@/lib/supabase-server";
+import { getServiceClient, hasServiceRoleKey } from "@/lib/supabase-server";
 import {
   isMiddlewareCatalogSyncOutlet,
   isPosMiddlewareOutlet,
@@ -36,7 +36,7 @@ function mapOutlet(row: OutletRow): Outlet {
     id: row.id,
     name: (row.name ?? "Outlet").trim(),
     code: row.code ?? null,
-    active: Boolean(row.active ?? false),
+    active: row.active !== false,
     channel: row.channel ?? null,
     has_pos_middleware: row.has_pos_middleware ?? null,
     default_sales_warehouse_id: row.default_sales_warehouse_id ?? null,
@@ -71,7 +71,17 @@ export async function GET(request: Request) {
       outlets = outlets.filter((outlet) => isHeartbeatMonitoredOutlet(outlet));
     }
 
-    return NextResponse.json({ outlets });
+    const response: { outlets: Outlet[]; warning?: string } = { outlets };
+    if (
+      (scope === "middleware" || scope === "catalog-sync") &&
+      outlets.length === 0 &&
+      !hasServiceRoleKey()
+    ) {
+      response.warning =
+        "Server is missing SUPABASE_SERVICE_ROLE_KEY — outlet list is empty because row-level security blocks the anon key.";
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("[outlets] GET failed", error);
     return NextResponse.json({ error: "Unable to load outlets" }, { status: 500 });

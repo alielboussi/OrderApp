@@ -134,6 +134,24 @@
   font-size: 13px;
 }
 
+.googleNote {
+  margin: 10px 0 0;
+  color: #5c5c5c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pendingApproval {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .submit {
   margin-top: 4px;
   padding: 10px 14px;

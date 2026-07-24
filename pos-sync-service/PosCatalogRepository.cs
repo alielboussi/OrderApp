@@ -300,8 +300,8 @@ VALUES (@Name, 'Active', 'Pending');";
 UPDATE dbo.MenuItem
 SET Name = COALESCE(@Name, Name),
     Code = @Sku,
-    Price = COALESCE(@NetPrice, Price),
-    GrossPrice = COALESCE(@GrossPrice, GrossPrice),
+    Price = CASE WHEN @NetPrice IS NOT NULL AND @NetPrice > 0 THEN @NetPrice ELSE Price END,
+    GrossPrice = CASE WHEN @GrossPrice IS NOT NULL AND @GrossPrice > 0 THEN @GrossPrice ELSE GrossPrice END,
     MenuGroupId = COALESCE(@MenuGroupId, MenuGroupId),
     uploadstatus = 'Pending'
 WHERE Code = @Sku OR Id = TRY_CAST(@PosItemId AS int);";
@@ -396,23 +396,250 @@ VALUES (
             return;
         }
 
-        const string updateSql = @"
-UPDATE mf
-SET mf.name = COALESCE(@VariantName, mf.name),
-    mf.Name2 = @VariantSku,
-    mf.price = COALESCE(@NetPrice, mf.price),
-    mf.GrossPrice = COALESCE(@GrossPrice, mf.GrossPrice),
-    mf.MenuGroupId = COALESCE(@MenuGroupId, mf.MenuGroupId, mi.MenuGroupId),
-    mf.UploadStatus = 'Pending'
-FROM dbo.ModifierFlavour mf
-JOIN dbo.MenuItem mi ON mi.Id = mf.MenuItemId
-WHERE mi.Code = @ItemSku AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int));";
+        var variantName = evt.Payload.VariantName?.Trim();
+        var itemSkuTrimmed = itemSku.Trim();
+        var variantSkuTrimmed = variantSku.Trim();
 
-        // Include Id when MintPOS ModifierFlavour.Id is NOT NULL / non-identity.
+        await using var conn = new SqlConnection(ConnectionString);
+        await conn.OpenAsync(cancellationToken);
+        var menuGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
+
+        if (evt.Payload.IsInsertOnly)
+        {
+            if (await VariantExistsOnTillAsync(conn, itemSkuTrimmed, variantSkuTrimmed, variantName, evt.Payload.PosFlavourId, cancellationToken))
+            {
+                _logger.LogInformation(
+                    "Catalog variant SKU {VariantSku} for item {ItemSku} already exists; insert_only skipped.",
+                    variantSkuTrimmed,
+                    itemSkuTrimmed);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(variantName))
+            {
+                _logger.LogWarning(
+                    "Catalog variant SKU {VariantSku} for item {ItemSku} skipped: variant name is required.",
+                    variantSkuTrimmed,
+                    itemSkuTrimmed);
+                return;
+            }
+
+            var insertId = await AllocateModifierFlavourIdAsync(conn, evt.Payload.PosFlavourId, variantSkuTrimmed, cancellationToken);
+            if (!insertId.HasValue)
+            {
+                _logger.LogWarning(
+                    "Catalog variant SKU {VariantSku} for item {ItemSku} skipped: unable to allocate ModifierFlavour.Id.",
+                    variantSkuTrimmed,
+                    itemSkuTrimmed);
+                return;
+            }
+
+            await InsertVariantFlavourAsync(
+                conn,
+                itemSkuTrimmed,
+                variantSkuTrimmed,
+                variantName,
+                insertId.Value,
+                evt.Payload,
+                menuGroupId,
+                cancellationToken);
+            return;
+        }
+
+        var match = await ResolveModifierFlavourMatchAsync(
+            conn,
+            itemSkuTrimmed,
+            variantSkuTrimmed,
+            variantName,
+            evt.Payload.PosFlavourId,
+            cancellationToken);
+
+        if (match is not null)
+        {
+            var updated = await UpdateVariantFlavourAsync(
+                conn,
+                match.FlavourId,
+                variantSkuTrimmed,
+                variantName,
+                match.MatchedByNameOnly,
+                evt.Payload,
+                menuGroupId,
+                cancellationToken);
+            if (updated > 0)
+            {
+                return;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(variantName))
+        {
+            _logger.LogWarning(
+                "Catalog variant SKU {VariantSku} for item {ItemSku} skipped: no existing flavour match and variant name is missing.",
+                variantSkuTrimmed,
+                itemSkuTrimmed);
+            return;
+        }
+
+        if (!HasPositivePrice(evt.Payload))
+        {
+            _logger.LogInformation(
+                "Catalog variant SKU {VariantSku} for item {ItemSku} skipped insert: no existing flavour match and payload has no price.",
+                variantSkuTrimmed,
+                itemSkuTrimmed);
+            return;
+        }
+
+        if (await VariantExistsOnTillAsync(conn, itemSkuTrimmed, variantSkuTrimmed, variantName, evt.Payload.PosFlavourId, cancellationToken))
+        {
+            _logger.LogInformation(
+                "Catalog variant SKU {VariantSku} for item {ItemSku} already exists after re-check; insert skipped.",
+                variantSkuTrimmed,
+                itemSkuTrimmed);
+            return;
+        }
+
+        var allocatedId = await AllocateModifierFlavourIdAsync(conn, evt.Payload.PosFlavourId, variantSkuTrimmed, cancellationToken);
+        if (!allocatedId.HasValue)
+        {
+            _logger.LogWarning(
+                "Catalog variant SKU {VariantSku} for item {ItemSku} insert skipped: unable to allocate ModifierFlavour.Id.",
+                variantSkuTrimmed,
+                itemSkuTrimmed);
+            return;
+        }
+
+        var inserted = await InsertVariantFlavourAsync(
+            conn,
+            itemSkuTrimmed,
+            variantSkuTrimmed,
+            variantName,
+            allocatedId.Value,
+            evt.Payload,
+            menuGroupId,
+            cancellationToken);
+        if (inserted == 0)
+        {
+            _logger.LogWarning(
+                "Catalog variant SKU {VariantSku} for item {ItemSku} insert affected 0 rows; parent item may be missing on till.",
+                variantSkuTrimmed,
+                itemSkuTrimmed);
+        }
+    }
+
+    private sealed record ModifierFlavourMatch(int FlavourId, bool MatchedByNameOnly);
+
+    private static bool HasPositivePrice(CatalogSyncPayload payload)
+    {
+        var prices = ResolveVariantPosPrices(payload);
+        return prices.NetPrice is > 0 || prices.GrossPrice is > 0;
+    }
+
+    private static async Task<ModifierFlavourMatch?> ResolveModifierFlavourMatchAsync(
+        SqlConnection conn,
+        string itemSku,
+        string variantSku,
+        string? variantName,
+        string? posFlavourId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+SELECT TOP 1
+    mf.Id,
+    CASE
+        WHEN mf.Name2 = @VariantSku
+          OR mf.Id = TRY_CAST(@PosFlavourId AS int)
+          OR mf.Id = TRY_CAST(@VariantSku AS int) THEN 0
+        ELSE 1
+    END AS MatchedByNameOnly
+FROM dbo.ModifierFlavour mf WITH (NOLOCK)
+JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = mf.MenuItemId
+WHERE mi.Code = @ItemSku
+  AND (
+    mf.Name2 = @VariantSku
+    OR mf.Id = TRY_CAST(@PosFlavourId AS int)
+    OR mf.Id = TRY_CAST(@VariantSku AS int)
+    OR (
+        @VariantName IS NOT NULL
+        AND LTRIM(RTRIM(mf.name)) = LTRIM(RTRIM(@VariantName))
+    )
+  )
+ORDER BY
+    CASE
+        WHEN mf.Name2 = @VariantSku THEN 0
+        WHEN mf.Id = TRY_CAST(@PosFlavourId AS int) THEN 1
+        WHEN mf.Id = TRY_CAST(@VariantSku AS int) THEN 2
+        ELSE 3
+    END,
+    mf.Id;";
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@ItemSku", itemSku);
+        cmd.Parameters.AddWithValue("@VariantSku", variantSku);
+        cmd.Parameters.AddWithValue("@PosFlavourId", (object?)posFlavourId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@VariantName", (object?)variantName ?? DBNull.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var flavourId = Convert.ToInt32(reader["Id"]);
+        var matchedByNameOnly = Convert.ToInt32(reader["MatchedByNameOnly"]) == 1;
+        return new ModifierFlavourMatch(flavourId, matchedByNameOnly);
+    }
+
+    private static async Task<int> UpdateVariantFlavourAsync(
+        SqlConnection conn,
+        int flavourId,
+        string variantSku,
+        string? variantName,
+        bool matchedByNameOnly,
+        CatalogSyncPayload payload,
+        int? menuGroupId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = @"
+UPDATE dbo.ModifierFlavour
+SET
+    name = COALESCE(@VariantName, name),
+    Name2 = CASE
+        WHEN @MatchedByNameOnly = 1 THEN Name2
+        WHEN NULLIF(LTRIM(RTRIM(Name2)), '') IS NULL THEN @VariantSku
+        ELSE Name2
+    END,
+    price = CASE WHEN @NetPrice IS NOT NULL AND @NetPrice > 0 THEN @NetPrice ELSE price END,
+    GrossPrice = CASE WHEN @GrossPrice IS NOT NULL AND @GrossPrice > 0 THEN @GrossPrice ELSE GrossPrice END,
+    MenuGroupId = COALESCE(@MenuGroupId, MenuGroupId),
+    UploadStatus = 'Pending'
+WHERE Id = @FlavourId;";
+
+        var prices = ResolveVariantPosPrices(payload);
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@FlavourId", flavourId);
+        cmd.Parameters.AddWithValue("@VariantSku", variantSku);
+        cmd.Parameters.AddWithValue("@VariantName", (object?)variantName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MatchedByNameOnly", matchedByNameOnly ? 1 : 0);
+        cmd.Parameters.AddWithValue("@NetPrice", (object?)prices.NetPrice ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@GrossPrice", (object?)prices.GrossPrice ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<int> InsertVariantFlavourAsync(
+        SqlConnection conn,
+        string itemSku,
+        string variantSku,
+        string variantName,
+        int flavourId,
+        CatalogSyncPayload payload,
+        int? menuGroupId,
+        CancellationToken cancellationToken)
+    {
         const string insertSql = @"
 INSERT INTO dbo.ModifierFlavour (Id, MenuItemId, MenuGroupId, name, Name2, price, GrossPrice, Status, UploadStatus)
 SELECT
-  COALESCE(TRY_CAST(@PosFlavourId AS int), TRY_CAST(@VariantSku AS int), mi.Id),
+  @FlavourId,
   mi.Id,
   COALESCE(@MenuGroupId, mi.MenuGroupId),
   @VariantName,
@@ -423,82 +650,74 @@ SELECT
   'Pending'
 FROM dbo.MenuItem mi
 WHERE mi.Code = @ItemSku
-  AND COALESCE(TRY_CAST(@PosFlavourId AS int), TRY_CAST(@VariantSku AS int), mi.Id) IS NOT NULL
   AND NOT EXISTS (
       SELECT 1
       FROM dbo.ModifierFlavour mf
       WHERE mf.MenuItemId = mi.Id
-        AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int))
+        AND (
+          mf.Name2 = @VariantSku
+          OR mf.Id = @FlavourId
+          OR LTRIM(RTRIM(mf.name)) = LTRIM(RTRIM(@VariantName))
+        )
   );";
 
-        await using var conn = new SqlConnection(ConnectionString);
-        await conn.OpenAsync(cancellationToken);
-        var menuGroupId = await ResolveMenuGroupIdAsync(conn, evt.Payload, cancellationToken);
+        var prices = ResolveVariantPosPrices(payload);
+        await using var insertCmd = new SqlCommand(insertSql, conn);
+        insertCmd.Parameters.AddWithValue("@ItemSku", itemSku);
+        insertCmd.Parameters.AddWithValue("@VariantSku", variantSku);
+        insertCmd.Parameters.AddWithValue("@VariantName", variantName);
+        insertCmd.Parameters.AddWithValue("@FlavourId", flavourId);
+        insertCmd.Parameters.AddWithValue("@NetPrice", (object?)prices.NetPrice ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("@GrossPrice", (object?)prices.GrossPrice ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
+        return await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 
-        if (evt.Payload.IsInsertOnly)
+    private static async Task<int?> AllocateModifierFlavourIdAsync(
+        SqlConnection conn,
+        string? posFlavourId,
+        string variantSku,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[] { posFlavourId, variantSku })
         {
-            if (await VariantExistsBySkuAsync(conn, itemSku, variantSku, evt.Payload.PosFlavourId, cancellationToken))
+            if (!int.TryParse(candidate?.Trim(), out var parsedId) || parsedId <= 0)
             {
-                _logger.LogInformation(
-                    "Catalog variant SKU {VariantSku} for item {ItemSku} already exists; insert_only skipped.",
-                    variantSku,
-                    itemSku);
-                return;
+                continue;
             }
 
-            if (string.IsNullOrWhiteSpace(evt.Payload.VariantName))
+            if (!await ModifierFlavourIdExistsAsync(conn, parsedId, cancellationToken))
             {
-                _logger.LogWarning(
-                    "Catalog variant SKU {VariantSku} for item {ItemSku} skipped: variant name is required.",
-                    variantSku,
-                    itemSku);
-                return;
+                return parsedId;
             }
-
-            await using var insertCmd = new SqlCommand(insertSql, conn);
-            insertCmd.Parameters.AddWithValue("@ItemSku", itemSku);
-            insertCmd.Parameters.AddWithValue("@VariantSku", variantSku);
-            insertCmd.Parameters.AddWithValue("@VariantName", evt.Payload.VariantName.Trim());
-            BindVariantPriceParams(insertCmd, evt.Payload);
-            insertCmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
-            insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
-            var inserted = await insertCmd.ExecuteNonQueryAsync(cancellationToken);
-            if (inserted == 0)
-            {
-                _logger.LogWarning(
-                    "Catalog variant SKU {VariantSku} for item {ItemSku} insert affected 0 rows; parent item may be missing on till.",
-                    variantSku,
-                    itemSku);
-            }
-
-            return;
         }
 
-        await using var cmd = new SqlCommand(updateSql, conn);
-        cmd.Parameters.AddWithValue("@ItemSku", itemSku);
-        cmd.Parameters.AddWithValue("@VariantSku", variantSku);
-        cmd.Parameters.AddWithValue("@VariantName", (object?)evt.Payload.VariantName ?? DBNull.Value);
-        BindVariantPriceParams(cmd, evt.Payload);
-        cmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
-
-        var updated = await cmd.ExecuteNonQueryAsync(cancellationToken);
-        if (updated == 0 && !string.IsNullOrWhiteSpace(evt.Payload.VariantName))
+        const string sql = "SELECT ISNULL(MAX(Id), 0) + 1 FROM dbo.ModifierFlavour WITH (UPDLOCK, HOLDLOCK);";
+        await using var cmd = new SqlCommand(sql, conn);
+        var nextId = await cmd.ExecuteScalarAsync(cancellationToken);
+        if (nextId is null || nextId == DBNull.Value)
         {
-            await using var insertCmd = new SqlCommand(insertSql, conn);
-            insertCmd.Parameters.AddWithValue("@ItemSku", itemSku);
-            insertCmd.Parameters.AddWithValue("@VariantSku", variantSku);
-            insertCmd.Parameters.AddWithValue("@VariantName", evt.Payload.VariantName.Trim());
-            BindVariantPriceParams(insertCmd, evt.Payload);
-            insertCmd.Parameters.AddWithValue("@PosFlavourId", (object?)evt.Payload.PosFlavourId ?? DBNull.Value);
-            insertCmd.Parameters.AddWithValue("@MenuGroupId", (object?)menuGroupId ?? DBNull.Value);
-            await insertCmd.ExecuteNonQueryAsync(cancellationToken);
+            return null;
         }
+
+        return Convert.ToInt32(nextId);
+    }
+
+    private static async Task<bool> ModifierFlavourIdExistsAsync(
+        SqlConnection conn,
+        int flavourId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = "SELECT TOP 1 1 FROM dbo.ModifierFlavour WITH (NOLOCK) WHERE Id = @Id;";
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@Id", flavourId);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is not null && result != DBNull.Value;
     }
 
     private async Task UpdatePriceAsync(CatalogSyncEvent evt, CancellationToken cancellationToken)
     {
-        if (evt.Payload.Price is null)
+        if (evt.Payload.Price is not > 0 && evt.Payload.VatExcPrice is not > 0)
         {
             return;
         }
@@ -629,10 +848,11 @@ WHERE mi.Code = @ItemSku
         return result is not null && result != DBNull.Value;
     }
 
-    private static async Task<bool> VariantExistsBySkuAsync(
+    private static async Task<bool> VariantExistsOnTillAsync(
         SqlConnection conn,
         string itemSku,
         string variantSku,
+        string? variantName,
         string? posFlavourId,
         CancellationToken cancellationToken)
     {
@@ -641,12 +861,21 @@ SELECT TOP 1 1
 FROM dbo.ModifierFlavour mf WITH (NOLOCK)
 JOIN dbo.MenuItem mi WITH (NOLOCK) ON mi.Id = mf.MenuItemId
 WHERE mi.Code = @ItemSku
-  AND (mf.Name2 = @VariantSku OR mf.Id = TRY_CAST(@PosFlavourId AS int));";
+  AND (
+    mf.Name2 = @VariantSku
+    OR mf.Id = TRY_CAST(@PosFlavourId AS int)
+    OR mf.Id = TRY_CAST(@VariantSku AS int)
+    OR (
+        @VariantName IS NOT NULL
+        AND LTRIM(RTRIM(mf.name)) = LTRIM(RTRIM(@VariantName))
+    )
+  );";
 
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@ItemSku", itemSku.Trim());
         cmd.Parameters.AddWithValue("@VariantSku", variantSku.Trim());
         cmd.Parameters.AddWithValue("@PosFlavourId", (object?)posFlavourId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@VariantName", (object?)variantName?.Trim() ?? DBNull.Value);
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return result is not null && result != DBNull.Value;
     }

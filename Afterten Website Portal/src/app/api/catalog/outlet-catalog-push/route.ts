@@ -4,6 +4,7 @@ import { parseCatalogDeliveryTiming } from "@/lib/catalog-sync-schedule";
 import {
   buildCatalogPushCandidates,
   buildCatalogRemoveCandidates,
+  explainCatalogPushGap,
   loadCatalogPushPickerCatalog,
   loadMenuGroupPushSummaries,
   pushCatalogCandidatesToOutlets,
@@ -68,7 +69,13 @@ export async function GET() {
     return NextResponse.json(catalog);
   } catch (error) {
     console.error("[catalog/outlet-catalog-push] GET failed", error);
-    return NextResponse.json({ error: "Unable to load menu groups for outlet push" }, { status: 500 });
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" && error && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "Unable to load menu groups for outlet push";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -143,7 +150,7 @@ export async function POST(request: Request) {
         );
       }
 
-      await removeCatalogCandidatesFromOutlets(supabase, outletIds, candidates, syncOptions);
+      const eventIds = await removeCatalogCandidatesFromOutlets(supabase, outletIds, candidates, syncOptions);
 
       const groupCount = candidates.filter((row) => row.catalog_entity_type === "menu_group").length;
       const itemCount = candidates.filter((row) => row.catalog_entity_type === "item").length;
@@ -162,6 +169,7 @@ export async function POST(request: Request) {
           variants: variantCount,
           total: candidates.length,
         },
+        event_ids: eventIds,
       });
     }
 
@@ -173,28 +181,23 @@ export async function POST(request: Request) {
     });
 
     if (!candidates.length) {
-      return NextResponse.json(
-        {
-          error:
-            "No catalog rows to send for the selected groups. Assign finished products to those groups first.",
-        },
-        { status: 400 }
-      );
+      const detail = await explainCatalogPushGap(supabase, menuGroupIds);
+      return NextResponse.json({ error: detail }, { status: 400 });
     }
 
-    await pushCatalogCandidatesToOutlets(supabase, outletIds, candidates, syncOptions);
+    const eventIds = await pushCatalogCandidatesToOutlets(supabase, outletIds, candidates, syncOptions);
 
     const groupCount = candidates.filter((row) => row.entity_type === "menu_group").length;
     const itemCount = candidates.filter((row) => row.entity_type === "item").length;
     const variantCount = candidates.filter((row) => row.entity_type === "variant").length;
 
-      return NextResponse.json({
-        ok: true,
-        action: "push",
-        delivery: deliveryTiming.delivery,
-        scheduled_at: deliveryTiming.scheduledAt,
-        sync_mode: syncMode,
-        sync_scope: scope,
+    return NextResponse.json({
+      ok: true,
+      action: "push",
+      delivery: deliveryTiming.delivery,
+      scheduled_at: deliveryTiming.scheduledAt,
+      sync_mode: syncMode,
+      sync_scope: scope,
       outlets: outletIds.length,
       outlet_ids: outletIds,
       menu_group_ids: menuGroupIds,
@@ -206,6 +209,7 @@ export async function POST(request: Request) {
         variants: variantCount,
         total: candidates.length,
       },
+      event_ids: eventIds,
     });
   } catch (error) {
     console.error("[catalog/outlet-catalog-push] POST failed", error);

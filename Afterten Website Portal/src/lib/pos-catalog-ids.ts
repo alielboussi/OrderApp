@@ -1,13 +1,30 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** MintPOS MenuItem.Code / ModifierFlavour.Name2 use numeric POS ids as SKUs. */
+/** MintPOS MenuItem.Code / ModifierFlavour.Name2 use 1-3 digit numeric IDs. */
+export const POS_NUMERIC_SKU_MAX = 999;
+
 export function parsePosNumericSku(sku: string | null | undefined): number | null {
   if (!sku) return null;
   const trimmed = sku.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
+  if (!/^\d{1,3}$/.test(trimmed)) return null;
   const value = Number(trimmed);
-  if (!Number.isSafeInteger(value) || value <= 0) return null;
+  if (!Number.isSafeInteger(value) || value < 1 || value > POS_NUMERIC_SKU_MAX) return null;
   return value;
+}
+
+function assertAllocatablePosSku(value: number): string {
+  if (!parsePosNumericSku(String(value))) {
+    throw new Error(`No available MintPOS SKU IDs left (max ${POS_NUMERIC_SKU_MAX})`);
+  }
+  return String(value);
+}
+
+function nextAllocatablePosSku(currentMax: number): number {
+  const next = currentMax + 1;
+  if (!parsePosNumericSku(String(next))) {
+    throw new Error(`No available MintPOS SKU IDs left (max ${POS_NUMERIC_SKU_MAX})`);
+  }
+  return next;
 }
 
 function maxPosNumericSku(rows: Array<{ sku?: string | null }> | null | undefined): number {
@@ -54,12 +71,74 @@ async function fetchAllSkuRows(
 
 export async function nextPosItemSku(supabase: SupabaseClient): Promise<string> {
   const data = await fetchAllSkuRows(supabase, "catalog_items");
-  return String(maxPosNumericSku(data) + 1);
+  return assertAllocatablePosSku(nextAllocatablePosSku(maxPosNumericSku(data)));
 }
 
 export async function nextPosVariantSku(supabase: SupabaseClient): Promise<string> {
   const data = await fetchAllSkuRows(supabase, "catalog_variants");
-  return String(maxPosNumericSku(data) + 1);
+  return assertAllocatablePosSku(nextAllocatablePosSku(maxPosNumericSku(data)));
+}
+
+async function fetchSiblingVariantSkuRows(
+  supabase: SupabaseClient,
+  itemId: string,
+  excludeVariantId?: string | null
+): Promise<Array<{ id?: string; sku?: string | null }>> {
+  const { data, error } = await supabase.from("catalog_variants").select("id,sku").eq("item_id", itemId);
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []).filter((row) => {
+    if (!excludeVariantId) return true;
+    return row.id !== excludeVariantId;
+  });
+}
+
+export async function findSiblingVariantSkuConflict(
+  supabase: SupabaseClient,
+  itemId: string,
+  sku: string,
+  excludeVariantId?: string | null
+): Promise<boolean> {
+  const normalized = sku.trim().toLowerCase();
+  if (!normalized) return false;
+  const siblings = await fetchSiblingVariantSkuRows(supabase, itemId, excludeVariantId);
+  return siblings.some((row) => (row.sku ?? "").trim().toLowerCase() === normalized);
+}
+
+/** Next numeric MintPOS variant SKU for a product's existing variant list. */
+export async function nextPosVariantSkuForItem(
+  supabase: SupabaseClient,
+  itemId: string,
+  excludeVariantId?: string | null
+): Promise<string> {
+  const siblings = await fetchSiblingVariantSkuRows(supabase, itemId, excludeVariantId);
+  const siblingNums = siblings
+    .map((row) => parsePosNumericSku(row.sku ?? null))
+    .filter((value): value is number => value !== null);
+
+  let candidate =
+    siblingNums.length > 0
+      ? nextAllocatablePosSku(Math.max(...siblingNums))
+      : Number(await nextPosVariantSku(supabase));
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const sku = assertAllocatablePosSku(candidate);
+    if (await findSiblingVariantSkuConflict(supabase, itemId, sku, excludeVariantId)) {
+      candidate = nextAllocatablePosSku(candidate);
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from("catalog_variants")
+      .select("id")
+      .ilike("sku", sku)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data || data.id === excludeVariantId) return sku;
+    candidate = nextAllocatablePosSku(candidate);
+  }
+
+  throw new Error(`Unable to allocate a unique POS variant SKU for this product (max ${POS_NUMERIC_SKU_MAX})`);
 }
 
 export async function nextPosMenuGroupId(supabase: SupabaseClient): Promise<number> {
@@ -76,6 +155,9 @@ export async function allocatePosItemSku(
 ): Promise<string> {
   const trimmed = preferred?.trim();
   if (trimmed) {
+    if (!parsePosNumericSku(trimmed)) {
+      throw new Error(`SKU must be a 1-3 digit numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX})`);
+    }
     const { data, error } = await supabase
       .from("catalog_items")
       .select("id")
@@ -96,17 +178,26 @@ export async function allocatePosItemSku(
       .maybeSingle();
     if (error) throw error;
     if (!data) return candidate;
-    candidate = String(Number(candidate) + 1);
+    candidate = assertAllocatablePosSku(nextAllocatablePosSku(Number(candidate)));
   }
-  throw new Error("Unable to allocate a unique POS item SKU");
+  throw new Error(`Unable to allocate a unique POS item SKU (max ${POS_NUMERIC_SKU_MAX})`);
 }
 
 export async function allocatePosVariantSku(
   supabase: SupabaseClient,
-  preferred?: string | null
+  preferred?: string | null,
+  itemId?: string | null,
+  excludeVariantId?: string | null
 ): Promise<string> {
   const trimmed = preferred?.trim();
   if (trimmed) {
+    if (!parsePosNumericSku(trimmed)) {
+      throw new Error(`Variant SKU must be a 1-3 digit numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX})`);
+    }
+    if (itemId && (await findSiblingVariantSkuConflict(supabase, itemId, trimmed, excludeVariantId))) {
+      throw new Error("Variant SKU is already used by another variant on this product");
+    }
+
     const { data, error } = await supabase
       .from("catalog_variants")
       .select("id")
@@ -114,7 +205,12 @@ export async function allocatePosVariantSku(
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    if (!data) return trimmed;
+    if (!data || data.id === excludeVariantId) return trimmed;
+    throw new Error("Variant SKU is already in use");
+  }
+
+  if (itemId) {
+    return nextPosVariantSkuForItem(supabase, itemId, excludeVariantId);
   }
 
   let candidate = await nextPosVariantSku(supabase);
@@ -127,9 +223,9 @@ export async function allocatePosVariantSku(
       .maybeSingle();
     if (error) throw error;
     if (!data) return candidate;
-    candidate = String(Number(candidate) + 1);
+    candidate = assertAllocatablePosSku(nextAllocatablePosSku(Number(candidate)));
   }
-  throw new Error("Unable to allocate a unique POS variant SKU");
+  throw new Error(`Unable to allocate a unique POS variant SKU (max ${POS_NUMERIC_SKU_MAX})`);
 }
 
 export async function allocatePosMenuGroupId(

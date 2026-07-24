@@ -7,6 +7,7 @@ import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import { useUomOptions } from "@/lib/use-uom-options";
+import { POS_NUMERIC_SKU_MAX, parsePosNumericSku } from "@/lib/pos-catalog-ids";
 import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "./product.module.css";
@@ -26,7 +27,6 @@ type FormState = {
   cost: string;
   selling_price: string;
   has_variations: boolean;
-  outlet_order_visible: boolean;
   image_url: string;
   active: boolean;
   menu_group_id: string;
@@ -41,7 +41,6 @@ const defaultForm: FormState = {
   cost: "0",
   selling_price: "0",
   has_variations: false,
-  outlet_order_visible: true,
   image_url: "",
   active: true,
   menu_group_id: "",
@@ -126,7 +125,6 @@ function ProductCreatePage() {
             cost: (item.cost ?? 0).toString(),
             selling_price: (item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
-            outlet_order_visible: item.outlet_order_visible ?? true,
             image_url: item.image_url ?? "",
             active: item.active ?? true,
             menu_group_id: item.menu_group_id ?? "",
@@ -162,7 +160,7 @@ function ProductCreatePage() {
       ? `Auto-assigned on save (next available ID: ${suggestedSku})`
       : "Auto-assigned on save when left blank"
     : form.item_kind === "finished"
-      ? "MintPOS product ID — leave blank to auto-assign on save"
+      ? `MintPOS product ID (1-${POS_NUMERIC_SKU_MAX}) — leave blank to auto-assign`
       : "Optional internal SKU";
 
   if (status !== "ok") return null;
@@ -176,6 +174,13 @@ function ProductCreatePage() {
     event.preventDefault();
     if (readOnly) {
       setResult({ ok: false, message: "Read-only access: saving is disabled." });
+      return;
+    }
+    if (form.item_kind === "finished" && form.sku.trim() && !parsePosNumericSku(form.sku)) {
+      setResult({
+        ok: false,
+        message: `Product SKU must be a 1-3 digit number (1-${POS_NUMERIC_SKU_MAX}).`,
+      });
       return;
     }
     setSaving(true);
@@ -192,7 +197,6 @@ function ProductCreatePage() {
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
         has_variations: form.has_variations,
-        outlet_order_visible: form.outlet_order_visible,
         image_url: form.image_url,
         active: form.active,
         menu_group_id: form.item_kind === "finished" && form.menu_group_id ? form.menu_group_id : null,
@@ -271,7 +275,6 @@ function ProductCreatePage() {
               cost: (item.cost ?? 0).toString(),
               selling_price: (item.selling_price ?? 0).toString(),
               has_variations: Boolean(item.has_variations),
-              outlet_order_visible: item.outlet_order_visible ?? true,
               image_url: item.image_url ?? "",
               active: item.active ?? true,
               menu_group_id: item.menu_group_id ?? "",
@@ -303,6 +306,8 @@ function ProductCreatePage() {
               value={form.sku}
               onChange={(v) => handleChange("sku", v)}
               placeholder={usesAutoSku && suggestedSku ? suggestedSku : undefined}
+              maxLength={form.item_kind === "finished" ? 3 : undefined}
+              inputMode={form.item_kind === "finished" ? "numeric" : undefined}
             />
             <Field
               label="Product name"
@@ -449,9 +454,24 @@ type FieldProps = {
   min?: string;
   disabled?: boolean;
   placeholder?: string;
+  maxLength?: number;
+  inputMode?: "numeric" | "text";
 };
 
-function Field({ label, hint, value, onChange, required, type = "text", step, min, disabled, placeholder }: FieldProps) {
+function Field({
+  label,
+  hint,
+  value,
+  onChange,
+  required,
+  type = "text",
+  step,
+  min,
+  disabled,
+  placeholder,
+  maxLength,
+  inputMode,
+}: FieldProps) {
   return (
     <label className={styles.field}>
       <span className={styles.label}>{label}</span>
@@ -466,6 +486,8 @@ function Field({ label, hint, value, onChange, required, type = "text", step, mi
         min={min}
         disabled={disabled}
         placeholder={placeholder}
+        maxLength={maxLength}
+        inputMode={inputMode}
       />
     </label>
   );

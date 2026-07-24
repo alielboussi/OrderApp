@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
 import type {
   CatalogPushPickerItem,
@@ -29,6 +29,25 @@ type OutletRow = {
   has_pos_middleware?: boolean | null;
   channel?: string | null;
 };
+
+type DeliveryPhase = "queued" | "delivering" | "sent" | "scheduled" | "stalled";
+
+type DeliveryTracker = {
+  action: PanelMode;
+  delivery: DeliveryMode;
+  scheduledAt: string | null;
+  eventIds: string[];
+  total: number;
+  pending: number;
+  delivered: number;
+  lastDeliveredAt: string | null;
+  phase: DeliveryPhase;
+  outlets: number;
+  sent: { menu_groups: number; items: number; variants: number; total: number };
+};
+
+const DELIVERY_POLL_MS = 2500;
+const DELIVERY_STALL_MS = 5 * 60 * 1000;
 
 type PanelMode = "push" | "remove";
 type DeliveryMode = "now" | "schedule";
@@ -59,38 +78,97 @@ export default function OutletCatalogPushPanel() {
     removed: number;
     offline_outlets: Array<{ outlet_id: string; outlet_name: string }>;
   } | null>(null);
-  const [result, setResult] = useState<{
-    action: PanelMode;
-    delivery: DeliveryMode;
-    scheduledAt: string | null;
-    syncMode: "insert_only" | "upsert";
-    sent: { menu_groups: number; items: number; variants: number; total: number };
-    outlets: number;
-  } | null>(null);
+  const [result, setResult] = useState<DeliveryTracker | null>(null);
+  const pollStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!result || result.delivery === "schedule" || result.phase === "sent" || result.phase === "scheduled") {
+      return;
+    }
+    if (!result.eventIds.length) return;
+
+    pollStartedAtRef.current = Date.now();
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/catalog/outlet-catalog-push/status?ids=${encodeURIComponent(result.eventIds.join(","))}`,
+          { cache: "no-store" }
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+
+        const total = typeof json.total === "number" ? json.total : result.total;
+        const pending = typeof json.pending === "number" ? json.pending : result.pending;
+        const delivered = typeof json.delivered === "number" ? json.delivered : result.delivered;
+        const lastDeliveredAt =
+          typeof json.last_delivered_at === "string" ? json.last_delivered_at : result.lastDeliveredAt;
+
+        let phase: DeliveryPhase = "queued";
+        if (json.complete || (delivered > 0 && pending === 0)) {
+          phase = "sent";
+        } else if (delivered > 0) {
+          phase = "delivering";
+        } else if (pollStartedAtRef.current && Date.now() - pollStartedAtRef.current > DELIVERY_STALL_MS) {
+          phase = "stalled";
+        }
+
+        setResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                total,
+                pending,
+                delivered,
+                lastDeliveredAt,
+                phase,
+              }
+            : prev
+        );
+      } catch {
+        // Keep polling on transient errors.
+      }
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), DELIVERY_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [result?.eventIds, result?.delivery, result?.phase]);
+
+  const deliveryProgress = useMemo(() => {
+    if (!result || result.total <= 0) return 0;
+    return Math.round((result.delivered / result.total) * 100);
+  }, [result]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [outletsRes, catalogRes] = await Promise.all([
-        fetch("/api/outlets?scope=middleware", { cache: "no-store" }),
-        fetch("/api/catalog/outlet-catalog-push", { cache: "no-store" }),
-      ]);
+      const outletsRes = await fetch("/api/outlets?scope=middleware", { cache: "no-store" });
       const outletsJson = await outletsRes.json().catch(() => ({}));
-      const catalogJson = await catalogRes.json().catch(() => ({}));
       if (!outletsRes.ok) {
         throw new Error(outletsJson.error || "Unable to load middleware outlets");
       }
+      const loadedOutlets = (outletsJson.outlets as OutletRow[]) ?? [];
+      setOutlets(loadedOutlets);
+      if (typeof outletsJson.warning === "string" && outletsJson.warning.trim()) {
+        setError(outletsJson.warning);
+      }
+
+      const catalogRes = await fetch("/api/catalog/outlet-catalog-push", { cache: "no-store" });
+      const catalogJson = await catalogRes.json().catch(() => ({}));
       if (!catalogRes.ok) {
         throw new Error(catalogJson.error || "Unable to load catalog");
       }
-      setOutlets((outletsJson.outlets as OutletRow[]) ?? []);
       setGroups((catalogJson.groups as MenuGroupPushSummary[]) ?? []);
       setItems((catalogJson.items as CatalogPushPickerItem[]) ?? []);
       setVariants((catalogJson.variants as CatalogPushPickerVariant[]) ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load push settings");
-      setOutlets([]);
       setGroups([]);
       setItems([]);
       setVariants([]);
@@ -268,14 +346,24 @@ export default function OutletCatalogPushPanel() {
         throw new Error(json.error || (mode === "remove" ? "Unable to remove catalog" : "Unable to push catalog"));
       }
 
-      setResult({
+      const eventIds = Array.isArray(json.event_ids)
+        ? json.event_ids.filter((id: unknown): id is string => typeof id === "string" && Boolean(id.trim()))
+        : [];
+
+      const tracker: DeliveryTracker = {
         action: mode,
         delivery: json.delivery === "schedule" ? "schedule" : "now",
         scheduledAt: typeof json.scheduled_at === "string" ? json.scheduled_at : null,
-        syncMode: json.sync_mode === "upsert" ? "upsert" : "insert_only",
-        sent: json.sent,
-        outlets: json.outlets,
-      });
+        eventIds,
+        total: json.sent?.total ?? 0,
+        pending: json.sent?.total ?? 0,
+        delivered: 0,
+        lastDeliveredAt: null,
+        phase: json.delivery === "schedule" ? "scheduled" : "queued",
+        outlets: json.outlets ?? 0,
+        sent: json.sent ?? { menu_groups: 0, items: 0, variants: 0, total: 0 },
+      };
+      setResult(tracker);
 
       const selectedOutletNames = middlewareOutlets
         .filter((outlet) => selectedOutletIds.includes(outlet.id))
@@ -413,7 +501,13 @@ export default function OutletCatalogPushPanel() {
             selectedIds={selectedOutletIds}
             onChange={setSelectedOutletIds}
             disabled={loading || pushing}
-            emptyMessage="No active middleware outlets found."
+            emptyMessage={
+              loading
+                ? "Loading outlets…"
+                : outlets.length > 0
+                  ? "No middleware outlets match the catalog filter."
+                  : "No middleware outlets found. In Supabase, set has_pos_middleware = true on Till 1, Till 2, and Quick Corner."
+            }
             getItemLabel={(outlet) => outlet.name ?? outlet.id}
             renderMeta={(outlet) => (outlet.code ? outlet.code : null)}
           />
@@ -432,7 +526,13 @@ export default function OutletCatalogPushPanel() {
             disabled={loading || pushing}
             searchable
             searchPlaceholder="Search menu groups…"
-            emptyMessage={loading ? "Loading groups…" : "No menu groups with products found."}
+            emptyMessage={
+              loading
+                ? "Loading groups…"
+                : groups.length > 0
+                  ? "No groups with pushable products. Tick “Include groups with no products” or assign finished products (with SKU) to a menu group."
+                  : "No menu groups in catalog. Add groups under Catalog → Menu groups."
+            }
             getItemLabel={(group) => group.name}
             renderMeta={(group) => (
               <>
@@ -593,23 +693,73 @@ export default function OutletCatalogPushPanel() {
         ) : null}
 
         {result ? (
-          <div className={`${eb.pageCardBody} ${styles.formFeedback}`}>
-            <strong>
-              {result.delivery === "schedule"
-                ? result.action === "remove"
-                  ? "Removal scheduled."
-                  : "Send scheduled."
-                : result.action === "remove"
-                  ? "Removal queued."
-                  : "Send queued."}
-            </strong>{" "}
-            {result.sent.total} event{result.sent.total === 1 ? "" : "s"} ({result.sent.menu_groups} groups,{" "}
-            {result.sent.items} products, {result.sent.variants} variants){" "}
-            {result.action === "remove" ? "from" : "to"} {result.outlets} outlet
-            {result.outlets === 1 ? "" : "s"}
-            {result.delivery === "schedule" && result.scheduledAt
-              ? ` for ${formatStamp(result.scheduledAt)}.`
-              : "."}
+          <div className={`${styles.deliveryTracker} ${styles[`deliveryPhase_${result.phase}`] ?? ""}`}>
+            <div className={styles.deliverySteps} aria-label="Catalog delivery progress">
+              <span className={result.phase === "queued" ? styles.deliveryStepActive : styles.deliveryStepDone}>
+                Queued
+              </span>
+              <span className={styles.deliveryStepDivider} aria-hidden="true" />
+              <span
+                className={
+                  result.phase === "delivering"
+                    ? styles.deliveryStepActive
+                    : result.phase === "sent"
+                      ? styles.deliveryStepDone
+                      : styles.deliveryStepPending
+                }
+              >
+                Delivering
+              </span>
+              <span className={styles.deliveryStepDivider} aria-hidden="true" />
+              <span className={result.phase === "sent" ? styles.deliveryStepActive : styles.deliveryStepPending}>
+                Sent to till
+              </span>
+            </div>
+
+            {result.delivery === "now" ? (
+              <div className={styles.deliveryProgressTrack} aria-hidden="true">
+                <div className={styles.deliveryProgressFill} style={{ width: `${deliveryProgress}%` }} />
+              </div>
+            ) : null}
+
+            <p className={styles.deliveryMessage}>
+              {result.phase === "scheduled" ? (
+                <>
+                  <strong>Scheduled.</strong> {result.sent.total} event{result.sent.total === 1 ? "" : "s"} (
+                  {result.sent.menu_groups} groups, {result.sent.items} products, {result.sent.variants} variants){" "}
+                  {result.action === "remove" ? "from" : "to"} {result.outlets} outlet
+                  {result.outlets === 1 ? "" : "s"}
+                  {result.scheduledAt ? ` for ${formatStamp(result.scheduledAt)}.` : "."}
+                </>
+              ) : result.phase === "sent" ? (
+                <>
+                  <strong>Sent to till.</strong> {result.delivered} of {result.total} event
+                  {result.total === 1 ? "" : "s"} delivered
+                  {result.lastDeliveredAt ? ` at ${formatStamp(result.lastDeliveredAt)}` : ""} (
+                  {result.sent.menu_groups} groups, {result.sent.items} products, {result.sent.variants} variants){" "}
+                  {result.action === "remove" ? "from" : "to"} {result.outlets} outlet
+                  {result.outlets === 1 ? "" : "s"}.
+                </>
+              ) : result.phase === "delivering" ? (
+                <>
+                  <strong>Delivering to till…</strong> {result.delivered} of {result.total} event
+                  {result.total === 1 ? "" : "s"} applied ({result.pending} pending).
+                </>
+              ) : result.phase === "stalled" ? (
+                <>
+                  <strong>Still waiting on middleware.</strong> {result.pending} of {result.total} event
+                  {result.total === 1 ? "" : "s"} not delivered yet. Check SCPGT is running on the till and the outlet
+                  is online in Middleware status above.
+                </>
+              ) : (
+                <>
+                  <strong>Queued.</strong> {result.sent.total} event{result.sent.total === 1 ? "" : "s"} (
+                  {result.sent.menu_groups} groups, {result.sent.items} products, {result.sent.variants} variants){" "}
+                  {result.action === "remove" ? "from" : "to"} {result.outlets} outlet
+                  {result.outlets === 1 ? "" : "s"} — waiting for till middleware to pick them up.
+                </>
+              )}
+            </p>
           </div>
         ) : null}
 

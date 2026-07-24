@@ -66,6 +66,9 @@ function pickQtyUnit(value: unknown, fallback: QtyUnit): QtyUnit {
 }
 
 function toNumber(value: unknown, fallback: number, min?: number): CleanResult<number> {
+  if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) {
+    value = fallback;
+  }
   const parsed = typeof value === "number" ? value : Number(value);
   if (Number.isFinite(parsed)) {
     if (typeof min === "number" && parsed <= min) {
@@ -148,6 +151,48 @@ const VARIANT_OPTIONAL_FIELDS = [
   "locked_from_warehouse_id",
   "default_warehouse_id",
 ] as const;
+
+function missingColumnFromError(error: SupabaseError): string | null {
+  if (!error) return null;
+  const blob = `${error.message ?? ""} ${error.details ?? ""}`;
+  const pgrst = blob.match(/Could not find the '([^']+)' column/i);
+  if (pgrst?.[1]) return pgrst[1];
+  const quoted =
+    blob.match(/column "([^"]+)" of relation/i) ?? blob.match(/column "([^"]+)" does not exist/i);
+  if (quoted?.[1]) return quoted[1];
+  const bare = blob.match(/column catalog_variants\.(\w+) does not exist/i);
+  return bare?.[1] ?? null;
+}
+
+function isMissingColumnError(error: SupabaseError): boolean {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  return /could not find the '[^']+' column/i.test(error.message ?? "");
+}
+
+function stripMissingOptionalField<T extends Record<string, unknown>>(
+  payload: T,
+  error: SupabaseError,
+  optionalKeys: string[]
+): { payload: Partial<T>; optionalKeys: string[] } | null {
+  const missing = missingColumnFromError(error);
+  if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+    const { [missing]: removed, ...rest } = payload;
+    void removed;
+    return {
+      payload: rest as Partial<T>,
+      optionalKeys: optionalKeys.filter((key) => key !== missing),
+    };
+  }
+  if (!optionalKeys.length) return null;
+  const [removeKey, ...restKeys] = optionalKeys;
+  if (!Object.prototype.hasOwnProperty.call(payload, removeKey)) {
+    return { payload, optionalKeys: restKeys };
+  }
+  const { [removeKey]: removed, ...rest } = payload;
+  void removed;
+  return { payload: rest as Partial<T>, optionalKeys: restKeys };
+}
 
 function selectVariantFields(optional: readonly string[], minimalCore = false) {
   if (minimalCore) return "id,item_id,name,sku,item_kind,active";
@@ -317,7 +362,7 @@ export async function GET(request: Request) {
       const primary = await supabase.from("catalog_items").select("id,active").eq("id", itemId).maybeSingle();
       itemRow = (primary.data as typeof itemRow) ?? null;
       itemError = primary.error;
-      if (itemError?.code === "42703") {
+      if (itemError && isMissingColumnError(itemError)) {
         const fallback = await supabase.from("catalog_items").select("id").eq("id", itemId).maybeSingle();
         itemRow = (fallback.data as typeof itemRow) ?? null;
         itemError = fallback.error;
@@ -351,11 +396,11 @@ export async function GET(request: Request) {
       variantRows = result.data;
       variantError = result.error;
 
-      if (variantError?.code === "42703" && optional.length) {
+      if (variantError && isMissingColumnError(variantError) && optional.length) {
         optional.pop();
         continue;
       }
-      if (variantError?.code === "42703" && !useMinimalCore) {
+      if (variantError && isMissingColumnError(variantError) && !useMinimalCore) {
         useMinimalCore = true;
         continue;
       }
@@ -408,15 +453,15 @@ async function loadAllVariants(
     variantRows = result.data;
     variantError = result.error;
 
-    if (variantError?.code === "42703" && optional.length) {
+    if (variantError && isMissingColumnError(variantError) && optional.length) {
       optional.pop();
       continue;
     }
-    if (variantError?.code === "42703" && useActiveFilter) {
+    if (variantError && isMissingColumnError(variantError) && useActiveFilter) {
       useActiveFilter = false;
       continue;
     }
-    if (variantError?.code === "42703" && !useMinimalCore) {
+    if (variantError && isMissingColumnError(variantError) && !useMinimalCore) {
       useMinimalCore = true;
       continue;
     }
@@ -479,7 +524,7 @@ async function enrichVariants(
     storageRows = (primary.data as typeof storageRows) ?? [];
     storageErr = primary.error;
 
-    if (storageErr?.code === "42703") {
+    if (storageErr && isMissingColumnError(storageErr)) {
       const fallback = await supabase
         .from("item_storage_homes")
         .select("item_id, variant_key, storage_warehouse_id")
@@ -584,17 +629,25 @@ export async function POST(request: Request) {
     const resolvedStorageHomeIds = buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds);
 
     let resolvedVariantSku = cleanText(body.sku) ?? null;
-    if (!resolvedVariantSku) {
+    const resolvedItemKind = cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished");
+    if (resolvedItemKind === "finished") {
+      try {
+        resolvedVariantSku = await allocatePosVariantSku(supabase, resolvedVariantSku, itemId);
+      } catch (allocationError) {
+        const message =
+          allocationError instanceof Error ? allocationError.message : "Unable to allocate variant SKU";
+        return NextResponse.json({ error: message }, { status: 400 });
+      }
+    } else if (!resolvedVariantSku) {
       return NextResponse.json({ error: "Variant SKU is required" }, { status: 400 });
     }
-    resolvedVariantSku = await allocatePosVariantSku(supabase, resolvedVariantSku);
 
     const payload: VariantPayload = {
       item_id: itemId,
       name,
       sku: resolvedVariantSku ?? null,
       supplier_sku: cleanText(body.supplier_sku) ?? null,
-      item_kind: cleanItemKind(body.item_kind, itemRow?.item_kind ?? "finished"),
+      item_kind: resolvedItemKind,
       consumption_uom: consumptionUom,
       purchase_pack_unit: purchasePackUnit,
       units_per_purchase_pack: unitsPerPack.value,
@@ -607,10 +660,8 @@ export async function POST(request: Request) {
       qty_decimal_places: qtyDecimalPlaces,
       cost: cost.value,
       selling_price: sellingPrice.value,
-      locked_from_warehouse_id: cleanUuid(body.locked_from_warehouse_id),
-      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
+      outlet_order_visible: true,
       image_url: cleanText(body.image_url) ?? null,
-      default_warehouse_id: defaultWarehouseId,
       active: cleanBoolean(body.active, true),
     };
 
@@ -620,10 +671,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Variant key cannot be base" }, { status: 400 });
     }
 
-    const { error: insertError } = await supabase.from("catalog_variants").insert({
-      id: variantId,
-      ...payload,
-    });
+    let attemptInsert: Record<string, unknown> = { id: variantId, ...payload };
+    let optionalKeys = [...VARIANT_OPTIONAL_FIELDS];
+    let insertError: SupabaseError = null;
+    let skuRetries = 0;
+
+    while (true) {
+      const { error } = await supabase.from("catalog_variants").insert(attemptInsert);
+      insertError = error ?? null;
+
+      if (insertError?.code === "23505" && resolvedItemKind === "finished" && skuRetries < 5) {
+        const blob = `${insertError.details ?? ""} ${insertError.message ?? ""} ${insertError.hint ?? ""}`.toLowerCase();
+        if (blob.includes("sku")) {
+          resolvedVariantSku = await allocatePosVariantSku(supabase, null, itemId);
+          payload.sku = resolvedVariantSku;
+          attemptInsert = { ...attemptInsert, sku: resolvedVariantSku };
+          skuRetries += 1;
+          continue;
+        }
+      }
+
+      if (isMissingColumnError(insertError) && optionalKeys.length) {
+        const stripped = stripMissingOptionalField(attemptInsert, insertError, optionalKeys);
+        if (stripped) {
+          attemptInsert = stripped.payload;
+          optionalKeys = stripped.optionalKeys;
+          continue;
+        }
+      }
+      break;
+    }
+
     if (insertError) throw insertError;
 
     await refreshHasVariations(supabase, itemId);
@@ -665,7 +743,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[catalog/variants] POST failed", error);
-    return NextResponse.json({ error: "Unable to create variant" }, { status: 500 });
+    const dbError = error as { code?: string; message?: string };
+    if (dbError?.code === "23505") {
+      return NextResponse.json({ error: "A variant with this SKU or name already exists" }, { status: 409 });
+    }
+    const message = dbError?.message || (error instanceof Error ? error.message : "Unable to create variant");
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -718,7 +801,25 @@ export async function PUT(request: Request) {
       update.name = name;
     }
 
-    if (body.sku !== undefined) update.sku = cleanText(body.sku) ?? null;
+    if (body.sku !== undefined) {
+      const nextSku = cleanText(body.sku);
+      const resolvedItemKind =
+        update.item_kind ?? (existing as CatalogVariantRow).item_kind ?? itemRow?.item_kind ?? "finished";
+      if (resolvedItemKind === "finished") {
+        if (!nextSku) {
+          return NextResponse.json({ error: "Variant SKU is required" }, { status: 400 });
+        }
+        try {
+          update.sku = await allocatePosVariantSku(supabase, nextSku, effectiveItemId, id);
+        } catch (allocationError) {
+          const message =
+            allocationError instanceof Error ? allocationError.message : "Unable to allocate variant SKU";
+          return NextResponse.json({ error: message }, { status: 400 });
+        }
+      } else {
+        update.sku = nextSku ?? null;
+      }
+    }
     if (body.supplier_sku !== undefined) update.supplier_sku = cleanText(body.supplier_sku) ?? null;
     if (body.item_kind !== undefined) {
       update.item_kind = cleanItemKind(body.item_kind, (existing as CatalogVariantRow).item_kind ?? itemRow?.item_kind ?? "finished");
@@ -800,9 +901,6 @@ export async function PUT(request: Request) {
         update.selling_price = sellingPrice.value;
       }
     }
-    if (body.outlet_order_visible !== undefined) {
-      update.outlet_order_visible = cleanBoolean(body.outlet_order_visible, true);
-    }
     if (body.image_url !== undefined) update.image_url = cleanText(body.image_url) ?? null;
     if (hasStorageHomeInput) {
       update.default_warehouse_id = storageHomeIdInput ?? storageHomeIdsInput?.[0] ?? null;
@@ -825,7 +923,7 @@ export async function PUT(request: Request) {
         .eq("item_id", effectiveItemId);
       updateError = result.error;
 
-      if (updateError?.code === "42703" && optionalKeys.length) {
+      if (updateError && isMissingColumnError(updateError) && optionalKeys.length) {
         const removeKey = optionalKeys.pop();
         if (removeKey) {
           const { [removeKey]: removed, ...rest } = updatePayload as Record<string, unknown>;

@@ -227,7 +227,7 @@ export default function OutletCatalogAccessPage() {
                       checked={item.allow_orders}
                       onChange={(e) => toggleItem(item.id, e.target.checked)}
                     />{" "}
-                    Orders app
+                    Show in outlet orders
                   </label>
                 ) : (
                   <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
@@ -240,7 +240,7 @@ export default function OutletCatalogAccessPage() {
                             checked={variant.allow_orders}
                             onChange={(e) => toggleVariant(item.id, variant.id, e.target.checked)}
                           />{" "}
-                          Orders app
+                          Show in outlet orders
                         </label>
                       </div>
                     ))}

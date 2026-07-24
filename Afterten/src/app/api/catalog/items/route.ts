@@ -560,7 +560,7 @@ export async function POST(request: Request) {
       selling_price: sellingPrice.value,
       has_variations: cleanBoolean(body.has_variations, false),
       has_recipe: cleanBoolean(body.has_recipe, false),
-      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
+      outlet_order_visible: true,
       image_url: cleanText(body.image_url) ?? null,
       ...(defaultWarehouseId !== undefined && defaultWarehouseId !== null
         ? { default_warehouse_id: defaultWarehouseId }
@@ -759,7 +759,6 @@ export async function PUT(request: Request) {
       cost: cost.value,
       selling_price: sellingPrice.value,
       has_variations: cleanBoolean(body.has_variations, false),
-      outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
       image_url: cleanText(body.image_url) ?? null,
       ...(defaultWarehouseId !== undefined ? { default_warehouse_id: defaultWarehouseId } : {}),
       menu_group_id: menuGroupId,

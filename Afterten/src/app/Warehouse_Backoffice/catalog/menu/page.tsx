@@ -6,6 +6,7 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logMiddlewareDispatch, logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
+import { vatExcludedFromSellingPrice } from "@/lib/catalog-middleware";
 import eb from "../../enterprise.module.css";
 import styles from "./menu.module.css";
 
@@ -14,11 +15,20 @@ type Item = {
   name: string;
   sku?: string | null;
   item_kind?: string | null;
+  menu_group_id?: string | null;
   active?: boolean | null;
   has_variations?: boolean | null;
   has_recipe?: boolean | null;
   base_recipe_count?: number | null;
   image_url?: string | null;
+  selling_price?: number | null;
+};
+
+type MenuGroup = {
+  id: string;
+  name: string;
+  pos_menu_group_id?: number | null;
+  active?: boolean | null;
 };
 
 type Variant = {
@@ -30,6 +40,7 @@ type Variant = {
   active?: boolean | null;
   has_recipe?: boolean | null;
   image_url?: string | null;
+  selling_price?: number | null;
 };
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
@@ -66,20 +77,80 @@ function DeleteIcon() {
   );
 }
 
+function formatPrice(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value < 0) return "—";
+  return value.toFixed(2);
+}
+
+function SellingPriceLine({ sellingPrice }: { sellingPrice?: number | null }) {
+  if (sellingPrice == null || !Number.isFinite(sellingPrice) || sellingPrice <= 0) {
+    return <p className={`${styles.priceLine} ${styles.priceLineMuted}`}>No selling price set</p>;
+  }
+  const exVat = vatExcludedFromSellingPrice(sellingPrice);
+  return (
+    <p className={styles.priceLine}>
+      <span>Selling {formatPrice(sellingPrice)}</span>
+      <span className={styles.priceSep}>·</span>
+      <span>Ex VAT {formatPrice(exVat)}</span>
+    </p>
+  );
+}
+
+function ProductPriceDisplay({
+  sellingPrice,
+  variants,
+  hasVariants,
+}: {
+  sellingPrice?: number | null;
+  variants: Variant[];
+  hasVariants: boolean;
+}) {
+  if (hasVariants) {
+    const prices = variants
+      .map((variant) => variant.selling_price)
+      .filter((price): price is number => price != null && Number.isFinite(price) && price > 0);
+    if (!prices.length) {
+      return <p className={`${styles.priceLine} ${styles.priceLineMuted}`}>No variant prices set</p>;
+    }
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    if (min === max) {
+      return <SellingPriceLine sellingPrice={min} />;
+    }
+    const minExVat = vatExcludedFromSellingPrice(min);
+    const maxExVat = vatExcludedFromSellingPrice(max);
+    return (
+      <p className={styles.priceLine}>
+        <span>
+          Selling {formatPrice(min)} – {formatPrice(max)}
+        </span>
+        <span className={styles.priceSep}>·</span>
+        <span>
+          Ex VAT {formatPrice(minExVat)} – {formatPrice(maxExVat)}
+        </span>
+      </p>
+    );
+  }
+  return <SellingPriceLine sellingPrice={sellingPrice} />;
+}
+
 function ProductCard({
   item,
   itemVariants,
+  menuGroupName,
   onShowVariants,
   onDeleteItem,
   readOnly,
 }: {
   item: Item;
   itemVariants: Variant[];
+  menuGroupName?: string | null;
   onShowVariants: (item: Item, variants: Variant[]) => void;
   onDeleteItem: (item: Item) => void;
   readOnly: boolean;
 }) {
   const hasVariants = Boolean(item.has_variations) || itemVariants.length > 0;
+  const isFinished = (item.item_kind ?? "finished").trim().toLowerCase() === "finished";
 
   return (
     <article className={styles.card}>
@@ -111,6 +182,14 @@ function ProductCard({
                 </svg>
               </a>
             </div>
+            {isFinished ? (
+              <p
+                className={`${styles.menuGroupLabel} ${!menuGroupName ? styles.menuGroupLabelMissing : ""}`}
+                title={menuGroupName ? "POS menu group" : "No menu group — required for till push"}
+              >
+                {menuGroupName ?? "No menu group"}
+              </p>
+            ) : null}
             <div className={styles.titleRow}>
               <h2 className={styles.itemName}>{item.name}</h2>
               {hasVariants ? (
@@ -125,6 +204,11 @@ function ProductCard({
                 </button>
               ) : null}
             </div>
+            <ProductPriceDisplay
+              sellingPrice={item.selling_price}
+              variants={itemVariants}
+              hasVariants={hasVariants}
+            />
           </div>
         </div>
       </div>
@@ -181,6 +265,7 @@ function VariantsPopup({
               <div className={styles.variantMeta}>
                 <p className={styles.variantName}>{variant.name}</p>
                 <p className={styles.variantSku}>SKU: {variant.sku ?? "—"}</p>
+                <SellingPriceLine sellingPrice={variant.selling_price} />
               </div>
               <div className={styles.rowActions}>
                 <a
@@ -232,6 +317,8 @@ export default function CatalogMenuPage() {
   const [middlewareOutlets, setMiddlewareOutlets] = useState<OutletRow[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [menuGroups, setMenuGroups] = useState<MenuGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [variantsPopup, setVariantsPopup] = useState<ItemWithVariants | null>(null);
@@ -246,9 +333,14 @@ export default function CatalogMenuPage() {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, variantsRes] = await Promise.all([fetch("/api/catalog/items"), fetch("/api/catalog/variants")]);
+      const [itemsRes, variantsRes, groupsRes] = await Promise.all([
+        fetch("/api/catalog/items"),
+        fetch("/api/catalog/variants"),
+        fetch("/api/catalog/menu-groups"),
+      ]);
       const itemsJson = await itemsRes.json().catch(() => ({}));
       const variantsJson = await variantsRes.json().catch(() => ({}));
+      const groupsJson = await groupsRes.json().catch(() => ({}));
       if (!itemsRes.ok) {
         throw new Error(
           typeof itemsJson.error === "string" ? itemsJson.error : "Unable to load products",
@@ -265,8 +357,15 @@ export default function CatalogMenuPage() {
         );
       }
 
+      if (!groupsRes.ok) {
+        throw new Error(
+          typeof groupsJson.error === "string" ? groupsJson.error : "Unable to load menu groups",
+        );
+      }
+
       setItems(Array.isArray(itemsJson.items) ? itemsJson.items : []);
       setVariants(Array.isArray(variantsJson.variants) ? variantsJson.variants : []);
+      setMenuGroups(Array.isArray(groupsJson.groups) ? groupsJson.groups : []);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to load catalog");
@@ -319,6 +418,20 @@ export default function CatalogMenuPage() {
     return Array.from(kinds).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [items]);
 
+  const menuGroupNameById = useMemo(
+    () => new Map(menuGroups.map((group) => [group.id, group.name] as const)),
+    [menuGroups],
+  );
+
+  const matchesGroupFilter = useCallback(
+    (item: Item) => {
+      if (groupFilter === "all") return true;
+      if (groupFilter === "none") return !item.menu_group_id;
+      return item.menu_group_id === groupFilter;
+    },
+    [groupFilter],
+  );
+
   const groupedData = useMemo(() => {
     const term = search.trim().toLowerCase();
     const buildGrouped = (sourceItems: Item[]) => {
@@ -347,6 +460,8 @@ export default function CatalogMenuPage() {
         .filter((entry): entry is ItemWithVariants => Boolean(entry));
     };
 
+    const groupFilteredItems = items.filter(matchesGroupFilter);
+
     if (typeFilter === "all") {
       const kindOrder = [
         { key: "finished", label: "Finished products" },
@@ -354,7 +469,7 @@ export default function CatalogMenuPage() {
         { key: "raw", label: "Raws" },
       ];
       const sections = kindOrder.map((kind) => {
-        const sectionItems = items.filter((item) => {
+        const sectionItems = groupFilteredItems.filter((item) => {
           const normalized = (item.item_kind ?? "product").trim().toLowerCase();
           return normalized === kind.key;
         });
@@ -363,12 +478,12 @@ export default function CatalogMenuPage() {
       return { mode: "sections" as const, sections };
     }
 
-    const filteredItems = items.filter((item) => {
+    const filteredItems = groupFilteredItems.filter((item) => {
       const kind = (item.item_kind ?? "product").trim().toLowerCase();
       return kind === typeFilter;
     });
     return { mode: "flat" as const, entries: buildGrouped(filteredItems) };
-  }, [items, variants, search, typeFilter]);
+  }, [items, variants, search, typeFilter, matchesGroupFilter]);
 
   const variantCount = useMemo(() => variants.length, [variants]);
 
@@ -583,6 +698,24 @@ export default function CatalogMenuPage() {
               ))}
             </select>
           </label>
+          <label className={`${eb.fieldLabel} ${styles.catalogFilterGroup}`}>
+            Menu group
+            <select
+              id="menu-group-filter"
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+              className={eb.fieldSelect}
+            >
+              <option value="all">All groups</option>
+              <option value="none">No group</option>
+              {menuGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                  {group.pos_menu_group_id != null ? ` (#${group.pos_menu_group_id})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {error && <div className={styles.error}>{error}</div>}
       </section>
@@ -604,6 +737,9 @@ export default function CatalogMenuPage() {
                         key={item.id}
                         item={item}
                         itemVariants={itemVariants}
+                        menuGroupName={
+                          item.menu_group_id ? menuGroupNameById.get(item.menu_group_id) ?? null : null
+                        }
                         onShowVariants={openVariantsPopup}
                         onDeleteItem={(entry) => openDeleteDialog({ kind: "item", item: entry })}
                         readOnly={readOnly}
@@ -622,6 +758,9 @@ export default function CatalogMenuPage() {
                   key={item.id}
                   item={item}
                   itemVariants={itemVariants}
+                  menuGroupName={
+                    item.menu_group_id ? menuGroupNameById.get(item.menu_group_id) ?? null : null
+                  }
                   onShowVariants={openVariantsPopup}
                   onDeleteItem={(entry) => openDeleteDialog({ kind: "item", item: entry })}
                   readOnly={readOnly}

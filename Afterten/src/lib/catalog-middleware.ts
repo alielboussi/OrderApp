@@ -32,20 +32,29 @@ export function withCatalogSyncSchedule(
   };
 }
 
+function middlewarePriceFields(
+  sellingPrice: number | null | undefined
+): { price: number; vat_exc_price: number | null } | Record<string, never> {
+  if (sellingPrice == null || !Number.isFinite(sellingPrice) || sellingPrice <= 0) {
+    return {};
+  }
+  return {
+    price: sellingPrice,
+    vat_exc_price: vatExcludedFromSellingPrice(sellingPrice),
+  };
+}
+
 export function buildItemMiddlewarePayload(params: {
   sku: string | null;
   name: string;
   sellingPrice: number | null;
   groupFields?: MenuGroupSyncFields;
 }): Record<string, unknown> {
-  const sellingPrice =
-    params.sellingPrice != null && Number.isFinite(params.sellingPrice) ? params.sellingPrice : null;
   return {
     change_type: "upsert_item",
     sku: params.sku,
     name: params.name,
-    price: sellingPrice,
-    vat_exc_price: vatExcludedFromSellingPrice(sellingPrice),
+    ...middlewarePriceFields(params.sellingPrice),
     ...(params.groupFields ?? {}),
   };
 }
@@ -58,16 +67,13 @@ export function buildVariantMiddlewarePayload(params: {
   posFlavourId: string | null;
   groupFields?: MenuGroupSyncFields;
 }): Record<string, unknown> {
-  const sellingPrice =
-    params.sellingPrice != null && Number.isFinite(params.sellingPrice) ? params.sellingPrice : null;
   return {
     change_type: "upsert_variant",
     item_sku: params.itemSku,
     variant_sku: params.variantSku,
     variant_name: params.variantName,
-    price: sellingPrice,
-    vat_exc_price: vatExcludedFromSellingPrice(sellingPrice),
-    pos_flavour_id: params.posFlavourId,
+    ...middlewarePriceFields(params.sellingPrice),
+    ...(params.posFlavourId ? { pos_flavour_id: params.posFlavourId } : {}),
     ...(params.groupFields ?? {}),
   };
 }
@@ -78,14 +84,22 @@ export async function enqueueCatalogSyncForOutlet(
   entityType: "item" | "variant" | "menu_group" | "delete",
   entityId: string,
   payload: Record<string, unknown>
-) {
-  const { error } = await supabase.from("outlet_catalog_sync_events").insert({
-    outlet_id: outletId,
-    entity_type: entityType,
-    entity_id: entityId,
-    payload,
-  });
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("outlet_catalog_sync_events")
+    .insert({
+      outlet_id: outletId,
+      entity_type: entityType,
+      entity_id: entityId,
+      payload,
+    })
+    .select("id")
+    .single();
   if (error) {
     throw new Error(error.message || "Failed to enqueue catalog sync for outlet");
   }
+  if (!data?.id) {
+    throw new Error("Failed to enqueue catalog sync for outlet");
+  }
+  return String(data.id);
 }

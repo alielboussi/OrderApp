@@ -11,6 +11,19 @@ function getSupabaseUrl(): string {
   return url;
 }
 
+export function hasServiceRoleKey(): boolean {
+  const serviceKeyCandidates = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE,
+    process.env.SUPABASE_SERVICE_API_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_SECRET,
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE,
+  ];
+  return serviceKeyCandidates.some((candidate) => Boolean(candidate?.trim()));
+}
+
 function getServiceKey(): string {
   const serviceKeyCandidates = [
     process.env.SUPABASE_SERVICE_ROLE_KEY,

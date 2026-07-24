@@ -182,6 +182,22 @@
   color: #5c5c5c;
 }
 
+.menuGroupLabel {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d4ed8;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.menuGroupLabelMissing {
+  color: #b45309;
+}
+
 .itemName {
   margin: 0;
   font-size: 16px;
@@ -192,6 +208,25 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.priceLine {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #374151;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  line-height: 1.35;
+}
+
+.priceLineMuted {
+  color: #9ca3af;
+}
+
+.priceSep {
+  color: #d1d5db;
 }
 
 .titleRow {
@@ -356,6 +391,11 @@
 
 .catalogFilterType {
   flex: 0 0 200px;
+  text-align: center;
+}
+
+.catalogFilterGroup {
+  flex: 0 0 220px;
   text-align: center;
 }
 

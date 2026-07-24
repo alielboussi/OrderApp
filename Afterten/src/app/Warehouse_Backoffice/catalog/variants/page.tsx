@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState, FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import { useUomOptions } from "@/lib/use-uom-options";
+import { POS_NUMERIC_SKU_MAX, parsePosNumericSku } from "@/lib/pos-catalog-ids";
 import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "../product/product.module.css";
@@ -34,7 +35,6 @@ type FormState = {
   units_per_pack: string;
   cost: string;
   selling_price: string;
-  outlet_order_visible: boolean;
   image_url: string;
   active: boolean;
 };
@@ -48,7 +48,6 @@ const defaultForm: FormState = {
   units_per_pack: "1",
   cost: "0",
   selling_price: "0",
-  outlet_order_visible: true,
   image_url: "",
   active: true,
 };
@@ -67,10 +66,30 @@ function VariantFormPage() {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [, setLoadingVariant] = useState(false);
+  const [suggestedSku, setSuggestedSku] = useState("");
+  const [skuManual, setSkuManual] = useState(false);
   const uomOptions = useUomOptions();
 
   const editingId = searchParams?.get("id")?.trim() || "";
   const incomingItemId = searchParams?.get("item_id")?.trim() || "";
+
+  const fetchNextPosSku = useCallback(async (productId?: string) => {
+    const itemId = productId ?? form.item_id;
+    if (!itemId) {
+      setSuggestedSku("");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/catalog/next-pos-ids?item_id=${encodeURIComponent(itemId)}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      if (typeof json.next_variant_sku === "string") {
+        setSuggestedSku(json.next_variant_sku);
+      }
+    } catch (error) {
+      console.error("Failed to load next POS variant SKU", error);
+    }
+  }, [form.item_id]);
 
   const vatExcludedPrice = useMemo(() => {
     const parsed = Number(form.selling_price);
@@ -98,6 +117,11 @@ function VariantFormPage() {
   }, [incomingItemId, editingId]);
 
   useEffect(() => {
+    if (status !== "ok" || editingId || form.item_kind !== "finished" || !form.item_id) return;
+    void fetchNextPosSku(form.item_id);
+  }, [status, editingId, form.item_kind, form.item_id, fetchNextPosSku]);
+
+  useEffect(() => {
     async function loadVariant(id: string) {
       setLoadingVariant(true);
       try {
@@ -115,7 +139,6 @@ function VariantFormPage() {
           units_per_pack: String(variant.units_per_purchase_pack ?? 1),
           cost: (variant.cost ?? 0).toString(),
           selling_price: (variant.selling_price ?? 0).toString(),
-          outlet_order_visible: variant.outlet_order_visible ?? true,
           image_url: variant.image_url ?? "",
           active: variant.active ?? true,
         });
@@ -149,8 +172,29 @@ function VariantFormPage() {
   }
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
+    if (key === "sku" && typeof value === "string") {
+      setSkuManual(true);
+    }
+    if (key === "item_id" && typeof value === "string") {
+      setSkuManual(false);
+      setForm((prev) => ({ ...prev, item_id: value, sku: "" }));
+      void fetchNextPosSku(value);
+      return;
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  const usesAutoSku =
+    !editingId && form.item_kind === "finished" && !skuManual && !form.sku.trim();
+  const skuHint = usesAutoSku
+    ? suggestedSku
+      ? `Auto-assigned on save (next for this product: ${suggestedSku})`
+      : form.item_id
+        ? "Auto-assigned on save when left blank"
+        : "Select a parent product first"
+    : form.item_kind === "finished"
+      ? `Numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX}) — unique on this product`
+      : "Optional internal SKU";
 
   const toNumber = (value: string, fallback: number, min = 0) => {
     const parsed = Number(value);
@@ -161,7 +205,9 @@ function VariantFormPage() {
 
   const resetForm = () => {
     const keepItemId = incomingItemId || form.item_id;
+    setSkuManual(false);
     setForm({ ...defaultForm, item_id: keepItemId });
+    void fetchNextPosSku();
   };
 
   const submit = async (event: FormEvent) => {
@@ -174,8 +220,11 @@ function VariantFormPage() {
       setResult({ ok: false, message: "Select a parent product first." });
       return;
     }
-    if (!form.sku.trim()) {
-      setResult({ ok: false, message: "Variant SKU is required." });
+    if (form.item_kind === "finished" && form.sku.trim() && !parsePosNumericSku(form.sku)) {
+      setResult({
+        ok: false,
+        message: `Variant SKU must be a 1-3 digit number (1-${POS_NUMERIC_SKU_MAX}).`,
+      });
       return;
     }
     setSaving(true);
@@ -184,14 +233,13 @@ function VariantFormPage() {
       const payload = {
         item_id: form.item_id,
         name: form.name,
-        sku: form.sku.trim(),
+        sku: usesAutoSku ? "" : form.sku.trim(),
         item_kind: form.item_kind,
         consumption_uom: form.consumption_uom,
         units_per_purchase_pack: toNumber(form.units_per_pack, 1),
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
-        outlet_order_visible: form.outlet_order_visible,
         image_url: form.image_url,
         active: form.active,
         supplier_sku: null,
@@ -210,9 +258,10 @@ function VariantFormPage() {
       }
 
       const savedJson = await res.json().catch(() => ({}));
-      const savedVariant = (savedJson.variant ?? savedJson) as { id?: string; name?: string } | null;
+      const savedVariant = (savedJson.variant ?? savedJson) as { id?: string; name?: string; sku?: string | null } | null;
       const entityId = editingId ?? savedVariant?.id ?? null;
       const entityName = form.name || savedVariant?.name || "Variant";
+      const savedSku = savedVariant?.sku ?? (usesAutoSku ? suggestedSku : form.sku.trim() || null);
 
       await logWarehouseAction({
         action: editingId ? WAREHOUSE_AUDIT_ACTIONS.EDIT_VARIANT : WAREHOUSE_AUDIT_ACTIONS.ADD_VARIANT,
@@ -221,7 +270,7 @@ function VariantFormPage() {
         entity_type: "variant",
         entity_id: entityId,
         entity_name: entityName,
-        details: { item_id: form.item_id, sku: form.sku.trim() || null },
+        details: { item_id: form.item_id, sku: savedSku },
       });
 
       setResult({ ok: true, message: editingId ? "Variant updated" : "Variant saved" });
@@ -241,7 +290,6 @@ function VariantFormPage() {
               units_per_pack: String(variant.units_per_purchase_pack ?? 1),
               cost: (variant.cost ?? 0).toString(),
               selling_price: (variant.selling_price ?? 0).toString(),
-              outlet_order_visible: variant.outlet_order_visible ?? true,
               image_url: variant.image_url ?? "",
               active: variant.active ?? true,
             });
@@ -278,10 +326,12 @@ function VariantFormPage() {
           />
           <Field
             label="Sku"
-            hint="Unique SKU for POS / supplier mapping (e.g. barcode or MintPOS Name2)"
+            hint={skuHint}
             value={form.sku}
             onChange={(v) => handleChange("sku", v)}
-            required
+            placeholder={usesAutoSku && suggestedSku ? suggestedSku : undefined}
+            maxLength={form.item_kind === "finished" ? 3 : undefined}
+            inputMode={form.item_kind === "finished" ? "numeric" : undefined}
           />
           <Field
             label="Variant name"
@@ -362,12 +412,6 @@ function VariantFormPage() {
 
         <div className={styles.toggleRow}>
           <Checkbox
-            label="Show in outlet orders"
-            hint="If off, this variant stays hidden from outlet ordering"
-            checked={form.outlet_order_visible}
-            onChange={(checked) => handleChange("outlet_order_visible", checked)}
-          />
-          <Checkbox
             label="Active"
             hint="Keep checked so teams can use it"
             checked={form.active}
@@ -419,9 +463,24 @@ type FieldProps = {
   min?: string;
   disabled?: boolean;
   placeholder?: string;
+  maxLength?: number;
+  inputMode?: "numeric" | "text";
 };
 
-function Field({ label, hint, value, onChange, required, type = "text", step, min, disabled, placeholder }: FieldProps) {
+function Field({
+  label,
+  hint,
+  value,
+  onChange,
+  required,
+  type = "text",
+  step,
+  min,
+  disabled,
+  placeholder,
+  maxLength,
+  inputMode,
+}: FieldProps) {
   return (
     <label className={styles.field}>
       <span className={styles.label}>{label}</span>
@@ -436,6 +495,8 @@ function Field({ label, hint, value, onChange, required, type = "text", step, mi
         min={min}
         disabled={disabled}
         placeholder={placeholder}
+        maxLength={maxLength}
+        inputMode={inputMode}
       />
     </label>
   );

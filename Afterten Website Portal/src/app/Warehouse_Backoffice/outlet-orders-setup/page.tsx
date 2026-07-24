@@ -123,7 +123,7 @@ export default function OutletOrdersSetupPage() {
               <span className={styles.sequenceIndex}>4</span>
               <div className={styles.sequenceContent}>
                 <div className={styles.sequenceLabel}>Enable item visibility for outlet orders</div>
-                <div className={styles.sequenceHint}>Ensure items/variants are marked Show in outlet orders.</div>
+                <div className={styles.sequenceHint}>Configure outlet orders access under Outlets → Catalog access.</div>
                 <button type="button" className={styles.sequenceButton} onClick={() => router.push("/Warehouse_Backoffice/catalog/menu")}>
                   Open Menu Items & Recipes
                 </button>

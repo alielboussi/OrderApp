@@ -48,6 +48,11 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     tone: "default",
   },
   {
+    label: "Account",
+    items: [{ label: "Approvals", href: "/Warehouse_Backoffice/account/approvals", adminOnly: true }],
+    tone: "system",
+  },
+  {
     label: "Logs",
     items: [{ label: "User Activity", href: "/Warehouse_Backoffice/logs", adminOnly: true }],
     tone: "system",
@@ -79,6 +84,7 @@ export function pageTitleForPath(pathname: string, hash?: string): string {
   }
   if (pathname === "/Warehouse_Backoffice/catalog/menu") return "View Products & Variants";
   if (pathname === "/Warehouse_Backoffice/logs") return "User Activity";
+  if (pathname === "/Warehouse_Backoffice/account/approvals") return "Approvals";
   return "Warehouse Backoffice";
 }
 

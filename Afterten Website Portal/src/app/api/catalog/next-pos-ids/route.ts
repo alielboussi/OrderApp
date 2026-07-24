@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-import { nextPosItemSku, nextPosMenuGroupId, nextPosVariantSku } from "@/lib/pos-catalog-ids";
+import {
+  nextPosItemSku,
+  nextPosMenuGroupId,
+  nextPosVariantSku,
+  nextPosVariantSkuForItem,
+} from "@/lib/pos-catalog-ids";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const itemId = new URL(request.url).searchParams.get("item_id")?.trim() || null;
     const supabase = getServiceClient();
     const [nextItemSku, nextVariantSku, nextMenuGroupId] = await Promise.all([
       nextPosItemSku(supabase),
-      nextPosVariantSku(supabase),
+      itemId ? nextPosVariantSkuForItem(supabase, itemId) : nextPosVariantSku(supabase),
       nextPosMenuGroupId(supabase),
     ]);
 
