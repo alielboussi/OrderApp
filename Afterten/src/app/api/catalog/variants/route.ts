@@ -803,9 +803,12 @@ export async function PUT(request: Request) {
 
     if (body.sku !== undefined) {
       const nextSku = cleanText(body.sku);
+      const existingSku = (existing as CatalogVariantRow).sku?.trim() ?? "";
       const resolvedItemKind =
         update.item_kind ?? (existing as CatalogVariantRow).item_kind ?? itemRow?.item_kind ?? "finished";
-      if (resolvedItemKind === "finished") {
+      if (nextSku && existingSku && nextSku.toLowerCase() === existingSku.toLowerCase()) {
+        // SKU unchanged — skip re-allocation on price/name-only edits.
+      } else if (resolvedItemKind === "finished") {
         if (!nextSku) {
           return NextResponse.json({ error: "Variant SKU is required" }, { status: 400 });
         }
@@ -992,7 +995,14 @@ export async function PUT(request: Request) {
   } catch (error) {
     const details = toErrorDetails(error);
     console.error("[catalog/variants] PUT failed", details);
-    return NextResponse.json({ error: "Unable to update variant", details }, { status: 500 });
+    if (details.code === "23505") {
+      return NextResponse.json(
+        { error: "A variant with this SKU or name already exists", details },
+        { status: 409 },
+      );
+    }
+    const message = details.message || "Unable to update variant";
+    return NextResponse.json({ error: message, details }, { status: 500 });
   }
 }
 

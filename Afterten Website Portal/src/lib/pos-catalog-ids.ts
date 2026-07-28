@@ -215,15 +215,7 @@ export async function allocatePosVariantSku(
       throw new Error("Variant SKU is already used by another variant on this product");
     }
 
-    const { data, error } = await supabase
-      .from("catalog_variants")
-      .select("id")
-      .ilike("sku", trimmed)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data || data.id === excludeVariantId) return trimmed;
-    throw new Error("Variant SKU is already in use");
+    return trimmed;
   }
 
   if (itemId) {

@@ -254,7 +254,9 @@ function VariantFormPage() {
 
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Could not save variant");
+        const detailMessage =
+          typeof json.details?.message === "string" ? json.details.message : null;
+        throw new Error(json.error || detailMessage || "Could not save variant");
       }
 
       const savedJson = await res.json().catch(() => ({}));
