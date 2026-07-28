@@ -200,6 +200,44 @@ function selectVariantFields(optional: readonly string[], minimalCore = false) {
   return `${VARIANT_CORE_FIELDS}${optionalPart}`;
 }
 
+async function fetchVariantRowById(
+  supabase: ReturnType<typeof getServiceClient>,
+  id: string,
+): Promise<{ data: Partial<CatalogVariantRow> | null; error: SupabaseError }> {
+  const optional = [...VARIANT_OPTIONAL_FIELDS];
+  let useMinimalCore = false;
+
+  while (true) {
+    const result = await supabase
+      .from("catalog_variants")
+      .select(selectVariantFields(optional, useMinimalCore))
+      .eq("id", id)
+      .maybeSingle();
+
+    const error = result.error;
+    if (error && isMissingColumnError(error)) {
+      const missing = missingColumnFromError(error);
+      if (missing) {
+        const idx = optional.indexOf(missing as (typeof VARIANT_OPTIONAL_FIELDS)[number]);
+        if (idx >= 0) {
+          optional.splice(idx, 1);
+          continue;
+        }
+      }
+      if (optional.length) {
+        optional.pop();
+        continue;
+      }
+      if (!useMinimalCore) {
+        useMinimalCore = true;
+        continue;
+      }
+    }
+
+    return { data: result.data as Partial<CatalogVariantRow> | null, error };
+  }
+}
+
 function normalizeVariantRow(row: Partial<CatalogVariantRow>) {
   return {
     id: row.id ?? "",
@@ -760,13 +798,7 @@ export async function PUT(request: Request) {
 
     const itemId = cleanUuid(body.item_id);
     const supabase = getServiceClient();
-    const { data: existing, error: existingError } = await supabase
-      .from("catalog_variants")
-      .select(
-        "id,item_id,name,sku,supplier_sku,item_kind,consumption_uom,purchase_pack_unit,units_per_purchase_pack,purchase_unit_mass,purchase_unit_mass_uom,transfer_unit,transfer_quantity,qty_decimal_places,cost,selling_price,outlet_order_visible,image_url,default_warehouse_id,active"
-      )
-      .eq("id", id)
-      .maybeSingle();
+    const { data: existing, error: existingError } = await fetchVariantRowById(supabase, id);
     if (existingError) throw existingError;
     if (!existing) return NextResponse.json({ error: "Variant not found" }, { status: 404 });
 
