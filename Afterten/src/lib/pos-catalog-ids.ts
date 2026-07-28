@@ -12,6 +12,21 @@ export function parsePosNumericSku(sku: string | null | undefined): number | nul
   return value;
 }
 
+/**
+ * ModifierFlavour.Name2 on the till — usually 1–999, but alcohol/barcode lines use longer numeric codes.
+ */
+export function parsePosVariantMintSku(sku: string | null | undefined): string | null {
+  if (!sku) return null;
+  const trimmed = sku.trim();
+  if (parsePosNumericSku(trimmed) !== null) return trimmed;
+  if (/^\d{4,20}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+export function isValidPosVariantMintSku(sku: string | null | undefined): boolean {
+  return parsePosVariantMintSku(sku) !== null;
+}
+
 function assertAllocatablePosSku(value: number): string {
   if (!parsePosNumericSku(String(value))) {
     throw new Error(`No available MintPOS SKU IDs left (max ${POS_NUMERIC_SKU_MAX})`);
@@ -191,8 +206,10 @@ export async function allocatePosVariantSku(
 ): Promise<string> {
   const trimmed = preferred?.trim();
   if (trimmed) {
-    if (!parsePosNumericSku(trimmed)) {
-      throw new Error(`Variant SKU must be a 1-3 digit numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX})`);
+    if (!parsePosVariantMintSku(trimmed)) {
+      throw new Error(
+        `Variant SKU must be a numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX}) or till barcode (4-20 digits)`,
+      );
     }
     if (itemId && (await findSiblingVariantSkuConflict(supabase, itemId, trimmed, excludeVariantId))) {
       throw new Error("Variant SKU is already used by another variant on this product");

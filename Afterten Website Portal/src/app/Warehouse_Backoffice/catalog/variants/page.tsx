@@ -7,7 +7,7 @@ import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import { useUomOptions } from "@/lib/use-uom-options";
-import { POS_NUMERIC_SKU_MAX, parsePosNumericSku } from "@/lib/pos-catalog-ids";
+import { POS_NUMERIC_SKU_MAX, isValidPosVariantMintSku } from "@/lib/pos-catalog-ids";
 import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "../product/product.module.css";
@@ -193,7 +193,7 @@ function VariantFormPage() {
         ? "Auto-assigned on save when left blank"
         : "Select a parent product first"
     : form.item_kind === "finished"
-      ? `Numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX}) — unique on this product`
+      ? `MintPOS variant SKU: 1-${POS_NUMERIC_SKU_MAX} or till barcode (4-20 digits)`
       : "Optional internal SKU";
 
   const toNumber = (value: string, fallback: number, min = 0) => {
@@ -220,10 +220,10 @@ function VariantFormPage() {
       setResult({ ok: false, message: "Select a parent product first." });
       return;
     }
-    if (form.item_kind === "finished" && form.sku.trim() && !parsePosNumericSku(form.sku)) {
+    if (form.item_kind === "finished" && form.sku.trim() && !isValidPosVariantMintSku(form.sku)) {
       setResult({
         ok: false,
-        message: `Variant SKU must be a 1-3 digit number (1-${POS_NUMERIC_SKU_MAX}).`,
+        message: `Variant SKU must be a numeric MintPOS ID (1-${POS_NUMERIC_SKU_MAX}) or till barcode (4-20 digits).`,
       });
       return;
     }
