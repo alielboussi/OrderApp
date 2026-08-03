@@ -68,7 +68,7 @@ export default function WarehouseBackofficeLogsPage() {
         const message = err instanceof Error ? err.message : "Failed to load logs";
         if (message.includes("warehouse_backoffice_logs") && message.includes("does not exist")) {
           setError(
-            "The warehouse_backoffice_logs table is missing. Run supabase/scripts/warehouse_backoffice_audit_logs.sql in the Supabase SQL Editor, then refresh.",
+            "Warehouse audit logs are unavailable. Ensure Firestore warehouse_backoffice_logs is configured, then refresh.",
           );
           return;
         }

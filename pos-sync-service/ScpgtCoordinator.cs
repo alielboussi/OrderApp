@@ -40,7 +40,7 @@ public sealed class ScpgtCoordinator
         var context = await _cloud.GetOutletSyncContextAsync(cancellationToken);
         if (context is null)
         {
-            return BuildSnapshot("Unable to load outlet.", "Check Supabase URL/key and outlet id.", null, false, null);
+            return BuildSnapshot("Unable to load outlet.", "Check Firebase credentials and outlet id.", null, false, null);
         }
 
         if (string.IsNullOrWhiteSpace(context.WarehouseId))
@@ -77,7 +77,7 @@ public sealed class ScpgtCoordinator
         {
             return BuildSnapshot(
                 overrideTitle ?? "Unable to load outlet.",
-                overrideDetail ?? "Check Supabase configuration.",
+                overrideDetail ?? "Check Firebase configuration.",
                 null,
                 false,
                 null);
@@ -87,7 +87,7 @@ public sealed class ScpgtCoordinator
         {
             return BuildSnapshot(
                 overrideTitle ?? "Middleware disabled.",
-                overrideDetail ?? "Enable has_pos_middleware on this outlet in Supabase.",
+                overrideDetail ?? "Enable has_pos_middleware on this outlet in Firebase.",
                 context,
                 false,
                 null);
@@ -131,11 +131,11 @@ public sealed class ScpgtCoordinator
         var maxUtc = ConfigStore.LoadMaxSaleDateUtc(_contentRoot);
         var syncWindowLabel = BuildConfiguredWindowLabel(context, minUtc, maxUtc);
 
-        var lastSyncLabel = "Last website/supabase sync: Not yet";
+        var lastSyncLabel = "Last website/cloud sync: Not yet";
         if (lastHeartbeatUtc.HasValue)
         {
             var local = DateTime.SpecifyKind(lastHeartbeatUtc.Value, DateTimeKind.Utc).ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
-            lastSyncLabel = $"Last website/supabase sync: {local}";
+            lastSyncLabel = $"Last website/cloud sync: {local}";
         }
 
         return new ScpgtUiSnapshot(

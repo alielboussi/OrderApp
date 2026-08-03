@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServiceClient } from "@/lib/supabase-server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { listFirestoreCatalogChangeEvents } from "@/lib/firestore-catalog-change-events";
 import {
   CATALOG_CHANGE_TYPES,
@@ -50,68 +48,23 @@ export async function GET(request: Request) {
       (value): value is CatalogEntityType => value === "item" || value === "variant" || value === "menu_group"
     );
 
-    if (useFirebaseBackend()) {
-      const changes = (await listFirestoreCatalogChangeEvents({
-        since,
-        until,
-        limit,
-        entityId,
-        sku,
-        changeTypes,
-        entityTypes,
-      })) as CatalogChangeEventRow[];
-      return NextResponse.json({
-        changes,
-        count: changes.length,
-        latest_at: changes[0]?.created_at ?? null,
-        polled_at: new Date().toISOString(),
-        backend: "firebase",
-      });
-    }
-
-    const supabase = getServiceClient();
-    let query = supabase
-      .from("catalog_change_events")
-      .select(
-        "id,created_at,change_type,entity_type,entity_id,entity_name,sku,menu_group_id,item_id,actor_user_id,actor_email,changes,snapshot,source"
-      )
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (since) query = query.gt("created_at", since);
-    if (until) query = query.lte("created_at", until);
-    if (entityId) query = query.eq("entity_id", entityId);
-    if (sku) query = query.ilike("sku", sku);
-    if (changeTypes.length === 1) query = query.eq("change_type", changeTypes[0]);
-    if (changeTypes.length > 1) query = query.in("change_type", changeTypes);
-    if (entityTypes.length === 1) query = query.eq("entity_type", entityTypes[0]);
-    if (entityTypes.length > 1) query = query.in("entity_type", entityTypes);
-
-    const { data, error } = await query;
-    if (error) {
-      if (error.message?.includes("catalog_change_events") && error.message.includes("does not exist")) {
-        return NextResponse.json(
-          {
-            error:
-              "catalog_change_events table is missing. Run supabase/scripts/catalog_change_events.sql in Supabase.",
-          },
-          { status: 503 }
-        );
-      }
-      throw error;
-    }
-
-    const changes = ((data ?? []) as CatalogChangeEventRow[]).map((row) => ({
-      ...row,
-      changes: Array.isArray(row.changes) ? row.changes : [],
-    }));
-
-    return NextResponse.json({
-      changes,
-      count: changes.length,
-      latest_at: changes[0]?.created_at ?? null,
-      polled_at: new Date().toISOString(),
-    });
+    const changes = (await listFirestoreCatalogChangeEvents({
+  since,
+  until,
+  limit,
+  entityId,
+  sku,
+  changeTypes,
+  entityTypes,
+})) as CatalogChangeEventRow[];
+return NextResponse.json({
+  changes,
+  count: changes.length,
+  latest_at: changes[0]?.created_at ?? null,
+  polled_at: new Date().toISOString(),
+  backend: "firebase",
+});
+    
   } catch (error) {
     console.error("[catalog/changes] GET failed", error);
     return NextResponse.json({ error: "Unable to load catalog changes" }, { status: 500 });

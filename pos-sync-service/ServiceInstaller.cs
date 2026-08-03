@@ -125,19 +125,13 @@ public static class ServiceInstaller
             "--installPath", wizardState.InstallPath,
             "--configRoot", wizardState.ConfigRoot,
             "--outlet-id", wizardState.OutletId,
-            "--supabase-url", wizardState.SupabaseUrl,
-            "--supabase-anon-key", wizardState.SupabaseAnonKey,
+            "--firebase-project-id", wizardState.FirebaseProjectId,
+            "--firebase-credentials-path", wizardState.FirebaseCredentialsPath,
             "--pos-server", wizardState.PosServer,
             "--pos-database", wizardState.PosDatabase,
             "--pos-username", wizardState.PosUsername,
             "--pos-password", wizardState.PosPassword
         };
-
-        if (!string.IsNullOrWhiteSpace(wizardState.SupabaseServiceKey))
-        {
-            args.Add("--supabase-service-key");
-            args.Add(wizardState.SupabaseServiceKey);
-        }
 
         return InstallFromArgs(args.ToArray(), sourceRoot);
     }
@@ -211,7 +205,7 @@ public static class ServiceInstaller
         var root = LoadJson(path);
         var posDb = root["PosDb"] as JsonObject ?? new JsonObject();
         var outlet = root["Outlet"] as JsonObject ?? new JsonObject();
-        var supabase = root["Supabase"] as JsonObject ?? new JsonObject();
+        var firebase = root["Firebase"] as JsonObject ?? new JsonObject();
 
         SetStringIfProvided(posDb, "ConnectionString", GetArgValue(args, "--pos-connection-string"));
         SetStringIfProvided(posDb, "Server", GetArgValue(args, "--pos-server"));
@@ -219,19 +213,18 @@ public static class ServiceInstaller
         SetStringIfProvided(posDb, "Username", GetArgValue(args, "--pos-username"));
         SetStringIfProvided(posDb, "Password", GetArgValue(args, "--pos-password"));
         SetStringIfProvided(outlet, "Id", GetArgValue(args, "--outlet-id"));
-        SetStringIfProvided(supabase, "Url", GetArgValue(args, "--supabase-url"));
-        SetStringIfProvided(supabase, "AnonKey", GetArgValue(args, "--supabase-anon-key"));
-        SetStringIfProvided(supabase, "ServiceKey", GetArgValue(args, "--supabase-service-key"));
+        SetStringIfProvided(firebase, "ProjectId", GetArgValue(args, "--firebase-project-id"));
+        SetStringIfProvided(firebase, "CredentialsPath", GetArgValue(args, "--firebase-credentials-path"));
 
         var canPrompt = Environment.UserInteractive && !HasFlag(args, "--no-prompt");
         if (canPrompt)
         {
-            PromptForRequiredValues(posDb, outlet, supabase);
+            PromptForRequiredValues(posDb, outlet, firebase);
         }
 
         root["PosDb"] = posDb;
         root["Outlet"] = outlet;
-        root["Supabase"] = supabase;
+        root["Firebase"] = firebase;
 
         File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -248,7 +241,7 @@ public static class ServiceInstaller
         }
     }
 
-    private static void PromptForRequiredValues(JsonObject posDb, JsonObject outlet, JsonObject supabase)
+    private static void PromptForRequiredValues(JsonObject posDb, JsonObject outlet, JsonObject firebase)
     {
         outlet["Id"] = PromptIfMissing(
             outlet,
@@ -257,19 +250,19 @@ public static class ServiceInstaller
             static value => Guid.TryParse(value, out _),
             "Outlet UUID must be a valid GUID.");
 
-        supabase["Url"] = PromptIfMissing(
-            supabase,
-            "Url",
-            "Supabase URL (https://...supabase.co)",
-            static value => Uri.TryCreate(value, UriKind.Absolute, out _),
-            "Supabase URL must be a valid absolute URL.");
-
-        supabase["AnonKey"] = PromptIfMissing(
-            supabase,
-            "AnonKey",
-            "Supabase anon key",
+        firebase["ProjectId"] = PromptIfMissing(
+            firebase,
+            "ProjectId",
+            "Firebase Project ID",
             static value => !string.IsNullOrWhiteSpace(value),
-            "Anon key is required.");
+            "Firebase Project ID is required.");
+
+        firebase["CredentialsPath"] = PromptIfMissing(
+            firebase,
+            "CredentialsPath",
+            "Firebase credentials JSON path",
+            static value => !string.IsNullOrWhiteSpace(value) && File.Exists(value),
+            "Firebase credentials file must exist.");
 
         var currentServer = ReadString(posDb, "Server");
         if (IsPlaceholder(currentServer))
@@ -340,7 +333,6 @@ public static class ServiceInstaller
         }
 
         return value.Contains("YOUR-PROJECT", StringComparison.OrdinalIgnoreCase)
-            || value.Contains("SUPABASE_", StringComparison.OrdinalIgnoreCase)
             || value.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase)
             || value == "00000000-0000-0000-0000-000000000000";
     }

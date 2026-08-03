@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import {
   createFirestoreOrdersSupervisor,
   deleteFirestoreOrdersSupervisor,
@@ -12,15 +11,7 @@ export async function GET(request: Request) {
   const auth = await requireWarehouseAuth(request);
   if (!auth.ok) return auth.response;
 
-  try {
-    if (!useFirebaseBackend()) {
-      return NextResponse.json(
-        { error: "Orders supervisors are only available with CLOUD_BACKEND=firebase" },
-        { status: 400 },
-      );
-    }
-
-    const supervisors = await listFirestoreOrdersSupervisors();
+  try {const supervisors = await listFirestoreOrdersSupervisors();
     return NextResponse.json({ supervisors, cloud_backend: "firebase" });
   } catch (error) {
     console.error("[outlets/orders-supervisors] GET failed", error);
@@ -32,15 +23,7 @@ export async function POST(request: Request) {
   const auth = await requireWarehouseAuth(request);
   if (!auth.ok) return auth.response;
 
-  try {
-    if (!useFirebaseBackend()) {
-      return NextResponse.json(
-        { error: "Orders supervisors are only available with CLOUD_BACKEND=firebase" },
-        { status: 400 },
-      );
-    }
-
-    const body = await request.json().catch(() => ({}));
+  try {const body = await request.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
@@ -63,15 +46,7 @@ export async function PATCH(request: Request) {
   const auth = await requireWarehouseAuth(request);
   if (!auth.ok) return auth.response;
 
-  try {
-    if (!useFirebaseBackend()) {
-      return NextResponse.json(
-        { error: "Orders supervisors are only available with CLOUD_BACKEND=firebase" },
-        { status: 400 },
-      );
-    }
-
-    const body = await request.json().catch(() => ({}));
+  try {const body = await request.json().catch(() => ({}));
     const id = typeof body.id === "string" ? body.id.trim() : "";
     const name = body.name !== undefined && body.name !== null ? String(body.name) : undefined;
     const email = body.email !== undefined && body.email !== null ? String(body.email) : undefined;
@@ -98,15 +73,7 @@ export async function DELETE(request: Request) {
   const auth = await requireWarehouseAuth(request);
   if (!auth.ok) return auth.response;
 
-  try {
-    if (!useFirebaseBackend()) {
-      return NextResponse.json(
-        { error: "Orders supervisors are only available with CLOUD_BACKEND=firebase" },
-        { status: 400 },
-      );
-    }
-
-    const body = await request.json().catch(() => ({}));
+  try {const body = await request.json().catch(() => ({}));
     const id = typeof body.id === "string" ? body.id.trim() : "";
     if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 

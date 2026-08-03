@@ -25,7 +25,7 @@ export default function OutletOrdersSetupPage() {
             <p className={styles.kicker}>AfterTen Logistics</p>
             <h1 className={styles.title}>Outlet Orders Setup</h1>
             <p className={styles.subtitle}>
-              Firebase-only workflow for the Android Orders app (Expo). No Supabase steps.
+              Firebase workflow for the Android Orders app (Expo).
             </p>
           </div>
           <div className={styles.headerButtons}>
@@ -51,7 +51,6 @@ export default function OutletOrdersSetupPage() {
               <div className={styles.sequenceContent}>
                 <div className={styles.sequenceLabel}>Seed outlet metadata</div>
                 <div className={styles.sequenceHint}>
-                  <code>node scripts/sync-outlet-warehouse-ids-from-supabase.cjs</code> (one-time, if needed) then{" "}
                   <code>node scripts/seed-outlets.cjs</code>
                 </div>
                 <button type="button" className={styles.sequenceButton} onClick={() => openExternal(FIREBASE_CONSOLE)}>

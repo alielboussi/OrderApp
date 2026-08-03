@@ -40,7 +40,7 @@ export default function WarehouseAccountApprovalsPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await warehouseAuthedFetch(null, "/api/warehouse-account-approvals", {
+      const response = await warehouseAuthedFetch("/api/warehouse-account-approvals", {
         cache: "no-store",
       });
       const payload = await response.json().catch(() => ({}));
@@ -81,7 +81,7 @@ export default function WarehouseAccountApprovalsPage() {
     setError(null);
     setSuccess(null);
     try {
-      const response = await warehouseAuthedFetch(null, "/api/warehouse-account-approvals", {
+      const response = await warehouseAuthedFetch("/api/warehouse-account-approvals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, user_id: selected.user_id }),

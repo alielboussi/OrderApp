@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PosSyncService.Models;
 
 public sealed record PosOrder(
@@ -72,7 +74,12 @@ public sealed record PosCustomer(
     string? Email
 );
 
-public sealed record SupabaseResult(bool IsSuccess, string? ErrorMessage = null);
+public sealed record CloudSyncResult(bool IsSuccess, string? ErrorMessage = null);
+
+public sealed record WarehouseRow(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string? Name
+);
 
 public sealed record PosValidationResult(
     bool IsSuccess,

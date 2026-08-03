@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServiceClient } from "@/lib/supabase-server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { fetchFirestorePosSales } from "@/lib/firestore-pos-sales";
 
 const MAX_LIMIT = 2000;
@@ -88,89 +86,18 @@ export async function GET(request: NextRequest) {
 
     const limit = parseLimit(url.searchParams.get("limit"), DEFAULT_LIMIT);
 
-    if (useFirebaseBackend()) {
-      const payload = await fetchFirestorePosSales({
-        outletId,
-        since: effectiveSince,
-        until: effectiveUntil,
-        sourceEventId: sourceEventId || undefined,
-        sourceEventPrefix: sourceEventId ? undefined : sourceEventPrefix || undefined,
-        branchId,
-        limit,
-        includeSales,
-      });
-      return NextResponse.json(payload);
-    }
-
-    const supabase = getServiceClient();
-
-    let orderQuery = supabase
-      .from("orders")
-      .select(
-        "id,outlet_id,source_event_id,pos_sale_id,branch_id,order_type,bill_type,total_discount,total_discount_amount,total_gst,service_charges,delivery_charges,tip,pos_fee,price_type,raw_payload,created_at"
-      )
-      .not("source_event_id", "is", null)
-      .gte("created_at", effectiveSince.toISOString())
-      .lte("created_at", effectiveUntil.toISOString())
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (outletId) {
-      orderQuery = orderQuery.eq("outlet_id", outletId);
-    }
-
-    if (sourceEventId) {
-      orderQuery = orderQuery.eq("source_event_id", sourceEventId);
-    } else if (sourceEventPrefix) {
-      orderQuery = orderQuery.ilike("source_event_id", `${sourceEventPrefix}%`);
-    }
-
-    if (branchId !== null) {
-      orderQuery = orderQuery.eq("branch_id", branchId);
-    }
-
-    const { data: orders, error: orderError } = await orderQuery;
-    if (orderError) throw orderError;
-
-    const response: Record<string, unknown> = {
-      outlet_id: outletId,
-      since: effectiveSince.toISOString(),
-      until: effectiveUntil.toISOString(),
-      limit,
-      source_event_id: sourceEventId || null,
-      source_event_prefix: sourceEventId ? null : sourceEventPrefix || null,
-      branch_id: branchId,
-      order_count: orders?.length ?? 0,
-      orders: orders ?? [],
-    };
-
-    if (includeSales) {
-      let salesQuery = supabase
-        .from("outlet_sales")
-        .select("id,outlet_id,item_id,variant_key,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,context")
-        .gte("sold_at", effectiveSince.toISOString())
-        .lte("sold_at", effectiveUntil.toISOString())
-        .order("sold_at", { ascending: false })
-        .limit(limit);
-
-      if (outletId) {
-        salesQuery = salesQuery.eq("outlet_id", outletId);
-      }
-
-      if (sourceEventId) {
-        salesQuery = salesQuery.filter("context->>source_event_id", "eq", sourceEventId);
-      } else if (sourceEventPrefix) {
-        salesQuery = salesQuery.filter("context->>source_event_id", "ilike", `${sourceEventPrefix}%`);
-      }
-
-      const { data: sales, error: salesError } = await salesQuery;
-      if (salesError) throw salesError;
-
-      response.sales_count = sales?.length ?? 0;
-      response.sales = sales ?? [];
-    }
-
-    return NextResponse.json(response);
+    const payload = await fetchFirestorePosSales({
+  outletId,
+  since: effectiveSince,
+  until: effectiveUntil,
+  sourceEventId: sourceEventId || undefined,
+  sourceEventPrefix: sourceEventId ? undefined : sourceEventPrefix || undefined,
+  branchId,
+  limit,
+  includeSales,
+});
+return NextResponse.json(payload);
+    
   } catch (error) {
     console.error("[pos-sales] GET failed", error);
     return NextResponse.json({ error: "Unable to load POS sales" }, { status: 500 });

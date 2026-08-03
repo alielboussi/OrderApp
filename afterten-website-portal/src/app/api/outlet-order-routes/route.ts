@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import {
   listFirestoreOutletOrderRoutes,
   saveFirestoreOutletOrderRoutes,
 } from "@/lib/firestore-outlet-order-routes";
-import { getServiceClient } from "@/lib/supabase-server";
 
 type RouteRow = {
   outlet_id: string;
@@ -37,22 +35,9 @@ export async function GET(request: Request) {
 
     const variantKey = normalizeVariantKey(url.searchParams.get("variant_key") || url.searchParams.get("normalized_variant_key"));
 
-    if (useFirebaseBackend()) {
-      const routes = await listFirestoreOutletOrderRoutes(itemId, variantKey);
-      return NextResponse.json({ routes, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("outlet_order_routes")
-      .select("outlet_id,item_id,warehouse_id,normalized_variant_key,variant_key")
-      .eq("item_id", itemId)
-      .eq("normalized_variant_key", variantKey);
-
-    if (error) throw error;
-
-    const routes: RouteRow[] = Array.isArray(data) ? data : [];
-    return NextResponse.json({ routes });
+    const routes = await listFirestoreOutletOrderRoutes(itemId, variantKey);
+return NextResponse.json({ routes, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[outlet-order-routes] GET failed", error);
     return NextResponse.json({ error: "Unable to load order routes" }, { status: 500 });
@@ -90,35 +75,13 @@ export async function PUT(request: Request) {
       });
     }
 
-    if (useFirebaseBackend()) {
-      const routes = [
-        ...upserts.map((row) => ({ outlet_id: row.outlet_id, warehouse_id: row.warehouse_id })),
-        ...deleteOutletIds.map((outlet_id) => ({ outlet_id, warehouse_id: null })),
-      ];
-      await saveFirestoreOutletOrderRoutes(itemId, variantKey, routes);
-      return NextResponse.json({ ok: true, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-
-    if (deleteOutletIds.length) {
-      const { error: deleteError } = await supabase
-        .from("outlet_order_routes")
-        .delete()
-        .eq("item_id", itemId)
-        .eq("normalized_variant_key", variantKey)
-        .in("outlet_id", deleteOutletIds);
-      if (deleteError) throw deleteError;
-    }
-
-    if (upserts.length) {
-      const { error: upsertError } = await supabase
-        .from("outlet_order_routes")
-        .upsert(upserts, { onConflict: "outlet_id,item_id,normalized_variant_key" });
-      if (upsertError) throw upsertError;
-    }
-
-    return NextResponse.json({ ok: true });
+    const routes = [
+  ...upserts.map((row) => ({ outlet_id: row.outlet_id, warehouse_id: row.warehouse_id })),
+  ...deleteOutletIds.map((outlet_id) => ({ outlet_id, warehouse_id: null })),
+];
+await saveFirestoreOutletOrderRoutes(itemId, variantKey, routes);
+return NextResponse.json({ ok: true, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[outlet-order-routes] PUT failed", error);
     return NextResponse.json({ error: "Unable to save order routes" }, { status: 500 });

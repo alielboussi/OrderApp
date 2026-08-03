@@ -625,7 +625,7 @@ WHERE CAST(bt.id AS nvarchar(64)) IN ({inList});";
     }
 
     /// <summary>
-    /// Align MintPOS upload flags when Supabase already has the sale (Sale Processed) but lines/BillType lag.
+    /// Align MintPOS upload flags when the cloud already has the sale (Sale Processed) but lines/BillType lag.
     /// </summary>
     public async Task<int> RepairConsistentProcessedFlagsAsync(CancellationToken cancellationToken)
     {

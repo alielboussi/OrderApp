@@ -6,7 +6,6 @@ import {
   type FirestoreTransferOrderItem,
 } from "@/lib/firestore-transfer-orders";
 import { formatTransferOrderStatus, normalizeTransferOrderStatus } from "@/lib/transfer-order-status";
-import { getServiceClient } from "@/lib/supabase-server";
 
 type TimelineStep = {
   step: string;
@@ -224,91 +223,6 @@ export async function getFirestoreTransferOrderDetail(orderId: string): Promise<
   };
 }
 
-export async function getSupabaseTransferOrderDetail(orderId: string): Promise<TransferOrderDetailResponse | null> {
-  const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .select(
-      "id,order_number,created_at,updated_at,status,outlet_id,outlets(name),locked,modified_by_supervisor,employee_signed_name,employee_signed_at,supervisor_signed_name,supervisor_signed_at,supervisor_edited_name,supervisor_edited_at,driver_signed_name,driver_signed_at,offloader_signed_name,offloader_signed_at,accepted_at,loaded_at,completed_at",
-    )
-    .eq("id", orderId)
-    .is("source_event_id", null)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-
-  const { data: itemRows, error: itemsError } = await supabase
-    .from("order_items")
-    .select("id,product_id,variant_key,name,qty,receiving_uom,consumption_uom,cost,amount,package_contains")
-    .eq("order_id", orderId);
-  if (itemsError) throw itemsError;
-
-  const items = (itemRows ?? []).map((row) => ({
-    id: String(row.id),
-    order_id: orderId,
-    product_id: row.product_id ?? null,
-    variant_key: row.variant_key ?? null,
-    name: row.name ?? null,
-    receiving_uom: row.receiving_uom ?? null,
-    consumption_uom: row.consumption_uom ?? null,
-    qty: row.qty ?? null,
-    cost: row.cost ?? null,
-    amount: row.amount ?? null,
-    package_contains: row.package_contains ?? null,
-  }));
-
-  const totals = sumItems(items);
-  const outletRelation = data.outlets as { name?: string | null } | Array<{ name?: string | null }> | null;
-  const outletName = Array.isArray(outletRelation) ? outletRelation[0]?.name ?? null : outletRelation?.name ?? null;
-  const record = data as Record<string, unknown>;
-
-  return {
-    order: {
-      id: String(data.id),
-      order_number: data.order_number ?? null,
-      status: data.status ?? null,
-      status_label: formatTransferOrderStatus(data.status),
-      outlet: {
-        id: data.outlet_id ?? null,
-        name: outletName,
-      },
-      totals,
-      flags: {
-        locked: Boolean(data.locked),
-        modified_by_supervisor: Boolean(data.modified_by_supervisor),
-      },
-      created_at: data.created_at ?? null,
-      updated_at: data.updated_at ?? null,
-    },
-    timeline: buildTimeline(record, data.status ?? null),
-    participants: {
-      employee: {
-        name: data.employee_signed_name ?? null,
-        signed_at: data.employee_signed_at ?? null,
-      },
-      supervisor: {
-        name: data.supervisor_signed_name ?? null,
-        signed_at: data.supervisor_signed_at ?? data.accepted_at ?? null,
-        edited_name: data.supervisor_edited_name ?? null,
-        edited_at: data.supervisor_edited_at ?? null,
-      },
-      driver: {
-        name: data.driver_signed_name ?? null,
-        signed_at: data.driver_signed_at ?? data.loaded_at ?? null,
-      },
-      offloader: {
-        name: data.offloader_signed_name ?? null,
-        signed_at: data.offloader_signed_at ?? data.completed_at ?? null,
-      },
-    },
-    items: mapItems(items),
-  };
-}
-
 export async function getTransferOrderDetail(orderId: string): Promise<TransferOrderDetailResponse | null> {
-  const { useFirebaseBackend } = await import("@/lib/cloud-backend");
-  if (useFirebaseBackend()) {
-    return getFirestoreTransferOrderDetail(orderId);
-  }
-  return getSupabaseTransferOrderDetail(orderId);
+  return getFirestoreTransferOrderDetail(orderId);
 }

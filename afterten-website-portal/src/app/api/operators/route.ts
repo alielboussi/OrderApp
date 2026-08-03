@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { useFirebaseBackend } from '@/lib/cloud-backend';
 import { listFirestoreOperators } from '@/lib/firestore-operators';
-import { getServiceClient } from '@/lib/supabase-server';
 
 type OperatorRecord = {
   id: string;
@@ -33,36 +31,9 @@ function isSupervisorUser(user: { user_metadata?: Record<string, unknown> | null
 
 export async function GET() {
   try {
-    if (useFirebaseBackend()) {
-      const operators = await listFirestoreOperators();
-      return NextResponse.json({ operators, cloud_backend: 'firebase' });
-    }
-
-    const supabase = getServiceClient();
-    const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (error) {
-      throw error;
-    }
-
-    const operators = (data?.users ?? [])
-      .filter((user) => !user.is_anonymous && isSupervisorUser(user))
-      .map((user) => {
-        const metaDisplayName = normalizeDisplayName(user.user_metadata?.display_name);
-        const primaryDisplayName = metaDisplayName ?? user.email ?? 'Operator';
-        const fallbackName = user.email ?? primaryDisplayName;
-        const email = user.email ?? 'operator@afterten.local';
-        return {
-          id: user.id,
-          display_name: primaryDisplayName,
-          name: fallbackName,
-          email,
-          auth_user_id: user.id,
-        } satisfies OperatorRecord;
-      });
-
-    operators.sort((a, b) => a.display_name.localeCompare(b.display_name, undefined, { sensitivity: 'base' }));
-
-    return NextResponse.json({ operators });
+    const operators = await listFirestoreOperators();
+return NextResponse.json({ operators, cloud_backend: 'firebase' });
+    
   } catch (error) {
     console.error('operators api failed', error);
     return NextResponse.json({ error: 'Unable to load operators' }, { status: 500 });

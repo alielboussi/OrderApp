@@ -76,38 +76,12 @@ builder.Services.AddOptions<OutletOptions>()
     .Validate(o => o.Id != Guid.Empty, "Outlet:Id is required and must be a valid UUID from public.outlets")
     .ValidateOnStart();
 
-builder.Services.AddOptions<CloudBackendOptions>()
-    .Bind(builder.Configuration.GetSection("Cloud"));
-
-var cloudBackend = builder.Configuration.GetValue<string>("Cloud:Backend") ?? "Firebase";
-var useFirebase = cloudBackend.Equals("Firebase", StringComparison.OrdinalIgnoreCase);
-
-if (useFirebase)
-{
-    builder.Services.AddOptions<FirebaseOptions>()
-        .Bind(builder.Configuration.GetSection("Firebase"))
-        .Validate(o => !string.IsNullOrWhiteSpace(o.ProjectId), "Firebase:ProjectId is required when Cloud:Backend=Firebase")
-        .ValidateOnStart();
-    builder.Services.AddSingleton<FirebaseFirestoreAccess>();
-    builder.Services.AddSingleton<IOutletCloudClient, FirebaseCloudClient>();
-}
-else
-{
-    builder.Services.AddOptions<SupabaseOptions>()
-        .Bind(builder.Configuration.GetSection("Supabase"))
-        .Validate(o => !string.IsNullOrWhiteSpace(o.Url), "Supabase:Url is required")
-        .Validate(
-            o => !string.IsNullOrWhiteSpace(o.ServiceKey) || !string.IsNullOrWhiteSpace(o.AnonKey),
-            "Supabase:ServiceKey or Supabase:AnonKey is required"
-        )
-        .ValidateOnStart();
-    builder.Services.AddSingleton<SupabaseClient>();
-    builder.Services.AddSingleton<IOutletCloudClient>(sp => sp.GetRequiredService<SupabaseClient>());
-    builder.Services.AddHttpClient("Supabase", client =>
-    {
-        client.Timeout = TimeSpan.FromSeconds(180);
-    });
-}
+builder.Services.AddOptions<FirebaseOptions>()
+    .Bind(builder.Configuration.GetSection("Firebase"))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.ProjectId), "Firebase:ProjectId is required")
+    .ValidateOnStart();
+builder.Services.AddSingleton<FirebaseFirestoreAccess>();
+builder.Services.AddSingleton<IOutletCloudClient, FirebaseCloudClient>();
 
 builder.Services.AddOptions<SyncOptions>()
     .Bind(builder.Configuration.GetSection("Sync"))

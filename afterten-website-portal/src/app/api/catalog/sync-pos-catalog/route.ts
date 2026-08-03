@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { getFirestoreDb } from "@/lib/firebase-server";
-import { getServiceClient } from "@/lib/supabase-server";
 
 type SyncRowInput = {
   item_sku?: unknown;
@@ -65,191 +63,95 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const rows = parseRows(body);
 
-    if (useFirebaseBackend()) {
-      const db = getFirestoreDb();
-      const itemSkuToName = new Map<string, string>();
-      for (const row of rows) {
-        if (!itemSkuToName.has(row.item_sku)) itemSkuToName.set(row.item_sku, row.item_name);
-      }
-      const itemSkus = Array.from(itemSkuToName.keys());
-      const itemsSnap = await db.collection("catalog_items").where("item_kind", "==", "finished").get();
-      const itemsBySku = new Map<string, { id: string; sku: string; name: string | null }>();
-      for (const doc of itemsSnap.docs) {
-        const data = doc.data();
-        const sku = cleanText(data.sku);
-        if (!sku || !itemSkus.includes(sku)) continue;
-        itemsBySku.set(sku, { id: doc.id, sku, name: data.name ?? null });
-      }
+    const db = getFirestoreDb();
+const itemSkuToName = new Map<string, string>();
+for (const row of rows) {
+  if (!itemSkuToName.has(row.item_sku)) itemSkuToName.set(row.item_sku, row.item_name);
+}
+const itemSkus = Array.from(itemSkuToName.keys());
+const itemsSnap = await db.collection("catalog_items").where("item_kind", "==", "finished").get();
+const itemsBySku = new Map<string, { id: string; sku: string; name: string | null }>();
+for (const doc of itemsSnap.docs) {
+  const data = doc.data();
+  const sku = cleanText(data.sku);
+  if (!sku || !itemSkus.includes(sku)) continue;
+  itemsBySku.set(sku, { id: doc.id, sku, name: data.name ?? null });
+}
 
-      let itemsUpdated = 0;
-      const now = new Date().toISOString();
-      for (const [sku, name] of itemSkuToName.entries()) {
-        const item = itemsBySku.get(sku);
-        if (!item || (item.name ?? "") === name) continue;
-        await db.collection("catalog_items").doc(item.id).set({ name, updated_at: now }, { merge: true });
-        itemsUpdated++;
-      }
+let itemsUpdated = 0;
+const now = new Date().toISOString();
+for (const [sku, name] of itemSkuToName.entries()) {
+  const item = itemsBySku.get(sku);
+  if (!item || (item.name ?? "") === name) continue;
+  await db.collection("catalog_items").doc(item.id).set({ name, updated_at: now }, { merge: true });
+  itemsUpdated++;
+}
 
-      const itemIds = Array.from(new Set(Array.from(itemsBySku.values()).map((v) => v.id)));
-      if (!itemIds.length) {
-        return NextResponse.json({
-          ok: true,
-          items_updated: itemsUpdated,
-          variants_updated: 0,
-          unmatched_rows: rows.length,
-          unmatched_samples: rows.slice(0, 20),
-          cloud_backend: "firebase",
-        });
-      }
+const itemIds = Array.from(new Set(Array.from(itemsBySku.values()).map((v) => v.id)));
+if (!itemIds.length) {
+  return NextResponse.json({
+    ok: true,
+    items_updated: itemsUpdated,
+    variants_updated: 0,
+    unmatched_rows: rows.length,
+    unmatched_samples: rows.slice(0, 20),
+    cloud_backend: "firebase",
+  });
+}
 
-      const variantsSnap = await db.collection("catalog_variants").get();
-      const variantByItemAndName = new Map<string, { id: string; item_id: string; name: string; sku: string | null }>();
-      for (const doc of variantsSnap.docs) {
-        const v = doc.data();
-        if (!itemIds.includes(v.item_id)) continue;
-        variantByItemAndName.set(`${v.item_id}::${normalizeName(String(v.name ?? ""))}`, {
-          id: doc.id,
-          item_id: v.item_id,
-          name: String(v.name ?? ""),
-          sku: v.sku ?? null,
-        });
-      }
+const variantsSnap = await db.collection("catalog_variants").get();
+const variantByItemAndName = new Map<string, { id: string; item_id: string; name: string; sku: string | null }>();
+for (const doc of variantsSnap.docs) {
+  const v = doc.data();
+  if (!itemIds.includes(v.item_id)) continue;
+  variantByItemAndName.set(`${v.item_id}::${normalizeName(String(v.name ?? ""))}`, {
+    id: doc.id,
+    item_id: v.item_id,
+    name: String(v.name ?? ""),
+    sku: v.sku ?? null,
+  });
+}
 
-      let variantsUpdated = 0;
-      const unmatched: SyncRow[] = [];
-      const touchedVariantIds = new Set<string>();
-      for (const row of rows) {
-        const item = itemsBySku.get(row.item_sku);
-        if (!item) {
-          unmatched.push(row);
-          continue;
-        }
-        const key = `${item.id}::${normalizeName(row.variant_name)}`;
-        const variant = variantByItemAndName.get(key);
-        if (!variant) {
-          unmatched.push(row);
-          continue;
-        }
-        if (touchedVariantIds.has(variant.id)) continue;
-        const nextSku = row.variant_sku ?? variant.sku;
-        const needsName = variant.name !== row.variant_name;
-        const needsSku = (variant.sku ?? null) !== (nextSku ?? null);
-        if (!needsName && !needsSku) {
-          touchedVariantIds.add(variant.id);
-          continue;
-        }
-        await db.collection("catalog_variants").doc(variant.id).set(
-          { name: row.variant_name, sku: nextSku, updated_at: now },
-          { merge: true },
-        );
-        variantsUpdated++;
-        touchedVariantIds.add(variant.id);
-      }
+let variantsUpdated = 0;
+const unmatched: SyncRow[] = [];
+const touchedVariantIds = new Set<string>();
+for (const row of rows) {
+  const item = itemsBySku.get(row.item_sku);
+  if (!item) {
+    unmatched.push(row);
+    continue;
+  }
+  const key = `${item.id}::${normalizeName(row.variant_name)}`;
+  const variant = variantByItemAndName.get(key);
+  if (!variant) {
+    unmatched.push(row);
+    continue;
+  }
+  if (touchedVariantIds.has(variant.id)) continue;
+  const nextSku = row.variant_sku ?? variant.sku;
+  const needsName = variant.name !== row.variant_name;
+  const needsSku = (variant.sku ?? null) !== (nextSku ?? null);
+  if (!needsName && !needsSku) {
+    touchedVariantIds.add(variant.id);
+    continue;
+  }
+  await db.collection("catalog_variants").doc(variant.id).set(
+    { name: row.variant_name, sku: nextSku, updated_at: now },
+    { merge: true },
+  );
+  variantsUpdated++;
+  touchedVariantIds.add(variant.id);
+}
 
-      return NextResponse.json({
-        ok: true,
-        items_updated: itemsUpdated,
-        variants_updated: variantsUpdated,
-        unmatched_rows: unmatched.length,
-        unmatched_samples: unmatched.slice(0, 20),
-        cloud_backend: "firebase",
-      });
-    }
-
-    const supabase = getServiceClient();
-
-    const itemSkuToName = new Map<string, string>();
-    for (const row of rows) {
-      if (!itemSkuToName.has(row.item_sku)) itemSkuToName.set(row.item_sku, row.item_name);
-    }
-    const itemSkus = Array.from(itemSkuToName.keys());
-
-    const { data: items, error: itemError } = await supabase
-      .from("catalog_items")
-      .select("id,sku,name,item_kind")
-      .eq("item_kind", "finished")
-      .in("sku", itemSkus);
-    if (itemError) throw itemError;
-
-    const itemsBySku = new Map<string, { id: string; sku: string; name: string | null }>();
-    for (const item of items ?? []) {
-      const sku = cleanText((item as { sku?: unknown }).sku);
-      if (!sku) continue;
-      itemsBySku.set(sku, item as { id: string; sku: string; name: string | null });
-    }
-
-    let itemsUpdated = 0;
-    for (const [sku, name] of itemSkuToName.entries()) {
-      const item = itemsBySku.get(sku);
-      if (!item) continue;
-      if ((item.name ?? "") === name) continue;
-      const { error } = await supabase.from("catalog_items").update({ name, updated_at: new Date().toISOString() }).eq("id", item.id);
-      if (error) throw error;
-      itemsUpdated++;
-    }
-
-    const itemIds = Array.from(new Set(Array.from(itemsBySku.values()).map((v) => v.id)));
-    if (!itemIds.length) {
-      return NextResponse.json({
-        ok: true,
-        items_updated: itemsUpdated,
-        variants_updated: 0,
-        unmatched_rows: rows.length,
-        unmatched_samples: rows.slice(0, 20),
-      });
-    }
-
-    const { data: variants, error: variantError } = await supabase
-      .from("catalog_variants")
-      .select("id,item_id,name,sku")
-      .in("item_id", itemIds);
-    if (variantError) throw variantError;
-
-    const variantByItemAndName = new Map<string, { id: string; item_id: string; name: string; sku: string | null }>();
-    for (const variant of variants ?? []) {
-      const v = variant as { id: string; item_id: string; name: string; sku: string | null };
-      variantByItemAndName.set(`${v.item_id}::${normalizeName(v.name)}`, v);
-    }
-
-    let variantsUpdated = 0;
-    const unmatched: SyncRow[] = [];
-    const touchedVariantIds = new Set<string>();
-    for (const row of rows) {
-      const item = itemsBySku.get(row.item_sku);
-      if (!item) {
-        unmatched.push(row);
-        continue;
-      }
-      const key = `${item.id}::${normalizeName(row.variant_name)}`;
-      const variant = variantByItemAndName.get(key);
-      if (!variant) {
-        unmatched.push(row);
-        continue;
-      }
-      if (touchedVariantIds.has(variant.id)) continue;
-      const nextSku = row.variant_sku ?? variant.sku;
-      const needsName = variant.name !== row.variant_name;
-      const needsSku = (variant.sku ?? null) !== (nextSku ?? null);
-      if (!needsName && !needsSku) {
-        touchedVariantIds.add(variant.id);
-        continue;
-      }
-      const { error } = await supabase
-        .from("catalog_variants")
-        .update({ name: row.variant_name, sku: nextSku, updated_at: new Date().toISOString() })
-        .eq("id", variant.id);
-      if (error) throw error;
-      variantsUpdated++;
-      touchedVariantIds.add(variant.id);
-    }
-
-    return NextResponse.json({
-      ok: true,
-      items_updated: itemsUpdated,
-      variants_updated: variantsUpdated,
-      unmatched_rows: unmatched.length,
-      unmatched_samples: unmatched.slice(0, 20),
-    });
+return NextResponse.json({
+  ok: true,
+  items_updated: itemsUpdated,
+  variants_updated: variantsUpdated,
+  unmatched_rows: unmatched.length,
+  unmatched_samples: unmatched.slice(0, 20),
+  cloud_backend: "firebase",
+});
+    
   } catch (error) {
     console.error("[catalog/sync-pos-catalog] POST failed", error);
     return NextResponse.json(

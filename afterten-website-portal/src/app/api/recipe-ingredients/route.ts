@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { listFirestoreRecipeIngredientIds } from "@/lib/firestore-recipes";
-import { getServiceClient } from "@/lib/supabase-server";
 
 type RecipeRow = {
   ingredient_item_id: string | null;
@@ -30,33 +28,9 @@ export async function GET(request: Request) {
 
     const finishedVariantKey = normalizeVariantKey(url.searchParams.get("finished_variant_key"));
 
-    if (useFirebaseBackend()) {
-      const ingredientIds = await listFirestoreRecipeIngredientIds(finishedItemId, finishedVariantKey);
-      return NextResponse.json({ ingredient_item_ids: ingredientIds, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-
-    const { data, error } = await supabase
-      .from("recipes")
-      .select("ingredient_item_id, finished_item_id, finished_variant_key, recipe_for_kind, active")
-      .eq("finished_item_id", finishedItemId)
-      .eq("recipe_for_kind", "finished")
-      .eq("active", true);
-
-    if (error) throw error;
-
-    const rows = Array.isArray(data) ? (data as RecipeRow[]) : [];
-    const ingredientIds = Array.from(
-      new Set(
-        rows
-          .filter((row) => normalizeVariantKey(row.finished_variant_key) === finishedVariantKey)
-          .map((row) => row.ingredient_item_id)
-          .filter((id): id is string => Boolean(id))
-      )
-    );
-
-    return NextResponse.json({ ingredient_item_ids: ingredientIds });
+    const ingredientIds = await listFirestoreRecipeIngredientIds(finishedItemId, finishedVariantKey);
+return NextResponse.json({ ingredient_item_ids: ingredientIds, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[recipe-ingredients] GET failed", error);
     return NextResponse.json({ error: "Unable to load recipe ingredients" }, { status: 500 });

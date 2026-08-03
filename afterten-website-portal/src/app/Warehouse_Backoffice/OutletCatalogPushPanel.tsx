@@ -506,7 +506,7 @@ export default function OutletCatalogPushPanel() {
                 ? "Loading outlets…"
                 : outlets.length > 0
                   ? "No middleware outlets match the catalog filter."
-                  : "No middleware outlets found. In Supabase, set has_pos_middleware = true on Till 1, Till 2, and Quick Corner."
+                  : "No middleware outlets found. In Firestore, set has_pos_middleware = true on Till 1, Till 2, and Quick Corner."
             }
             getItemLabel={(outlet) => outlet.name ?? outlet.id}
             renderMeta={(outlet) => (outlet.code ? outlet.code : null)}

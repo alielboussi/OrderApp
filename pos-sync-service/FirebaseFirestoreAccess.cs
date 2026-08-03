@@ -19,7 +19,7 @@ public sealed class FirebaseFirestoreAccess
         var config = options.Value;
         if (string.IsNullOrWhiteSpace(config.ProjectId))
         {
-            throw new InvalidOperationException("Firebase:ProjectId is required when Cloud:Backend=Firebase");
+            throw new InvalidOperationException("Firebase:ProjectId is required");
         }
 
         var credentialsPath = config.CredentialsPath?.Trim();

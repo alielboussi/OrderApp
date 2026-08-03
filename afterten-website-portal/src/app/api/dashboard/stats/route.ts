@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
-import { loadPosSalesStats, parseShiftFilterFromUrl } from "@/lib/posSalesStats";
-import { getServiceClient } from "@/lib/supabase-server";
-import { isMissingRelationError } from "@/lib/supabase-errors";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { parseShiftFilterFromUrl } from "@/lib/posSalesStats";
 import {
   loadFirestorePosSalesStats,
   loadFirestoreTransferOrderStats,
@@ -98,112 +95,39 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
 
-    if (useFirebaseBackend()) {
-      let sales = {
-        total_qty: 0,
-        total_revenue: 0,
-        bill_count: 0,
-        line_count: 0,
-        most_sold: null as { name: string; qty: number } | null,
-        least_sold: null as { name: string; qty: number } | null,
-      };
-
-      if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
-        sales = await loadFirestorePosSalesStats({
-          outletIds: salesOutletIds,
-          fromIso: salesRange.from.toISOString(),
-          toIso: salesRange.to.toISOString(),
-          shiftIds,
-          includeUnknownShift,
-        });
-      }
-
-      const outlet_orders = await loadFirestoreTransferOrderStats(
-        salesOutletIds,
-        ordersRange.from.toISOString(),
-        ordersRange.to.toISOString(),
-      );
-
-      return NextResponse.json({
-        sales,
-        outlet_orders,
-        ranges: {
-          sales: { from: salesRange.from.toISOString(), to: salesRange.to.toISOString() },
-          orders: { from: ordersRange.from.toISOString(), to: ordersRange.to.toISOString() },
-        },
-        backend: "firebase",
-      });
-    }
-
-    const supabase = getServiceClient();
-
     let sales = {
-      total_qty: 0,
-      total_revenue: 0,
-      bill_count: 0,
-      line_count: 0,
-      most_sold: null as { name: string; qty: number } | null,
-      least_sold: null as { name: string; qty: number } | null,
-    };
+  total_qty: 0,
+  total_revenue: 0,
+  bill_count: 0,
+  line_count: 0,
+  most_sold: null as { name: string; qty: number } | null,
+  least_sold: null as { name: string; qty: number } | null,
+};
 
-    if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
-      try {
-        sales = await loadPosSalesStats(supabase, {
-          outletIds: salesOutletIds,
-          fromIso: salesRange.from.toISOString(),
-          toIso: salesRange.to.toISOString(),
-          shiftIds,
-          includeUnknownShift,
-        });
-      } catch (salesError) {
-        if (!isMissingRelationError(salesError as { code?: string; message?: string }, "outlet_sales")) {
-          throw salesError;
-        }
-      }
-    }
+if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
+  sales = await loadFirestorePosSalesStats({
+    outletIds: salesOutletIds,
+    fromIso: salesRange.from.toISOString(),
+    toIso: salesRange.to.toISOString(),
+    shiftIds,
+    includeUnknownShift,
+  });
+}
 
-    const ordersRes = await supabase
-      .from("orders")
-      .select("id")
-      .is("source_event_id", null)
-      .gte("created_at", ordersRange.from.toISOString())
-      .lte("created_at", ordersRange.to.toISOString())
-      .limit(MAX_ORDER_ROWS);
-
-    if (ordersRes.error) throw ordersRes.error;
-
-    const orderIds = ((ordersRes.data as Array<{ id: string }>) ?? []).map((row) => row.id).filter(Boolean);
-    const ordersByProduct: Array<{ name: string; qty: number }> = [];
-
-    if (orderIds.length > 0) {
-      const { data: orderItems, error: orderItemsError } = await supabase
-        .from("order_items")
-        .select("name,qty")
-        .in("order_id", orderIds)
-        .limit(MAX_ORDER_ROWS);
-      if (orderItemsError) throw orderItemsError;
-
-      for (const row of (orderItems as OrderItemRow[]) ?? []) {
-        const qty = toNumber(row.qty);
-        if (qty <= 0) continue;
-        ordersByProduct.push({ name: (row.name ?? "Unknown").trim() || "Unknown", qty });
-      }
-    }
-
-    const ordersAgg = aggregateByName(ordersByProduct);
-    const { most: mostOrdered, least: leastOrdered } = pickMostLeast(ordersAgg);
+const outlet_orders = await loadFirestoreTransferOrderStats(
+  salesOutletIds,
+  ordersRange.from.toISOString(),
+  ordersRange.to.toISOString(),
+);
 
     return NextResponse.json({
       sales,
-      outlet_orders: {
-        order_count: orderIds.length,
-        most_ordered: mostOrdered,
-        least_ordered: leastOrdered,
-      },
+      outlet_orders,
       ranges: {
         sales: { from: salesRange.from.toISOString(), to: salesRange.to.toISOString() },
         orders: { from: ordersRange.from.toISOString(), to: ordersRange.to.toISOString() },
       },
+      backend: "firebase",
     });
   } catch (error) {
     console.error("[dashboard/stats] GET failed", error);

@@ -345,11 +345,11 @@ public sealed partial class FirebaseCloudClient : IOutletCloudClient
         return result;
     }
 
-    public async Task<SupabaseResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken)
+    public async Task<CloudSyncResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)
         {
-            return new SupabaseResult(false, "Outlet Id is not configured");
+            return new CloudSyncResult(false, "Outlet Id is not configured");
         }
 
         try
@@ -402,12 +402,12 @@ public sealed partial class FirebaseCloudClient : IOutletCloudClient
             }
 
             await batch.CommitAsync(cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to sync order {SourceEventId} to Firestore", order.SourceEventId);
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 
@@ -427,8 +427,8 @@ public sealed partial class FirebaseCloudClient : IOutletCloudClient
             ?? Array.Empty<string>();
     }
 
-    public Task<SupabaseClient.WarehouseRow?> GetWarehouseAsync(string warehouseId, CancellationToken cancellationToken) =>
-        PilotNotReady<SupabaseClient.WarehouseRow?>(null);
+    public Task<WarehouseRow?> GetWarehouseAsync(string warehouseId, CancellationToken cancellationToken) =>
+        PilotNotReady<WarehouseRow?>(null);
 
     public async Task<DateTime?> GetLastHeartbeatUtcAsync(CancellationToken cancellationToken)
     {
@@ -449,11 +449,11 @@ public sealed partial class FirebaseCloudClient : IOutletCloudClient
         return snapshot.GetValue<Timestamp>("lastSeenAt").ToDateTime();
     }
 
-    public async Task<SupabaseResult> PatchOrderPayloadAsync(PosOrder order, CancellationToken cancellationToken)
+    public async Task<CloudSyncResult> PatchOrderPayloadAsync(PosOrder order, CancellationToken cancellationToken)
     {
         if (_outlet.Id == Guid.Empty)
         {
-            return new SupabaseResult(false, "Outlet Id is not configured");
+            return new CloudSyncResult(false, "Outlet Id is not configured");
         }
 
         try
@@ -462,7 +462,7 @@ public sealed partial class FirebaseCloudClient : IOutletCloudClient
             var snapshot = await billRef.GetSnapshotAsync(cancellationToken);
             if (!snapshot.Exists)
             {
-                return new SupabaseResult(true);
+                return new CloudSyncResult(true);
             }
 
             var rawPayload = FirebaseOrderPayload.BuildRawPayload(order, _outlet.Id);
@@ -483,12 +483,12 @@ public sealed partial class FirebaseCloudClient : IOutletCloudClient
             }
 
             await billRef.SetAsync(updates, SetOptions.MergeAll, cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to patch order payload for {SourceEventId}", order.SourceEventId);
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 

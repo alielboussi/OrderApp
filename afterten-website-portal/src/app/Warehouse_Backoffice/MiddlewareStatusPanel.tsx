@@ -96,7 +96,7 @@ export default function MiddlewareStatusPanel() {
         ) : merged.length === 0 ? (
           <p className={styles.pageCardBody}>
             No middleware outlets found. Run <code>recreate_warehouses_core.sql</code> and{" "}
-            <code>link_outlets_to_warehouses.sql</code> in Supabase, then confirm outlets have{" "}
+            <code>link_outlets_to_warehouses</code> in Firestore outlet records, then confirm outlets have{" "}
             <strong>has_pos_middleware = true</strong> or an <strong>outlet_warehouses</strong> link.
           </p>
         ) : (

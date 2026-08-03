@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { getFirestoreRecipeUomAvailableQty } from "@/lib/firestore-recipes";
-import { getServiceClient } from "@/lib/supabase-server";
 
 const normalizeVariantKey = (value?: string | null) => {
   const trimmed = value?.trim();
@@ -25,23 +23,9 @@ export async function POST(request: Request) {
 
     const variantKey = normalizeVariantKey(payload.variant_key);
 
-    if (useFirebaseBackend()) {
-      const row = await getFirestoreRecipeUomAvailableQty(warehouseId, itemId, variantKey);
-      return NextResponse.json({ row, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-
-    const { data, error } = await supabase.rpc("recipe_uom_available_qty", {
-      p_warehouse_id: warehouseId,
-      p_item_id: itemId,
-      p_variant_key: variantKey,
-    });
-
-    if (error) throw error;
-
-    const rows = Array.isArray(data) ? data : [];
-    return NextResponse.json({ row: rows[0] ?? null });
+    const row = await getFirestoreRecipeUomAvailableQty(warehouseId, itemId, variantKey);
+return NextResponse.json({ row, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[recipe-uom] available failed", error);
     return NextResponse.json({ error: "Unable to load recipe UOM availability" }, { status: 500 });

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useFirebaseAuthClient } from "@/lib/cloud-backend-client";
 import {
   getWarehouseAuthSession,
   warehouseSignInWithGoogle,
@@ -14,7 +13,6 @@ import styles from "./login.module.css";
 
 export default function WarehouseBackofficeLogin() {
   const router = useRouter();
-  const useFirebase = useFirebaseAuthClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +24,7 @@ export default function WarehouseBackofficeLogin() {
     const authError = params.get("error");
     if (!authError) return;
     setError(decodeURIComponent(authError));
-    // Clear stale Firebase/Supabase sessions that caused the redirect loop.
+    // Clear stale sessions that caused the redirect loop.
     void warehouseSignOut();
     window.history.replaceState({}, "", "/Warehouse_Backoffice/login");
   }, []);
@@ -48,7 +46,7 @@ export default function WarehouseBackofficeLogin() {
       let message = err instanceof Error ? err.message : "Unable to log in";
       if (message.includes("auth/invalid-credential") || message.includes("auth/wrong-password")) {
         message =
-          "Invalid email or password. Supabase passwords were not migrated — use Google sign-in, or ask an admin to run firebase/scripts/set-warehouse-portal-password.cjs to set a new Firebase password.";
+          "Invalid email or password. Use Google sign-in, or ask an admin to run firebase/scripts/set-warehouse-portal-password.cjs to set a Firebase password.";
       } else if (message.includes("auth/user-not-found")) {
         message =
           "No Firebase account exists for this email. Use Google sign-in first, or run set-warehouse-portal-password.cjs to create one.";
@@ -64,13 +62,11 @@ export default function WarehouseBackofficeLogin() {
     setGoogleLoading(true);
     try {
       await warehouseSignInWithGoogle();
-      if (useFirebase) {
-        const session = await getWarehouseAuthSession();
-        if (!session) throw new Error("Unable to establish session");
-        const approval = await requireActiveWarehouseAccountFromToken(session.accessToken);
-        if (!approval.ok) throw new Error(approval.message);
-        router.push("/Warehouse_Backoffice");
-      }
+      const session = await getWarehouseAuthSession();
+      if (!session) throw new Error("Unable to establish session");
+      const approval = await requireActiveWarehouseAccountFromToken(session.accessToken);
+      if (!approval.ok) throw new Error(approval.message);
+      router.push("/Warehouse_Backoffice");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to start Google sign-in";
       setError(message);
@@ -88,7 +84,7 @@ export default function WarehouseBackofficeLogin() {
           <p className={styles.kicker}>AfterTen Logistics</p>
           <h1 className={styles.title}>Warehouse Backoffice Login</h1>
           <p className={styles.subtitle}>
-            Sign in with Google or your {useFirebase ? "Firebase" : "Supabase"} account.
+            Sign in with Google or your Firebase account.
           </p>
 
           <button
@@ -102,7 +98,7 @@ export default function WarehouseBackofficeLogin() {
           </button>
           <p className={styles.googleNote}>
             First-time Google sign-in creates your account, then an administrator must approve access.
-            Email/password logins must be set up in Firebase (Supabase passwords were not migrated).
+            Email/password logins must be set up in Firebase before use.
           </p>
 
           {error ? (

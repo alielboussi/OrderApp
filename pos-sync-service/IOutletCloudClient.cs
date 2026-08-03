@@ -3,7 +3,7 @@ using PosSyncService.Models;
 namespace PosSyncService;
 
 /// <summary>
-/// Cloud backend for SCPGT — Supabase RPCs today, Firebase/Firestore in phased migration.
+/// Cloud backend for SCPGT — Firebase/Firestore.
 /// </summary>
 public interface IOutletCloudClient
 {
@@ -34,11 +34,11 @@ public interface IOutletCloudClient
         IReadOnlyCollection<string> sourceEventIds,
         CancellationToken cancellationToken);
 
-    Task<SupabaseResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken);
+    Task<CloudSyncResult> SendOrderAsync(PosOrder order, CancellationToken cancellationToken);
 
     Task<string[]> GetOutletWarehouseIdsAsync(Guid outletId, CancellationToken cancellationToken);
 
-    Task<SupabaseClient.WarehouseRow?> GetWarehouseAsync(string warehouseId, CancellationToken cancellationToken);
+    Task<WarehouseRow?> GetWarehouseAsync(string warehouseId, CancellationToken cancellationToken);
 
     Task<OutletSyncContext?> GetOutletSyncContextAsync(CancellationToken cancellationToken);
 
@@ -48,7 +48,7 @@ public interface IOutletCloudClient
 
     Task<DateTime?> GetLastHeartbeatUtcAsync(CancellationToken cancellationToken);
 
-    Task<SupabaseResult> PatchOrderPayloadAsync(PosOrder order, CancellationToken cancellationToken);
+    Task<CloudSyncResult> PatchOrderPayloadAsync(PosOrder order, CancellationToken cancellationToken);
 
     Task SendHeartbeatAsync(HeartbeatMetrics? metrics, CancellationToken cancellationToken);
 
@@ -56,17 +56,17 @@ public interface IOutletCloudClient
 
     Task MarkCatalogSyncDeliveredAsync(IEnumerable<Guid> eventIds, CancellationToken cancellationToken);
 
-    Task<SupabaseResult> SyncPosCatalogSkuMapAsync(
+    Task<CloudSyncResult> SyncPosCatalogSkuMapAsync(
         IReadOnlyList<PosCatalogSkuMapRow> rows,
         bool syncProducts,
         bool syncVariants,
         CancellationToken cancellationToken);
 
-    Task<SupabaseResult> SyncOutletPosCatalogBindingsAsync(
+    Task<CloudSyncResult> SyncOutletPosCatalogBindingsAsync(
         IReadOnlyList<PosCatalogSkuMapRow> rows,
         CancellationToken cancellationToken);
 
-    Task<SupabaseResult> SyncPosMenuGroupsAsync(
+    Task<CloudSyncResult> SyncPosMenuGroupsAsync(
         IReadOnlyList<PosMenuGroupMapRow> rows,
         CancellationToken cancellationToken);
 
@@ -78,11 +78,11 @@ public interface IOutletCloudClient
 
     Task MarkCashierSyncFailedAsync(Guid eventId, string errorMessage, CancellationToken cancellationToken);
 
-    Task<SupabaseResult> CompleteCashierInsertSyncAsync(Guid cashierId, int posUserId, CancellationToken cancellationToken);
+    Task<CloudSyncResult> CompleteCashierInsertSyncAsync(Guid cashierId, int posUserId, CancellationToken cancellationToken);
 
-    Task<SupabaseResult> CompleteCashierDeleteSyncAsync(Guid cashierId, CancellationToken cancellationToken);
+    Task<CloudSyncResult> CompleteCashierDeleteSyncAsync(Guid cashierId, CancellationToken cancellationToken);
 
-    Task<SupabaseResult> UpsertOutletCashiersFromPosAsync(
+    Task<CloudSyncResult> UpsertOutletCashiersFromPosAsync(
         IReadOnlyList<PosCashierRow> rows,
         CancellationToken cancellationToken);
 }

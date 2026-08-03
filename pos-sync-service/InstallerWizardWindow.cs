@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,9 +27,8 @@ internal sealed class InstallerWizardWindow : Window
     private TextBox _installPathBox = null!;
     private TextBox _configRootBox = null!;
     private TextBox _outletIdBox = null!;
-    private TextBox _supabaseUrlBox = null!;
-    private TextBox _supabaseAnonKeyBox = null!;
-    private TextBox _supabaseServiceKeyBox = null!;
+    private TextBox _firebaseProjectIdBox = null!;
+    private TextBox _firebaseCredentialsPathBox = null!;
     private TextBox _posServerBox = null!;
     private TextBox _posDatabaseBox = null!;
     private TextBox _posUsernameBox = null!;
@@ -173,7 +173,7 @@ internal sealed class InstallerWizardWindow : Window
                 break;
             case 2:
                 _stepTitle.Text = "Outlet Configuration";
-                _stepDescription.Text = "Enter required outlet, Supabase, and POS SQL settings.";
+                _stepDescription.Text = "Enter required outlet, Firebase, and POS SQL settings.";
                 _contentHost.Child = BuildConfigStep();
                 break;
             default:
@@ -232,9 +232,11 @@ internal sealed class InstallerWizardWindow : Window
     private UIElement BuildConfigStep()
     {
         _outletIdBox ??= new TextBox();
-        _supabaseUrlBox ??= new TextBox();
-        _supabaseAnonKeyBox ??= new TextBox();
-        _supabaseServiceKeyBox ??= new TextBox();
+        _firebaseProjectIdBox ??= new TextBox { Text = "afterten-portal-system" };
+        _firebaseCredentialsPathBox ??= new TextBox
+        {
+            Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "SCPGT", "afterten-firebase-adminsdk.json")
+        };
         _posServerBox ??= new TextBox { Text = "localhost" };
         _posDatabaseBox ??= new TextBox { Text = "MINTPOS" };
         _posUsernameBox ??= new TextBox { Text = "mint" };
@@ -242,9 +244,8 @@ internal sealed class InstallerWizardWindow : Window
 
         var panel = new StackPanel();
         panel.Children.Add(BuildLabeledInput("Outlet UUID", _outletIdBox));
-        panel.Children.Add(BuildLabeledInput("Supabase URL", _supabaseUrlBox));
-        panel.Children.Add(BuildLabeledInput("Supabase anon key", _supabaseAnonKeyBox));
-        panel.Children.Add(BuildLabeledInput("Supabase service key (optional)", _supabaseServiceKeyBox));
+        panel.Children.Add(BuildLabeledInput("Firebase Project ID", _firebaseProjectIdBox));
+        panel.Children.Add(BuildLabeledCredentialsPathRow("Firebase credentials JSON path", _firebaseCredentialsPathBox));
         panel.Children.Add(BuildLabeledInput("POS SQL Server", _posServerBox));
         panel.Children.Add(BuildLabeledInput("POS SQL Database", _posDatabaseBox));
         panel.Children.Add(BuildLabeledInput("POS SQL Username", _posUsernameBox));
@@ -268,9 +269,8 @@ internal sealed class InstallerWizardWindow : Window
             sb.AppendLine($"Install folder: {_installPathBox.Text.Trim()}");
             sb.AppendLine($"Config folder : {_configRootBox.Text.Trim()}");
             sb.AppendLine($"Outlet UUID   : {_outletIdBox.Text.Trim()}");
-            sb.AppendLine($"Supabase URL  : {_supabaseUrlBox.Text.Trim()}");
-            sb.AppendLine($"Anon key      : {(string.IsNullOrWhiteSpace(_supabaseAnonKeyBox.Text) ? "<missing>" : "<provided>")}");
-            sb.AppendLine($"Service key   : {(string.IsNullOrWhiteSpace(_supabaseServiceKeyBox.Text) ? "<empty>" : "<provided>")}");
+            sb.AppendLine($"Firebase project: {_firebaseProjectIdBox.Text.Trim()}");
+            sb.AppendLine($"Credentials   : {_firebaseCredentialsPathBox.Text.Trim()}");
             sb.AppendLine($"POS Server    : {_posServerBox.Text.Trim()}");
             sb.AppendLine($"POS Database  : {_posDatabaseBox.Text.Trim()}");
             sb.AppendLine($"POS Username  : {_posUsernameBox.Text.Trim()}");
@@ -332,6 +332,52 @@ internal sealed class InstallerWizardWindow : Window
         return panel;
     }
 
+    private UIElement BuildLabeledCredentialsPathRow(string label, TextBox textBox)
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        textBox.MinHeight = 28;
+        textBox.Padding = new Thickness(8, 4, 8, 4);
+        Grid.SetColumn(textBox, 0);
+        row.Children.Add(textBox);
+
+        var browse = new Button
+        {
+            Content = "Browse...",
+            Margin = new Thickness(8, 0, 0, 0),
+            MinWidth = 92,
+            Padding = new Thickness(10, 6, 10, 6)
+        };
+        browse.Click += (_, _) =>
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select Firebase service account JSON",
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                CheckFileExists = true
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                textBox.Text = dialog.FileName;
+            }
+        };
+        Grid.SetColumn(browse, 1);
+        row.Children.Add(browse);
+
+        panel.Children.Add(row);
+        return panel;
+    }
+
     private static UIElement BuildLabeledInput(string label, Control input)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
@@ -375,9 +421,8 @@ internal sealed class InstallerWizardWindow : Window
                     InstallPath: _installPathBox.Text.Trim(),
                     ConfigRoot: _configRootBox.Text.Trim(),
                     OutletId: _outletIdBox.Text.Trim(),
-                    SupabaseUrl: _supabaseUrlBox.Text.Trim(),
-                    SupabaseAnonKey: _supabaseAnonKeyBox.Text.Trim(),
-                    SupabaseServiceKey: _supabaseServiceKeyBox.Text.Trim(),
+                    FirebaseProjectId: _firebaseProjectIdBox.Text.Trim(),
+                    FirebaseCredentialsPath: _firebaseCredentialsPathBox.Text.Trim(),
                     PosServer: _posServerBox.Text.Trim(),
                     PosDatabase: _posDatabaseBox.Text.Trim(),
                     PosUsername: _posUsernameBox.Text.Trim(),
@@ -392,9 +437,8 @@ internal sealed class InstallerWizardWindow : Window
                     InstallPath: string.Empty,
                     ConfigRoot: string.Empty,
                     OutletId: string.Empty,
-                    SupabaseUrl: string.Empty,
-                    SupabaseAnonKey: string.Empty,
-                    SupabaseServiceKey: string.Empty,
+                    FirebaseProjectId: string.Empty,
+                    FirebaseCredentialsPath: string.Empty,
                     PosServer: string.Empty,
                     PosDatabase: string.Empty,
                     PosUsername: string.Empty,
@@ -437,15 +481,21 @@ internal sealed class InstallerWizardWindow : Window
                 return false;
             }
 
-            if (!Uri.TryCreate(_supabaseUrlBox.Text.Trim(), UriKind.Absolute, out _))
+            if (string.IsNullOrWhiteSpace(_firebaseProjectIdBox.Text))
             {
-                MessageBox.Show("Supabase URL must be a valid absolute URL.", "SCPGT Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Firebase Project ID is required.", "SCPGT Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(_supabaseAnonKeyBox.Text))
+            if (string.IsNullOrWhiteSpace(_firebaseCredentialsPathBox.Text))
             {
-                MessageBox.Show("Supabase anon key is required.", "SCPGT Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Firebase credentials JSON path is required.", "SCPGT Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            if (!File.Exists(_firebaseCredentialsPathBox.Text.Trim()))
+            {
+                MessageBox.Show("Firebase credentials file was not found at the specified path.", "SCPGT Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -469,9 +519,8 @@ internal sealed record InstallerWizardResult(
     string InstallPath,
     string ConfigRoot,
     string OutletId,
-    string SupabaseUrl,
-    string SupabaseAnonKey,
-    string SupabaseServiceKey,
+    string FirebaseProjectId,
+    string FirebaseCredentialsPath,
     string PosServer,
     string PosDatabase,
     string PosUsername,

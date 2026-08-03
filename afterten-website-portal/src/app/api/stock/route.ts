@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { useFirebaseBackend } from '@/lib/cloud-backend';
 import { listFirestoreWarehouses } from '@/lib/firestore-warehouses';
 import { listFirestoreWarehouseLiveItems } from '@/lib/firestore-warehouse-stock';
-import { getServiceClient } from '@/lib/supabase-server';
 import { aggregateStockRows, collectDescendantIds, filterRowsBySearch } from '@/lib/warehouse-helpers';
 import type { Warehouse, WarehouseStockRow } from '@/types/warehouse';
 
@@ -31,7 +29,7 @@ type ProductRecord = {
   name: string | null;
 };
 
-type SupabaseError = { code?: string; message?: string } | null;
+type StockApiError = { code?: string; message?: string } | null;
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,129 +41,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'warehouseId is required' }, { status: 400 });
     }
 
-    if (useFirebaseBackend()) {
-      const warehouses = await listFirestoreWarehouses();
-      if (!warehouses.some((wh) => wh.id === warehouseId)) {
-        return NextResponse.json({ error: 'Warehouse not found or inactive' }, { status: 404 });
-      }
-      const targetIds = collectDescendantIds(warehouses, warehouseId);
-      const liveItems = await listFirestoreWarehouseLiveItems({
-        warehouseIds: targetIds,
-        kinds: ['finished', 'ingredient', 'raw', 'packaging', 'consumable', 'other'],
-        search: search || null,
-      });
+    const warehouses = await listFirestoreWarehouses();
+if (!warehouses.some((wh) => wh.id === warehouseId)) {
+  return NextResponse.json({ error: 'Warehouse not found or inactive' }, { status: 404 });
+}
+const targetIds = collectDescendantIds(warehouses, warehouseId);
+const liveItems = await listFirestoreWarehouseLiveItems({
+  warehouseIds: targetIds,
+  kinds: ['finished', 'ingredient', 'raw', 'packaging', 'consumable', 'other'],
+  search: search || null,
+});
 
-      const normalizedRows: WarehouseStockRow[] = liveItems.map((row) => ({
-        warehouse_id: row.warehouse_id,
-        warehouse_name: row.warehouse_name,
-        product_id: row.item_id,
-        product_name: row.item_name ?? 'Product',
-        variant_key: row.variant_key,
-        variant_name: row.variant_key,
-        qty: row.net_units,
-      }));
+const normalizedRows: WarehouseStockRow[] = liveItems.map((row) => ({
+  warehouse_id: row.warehouse_id,
+  warehouse_name: row.warehouse_name,
+  product_id: row.item_id,
+  product_name: row.item_name ?? 'Product',
+  variant_key: row.variant_key,
+  variant_name: row.variant_key,
+  qty: row.net_units,
+}));
 
-      const filteredRows = filterRowsBySearch(normalizedRows, search);
-      const aggregates = aggregateStockRows(filteredRows);
+const filteredRows = filterRowsBySearch(normalizedRows, search);
+const aggregates = aggregateStockRows(filteredRows);
 
-      return NextResponse.json({
-        rows: filteredRows,
-        aggregates,
-        warehouseCount: targetIds.length,
-        cloud_backend: 'firebase',
-      });
-    }
-
-    const supabase = getServiceClient();
-
-    const { data: warehouseRows, error: warehouseError } = await supabase
-      .from('warehouses')
-      .select('id,name,parent_warehouse_id,kind,active')
-      .eq('active', true);
-
-    if (warehouseError) {
-      throw warehouseError;
-    }
-
-    const warehouses: Warehouse[] = (warehouseRows ?? []).map((wh: WarehouseRecord) => ({
-      id: wh.id,
-      name: wh.name ?? 'Warehouse',
-      parent_warehouse_id: wh.parent_warehouse_id,
-      kind: wh.kind,
-      active: wh.active ?? false,
-    }));
-
-    if (!warehouses.some((wh) => wh.id === warehouseId)) {
-      return NextResponse.json({ error: 'Warehouse not found or inactive' }, { status: 404 });
-    }
-
-    const targetIds = collectDescendantIds(warehouses, warehouseId);
-
-    let stockRows: StockRecord[] = [];
-    let stockError: SupabaseError = null;
-
-    const primary = await supabase
-      .from(STOCK_VIEW_NAME)
-      .select('warehouse_id,item_id,item_name,variant_key,net_units')
-      .in('warehouse_id', targetIds);
-    stockRows = (primary.data as StockRecord[] | null) ?? [];
-    stockError = primary.error;
-
-    if (stockError?.code === '42703') {
-      const fallback = await supabase
-        .from(STOCK_VIEW_NAME)
-        .select('warehouse_id,product_id,variant_key,qty')
-        .in('warehouse_id', targetIds);
-      stockRows = (fallback.data as StockRecord[] | null) ?? [];
-      stockError = fallback.error;
-    }
-
-    if (stockError) {
-      throw stockError;
-    }
-
-    const productIds = Array.from(
-      new Set(
-        (stockRows ?? [])
-          .map((row: StockRecord) => row.item_id ?? row.product_id ?? '')
-          .filter(Boolean)
-      )
-    );
-
-    const productLookup = new Map<string, string>();
-    const needsLookup = stockRows.some((row) => !row.item_name);
-    if (needsLookup && productIds.length) {
-      const { data: products, error: productsError } = await supabase
-        .from('catalog_items')
-        .select('id,name')
-        .in('id', productIds);
-      if (productsError) {
-        throw productsError;
-      }
-      (products as ProductRecord[] | null)?.forEach((product) => {
-        productLookup.set(product.id, product.name ?? 'Product');
-      });
-    }
-
-    const normalizedRows: WarehouseStockRow[] = (stockRows ?? []).map((row: StockRecord) => {
-      const productId = row.item_id ?? row.product_id ?? '';
-      const qtyRaw = row.net_units ?? row.qty;
-      const productName = row.item_name ?? productLookup.get(productId) ?? 'Product';
-      return {
-        warehouse_id: row.warehouse_id,
-        warehouse_name: warehouses.find((wh) => wh.id === row.warehouse_id)?.name ?? 'Warehouse',
-        product_id: productId,
-        product_name: productName,
-        variant_key: row.variant_key ?? null,
-        variant_name: row.variant_key ?? null,
-        qty: Number(qtyRaw) || 0,
-      };
-    });
-
-    const filteredRows = filterRowsBySearch(normalizedRows, search);
-    const aggregates = aggregateStockRows(filteredRows);
-
-    return NextResponse.json({ rows: filteredRows, aggregates, warehouseCount: targetIds.length });
+return NextResponse.json({
+  rows: filteredRows,
+  aggregates,
+  warehouseCount: targetIds.length,
+  cloud_backend: 'firebase',
+});
+    
   } catch (error) {
     console.error('stock api failed', error);
     return NextResponse.json({ error: 'Unable to load stock data' }, { status: 500 });

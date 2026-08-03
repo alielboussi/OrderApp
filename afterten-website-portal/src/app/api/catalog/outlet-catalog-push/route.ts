@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { parseCatalogDeliveryTiming } from "@/lib/catalog-sync-schedule";
 import {
-  buildCatalogPushCandidates,
   buildCatalogRemoveCandidates,
-  explainCatalogPushGap,
-  loadCatalogPushPickerCatalog,
   pushCatalogCandidatesToOutlets,
   removeCatalogCandidatesFromOutlets,
   type CatalogPushScope,
@@ -17,7 +13,6 @@ import {
   loadFirestoreGroupCatalogData,
   middlewareFirestoreOutletIds,
 } from "@/lib/firestore-catalog-outlet-push";
-import { getServiceClient } from "@/lib/supabase-server";
 
 function parseUuidList(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -29,24 +24,6 @@ function parseUuidList(values: unknown): string[] {
         .filter(Boolean),
     ),
   );
-}
-
-async function middlewareSupabaseOutletIds(requestedIds: string[]) {
-  const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from("outlets")
-    .select("id")
-    .eq("active", true)
-    .eq("has_pos_middleware", true);
-  if (error) throw error;
-
-  const allowed = new Set(
-    (data ?? [])
-      .map((row) => (row as { id?: string }).id)
-      .filter((id): id is string => Boolean(id)),
-  );
-
-  return requestedIds.length > 0 ? requestedIds.filter((id) => allowed.has(id)) : Array.from(allowed);
 }
 
 function parseCatalogPushScope(body: Record<string, unknown>): CatalogPushScope | { error: string } {
@@ -68,14 +45,8 @@ function parseCatalogPushScope(body: Record<string, unknown>): CatalogPushScope 
 
 export async function GET() {
   try {
-    if (useFirebaseBackend()) {
-      const catalog = await loadFirestoreCatalogPushPickerCatalog();
-      return NextResponse.json({ ...catalog, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-    const catalog = await loadCatalogPushPickerCatalog(supabase);
-    return NextResponse.json(catalog);
+    const catalog = await loadFirestoreCatalogPushPickerCatalog();
+    return NextResponse.json({ ...catalog, cloud_backend: "firebase" });
   } catch (error) {
     console.error("[catalog/outlet-catalog-push] GET failed", error);
     const message =
@@ -91,7 +62,6 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const firebase = useFirebaseBackend();
     const actionRaw = typeof body?.action === "string" ? body.action.trim().toLowerCase() : "push";
     const action = actionRaw === "remove" ? "remove" : "push";
     const menuGroupIds = parseUuidList(body?.menu_group_ids);
@@ -141,9 +111,7 @@ export async function POST(request: Request) {
     }
 
     const requestedOutletIds = parseUuidList(body?.outlet_ids);
-    const outletIds = firebase
-      ? await middlewareFirestoreOutletIds(requestedOutletIds)
-      : await middlewareSupabaseOutletIds(requestedOutletIds);
+    const outletIds = await middlewareFirestoreOutletIds(requestedOutletIds);
     if (!outletIds.length) {
       return NextResponse.json({ error: "No valid middleware outlets selected." }, { status: 400 });
     }
@@ -158,14 +126,11 @@ export async function POST(request: Request) {
     const syncOptions = { scheduledAt: deliveryTiming.scheduledAt, syncMode } as const;
 
     if (action === "remove") {
-      const candidates = firebase
-        ? await buildCatalogRemoveCandidates(
-            null,
-            menuGroupIds,
-            { includeEmptyGroups },
-            await loadFirestoreGroupCatalogData(menuGroupIds),
-          )
-        : await buildCatalogRemoveCandidates(getServiceClient(), menuGroupIds, { includeEmptyGroups });
+      const candidates = await buildCatalogRemoveCandidates(
+        menuGroupIds,
+        { includeEmptyGroups },
+        await loadFirestoreGroupCatalogData(menuGroupIds),
+      );
 
       if (!candidates.length) {
         return NextResponse.json(
@@ -177,12 +142,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const eventIds = await removeCatalogCandidatesFromOutlets(
-        firebase ? null : getServiceClient(),
-        outletIds,
-        candidates,
-        syncOptions,
-      );
+      const eventIds = await removeCatalogCandidatesFromOutlets(outletIds, candidates, syncOptions);
       const groupCount = candidates.filter((row) => row.catalog_entity_type === "menu_group").length;
       const itemCount = candidates.filter((row) => row.catalog_entity_type === "item").length;
       const variantCount = candidates.filter((row) => row.catalog_entity_type === "variant").length;
@@ -202,37 +162,23 @@ export async function POST(request: Request) {
           total: candidates.length,
         },
         event_ids: eventIds,
-        ...(firebase ? { cloud_backend: "firebase" as const } : {}),
+        cloud_backend: "firebase",
       });
     }
 
-    const candidates = firebase
-      ? await buildFirestoreCatalogPushCandidates(menuGroupIds, {
-          includeEmptyGroups,
-          scope,
-          item_ids: itemIds,
-          variant_ids: variantIds,
-        })
-      : await buildCatalogPushCandidates(getServiceClient(), menuGroupIds, {
-          includeEmptyGroups,
-          scope,
-          item_ids: itemIds,
-          variant_ids: variantIds,
-        });
+    const candidates = await buildFirestoreCatalogPushCandidates(menuGroupIds, {
+      includeEmptyGroups,
+      scope,
+      item_ids: itemIds,
+      variant_ids: variantIds,
+    });
 
     if (!candidates.length) {
-      const detail = firebase
-        ? await explainFirestoreCatalogPushGap(menuGroupIds)
-        : await explainCatalogPushGap(getServiceClient(), menuGroupIds);
+      const detail = await explainFirestoreCatalogPushGap(menuGroupIds);
       return NextResponse.json({ error: detail }, { status: 400 });
     }
 
-    const eventIds = await pushCatalogCandidatesToOutlets(
-      firebase ? null : getServiceClient(),
-      outletIds,
-      candidates,
-      syncOptions,
-    );
+    const eventIds = await pushCatalogCandidatesToOutlets(outletIds, candidates, syncOptions);
     const groupCount = candidates.filter((row) => row.entity_type === "menu_group").length;
     const itemCount = candidates.filter((row) => row.entity_type === "item").length;
     const variantCount = candidates.filter((row) => row.entity_type === "variant").length;
@@ -256,7 +202,7 @@ export async function POST(request: Request) {
         total: candidates.length,
       },
       event_ids: eventIds,
-      ...(firebase ? { cloud_backend: "firebase" as const } : {}),
+      cloud_backend: "firebase",
     });
   } catch (error) {
     console.error("[catalog/outlet-catalog-push] POST failed", error);

@@ -1,5 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 export type OutletCashierRow = {
   id: string;
   outlet_id: string;
@@ -34,33 +32,4 @@ export function validateCashierPassword(password: string): string | null {
   if (trimmed.length < 3) return "Password must be at least 3 characters.";
   if (trimmed.length > 32) return "Password must be 32 characters or fewer.";
   return null;
-}
-
-export async function enqueueCashierSyncEvent(
-  supabase: SupabaseClient,
-  params: {
-    outletId: string;
-    cashierId?: string | null;
-    action: CashierSyncAction;
-    payload: Record<string, unknown>;
-  },
-): Promise<string> {
-  const { data, error } = await supabase
-    .from("outlet_cashier_sync_events")
-    .insert({
-      outlet_id: params.outletId,
-      cashier_id: params.cashierId ?? null,
-      action: params.action,
-      payload: params.payload,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    throw new Error(error.message || "Failed to enqueue cashier sync event");
-  }
-  if (!data?.id) {
-    throw new Error("Failed to enqueue cashier sync event");
-  }
-  return String(data.id);
 }

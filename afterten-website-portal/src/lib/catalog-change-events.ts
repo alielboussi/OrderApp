@@ -1,9 +1,6 @@
 import "server-only";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { recordFirestoreCatalogChangeEvent } from "@/lib/firestore-catalog-change-events";
-import { getServiceClient } from "@/lib/supabase-server";
 
 export const CATALOG_CHANGE_TYPES = [
   "product_added",
@@ -145,15 +142,10 @@ export async function recordCatalogChange(
     snapshot?: Record<string, unknown> | null;
   },
 ) {
-  if (useFirebaseBackend()) {
-    await recordFirestoreCatalogChangeEvent(input);
-    return;
-  }
-  await recordCatalogChangeEvent(getServiceClient(), input);
+  await recordFirestoreCatalogChangeEvent(input);
 }
 
 export async function recordCatalogChangeEvent(
-  supabase: SupabaseClient,
   input: {
     operation: "insert" | "update" | "delete";
     entityType: CatalogEntityType;
@@ -169,52 +161,5 @@ export async function recordCatalogChangeEvent(
     snapshot?: Record<string, unknown> | null;
   }
 ) {
-  const changes =
-    input.operation === "insert"
-      ? []
-      : input.operation === "delete"
-        ? []
-        : diffTrackedFields(input.before, input.after, input.trackedFields);
-
-  if (input.operation === "update" && changes.length === 0) {
-    return;
-  }
-
-  if (useFirebaseBackend()) {
-    await recordFirestoreCatalogChangeEvent(input);
-    return;
-  }
-
-  let changeType: CatalogChangeType;
-  if (input.entityType === "item") {
-    changeType = classifyItemChange(input.operation, changes);
-  } else if (input.entityType === "variant") {
-    changeType = classifyVariantChange(input.operation, changes);
-  } else {
-    changeType = classifyMenuGroupChange(input.operation, changes);
-  }
-
-  const row = {
-    change_type: changeType,
-    entity_type: input.entityType,
-    entity_id: input.entityId,
-    entity_name: input.entityName ?? null,
-    sku: input.sku ?? null,
-    menu_group_id: input.menuGroupId ?? null,
-    item_id: input.itemId ?? null,
-    actor_user_id: input.actor?.user_id ?? null,
-    actor_email: input.actor?.user_email ?? null,
-    changes,
-    snapshot: input.snapshot ?? (input.operation === "delete" ? input.before ?? null : null),
-    source: "backoffice_api",
-  };
-
-  try {
-    const { error } = await supabase.from("catalog_change_events").insert(row);
-    if (error) {
-      console.error("[catalog-change-events] insert failed", error.message);
-    }
-  } catch (error) {
-    console.error("[catalog-change-events] insert failed", error);
-  }
+  await recordCatalogChange(input);
 }

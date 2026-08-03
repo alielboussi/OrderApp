@@ -1,6 +1,5 @@
 import "server-only";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildItemMiddlewarePayload,
   buildVariantMiddlewarePayload,
@@ -129,58 +128,6 @@ export type LoadedGroupCatalog = {
   variantsByItemId: Map<string, VariantRow[]>;
 };
 
-async function loadGroupCatalogData(
-  supabase: SupabaseClient,
-  menuGroupIds: string[]
-): Promise<LoadedGroupCatalog> {
-  const uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
-  const [groupsRes, itemsRes] = await Promise.all([
-    supabase
-      .from("catalog_menu_groups")
-      .select("id,name,pos_menu_group_id,active")
-      .in("id", uniqueGroupIds),
-    supabase
-      .from("catalog_items")
-      .select("id,name,sku,selling_price,menu_group_id,item_kind,active")
-      .in("menu_group_id", uniqueGroupIds)
-      .eq("item_kind", FINISHED_ITEM_KIND),
-  ]);
-
-  if (groupsRes.error) throw groupsRes.error;
-  if (itemsRes.error) throw itemsRes.error;
-
-  const groups = ((groupsRes.data ?? []) as MenuGroupRow[]).filter((group) => group.active !== false);
-  const items = filterSellableItems(
-    ((itemsRes.data ?? []) as ItemRow[]).filter((item) => isPushableCatalogItem(item))
-  );
-
-  const itemIds = items.map((item) => item.id);
-  const itemsById = new Map(items.map((item) => [item.id, item] as const));
-  let variants: VariantRow[] = [];
-  if (itemIds.length) {
-    const variantsRes = await supabase
-      .from("catalog_variants")
-      .select("id,item_id,name,sku,selling_price,item_kind,active")
-      .in("item_id", itemIds);
-    if (variantsRes.error) throw variantsRes.error;
-    variants = filterSellableVariants(
-      ((variantsRes.data ?? []) as VariantRow[]).filter(
-        (variant) => variant.active !== false && variant.sku?.trim()
-      ),
-      itemsById
-    );
-  }
-
-  const variantsByItemId = new Map<string, VariantRow[]>();
-  for (const variant of variants) {
-    const current = variantsByItemId.get(variant.item_id) ?? [];
-    current.push(variant);
-    variantsByItemId.set(variant.item_id, current);
-  }
-
-  return { groups, items, variants, variantsByItemId };
-}
-
 export type CatalogRemoveCandidate = {
   entity_type: "delete";
   entity_id: string;
@@ -190,17 +137,15 @@ export type CatalogRemoveCandidate = {
 };
 
 export async function buildCatalogRemoveCandidates(
-  supabase: SupabaseClient | null,
   menuGroupIds: string[],
-  options?: { includeEmptyGroups?: boolean },
-  loaded?: LoadedGroupCatalog,
+  options: { includeEmptyGroups?: boolean },
+  loaded: LoadedGroupCatalog,
 ): Promise<CatalogRemoveCandidate[]> {
   const uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
   if (!uniqueGroupIds.length) return [];
 
   const includeEmptyGroups = options?.includeEmptyGroups === true;
-  const catalog =
-    loaded ?? (await loadGroupCatalogData(supabase as SupabaseClient, uniqueGroupIds));
+  const catalog = loaded;
   const { groups, items, variants, variantsByItemId } = catalog;
 
   const groupsById = new Map(groups.map((group) => [group.id, group] as const));
@@ -307,7 +252,6 @@ function buildOutletSyncPayload(
 }
 
 export async function removeCatalogCandidatesFromOutlets(
-  supabase: SupabaseClient | null,
   outletIds: string[],
   candidates: CatalogRemoveCandidate[],
   options?: { scheduledAt?: string | null }
@@ -317,7 +261,6 @@ export async function removeCatalogCandidatesFromOutlets(
   for (const outletId of outletIds) {
     for (const candidate of candidates) {
       const eventId = await enqueueCatalogSyncForOutlet(
-        supabase,
         outletId,
         "delete",
         candidate.entity_id,
@@ -329,270 +272,12 @@ export async function removeCatalogCandidatesFromOutlets(
   return eventIds;
 }
 
-export async function loadMenuGroupPushSummaries(supabase: SupabaseClient): Promise<MenuGroupPushSummary[]> {
-  const [groupsRes, itemsRes, variantsRes] = await Promise.all([
-    supabase
-      .from("catalog_menu_groups")
-      .select("id,name,pos_menu_group_id,active")
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true }),
-    supabase
-      .from("catalog_items")
-      .select("id,menu_group_id,item_kind,active,sku")
-      .eq("item_kind", FINISHED_ITEM_KIND),
-    supabase.from("catalog_variants").select("id,item_id,item_kind,active"),
-  ]);
-
-  if (groupsRes.error) throw groupsRes.error;
-  if (itemsRes.error) throw itemsRes.error;
-  if (variantsRes.error) throw variantsRes.error;
-
-  const items = filterSellableItems((itemsRes.data ?? []) as ItemRow[]);
-  const pushableItems = items.filter((item) => isPushableCatalogItem(item));
-  const variants = ((variantsRes.data ?? []) as VariantRow[]).filter((variant) => variant.active !== false);
-  const activeItemIds = new Set(pushableItems.map((item) => item.id));
-  const itemsById = new Map(pushableItems.map((item) => [item.id, item] as const));
-
-  const itemCountByGroup = new Map<string, number>();
-  const variantCountByGroup = new Map<string, number>();
-
-  for (const item of pushableItems) {
-    if (!item.menu_group_id) continue;
-    itemCountByGroup.set(item.menu_group_id, (itemCountByGroup.get(item.menu_group_id) ?? 0) + 1);
-  }
-
-  for (const variant of variants) {
-    if (variant.active === false || !activeItemIds.has(variant.item_id)) continue;
-    if (!variant.sku?.trim()) continue;
-    const parent = itemsById.get(variant.item_id);
-    if (!parent?.menu_group_id || !isSellableCatalogVariant(variant, parent)) continue;
-    variantCountByGroup.set(
-      parent.menu_group_id,
-      (variantCountByGroup.get(parent.menu_group_id) ?? 0) + 1
-    );
-  }
-
-  return ((groupsRes.data ?? []) as MenuGroupRow[]).map((group) => ({
-    id: group.id,
-    name: group.name,
-    pos_menu_group_id: group.pos_menu_group_id,
-    active: group.active,
-    item_count: itemCountByGroup.get(group.id) ?? 0,
-    variant_count: variantCountByGroup.get(group.id) ?? 0,
-  }));
-}
-
 function defaultCatalogPushScope(): CatalogPushScope {
   return { sync_menu_groups: true, sync_products: true, sync_variants: true };
 }
 
 function menuGroupOnlyExpansion(scope: CatalogPushScope): boolean {
   return scope.sync_menu_groups && !scope.sync_products && !scope.sync_variants;
-}
-
-export async function loadCatalogPushPickerCatalog(
-  supabase: SupabaseClient
-): Promise<CatalogPushPickerCatalog> {
-  const groups = await loadMenuGroupPushSummaries(supabase);
-  const groupsById = new Map(groups.map((group) => [group.id, group.name] as const));
-
-  const { data: itemsData, error: itemsError } = await supabase
-    .from("catalog_items")
-    .select("id,name,sku,menu_group_id,item_kind,active")
-    .eq("item_kind", FINISHED_ITEM_KIND)
-    .order("name", { ascending: true });
-  if (itemsError) throw itemsError;
-
-  const items = filterSellableItems(
-    ((itemsData ?? []) as ItemRow[]).filter((item) => isPushableCatalogItem(item))
-  );
-
-  const itemIds = items.map((item) => item.id);
-  const itemsById = new Map(items.map((item) => [item.id, item] as const));
-  let variants: VariantRow[] = [];
-  if (itemIds.length) {
-    const { data: variantsData, error: variantsError } = await supabase
-      .from("catalog_variants")
-      .select("id,item_id,name,sku,item_kind,active")
-      .in("item_id", itemIds)
-      .order("name", { ascending: true });
-    if (variantsError) throw variantsError;
-    variants = filterSellableVariants(
-      ((variantsData ?? []) as VariantRow[]).filter(
-        (variant) => variant.active !== false && variant.sku?.trim()
-      ),
-      itemsById
-    );
-  }
-
-  const variantCountByItem = new Map<string, number>();
-  for (const variant of variants) {
-    variantCountByItem.set(variant.item_id, (variantCountByItem.get(variant.item_id) ?? 0) + 1);
-  }
-
-  return {
-    groups,
-    items: items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      sku: item.sku,
-      menu_group_id: item.menu_group_id,
-      menu_group_name: item.menu_group_id ? groupsById.get(item.menu_group_id) ?? null : null,
-      variant_count: variantCountByItem.get(item.id) ?? 0,
-    })),
-    variants: variants.map((variant) => {
-      const parent = itemsById.get(variant.item_id);
-      return {
-        id: variant.id,
-        item_id: variant.item_id,
-        item_name: parent?.name ?? "",
-        name: variant.name,
-        sku: variant.sku,
-        menu_group_id: parent?.menu_group_id ?? null,
-      };
-    }),
-  };
-}
-
-async function loadItemsAndVariantsForPush(
-  supabase: SupabaseClient,
-  menuGroupIds: string[],
-  itemIds: string[],
-  variantIds: string[]
-): Promise<LoadedGroupCatalog> {
-  const uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
-  if (uniqueGroupIds.length) {
-    return loadGroupCatalogData(supabase, uniqueGroupIds);
-  }
-
-  const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
-  const uniqueVariantIds = Array.from(new Set(variantIds.filter(Boolean)));
-
-  if (!uniqueItemIds.length && uniqueVariantIds.length) {
-    const { data: variantRows, error: variantLookupError } = await supabase
-      .from("catalog_variants")
-      .select("item_id")
-      .in("id", uniqueVariantIds);
-    if (variantLookupError) throw variantLookupError;
-    for (const row of variantRows ?? []) {
-      const itemId = (row as { item_id?: string }).item_id;
-      if (itemId) uniqueItemIds.push(itemId);
-    }
-  }
-
-  if (!uniqueItemIds.length) {
-    return { groups: [], items: [], variants: [], variantsByItemId: new Map() };
-  }
-
-  const { data: itemsData, error: itemsError } = await supabase
-    .from("catalog_items")
-    .select("id,name,sku,selling_price,menu_group_id,item_kind,active")
-    .in("id", Array.from(new Set(uniqueItemIds)))
-    .eq("item_kind", FINISHED_ITEM_KIND);
-  if (itemsError) throw itemsError;
-
-  const items = filterSellableItems(
-    ((itemsData ?? []) as ItemRow[]).filter((item) => isPushableCatalogItem(item))
-  );
-  const itemsById = new Map(items.map((item) => [item.id, item] as const));
-  const groupIds = Array.from(
-    new Set(items.map((item) => item.menu_group_id).filter((id): id is string => Boolean(id)))
-  );
-
-  const { data: groupsData, error: groupsError } = groupIds.length
-    ? await supabase
-        .from("catalog_menu_groups")
-        .select("id,name,pos_menu_group_id,active")
-        .in("id", groupIds)
-    : { data: [], error: null };
-  if (groupsError) throw groupsError;
-
-  const groups = ((groupsData ?? []) as MenuGroupRow[]).filter((group) => group.active !== false);
-
-  let variants: VariantRow[] = [];
-  const variantQueryIds = uniqueVariantIds.length
-    ? uniqueVariantIds
-    : items.map((item) => item.id);
-  if (variantQueryIds.length) {
-    const variantsRes = uniqueVariantIds.length
-      ? await supabase
-          .from("catalog_variants")
-          .select("id,item_id,name,sku,selling_price,item_kind,active")
-          .in("id", uniqueVariantIds)
-      : await supabase
-          .from("catalog_variants")
-          .select("id,item_id,name,sku,selling_price,item_kind,active")
-          .in("item_id", items.map((item) => item.id));
-    if (variantsRes.error) throw variantsRes.error;
-    variants = filterSellableVariants(
-      ((variantsRes.data ?? []) as VariantRow[]).filter(
-        (variant) => variant.active !== false && variant.sku?.trim()
-      ),
-      itemsById
-    );
-  }
-
-  const variantsByItemId = new Map<string, VariantRow[]>();
-  for (const variant of variants) {
-    const current = variantsByItemId.get(variant.item_id) ?? [];
-    current.push(variant);
-    variantsByItemId.set(variant.item_id, current);
-  }
-
-  return { groups, items, variants, variantsByItemId };
-}
-
-export async function buildCatalogPushCandidates(
-  supabase: SupabaseClient | null,
-  menuGroupIds: string[],
-  options?: {
-    includeEmptyGroups?: boolean;
-    scope?: CatalogPushScope;
-    item_ids?: string[];
-    variant_ids?: string[];
-  }
-): Promise<CatalogPushCandidate[]> {
-  const scope = options?.scope ?? defaultCatalogPushScope();
-  let uniqueGroupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
-  const itemIdFilter = new Set((options?.item_ids ?? []).filter(Boolean));
-  const variantIdFilter = new Set((options?.variant_ids ?? []).filter(Boolean));
-  const hasItemFilter = itemIdFilter.size > 0;
-  const hasVariantFilter = variantIdFilter.size > 0;
-
-  if (!scope.sync_menu_groups && !scope.sync_products && !scope.sync_variants) {
-    return [];
-  }
-
-  const expandGroupContents = menuGroupOnlyExpansion(scope);
-  if (expandGroupContents && !uniqueGroupIds.length) {
-    return [];
-  }
-
-  if (
-    !expandGroupContents &&
-    !uniqueGroupIds.length &&
-    !hasItemFilter &&
-    !hasVariantFilter
-  ) {
-    return [];
-  }
-
-  const loaded = await loadItemsAndVariantsForPush(
-    supabase as SupabaseClient,
-    uniqueGroupIds,
-    Array.from(itemIdFilter),
-    Array.from(variantIdFilter)
-  );
-
-  return buildCatalogPushCandidatesFromLoaded(loaded, uniqueGroupIds, {
-    ...options,
-    scope,
-    itemIdFilter,
-    variantIdFilter,
-    hasItemFilter,
-    hasVariantFilter,
-    expandGroupContents,
-  });
 }
 
 export function buildCatalogPushCandidatesFromLoaded(
@@ -757,25 +442,6 @@ export function explainCatalogPushGapFromItems(items: ItemRow[]): string {
   return `Found ${items.length} product(s) in those groups but none can be pushed: ${parts.join("; ")}. Middleware needs active finished products with a SKU and menu group.`;
 }
 
-export async function explainCatalogPushGap(
-  supabase: SupabaseClient,
-  menuGroupIds: string[]
-): Promise<string> {
-  const groupIds = Array.from(new Set(menuGroupIds.filter(Boolean)));
-  if (!groupIds.length) {
-    return "Select at least one menu group, product, or variant.";
-  }
-
-  const { data: assignedItems, error } = await supabase
-    .from("catalog_items")
-    .select("id,name,sku,menu_group_id,item_kind,active")
-    .in("menu_group_id", groupIds)
-    .eq("item_kind", FINISHED_ITEM_KIND);
-  if (error) throw error;
-
-  return explainCatalogPushGapFromItems((assignedItems ?? []) as ItemRow[]);
-}
-
 export function sortPushCandidates(candidates: CatalogPushCandidate[]): CatalogPushCandidate[] {
   const order = { menu_group: 0, item: 1, variant: 2 } as const;
   return [...candidates].sort((a, b) => {
@@ -801,7 +467,6 @@ export function filterCandidatesByMenuGroups(
 }
 
 export async function pushCatalogCandidatesToOutlets(
-  supabase: SupabaseClient | null,
   outletIds: string[],
   candidates: CatalogPushCandidate[],
   options?: { scheduledAt?: string | null; syncMode?: CatalogSyncMode }
@@ -810,7 +475,6 @@ export async function pushCatalogCandidatesToOutlets(
   for (const outletId of outletIds) {
     for (const candidate of candidates) {
       const eventId = await enqueueCatalogSyncForOutlet(
-        supabase,
         outletId,
         candidate.entity_type,
         candidate.entity_id,

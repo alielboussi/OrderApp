@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServiceClient, hasServiceRoleKey } from "@/lib/supabase-server";
 import {
   isMiddlewareCatalogSyncOutlet,
   isPosMiddlewareOutlet,
@@ -7,7 +6,6 @@ import {
   MIDDLEWARE_SALES_API_PATHS,
 } from "@/lib/outletScope";
 import { isHeartbeatMonitoredOutlet } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { createFirestoreOrdersOutlet, filterFirestoreOutletsByScope, listFirestoreOutlets, updateFirestoreOutletDefaultWarehouse } from "@/lib/firestore-outlets";
 
 type OutletRow = {
@@ -52,44 +50,10 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const scope = url.searchParams.get("scope")?.trim().toLowerCase() || null;
 
-    if (useFirebaseBackend()) {
-      let outlets = (await listFirestoreOutlets()).sort((a, b) => a.name.localeCompare(b.name));
-      outlets = filterFirestoreOutletsByScope(outlets, scope);
-      return NextResponse.json({ outlets, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-    const { data, error } = await supabase
-      .from("outlets")
-      .select("id,name,code,active,channel,has_pos_middleware,default_sales_warehouse_id")
-      .order("name");
-    if (error) throw error;
-
-    let outlets = Array.isArray(data)
-      ? data
-          .map(mapOutlet)
-          .filter((outlet, index, list) => outlet.id && index === list.findIndex((entry) => entry.id === outlet.id))
-      : [];
-
-    if (scope === "selling") {
-      outlets = outlets.filter((outlet) => isPosMiddlewareOutlet(outlet));
-    } else if (scope === "middleware" || scope === "catalog-sync") {
-      outlets = outlets.filter((outlet) => isMiddlewareCatalogSyncOutlet(outlet));
-    } else if (scope === "heartbeat") {
-      outlets = outlets.filter((outlet) => isHeartbeatMonitoredOutlet(outlet));
-    }
-
-    const response: { outlets: Outlet[]; warning?: string } = { outlets };
-    if (
-      (scope === "middleware" || scope === "catalog-sync") &&
-      outlets.length === 0 &&
-      !hasServiceRoleKey()
-    ) {
-      response.warning =
-        "Server is missing SUPABASE_SERVICE_ROLE_KEY — outlet list is empty because row-level security blocks the anon key.";
-    }
-
-    return NextResponse.json(response);
+    let outlets = (await listFirestoreOutlets()).sort((a, b) => a.name.localeCompare(b.name));
+outlets = filterFirestoreOutletsByScope(outlets, scope);
+return NextResponse.json({ outlets, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[outlets] GET failed", error);
     return NextResponse.json({ error: "Unable to load outlets" }, { status: 500 });
@@ -122,22 +86,10 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "No valid outlet ids supplied" }, { status: 400 });
     }
 
-    if (useFirebaseBackend()) {
-      const validUpdates = updates.filter((row): row is { id: string; default_sales_warehouse_id: string | null } => Boolean(row.id));
-      const updated = await updateFirestoreOutletDefaultWarehouse(validUpdates);
-      return NextResponse.json({ ok: true, updated, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-    for (const entry of updates) {
-      const { error } = await supabase
-        .from("outlets")
-        .update({ default_sales_warehouse_id: entry.default_sales_warehouse_id })
-        .eq("id", entry.id);
-      if (error) throw error;
-    }
-
-    return NextResponse.json({ ok: true, updated: updates.length });
+    const validUpdates = updates.filter((row): row is { id: string; default_sales_warehouse_id: string | null } => Boolean(row.id));
+const updated = await updateFirestoreOutletDefaultWarehouse(validUpdates);
+return NextResponse.json({ ok: true, updated, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[outlets] PUT failed", error);
     return NextResponse.json({ error: "Unable to save outlets" }, { status: 500 });
@@ -145,12 +97,7 @@ export async function PUT(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
-    if (!useFirebaseBackend()) {
-      return NextResponse.json({ error: "Create outlet is only available with CLOUD_BACKEND=firebase" }, { status: 400 });
-    }
-
-    const body = await request.json().catch(() => ({}));
+  try {const body = await request.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const ordersAppEmail = typeof body.orders_app_email === "string" ? body.orders_app_email.trim() : "";
     const ordersAppPassword = typeof body.orders_app_password === "string" ? body.orders_app_password : "";

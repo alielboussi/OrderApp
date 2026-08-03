@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServiceClient } from "@/lib/supabase-server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  listFirestoreCatalogItems,
+  listFirestoreCatalogVariants,
+} from "@/lib/firestore-catalog-store";
 import { insertFirestoreCatalogSyncRows } from "@/lib/firestore-catalog-sync";
+import { middlewareFirestoreOutletIds } from "@/lib/firestore-catalog-outlet-push";
 
 type CandidateRow = {
   key: string;
@@ -32,80 +35,69 @@ function cleanedSkuList(values: Array<string | null | undefined>): string[] {
   return result;
 }
 
-async function middlewareOutletIds() {
-  const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from("outlets")
-    .select("id")
-    .eq("active", true)
-    .eq("has_pos_middleware", true);
-  if (error) throw error;
-  return (data ?? [])
-    .map((row) => (row as { id?: string }).id)
-    .filter((id): id is string => Boolean(id));
-}
-
 async function loadDeleteCandidates(): Promise<CandidateRow[]> {
-  const supabase = getServiceClient();
-  const [itemsRes, variantsRes] = await Promise.all([
-    supabase.from("catalog_items").select("id,name,sku,item_kind").eq("item_kind", "finished").order("name"),
-    supabase.from("catalog_variants").select("id,item_id,name,sku,item_kind").eq("item_kind", "finished").order("name"),
+  const [items, variants] = await Promise.all([
+    listFirestoreCatalogItems(),
+    listFirestoreCatalogVariants({ activeOnly: false }),
   ]);
-  if (itemsRes.error) throw itemsRes.error;
-  if (variantsRes.error) throw variantsRes.error;
+
+  const finishedItems = items.filter((item) => String(item.item_kind ?? "").toLowerCase() === "finished");
+  const finishedVariants = variants.filter((variant) => String(variant.item_kind ?? "").toLowerCase() === "finished");
 
   const variantsByItemId = new Map<string, string[]>();
-  for (const row of variantsRes.data ?? []) {
-    const variant = row as { item_id?: string | null; sku?: string | null };
-    const itemId = asText(variant.item_id);
+  for (const row of finishedVariants) {
+    const itemId = asText(row.item_id);
     if (!itemId) continue;
     const current = variantsByItemId.get(itemId) ?? [];
-    const updated = cleanedSkuList([...current, variant.sku ?? null]);
-    variantsByItemId.set(itemId, updated);
+    variantsByItemId.set(itemId, cleanedSkuList([...current, typeof row.sku === "string" ? row.sku : null]));
   }
 
-  const itemCandidates = (itemsRes.data ?? []).map((row) => {
-    const item = row as { id: string; name?: string | null; sku?: string | null };
-    const allVariantSkus = variantsByItemId.get(item.id) ?? [];
-    const itemSkus = cleanedSkuList([item.sku ?? null]);
+  const itemCandidates = finishedItems.map((item) => {
+    const itemId = String(item.id ?? "");
+    const itemName = typeof item.name === "string" ? item.name : itemId;
+    const itemSku = typeof item.sku === "string" ? item.sku : null;
+    const allVariantSkus = variantsByItemId.get(itemId) ?? [];
+    const itemSkus = cleanedSkuList([itemSku]);
     return {
-      key: `delete_item:${item.id}`,
-      entity_type: "item",
-      entity_id: item.id,
-      title: item.name ?? item.id,
-      sku: item.sku ?? null,
+      key: `delete_item:${itemId}`,
+      entity_type: "item" as const,
+      entity_id: itemId,
+      title: itemName,
+      sku: itemSku,
       change_type: "delete_item",
       updated_at: null,
       payload: {
         delete_type: "item",
-        item_sku: item.sku ?? null,
+        item_sku: itemSku,
         item_skus: itemSkus,
         all_variant_skus: allVariantSkus,
         variant_skus: allVariantSkus,
-        name: item.name ?? null,
+        name: itemName,
       },
-    } satisfies CandidateRow;
+    };
   });
 
-  const variantCandidates = (variantsRes.data ?? []).map((row) => {
-    const variant = row as { id: string; item_id: string; name?: string | null; sku?: string | null };
-    const variantSkus = cleanedSkuList([variant.sku ?? null]);
+  const variantCandidates = finishedVariants.map((variant) => {
+    const variantId = String(variant.id ?? "");
+    const variantName = typeof variant.name === "string" ? variant.name : variantId;
+    const variantSku = typeof variant.sku === "string" ? variant.sku : null;
+    const variantSkus = cleanedSkuList([variantSku]);
     return {
-      key: `delete_variant:${variant.id}`,
-      entity_type: "variant",
-      entity_id: variant.id,
-      title: variant.name ?? variant.id,
-      sku: variant.sku ?? null,
+      key: `delete_variant:${variantId}`,
+      entity_type: "variant" as const,
+      entity_id: variantId,
+      title: variantName,
+      sku: variantSku,
       change_type: "delete_variant",
       updated_at: null,
       payload: {
         delete_type: "variant",
-        item_id: variant.item_id,
-        variant_sku: variant.sku ?? null,
+        item_id: typeof variant.item_id === "string" ? variant.item_id : String(variant.item_id ?? ""),
+        variant_sku: variantSku,
         variant_skus: variantSkus,
-        variant_name: variant.name ?? null,
+        variant_name: variantName,
       },
-    } satisfies CandidateRow;
+    };
   });
 
   return [...itemCandidates, ...variantCandidates];
@@ -114,7 +106,7 @@ async function loadDeleteCandidates(): Promise<CandidateRow[]> {
 export async function GET() {
   try {
     const candidates = await loadDeleteCandidates();
-    return NextResponse.json({ candidates });
+    return NextResponse.json({ candidates, cloud_backend: "firebase" });
   } catch (error) {
     console.error("[catalog/update-dispatch] GET failed", error);
     return NextResponse.json({ error: "Unable to load delete candidates" }, { status: 500 });
@@ -128,7 +120,7 @@ export async function POST(request: Request) {
     if (modeRaw !== "delete") {
       return NextResponse.json(
         { error: "Only delete dispatch is supported. Use Send to Middleware for catalog pushes." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -139,7 +131,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Select at least one item to delete." }, { status: 400 });
     }
 
-    const allMiddlewareOutletIds = await middlewareOutletIds();
+    const allMiddlewareOutletIds = await middlewareFirestoreOutletIds([]);
     if (!allMiddlewareOutletIds.length) {
       return NextResponse.json({ error: "No active middleware outlets found." }, { status: 400 });
     }
@@ -184,20 +176,12 @@ export async function POST(request: Request) {
       }
     }
 
-    const supabase = getServiceClient();
-    if (useFirebaseBackend()) {
-      await insertFirestoreCatalogSyncRows(rows);
-    } else {
-      const { error: insertError } = await supabase.from("outlet_catalog_sync_events").insert(rows);
-      if (insertError) throw insertError;
-    }
-
+    await insertFirestoreCatalogSyncRows(rows);
     return NextResponse.json({
       ok: true,
-      sent: chosen.length,
       outlets: outletIds.length,
-      outlet_ids: outletIds,
-      mode: "delete",
+      events: rows.length,
+      cloud_backend: "firebase",
     });
   } catch (error) {
     console.error("[catalog/update-dispatch] POST failed", error);

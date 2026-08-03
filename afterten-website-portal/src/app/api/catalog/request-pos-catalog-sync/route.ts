@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeFutureScheduledAt } from "@/lib/catalogSyncSchedule";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
-import { getServiceClient } from "@/lib/supabase-server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import { insertFirestoreCatalogSyncRows } from "@/lib/firestore-catalog-sync";
 import { listFirestoreOutlets } from "@/lib/firestore-outlets";
 
@@ -62,86 +60,33 @@ export async function POST(request: Request) {
       scheduled_at?: string | null;
     };
 
-    if (useFirebaseBackend()) {
-      const outlets = (await listFirestoreOutlets()).filter(
-        (row) => row.active && row.has_pos_middleware,
-      );
-      const allowedIds = new Set(outlets.map((row) => row.id));
-      const requestedIds = (body.outlet_ids ?? [])
-        .map((id) => id.trim())
-        .filter((id) => allowedIds.has(id));
-      const outletIds = requestedIds.length > 0 ? requestedIds : Array.from(allowedIds);
+    const outlets = (await listFirestoreOutlets()).filter(
+  (row) => row.active && row.has_pos_middleware,
+);
+const allowedIds = new Set(outlets.map((row) => row.id));
+const requestedIds = (body.outlet_ids ?? [])
+  .map((id) => id.trim())
+  .filter((id) => allowedIds.has(id));
+const outletIds = requestedIds.length > 0 ? requestedIds : Array.from(allowedIds);
 
-      if (!outletIds.length) {
-        return NextResponse.json({ ok: true, requested: 0, cloud_backend: "firebase" });
-      }
+if (!outletIds.length) {
+  return NextResponse.json({ ok: true, requested: 0, cloud_backend: "firebase" });
+}
 
-      const requestedAt = new Date().toISOString();
-      const outletOptions = body.outlet_options ?? {};
-      const scheduledAt =
-        typeof body.scheduled_at === "string" && body.scheduled_at.trim()
-          ? normalizeFutureScheduledAt(body.scheduled_at)
-          : null;
-      if (typeof body.scheduled_at === "string" && body.scheduled_at.trim() && !scheduledAt) {
-        return NextResponse.json({ error: "Scheduled time must be in the future" }, { status: 400 });
-      }
+const requestedAt = new Date().toISOString();
+const outletOptions = body.outlet_options ?? {};
+const scheduledAt =
+  typeof body.scheduled_at === "string" && body.scheduled_at.trim()
+    ? normalizeFutureScheduledAt(body.scheduled_at)
+    : null;
+if (typeof body.scheduled_at === "string" && body.scheduled_at.trim() && !scheduledAt) {
+  return NextResponse.json({ error: "Scheduled time must be in the future" }, { status: 400 });
+}
 
-      const rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt, scheduledAt);
-      await insertFirestoreCatalogSyncRows(rows);
-      return NextResponse.json({ ok: true, requested: rows.length, scheduled_at: scheduledAt, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-    const { data: outlets, error: outletError } = await supabase
-      .from("outlets")
-      .select("id,name,code,channel,active,has_pos_middleware")
-      .eq("active", true)
-      .eq("has_pos_middleware", true);
-    if (outletError) throw outletError;
-
-    const allowedIds = new Set(
-      (outlets ?? [])
-        .filter((row) => isMiddlewareCatalogSyncOutlet(row))
-        .map((row) => (row as { id?: string }).id)
-        .filter((id): id is string => Boolean(id)),
-    );
-
-    const requestedIds = (body.outlet_ids ?? [])
-      .map((id) => id.trim())
-      .filter((id) => allowedIds.has(id));
-    const outletIds = requestedIds.length > 0 ? requestedIds : Array.from(allowedIds);
-
-    if (!outletIds.length) {
-      return NextResponse.json({ ok: true, requested: 0 });
-    }
-
-    const requestedAt = new Date().toISOString();
-    const outletOptions = body.outlet_options ?? {};
-    const scheduledAt =
-      typeof body.scheduled_at === "string" && body.scheduled_at.trim()
-        ? normalizeFutureScheduledAt(body.scheduled_at)
-        : null;
-    if (typeof body.scheduled_at === "string" && body.scheduled_at.trim() && !scheduledAt) {
-      return NextResponse.json({ error: "Scheduled time must be in the future" }, { status: 400 });
-    }
-
-    let rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt, scheduledAt);
-    let { error } = await supabase.from("outlet_catalog_sync_events").insert(rows);
-
-    // Backward compatibility: some databases still constrain entity_type
-    // to legacy values and reject "sync_pos_catalog". In that case we
-    // enqueue as "item" with a command payload that middleware understands.
-    if (error?.code === "23514") {
-      rows = buildRows(outletIds, "item", outletOptions, requestedAt, scheduledAt);
-      const fallback = await supabase.from("outlet_catalog_sync_events").insert(rows);
-      error = fallback.error;
-    }
-
-    if (error) {
-      throw error;
-    }
-
-    return NextResponse.json({ ok: true, requested: rows.length, scheduled_at: scheduledAt });
+const rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt, scheduledAt);
+await insertFirestoreCatalogSyncRows(rows);
+return NextResponse.json({ ok: true, requested: rows.length, scheduled_at: scheduledAt, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[catalog/request-pos-catalog-sync] POST failed", error);
     return NextResponse.json({ error: "Unable to request POS catalog sync" }, { status: 500 });

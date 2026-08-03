@@ -2,7 +2,7 @@
   "name": "afterten-orderapp",
   "private": true,
   "workspaces": [
-    "Afterten"
+    "afterten-website-portal"
   ],
   "scripts": {
     "dev": "npm run dev --workspace scanners",

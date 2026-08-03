@@ -109,10 +109,9 @@ if (-not (Test-Path $settingsJson)) {
     "Outlet": {
         "Id": "00000000-0000-0000-0000-000000000000"
     },
-    "Supabase": {
-        "Url": "https://YOUR-PROJECT.supabase.co",
-        "AnonKey": "SUPABASE_ANON_KEY",
-        "ServiceKey": "SUPABASE_SERVICE_ROLE_KEY"
+    "Firebase": {
+        "ProjectId": "afterten-portal-system",
+        "CredentialsPath": "C:\\ProgramData\\SCPGT\\afterten-firebase-adminsdk.json"
     },
     "Sync": {
         "PollSeconds": 60,

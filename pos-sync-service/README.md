@@ -1,6 +1,6 @@
-# SCPGT (POS → Supabase Sync Windows Service)
+# SCPGT (POS → Firebase Sync Windows Service)
 
-A .NET 8 Worker Service that polls the local POS SQL Server database, posts orders to Supabase via an RPC, and marks POS rows processed. Installable as a Windows Service (visible in services.msc).
+A .NET 8 Worker Service that polls the local POS SQL Server database, posts orders to Firebase/Firestore, and marks POS rows processed. Installable as a Windows Service (visible in services.msc).
 
 ## Build
 ```
@@ -13,15 +13,14 @@ Edit `publish/appsettings.json` per outlet:
 - `PosDb.ConnectionString`: optional full SQL Server connection string.
 - `PosDb.Server`, `PosDb.Database`, `PosDb.Username`, `PosDb.Password`: preferred explicit SQL credentials.
 - `PosDb.TrustServerCertificate`, `PosDb.IntegratedSecurity`, `PosDb.Encrypt`: SQL connection behavior.
-- `Outlet.Id`: Supabase outlet UUID.
-- `Supabase.Url`: Supabase project URL.
-- `Supabase.AnonKey`: Anonymous key (preferred if RPCs allow anon access).
-- `Supabase.ServiceKey`: Service role key (optional; used if provided).
+- `Outlet.Id`: outlet UUID in Firestore.
+- `Firebase.ProjectId`: Firebase project ID.
+- `Firebase.CredentialsPath`: path to service account JSON (or leave empty to use `GOOGLE_APPLICATION_CREDENTIALS`).
 - `Sync.BatchSize`, `Sync.SourceSystem`: sync idempotency settings.
 
 Ready-to-fill template:
 - `appsettings.outlet.template.json` (copy to `%ProgramData%\SCPGT\appsettings.json` on each outlet PC).
-- Website scheduling UI: `Warehouse Backoffice -> Middleware updates` (apply `supabase/middleware_catalog_schedule.sql` first).
+- Website scheduling UI: `Warehouse Backoffice -> Middleware updates`.
 
 ## Install as Windows Service (PowerShell as Administrator)
 Quick installer script (publishes, copies, installs service, seeds config):
@@ -43,7 +42,7 @@ Start-Service -Name "SCPGT"
 Transfer only `SCPGT.exe` to outlet machine, then double-click it.
 - Opens setup wizard with **Back/Next** flow.
 - Lets user choose install folder and config folder.
-- Collects outlet UUID, Supabase URL/key, and POS SQL values in UI.
+- Collects outlet UUID, Firebase project/credentials, and POS SQL values in UI.
 - Prompts for admin (UAC), then installs/updates service and starts it.
 - Auto-saves config to `%ProgramData%\SCPGT\appsettings.json`.
 
@@ -81,14 +80,13 @@ pwsh -File .\scripts\install-service.ps1 -PublishOutput . -InstallPath "C:\\Prog
 
 ## What to adapt
 - Update the SQL queries in `PosRepository` to match your POS tables (e.g., `BillType`, `Saledetails`, payments, customers).
-- Ensure the Supabase RPC `sync_pos_order` exists and enforces idempotency on `source_event_id`.
-- Map POS item IDs to Supabase catalog/variant IDs inside the payload generation.
+- Ensure Firestore sync enforces idempotency on `source_event_id`.
+- Map POS item IDs to catalog/variant IDs inside the payload generation.
 
-## Supabase schema alignment checklist
-This service posts to the RPCs defined in Supabase Schema.sql. Before deployment, confirm:
-- RPCs exist: `sync_pos_order(payload jsonb)`, `validate_pos_order(payload jsonb)`, `log_pos_sync_failure(payload jsonb)`.
-- Migration `20260617100000_middleware_pos_sync_alignment.sql` applied (sync window + `uses_orders_app` guards).
+## Firebase alignment checklist
+Before deployment, confirm:
 - Outlet has `has_pos_middleware = true` and catalog SKUs on POS (`MenuItem.Code`).
+- Service account JSON has Firestore read/write access for the outlet.
 - POS orders are separate from warehouse app orders (`orders.source_event_id` set; status `synced`).
 
 ## Runtime notes

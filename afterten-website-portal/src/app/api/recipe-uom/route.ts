@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import {
   getFirestoreRecipeUomProfile,
   upsertFirestoreRecipeUomProfile,
 } from "@/lib/firestore-recipes";
-import { getServiceClient } from "@/lib/supabase-server";
 
 type ChainStepPayload = {
   step_order: number;
@@ -40,35 +38,9 @@ export async function GET(request: Request) {
 
     const variantKey = normalizeVariantKey(url.searchParams.get("variant_key"));
 
-    if (useFirebaseBackend()) {
-      const result = await getFirestoreRecipeUomProfile(itemId, variantKey);
-      return NextResponse.json({ ...result, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-
-    const { data: profile, error: profileError } = await supabase
-      .from("recipe_uom_profiles")
-      .select("id,item_id,variant_key,source_uom,target_uom")
-      .eq("item_id", itemId)
-      .eq("variant_key", variantKey)
-      .eq("active", true)
-      .maybeSingle();
-
-    if (profileError) throw profileError;
-    if (!profile) {
-      return NextResponse.json({ profile: null, steps: [] });
-    }
-
-    const { data: steps, error: stepsError } = await supabase
-      .from("recipe_uom_chain_steps")
-      .select("step_order,from_uom,to_uom,multiplier")
-      .eq("profile_id", profile.id)
-      .order("step_order", { ascending: true });
-
-    if (stepsError) throw stepsError;
-
-    return NextResponse.json({ profile, steps: steps ?? [] });
+    const result = await getFirestoreRecipeUomProfile(itemId, variantKey);
+return NextResponse.json({ ...result, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[recipe-uom] GET failed", error);
     return NextResponse.json({ error: "Unable to load recipe UOM profile" }, { status: 500 });
@@ -103,53 +75,15 @@ export async function POST(request: Request) {
           step.from_uom && step.to_uom && Number.isFinite(step.multiplier) && step.multiplier > 0
       );
 
-    if (useFirebaseBackend()) {
-      const result = await upsertFirestoreRecipeUomProfile({
-        itemId,
-        variantKey,
-        sourceUom,
-        targetUom,
-        steps,
-      });
-      return NextResponse.json({ ...result, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-
-    const { data: profileId, error: upsertError } = await supabase.rpc("upsert_recipe_uom_profile", {
-      p_item_id: itemId,
-      p_variant_key: variantKey,
-      p_source_uom: sourceUom,
-      p_target_uom: targetUom,
-    });
-
-    if (upsertError) throw upsertError;
-
-    if (!profileId) {
-      return NextResponse.json({ error: "Failed to save profile" }, { status: 500 });
-    }
-
-    const { error: replaceError } = await supabase.rpc("replace_recipe_uom_chain", {
-      p_profile_id: profileId,
-      p_steps: steps.map((step) => ({
-        step_order: step.step_order,
-        from_uom: step.from_uom,
-        to_uom: step.to_uom,
-        multiplier: step.multiplier,
-      })),
-    });
-
-    if (replaceError) throw replaceError;
-
-    const { data: profile, error: profileError } = await supabase
-      .from("recipe_uom_profiles")
-      .select("id,item_id,variant_key,source_uom,target_uom")
-      .eq("id", profileId)
-      .maybeSingle();
-
-    if (profileError) throw profileError;
-
-    return NextResponse.json({ profile, steps });
+    const result = await upsertFirestoreRecipeUomProfile({
+  itemId,
+  variantKey,
+  sourceUom,
+  targetUom,
+  steps,
+});
+return NextResponse.json({ ...result, cloud_backend: "firebase" });
+    
   } catch (error) {
     console.error("[recipe-uom] POST failed", error);
     return NextResponse.json({ error: "Unable to save recipe UOM profile" }, { status: 500 });

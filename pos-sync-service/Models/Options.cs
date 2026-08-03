@@ -47,19 +47,6 @@ public sealed class OutletOptions
     public Guid Id { get; init; }
 }
 
-public sealed class SupabaseOptions
-{
-    public string Url { get; init; } = string.Empty;
-    public string AnonKey { get; init; } = string.Empty;
-    public string ServiceKey { get; init; } = string.Empty;
-}
-
-/// <summary>Which cloud backend SCPGT uses.</summary>
-public sealed class CloudBackendOptions
-{
-  public string Backend { get; init; } = "Firebase";
-}
-
 public sealed class FirebaseOptions
 {
     public string ProjectId { get; init; } = string.Empty;
@@ -79,7 +66,7 @@ public sealed class SyncOptions
     public bool IncludeProcessed { get; init; } = false;
     /// <summary>How many read/upload batches to run per poll cycle (clears backlogs without waiting for the next poll).</summary>
     public int MaxBatchesPerCycle { get; init; } = 20;
-    /// <summary>How often to pull MintPOS SKUs into Supabase catalog (same poll loop as heartbeat).</summary>
+    /// <summary>How often to pull MintPOS SKUs into Firestore catalog (same poll loop as heartbeat).</summary>
     public int PosCatalogSyncMinutes { get; init; } = 5;
     /// <summary>
     /// Re-check MintPOS Processed bills against the cloud and re-queue any missing as Pending.

@@ -117,7 +117,7 @@ public sealed partial class FirebaseCloudClient
         await batch.CommitAsync(cancellationToken);
     }
 
-    public async Task<SupabaseResult> SyncPosCatalogSkuMapAsync(
+    public async Task<CloudSyncResult> SyncPosCatalogSkuMapAsync(
         IReadOnlyList<PosCatalogSkuMapRow> rows,
         bool syncProducts,
         bool syncVariants,
@@ -125,7 +125,7 @@ public sealed partial class FirebaseCloudClient
     {
         if (rows.Count == 0)
         {
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
 
         try
@@ -172,22 +172,22 @@ public sealed partial class FirebaseCloudClient
             }
 
             await batch.CommitAsync(cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to sync POS catalog SKU map to Firestore");
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 
-    public async Task<SupabaseResult> SyncOutletPosCatalogBindingsAsync(
+    public async Task<CloudSyncResult> SyncOutletPosCatalogBindingsAsync(
         IReadOnlyList<PosCatalogSkuMapRow> rows,
         CancellationToken cancellationToken)
     {
         if (rows.Count == 0 || _outlet.Id == Guid.Empty)
         {
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
 
         try
@@ -226,22 +226,22 @@ public sealed partial class FirebaseCloudClient
             }
 
             await batch.CommitAsync(cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to sync outlet catalog bindings to Firestore");
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 
-    public async Task<SupabaseResult> SyncPosMenuGroupsAsync(
+    public async Task<CloudSyncResult> SyncPosMenuGroupsAsync(
         IReadOnlyList<PosMenuGroupMapRow> rows,
         CancellationToken cancellationToken)
     {
         if (rows.Count == 0)
         {
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
 
         try
@@ -277,12 +277,12 @@ public sealed partial class FirebaseCloudClient
             }
 
             await batch.CommitAsync(cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to sync menu groups to Firestore");
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 
@@ -379,7 +379,7 @@ public sealed partial class FirebaseCloudClient
             cancellationToken);
     }
 
-    public async Task<SupabaseResult> CompleteCashierInsertSyncAsync(
+    public async Task<CloudSyncResult> CompleteCashierInsertSyncAsync(
         Guid cashierId,
         int posUserId,
         CancellationToken cancellationToken)
@@ -400,15 +400,15 @@ public sealed partial class FirebaseCloudClient
                     },
                     SetOptions.MergeAll,
                     cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 
-    public async Task<SupabaseResult> CompleteCashierDeleteSyncAsync(Guid cashierId, CancellationToken cancellationToken)
+    public async Task<CloudSyncResult> CompleteCashierDeleteSyncAsync(Guid cashierId, CancellationToken cancellationToken)
     {
         try
         {
@@ -426,21 +426,21 @@ public sealed partial class FirebaseCloudClient
                     },
                     SetOptions.MergeAll,
                     cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 
-    public async Task<SupabaseResult> UpsertOutletCashiersFromPosAsync(
+    public async Task<CloudSyncResult> UpsertOutletCashiersFromPosAsync(
         IReadOnlyList<PosCashierRow> rows,
         CancellationToken cancellationToken)
     {
         if (rows.Count == 0 || _outlet.Id == Guid.Empty)
         {
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
 
         try
@@ -470,11 +470,11 @@ public sealed partial class FirebaseCloudClient
             }
 
             await batch.CommitAsync(cancellationToken);
-            return new SupabaseResult(true);
+            return new CloudSyncResult(true);
         }
         catch (Exception ex)
         {
-            return new SupabaseResult(false, ex.Message);
+            return new CloudSyncResult(false, ex.Message);
         }
     }
 

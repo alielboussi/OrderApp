@@ -1,41 +1,22 @@
 import { NextResponse } from "next/server";
-import { fetchOutletCatalogAccess, saveOutletCatalogAccess } from "@/lib/outlet-catalog-access";
-import { useFirebaseBackend } from "@/lib/cloud-backend";
 import {
   fetchFirestoreOutletCatalogAccess,
   listFirestoreOutletsForCatalogAccess,
   saveFirestoreOutletCatalogAccess,
 } from "@/lib/firestore-outlet-catalog-access";
-import { getServiceClient } from "@/lib/supabase-server";
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const outletId = url.searchParams.get("outlet_id")?.trim();
 
-    if (useFirebaseBackend()) {
-      if (!outletId) {
-        const outlets = await listFirestoreOutletsForCatalogAccess();
-        return NextResponse.json({ outlets, cloud_backend: "firebase" });
-      }
-
-      const payload = await fetchFirestoreOutletCatalogAccess(outletId);
-      return NextResponse.json({ ...payload, cloud_backend: "firebase" });
-    }
-
-    const supabase = getServiceClient();
-
     if (!outletId) {
-      const { data, error } = await supabase
-        .from("outlets")
-        .select("id,name,auth_user_id")
-        .order("name");
-      if (error) throw error;
-      return NextResponse.json({ outlets: data ?? [] });
+      const outlets = await listFirestoreOutletsForCatalogAccess();
+      return NextResponse.json({ outlets, cloud_backend: "firebase" });
     }
 
-    const payload = await fetchOutletCatalogAccess(outletId);
-    return NextResponse.json(payload);
+    const payload = await fetchFirestoreOutletCatalogAccess(outletId);
+    return NextResponse.json({ ...payload, cloud_backend: "firebase" });
   } catch (error) {
     console.error("[outlet-catalog-access] GET failed", error);
     return NextResponse.json(
@@ -68,13 +49,8 @@ export async function PUT(request: Request) {
       })),
     };
 
-    if (useFirebaseBackend()) {
-      const payload = await saveFirestoreOutletCatalogAccess(input);
-      return NextResponse.json({ ...payload, cloud_backend: "firebase" });
-    }
-
-    const payload = await saveOutletCatalogAccess(input);
-    return NextResponse.json(payload);
+    const payload = await saveFirestoreOutletCatalogAccess(input);
+    return NextResponse.json({ ...payload, cloud_backend: "firebase" });
   } catch (error) {
     console.error("[outlet-catalog-access] PUT failed", error);
     return NextResponse.json(
