@@ -11,6 +11,10 @@ import {
 import { parseShiftFilterFromUrl } from "@/lib/posSalesStats";
 import { shiftFilterIsAllInclusive } from "@/lib/posShift";
 import { API_FORMAT_VERSION } from "@/lib/outlet-middleware-sales";
+import {
+  loadMiddlewareSalesCatalogIndex,
+  resolveMiddlewareSaleCatalogLine,
+} from "@/lib/middleware-sales-catalog-index";
 
 const VAT_RATE = 0.16;
 const MINTPOS_SHIFT_NAMES: Record<number, string> = {
@@ -215,6 +219,7 @@ export async function handleOutletMiddlewareSalesRequestFirebase(
           : [];
 
     const db = getFirestoreDb();
+    const catalogIndex = await loadMiddlewareSalesCatalogIndex(db, outletIds);
     const outletNames = new Map<string, string>();
     for (const id of outletIds) {
       const outletSnap = await db.collection("outlets").doc(id).get();
@@ -262,20 +267,29 @@ export async function handleOutletMiddlewareSalesRequestFirebase(
           const quantity = toNumber(row.quantity);
           const unitAfterVat = toNumber(row.sale_price) || toNumber(row.flavour_price);
           const unitBeforeVat = toNumber(row.vat_exc_price) || (unitAfterVat > 0 ? unitAfterVat / (1 + VAT_RATE) : 0);
-          const itemSku = asNonEmptyText(row.item_sku) ?? asNonEmptyText(row.pos_item_id) ?? "unknown";
+          const catalog = resolveMiddlewareSaleCatalogLine(catalogIndex, currentOutletId, {
+            pos_item_id: row.pos_item_id,
+            flavour_id: row.flavour_id,
+            item_sku: row.item_sku,
+            variant_sku: row.variant_sku,
+            variant_id: row.variant_id ?? row.variantId,
+            variant_key: row.variant_key ?? row.variantKey,
+            name: row.name,
+            flavour_name: row.flavour_name,
+          });
           return {
             outlet_uuid: currentOutletId,
             outlet_name: outletNames.get(currentOutletId) ?? null,
-            product_uuid: itemSku,
-            product_name: asNonEmptyText(row.name),
-            group_uuid: null,
-            group_name: null,
-            variant_uuid: null,
-            variant_name: asNonEmptyText(row.flavour_name),
-            variant_sku: asNonEmptyText(row.variant_sku),
-            menu_group_uuid: null,
-            menu_group_name: null,
-            pos_menu_group_id: null,
+            product_uuid: catalog.product_uuid,
+            product_name: catalog.product_name ?? asNonEmptyText(row.name),
+            group_uuid: catalog.group_uuid,
+            group_name: catalog.group_name,
+            variant_uuid: catalog.variant_uuid,
+            variant_name: catalog.variant_name ?? asNonEmptyText(row.flavour_name),
+            variant_sku: catalog.variant_sku ?? asNonEmptyText(row.variant_sku),
+            menu_group_uuid: catalog.menu_group_uuid,
+            menu_group_name: catalog.menu_group_name,
+            pos_menu_group_id: catalog.pos_menu_group_id,
             quantity: round2(quantity),
             price_before_vat_16: round2(unitBeforeVat),
             price_after_vat_16: round2(unitAfterVat),
