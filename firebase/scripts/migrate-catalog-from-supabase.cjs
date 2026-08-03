@@ -6,7 +6,7 @@
  *
  * Prerequisites:
  *   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in env, or in
- *   Afterten Website Portal/.env.local or .env
+ *   afterten-website-portal/.env.local or .env
  *
  * Run from firebase folder:
  *   node scripts/migrate-catalog-from-supabase.cjs
@@ -19,7 +19,7 @@ const { readFileSync, existsSync } = require("fs");
 const { resolve } = require("path");
 const admin = require(resolve(__dirname, "../functions/node_modules/firebase-admin"));
 
-const PORTAL_DIR = resolve(__dirname, "../../Afterten Website Portal");
+const PORTAL_DIR = resolve(__dirname, "../../afterten-website-portal");
 const PORTAL_ENV_FILES = [
   process.env.SUPABASE_ENV_PATH,
   resolve(PORTAL_DIR, ".env.local"),
@@ -68,7 +68,7 @@ function getSupabaseConfig() {
   if (!url || !key) {
     const checked = PORTAL_ENV_FILES.map((p) => `  - ${p}`).join("\n");
     throw new Error(
-      `Missing Supabase credentials.\n\nAdd to Afterten Website Portal/.env.local (or .env):\n` +
+      `Missing Supabase credentials.\n\nAdd to afterten-website-portal/.env.local (or .env):\n` +
         `  SUPABASE_URL=https://your-project.supabase.co\n` +
         `  SUPABASE_SERVICE_ROLE_KEY=eyJ...\n\nChecked:\n${checked}`,
     );

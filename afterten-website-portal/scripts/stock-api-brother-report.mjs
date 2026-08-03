@@ -3,7 +3,7 @@
  *
  * Usage:
  *   $env:STOCK_SYNC_API_TOKEN="<token>"
- *   node "Afterten Website Portal/scripts/stock-api-brother-report.mjs"
+ *   node "afterten-website-portal/scripts/stock-api-brother-report.mjs"
  *
  * Optional:
  *   --csv "path/to/report.csv"

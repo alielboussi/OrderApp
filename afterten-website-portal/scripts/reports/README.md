@@ -8,8 +8,8 @@ Regenerate:
 
 ```powershell
 $env:STOCK_SYNC_API_TOKEN="<token>"
-node "Afterten Website Portal/scripts/stock-control-alignment.mjs" `
-  --csv "Afterten Website Portal/scripts/reports/catalog-missing-in-stock-api.csv"
+node "afterten-website-portal/scripts/stock-control-alignment.mjs" `
+  --csv "afterten-website-portal/scripts/reports/catalog-missing-in-stock-api.csv"
 ```
 
 Columns:
@@ -26,13 +26,13 @@ Dry run:
 
 ```powershell
 $env:STOCK_SYNC_API_TOKEN="<token>"
-node "Afterten Website Portal/scripts/stock-catalog-cleanup.mjs"
+node "afterten-website-portal/scripts/stock-catalog-cleanup.mjs"
 ```
 
 Apply deletions:
 
 ```powershell
-node "Afterten Website Portal/scripts/stock-catalog-cleanup.mjs" --apply
+node "afterten-website-portal/scripts/stock-catalog-cleanup.mjs" --apply
 ```
 
 Portal API (warehouse auth):
@@ -46,13 +46,13 @@ Portal catalog UUIDs are synced from `GET /sync/catalog` (source of truth).
 
 ```powershell
 $env:STOCK_SYNC_API_TOKEN="<token>"
-node "Afterten Website Portal/scripts/stock-catalog-sync.mjs"
+node "afterten-website-portal/scripts/stock-catalog-sync.mjs"
 ```
 
 Optional: deactivate portal rows missing from the API:
 
 ```powershell
-node "Afterten Website Portal/scripts/stock-catalog-sync.mjs" --deactivate-missing
+node "afterten-website-portal/scripts/stock-catalog-sync.mjs" --deactivate-missing
 ```
 
 Portal API (warehouse auth):
@@ -71,12 +71,12 @@ Only items your brother must fix on the stock system (not portal cleanup):
 
 ```powershell
 $env:STOCK_SYNC_API_TOKEN="<token>"
-node "Afterten Website Portal/scripts/stock-api-brother-report.mjs"
+node "afterten-website-portal/scripts/stock-api-brother-report.mjs"
 ```
 
 Export CSV to send him:
 
 ```powershell
-node "Afterten Website Portal/scripts/stock-api-brother-report.mjs" `
-  --csv "Afterten Website Portal/scripts/reports/brother-stock-gaps.csv"
+node "afterten-website-portal/scripts/stock-api-brother-report.mjs" `
+  --csv "afterten-website-portal/scripts/reports/brother-stock-gaps.csv"
 ```

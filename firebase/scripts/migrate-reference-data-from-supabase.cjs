@@ -11,7 +11,7 @@ const { readFileSync, existsSync } = require("fs");
 const { resolve } = require("path");
 const admin = require(resolve(__dirname, "../functions/node_modules/firebase-admin"));
 
-const PORTAL_DIR = resolve(__dirname, "../../Afterten Website Portal");
+const PORTAL_DIR = resolve(__dirname, "../../afterten-website-portal");
 const PORTAL_ENV_FILES = [
   process.env.SUPABASE_ENV_PATH,
   resolve(PORTAL_DIR, ".env.local"),

@@ -73,3 +73,6 @@ firebase/**/secrets/
 
 # Local Expo app checkout (large; use separate repo or deploy)
 afterten-orders-expo/
+
+# Legacy portal folder name (renamed to afterten-website-portal)
+Afterten Website Portal/
