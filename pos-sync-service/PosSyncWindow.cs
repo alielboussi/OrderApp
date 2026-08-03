@@ -29,8 +29,7 @@ public static class PosSyncWindow
     }
 
     /// <summary>
-    /// MintPOS pending queue: do not drop sales before stocktake opening (Supabase validate_pos_order gates inventory).
-    /// Optional config min/max still apply; cutoff may cap max when a closed period is active.
+    /// MintPOS pending queue date window. Optional config min/max apply; cutoff may cap max when set.
     /// </summary>
     public static (DateTime? MinUtc, DateTime? MaxUtc) ComputePendingQueue(
         DateTime? openingUtc,

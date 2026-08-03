@@ -10,6 +10,8 @@ import {
 } from "@/lib/outletScope";
 import { parseShiftFilterFromUrl } from "@/lib/posSalesStats";
 import { shiftFilterIsAllInclusive } from "@/lib/posShift";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { handleOutletMiddlewareSalesRequestFirebase } from "@/lib/outlet-middleware-sales-firebase";
 
 export const API_FORMAT_VERSION = 2;
 
@@ -101,6 +103,12 @@ type SaleShift = {
   shift_opened_by: string | null;
 };
 
+type SaleCashier = {
+  user_id: number | null;
+  name: string | null;
+  username: string | null;
+};
+
 type SaleLines = {
   paragraph: string;
   items: SaleLine[];
@@ -121,6 +129,9 @@ type SaleEvent = {
   shift_session_end: string | null;
   shift_session_status: string | null;
   shift_opened_by: string | null;
+  cashier_id: number | null;
+  cashier_name: string | null;
+  cashier_username: string | null;
   outlet_uuid: string;
   outlet_name: string | null;
   sold_at: string;
@@ -358,6 +369,14 @@ function emptyShift(): SaleShift {
   };
 }
 
+function emptyCashier(): SaleCashier {
+  return {
+    user_id: null,
+    name: null,
+    username: null,
+  };
+}
+
 function extractShift(rawPayload: Record<string, unknown> | null): SaleShift {
   const payload = asRecord(rawPayload);
   const fallbackTerminal = asNonEmptyText(payload?.terminal);
@@ -378,6 +397,20 @@ function extractShift(rawPayload: Record<string, unknown> | null): SaleShift {
     shift_session_end: toIsoTimestamp(shift.session_end),
     shift_session_status: asNonEmptyText(shift.session_status),
     shift_opened_by: asNonEmptyText(shift.opened_by),
+  };
+}
+
+function extractCashier(rawPayload: Record<string, unknown> | null): SaleCashier {
+  const payload = asRecord(rawPayload);
+  if (!payload || !payload.cashier || typeof payload.cashier !== "object") {
+    return emptyCashier();
+  }
+
+  const cashier = payload.cashier as Record<string, unknown>;
+  return {
+    user_id: toNullableInt(cashier.user_id),
+    name: asNonEmptyText(cashier.name),
+    username: asNonEmptyText(cashier.username),
   };
 }
 
@@ -421,6 +454,10 @@ export async function handleOutletMiddlewareSalesRequest(
   request: NextRequest,
   options?: { fixedProfile?: MiddlewareSalesApiProfile },
 ) {
+  if (useFirebaseBackend()) {
+    return handleOutletMiddlewareSalesRequestFirebase(request, options);
+  }
+
   try {
     const url = new URL(request.url);
     const outletParam = url.searchParams.get("outletId");
@@ -451,6 +488,15 @@ export async function handleOutletMiddlewareSalesRequest(
     const applyShiftFilter =
       shiftIds != null && !shiftFilterIsAllInclusive(shiftIds, includeUnknownShift);
     const selectedShiftIds = new Set(shiftIds ?? []);
+    const cashierIdParam = url.searchParams.get("cashierId") ?? url.searchParams.get("cashier_id");
+    const cashierNameParam = url.searchParams.get("cashierName") ?? url.searchParams.get("cashier_name");
+    const cashierUsernameParam =
+      url.searchParams.get("cashierUsername") ?? url.searchParams.get("cashier_username");
+    const selectedCashierId = cashierIdParam ? toNullableInt(cashierIdParam) : null;
+    const selectedCashierName = cashierNameParam?.trim().toLowerCase() ?? null;
+    const selectedCashierUsername = cashierUsernameParam?.trim().toLowerCase() ?? null;
+    const applyCashierFilter =
+      selectedCashierId != null || Boolean(selectedCashierName) || Boolean(selectedCashierUsername);
 
     const sinceIso = since?.toISOString() ?? null;
     const untilIso = effectiveUntil.toISOString();
@@ -591,6 +637,7 @@ export async function handleOutletMiddlewareSalesRequest(
         const orderPayload = asRecord(order?.raw_payload);
         const paymentMethods = extractPaymentMethods(orderPayload);
         const shift = extractShift(orderPayload);
+        const cashier = extractCashier(orderPayload);
         const posSaleId =
           asNonEmptyText(order?.pos_sale_id) ??
           asNonEmptyText(context.sale_id) ??
@@ -611,6 +658,9 @@ export async function handleOutletMiddlewareSalesRequest(
           shift_session_end: shift.shift_session_end,
           shift_session_status: shift.shift_session_status,
           shift_opened_by: shift.shift_opened_by,
+          cashier_id: cashier.user_id,
+          cashier_name: cashier.name,
+          cashier_username: cashier.username,
           outlet_uuid: row.outlet_id,
           outlet_name: outlet?.name ?? null,
           sold_at: row.sold_at,
@@ -637,6 +687,23 @@ export async function handleOutletMiddlewareSalesRequest(
         if (!applyShiftFilter) return true;
         if (sale.shift_id == null) return includeUnknownShift;
         return selectedShiftIds.has(sale.shift_id);
+      })
+      .filter((sale) => {
+        if (!applyCashierFilter) return true;
+        if (selectedCashierId != null && sale.cashier_id === selectedCashierId) return true;
+        if (
+          selectedCashierName &&
+          sale.cashier_name?.trim().toLowerCase() === selectedCashierName
+        ) {
+          return true;
+        }
+        if (
+          selectedCashierUsername &&
+          sale.cashier_username?.trim().toLowerCase() === selectedCashierUsername
+        ) {
+          return true;
+        }
+        return false;
       })
       .sort((a, b) => b.sold_at.localeCompare(a.sold_at));
 

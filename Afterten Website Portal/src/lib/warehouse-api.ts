@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { useFirebaseAuthClient } from "@/lib/cloud-backend-client";
+import { getWarehouseAccessToken } from "@/lib/warehouse-auth-client";
 
 export type PendingWarehouseAccount = {
   user_id: string;
@@ -9,12 +11,14 @@ export type PendingWarehouseAccount = {
 };
 
 export async function warehouseAuthedFetch(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient | null,
   input: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const token = useFirebaseAuthClient()
+    ? await getWarehouseAccessToken()
+    : (await supabase?.auth.getSession())?.data.session?.access_token;
+
   if (!token) {
     throw new Error("Not signed in");
   }

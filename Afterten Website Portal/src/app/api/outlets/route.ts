@@ -7,6 +7,8 @@ import {
   MIDDLEWARE_SALES_API_PATHS,
 } from "@/lib/outletScope";
 import { isHeartbeatMonitoredOutlet } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { createFirestoreOrdersOutlet, filterFirestoreOutletsByScope, listFirestoreOutlets, updateFirestoreOutletDefaultWarehouse } from "@/lib/firestore-outlets";
 
 type OutletRow = {
   id: string;
@@ -49,6 +51,12 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const scope = url.searchParams.get("scope")?.trim().toLowerCase() || null;
+
+    if (useFirebaseBackend()) {
+      let outlets = (await listFirestoreOutlets()).sort((a, b) => a.name.localeCompare(b.name));
+      outlets = filterFirestoreOutletsByScope(outlets, scope);
+      return NextResponse.json({ outlets, cloud_backend: "firebase" });
+    }
 
     const supabase = getServiceClient();
     const { data, error } = await supabase
@@ -114,6 +122,12 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "No valid outlet ids supplied" }, { status: 400 });
     }
 
+    if (useFirebaseBackend()) {
+      const validUpdates = updates.filter((row): row is { id: string; default_sales_warehouse_id: string | null } => Boolean(row.id));
+      const updated = await updateFirestoreOutletDefaultWarehouse(validUpdates);
+      return NextResponse.json({ ok: true, updated, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
     for (const entry of updates) {
       const { error } = await supabase
@@ -127,5 +141,42 @@ export async function PUT(request: Request) {
   } catch (error) {
     console.error("[outlets] PUT failed", error);
     return NextResponse.json({ error: "Unable to save outlets" }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    if (!useFirebaseBackend()) {
+      return NextResponse.json({ error: "Create outlet is only available with CLOUD_BACKEND=firebase" }, { status: 400 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const ordersAppEmail = typeof body.orders_app_email === "string" ? body.orders_app_email.trim() : "";
+    const ordersAppPassword = typeof body.orders_app_password === "string" ? body.orders_app_password : "";
+    const code = typeof body.code === "string" ? body.code.trim() : null;
+    const warehouseId =
+      typeof body.warehouse_id === "string" && body.warehouse_id.trim() ? body.warehouse_id.trim() : null;
+
+    const created = await createFirestoreOrdersOutlet({
+      name,
+      code,
+      ordersAppEmail,
+      ordersAppPassword,
+      warehouseId,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      cloud_backend: "firebase",
+      outlet: created,
+      catalog_access_url: `/Warehouse_Backoffice/outlets/catalog-access?outlet_id=${created.outletId}`,
+    });
+  } catch (error) {
+    console.error("[outlets] POST failed", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to create outlet" },
+      { status: 500 },
+    );
   }
 }

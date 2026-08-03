@@ -12,7 +12,7 @@ using PosSyncService.Models;
 
 namespace PosSyncService;
 
-public sealed class SupabaseClient
+public sealed class SupabaseClient : IOutletCloudClient
 {
     private readonly SupabaseOptions _options;
     private readonly OutletOptions _outlet;
@@ -379,51 +379,6 @@ public sealed class SupabaseClient
         [property: JsonPropertyName("uses_orders_app")] bool? UsesOrdersApp
     );
 
-    public async Task<WarehousePeriodRow?> GetOpenStockPeriodAsync(string warehouseId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(warehouseId))
-        {
-            return null;
-        }
-
-        var path = $"/rest/v1/warehouse_stock_periods?select=id,warehouse_id,status,opened_at,closed_at&warehouse_id=eq.{warehouseId}&status=eq.open&order=opened_at.desc&limit=1";
-        var data = await GetAsync<WarehousePeriodRow[]>(path, cancellationToken);
-        return data?.FirstOrDefault();
-    }
-
-    public async Task<bool> HasStockCountsAsync(string periodId, string kind, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(periodId))
-        {
-            return false;
-        }
-
-        var normalizedKind = string.IsNullOrWhiteSpace(kind) ? "opening" : kind;
-        var path = $"/rest/v1/warehouse_stock_counts?select=id&period_id=eq.{periodId}&kind=eq.{normalizedKind}&limit=1";
-        var data = await GetAsync<CountRow[]>(path, cancellationToken);
-        return data != null && data.Length > 0;
-    }
-
-    public async Task<SupabaseResult> StartStockPeriodAsync(string warehouseId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(warehouseId))
-        {
-            return new SupabaseResult(false, "Warehouse id is required");
-        }
-
-        return await PostRpcAsync("/rest/v1/rpc/start_stock_period", new { p_warehouse_id = warehouseId }, cancellationToken);
-    }
-
-    public async Task<SupabaseResult> CloseStockPeriodAsync(string periodId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(periodId))
-        {
-            return new SupabaseResult(false, "Period id is required");
-        }
-
-        return await PostRpcAsync("/rest/v1/rpc/close_stock_period", new { p_period_id = periodId }, cancellationToken);
-    }
-
     public async Task<DateTime?> GetPosSyncCutoffUtcAsync(CancellationToken cancellationToken)
     {
         return await GetCounterUtcAsync("pos_sync_cutoff", "cutoff", cancellationToken);
@@ -531,6 +486,12 @@ public sealed class SupabaseClient
             {
                 payload["last_sale_uploaded_at"] = metrics.LastSaleUploadedUtc.Value.UtcDateTime;
             }
+
+            if (!string.IsNullOrWhiteSpace(metrics.BlockedBillId))
+            {
+                payload["blocked_bill_id"] = metrics.BlockedBillId;
+                payload["blocked_source_event_id"] = metrics.BlockedSourceEventId;
+            }
         }
 
         try
@@ -595,6 +556,98 @@ public sealed class SupabaseClient
         }
 
         await PostRpcAsync("/rest/v1/rpc/mark_catalog_sync_delivered", new { p_event_ids = ids }, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CashierSyncEvent>> FetchPendingCashierSyncAsync(CancellationToken cancellationToken)
+    {
+        if (_outlet.Id == Guid.Empty)
+        {
+            return Array.Empty<CashierSyncEvent>();
+        }
+
+        try
+        {
+            var client = CreateClient();
+            var response = await client.PostAsync(
+                "/rest/v1/rpc/fetch_outlet_cashier_sync",
+                JsonContent.Create(new { p_outlet_id = _outlet.Id, p_limit = 100 }, options: JsonOptions),
+                cancellationToken
+            );
+            if (!response.IsSuccessStatusCode)
+            {
+                return Array.Empty<CashierSyncEvent>();
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var rows = JsonSerializer.Deserialize<CashierSyncRow[]>(json, JsonOptions) ?? Array.Empty<CashierSyncRow>();
+            return rows.Select(row => new CashierSyncEvent(
+                row.Id,
+                row.CashierId,
+                row.Action ?? string.Empty,
+                row.Payload ?? new CashierSyncPayload()
+            )).ToArray();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch cashier sync events");
+            return Array.Empty<CashierSyncEvent>();
+        }
+    }
+
+    public async Task MarkCashierSyncDeliveredAsync(IEnumerable<Guid> eventIds, CancellationToken cancellationToken)
+    {
+        var ids = eventIds.ToArray();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        await PostRpcAsync("/rest/v1/rpc/mark_cashier_sync_delivered", new { p_event_ids = ids }, cancellationToken);
+    }
+
+    public Task MarkCashierSyncFailedAsync(Guid eventId, string errorMessage, CancellationToken cancellationToken) =>
+        PostRpcAsync(
+            "/rest/v1/rpc/mark_cashier_sync_failed",
+            new { p_event_id = eventId, p_error_message = errorMessage },
+            cancellationToken);
+
+    public Task<SupabaseResult> CompleteCashierInsertSyncAsync(
+        Guid cashierId,
+        int posUserId,
+        CancellationToken cancellationToken) =>
+        PostRpcAsync(
+            "/rest/v1/rpc/complete_cashier_insert_sync",
+            new { p_cashier_id = cashierId, p_pos_user_id = posUserId },
+            cancellationToken);
+
+    public Task<SupabaseResult> CompleteCashierDeleteSyncAsync(Guid cashierId, CancellationToken cancellationToken) =>
+        PostRpcAsync(
+            "/rest/v1/rpc/complete_cashier_delete_sync",
+            new { p_cashier_id = cashierId },
+            cancellationToken);
+
+    public async Task<SupabaseResult> UpsertOutletCashiersFromPosAsync(
+        IReadOnlyList<PosCashierRow> rows,
+        CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0)
+        {
+            return new SupabaseResult(true);
+        }
+
+        var payloadRows = rows.Select(row => new
+        {
+            pos_user_id = row.PosUserId,
+            name = row.Name,
+            username = row.Username,
+            user_type = row.UserType
+        }).ToArray();
+
+        return await PostRpcAsync(
+            "/rest/v1/rpc/upsert_outlet_cashiers_from_pos",
+            new { p_outlet_id = _outlet.Id, p_rows = payloadRows },
+            cancellationToken
+        );
     }
 
     public async Task<SupabaseResult> SyncPosCatalogSkuMapAsync(
@@ -675,6 +728,13 @@ public sealed class SupabaseClient
         [property: JsonPropertyName("entity_type")] string? EntityType,
         [property: JsonPropertyName("entity_id")] string EntityId,
         [property: JsonPropertyName("payload")] CatalogSyncPayload? Payload
+    );
+
+    private sealed record CashierSyncRow(
+        [property: JsonPropertyName("id")] Guid Id,
+        [property: JsonPropertyName("cashier_id")] Guid? CashierId,
+        [property: JsonPropertyName("action")] string? Action,
+        [property: JsonPropertyName("payload")] CashierSyncPayload? Payload
     );
 
     private async Task<DateTime?> GetCounterUtcAsync(string counterKey, string label, CancellationToken cancellationToken)
@@ -1000,18 +1060,6 @@ public sealed class SupabaseClient
         [property: JsonPropertyName("name")] string? Name
     );
 
-    public sealed record WarehousePeriodRow(
-        [property: JsonPropertyName("id")] string Id,
-        [property: JsonPropertyName("warehouse_id")] string WarehouseId,
-        [property: JsonPropertyName("status")] string Status,
-        [property: JsonPropertyName("opened_at")] DateTimeOffset OpenedAt,
-        [property: JsonPropertyName("closed_at")] DateTimeOffset? ClosedAt
-    );
-
-    private sealed record CountRow(
-        [property: JsonPropertyName("id")] string Id
-    );
-
     private static bool IsTransientStatus(System.Net.HttpStatusCode statusCode)
     {
         var code = (int)statusCode;
@@ -1080,24 +1128,18 @@ public sealed class SupabaseClient
                 opened_by = order.Shift.OpenedBy,
                 shift_source = order.Shift.ShiftSource
             },
+            cashier = order.Cashier is null ? null : new
+            {
+                user_id = order.Cashier.UserId,
+                name = order.Cashier.Name,
+                username = order.Cashier.Username
+            },
             customer = order.Customer is null ? null : new
             {
                 name = order.Customer.Name,
                 phone = order.Customer.Phone,
                 email = order.Customer.Email
-            },
-            inventory_consumed = order.Inventory.Select(ic => new
-            {
-                pos_id = ic.PosId,
-                raw_item_id = ic.RawItemId,
-                quantity_consumed = ic.QuantityConsumed,
-                remaining_quantity = ic.RemainingQuantity,
-                occurred_at = ic.PosDate ?? order.OccurredAt,
-                pos_date = ic.PosDate,
-                kdsid = ic.KdsId,
-                typec = ic.Typec,
-                branch_missing_note = ic.BranchMissingNote
-            }).ToList()
+            }
         };
     }
 }

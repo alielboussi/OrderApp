@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { getFirestoreDb } from "@/lib/firebase-server";
+import { syncFirestoreBaseStorageHomes } from "@/lib/firestore-catalog-store";
 import { getServiceClient } from "@/lib/supabase-server";
 
-function isUuid(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value.trim());
+function isUuid(value: string): boolean {
+  return /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value);
 }
 
 function cleanUuid(value: unknown): string | null {
-  if (isUuid(value)) return value.trim();
+  if (typeof value === "string" && isUuid(value)) return value.trim();
   return null;
 }
 
@@ -97,6 +100,20 @@ export async function PUT(request: Request) {
 
     if (!itemId) {
       return NextResponse.json({ error: "Valid item_id is required" }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      await getFirestoreDb()
+        .collection("catalog_items")
+        .doc(itemId)
+        .set({ default_warehouse_id: defaultWarehouseId, updated_at: new Date().toISOString() }, { merge: true });
+      await syncFirestoreBaseStorageHomes(itemId, resolvedStorageHomeIds);
+      return NextResponse.json({
+        item_id: itemId,
+        storage_warehouse_id: defaultWarehouseId,
+        storage_warehouse_ids: resolvedStorageHomeIds,
+        cloud_backend: "firebase",
+      });
     }
 
     const supabase = getServiceClient();

@@ -7,7 +7,7 @@ import type {
   CatalogPushPickerVariant,
   CatalogPushScope,
   MenuGroupPushSummary,
-} from "@/lib/catalog-outlet-push";
+} from "@/lib/catalog-outlet-push-types";
 import {
   defaultScheduledLocalValue,
   formatScheduleLabel,

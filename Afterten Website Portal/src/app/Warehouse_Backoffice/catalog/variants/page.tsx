@@ -35,6 +35,8 @@ type FormState = {
   units_per_pack: string;
   cost: string;
   selling_price: string;
+  orders_app_uom: string;
+  orders_app_cost_price: string;
   image_url: string;
   active: boolean;
 };
@@ -48,6 +50,8 @@ const defaultForm: FormState = {
   units_per_pack: "1",
   cost: "0",
   selling_price: "0",
+  orders_app_uom: "pc",
+  orders_app_cost_price: "0",
   image_url: "",
   active: true,
 };
@@ -139,6 +143,8 @@ function VariantFormPage() {
           units_per_pack: String(variant.units_per_purchase_pack ?? 1),
           cost: (variant.cost ?? 0).toString(),
           selling_price: (variant.selling_price ?? 0).toString(),
+          orders_app_uom: normalizeUomValue(variant.orders_app_uom ?? variant.consumption_uom) || "pc",
+          orders_app_cost_price: (variant.orders_app_cost_price ?? variant.selling_price ?? 0).toString(),
           image_url: variant.image_url ?? "",
           active: variant.active ?? true,
         });
@@ -240,6 +246,8 @@ function VariantFormPage() {
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
+        orders_app_uom: form.orders_app_uom,
+        orders_app_cost_price: toNumber(form.orders_app_cost_price, 0, -0.0001),
         image_url: form.image_url,
         active: form.active,
         supplier_sku: null,
@@ -292,6 +300,13 @@ function VariantFormPage() {
               units_per_pack: String(variant.units_per_purchase_pack ?? 1),
               cost: (variant.cost ?? 0).toString(),
               selling_price: (variant.selling_price ?? 0).toString(),
+              orders_app_uom:
+                normalizeUomValue(variant.orders_app_uom ?? variant.consumption_uom) || "pc",
+              orders_app_cost_price: (
+                variant.orders_app_cost_price ??
+                variant.selling_price ??
+                0
+              ).toString(),
               image_url: variant.image_url ?? "",
               active: variant.active ?? true,
             });
@@ -373,6 +388,31 @@ function VariantFormPage() {
             value={form.image_url}
             onChange={(v) => handleChange("image_url", v)}
           />
+        </div>
+
+        <div className={styles.sectionCard}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>Orders App</h3>
+            <p className={styles.sectionHint}>UOM and price shown in the outlet Orders mobile app for this variant.</p>
+          </div>
+          <div className={styles.sectionGrid}>
+            <Select
+              label="OrdersApp Uom"
+              hint="Unit of measure displayed when outlets order this variant"
+              value={form.orders_app_uom}
+              onChange={(v) => handleChange("orders_app_uom", v)}
+              options={uomOptions}
+            />
+            <Field
+              type="number"
+              label="Orders app cost price"
+              hint="Selling price shown in the Orders app review screen"
+              value={form.orders_app_cost_price}
+              onChange={(v) => handleChange("orders_app_cost_price", v)}
+              step="0.01"
+              min="0"
+            />
+          </div>
         </div>
 
         <div className={styles.sectionCard}>
@@ -489,7 +529,7 @@ function Field({
       <small className={styles.hint}>{hint}</small>
       <input
         required={required}
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         className={styles.input}
         type={type}
@@ -520,7 +560,7 @@ function Select({ label, hint, value, onChange, options, required, disabled }: S
       <span className={styles.label}>{label}</span>
       <small className={styles.hint}>{hint}</small>
       <select
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         className={styles.select}
         required={required}

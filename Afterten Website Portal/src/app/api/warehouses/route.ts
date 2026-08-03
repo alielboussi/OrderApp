@@ -1,4 +1,10 @@
 import { NextResponse } from 'next/server';
+import { useFirebaseBackend } from '@/lib/cloud-backend';
+import {
+  filterFirestoreWarehousesByScope,
+  listFirestoreOutletWarehouseIds,
+  listFirestoreWarehouses,
+} from '@/lib/firestore-warehouses';
 import { getServiceClient } from '@/lib/supabase-server';
 import { filterOutletScopedWarehouses, listOutletWarehouseIds } from '@/lib/outletScope';
 import type { Warehouse } from '@/types/warehouse';
@@ -52,7 +58,6 @@ async function fetchWarehousesViaTable(supabase: ReturnType<typeof getServiceCli
 
 export async function GET(request: Request) {
   try {
-    const supabase = getServiceClient();
     const url = new URL(request.url);
     const includeInactiveParam = url.searchParams.get('include_inactive');
     const includeInactive = includeInactiveParam === '1' || includeInactiveParam === 'true';
@@ -69,6 +74,21 @@ export async function GET(request: Request) {
     ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
     const lockedIds = Array.from(new Set(lockedIdCandidates.map((value) => value.trim())));
 
+    if (useFirebaseBackend()) {
+      let normalized = await listFirestoreWarehouses({ includeInactive, lockedIds });
+
+      if (scope === 'outlet') {
+        const outletWarehouseIds = new Set(await listFirestoreOutletWarehouseIds(outletId));
+        normalized = filterFirestoreWarehousesByScope(normalized, outletWarehouseIds);
+      } else if (scope === 'hub') {
+        const outletIds = new Set(await listFirestoreOutletWarehouseIds());
+        normalized = normalized.filter((w) => !outletIds.has(w.id));
+      }
+
+      return NextResponse.json({ warehouses: normalized, cloud_backend: 'firebase' });
+    }
+
+    const supabase = getServiceClient();
     let warehouseRecords: WarehouseRecord[] = [];
     try {
       const { data, error } = await supabase.rpc('console_locked_warehouses', {

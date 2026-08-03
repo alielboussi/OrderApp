@@ -3,6 +3,13 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { allocatePosVariantSku } from "@/lib/pos-catalog-ids";
 import { isMissingRelationError } from "@/lib/supabase-errors";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  firestoreCatalogVariantsDelete,
+  firestoreCatalogVariantsGet,
+  firestoreCatalogVariantsPost,
+  firestoreCatalogVariantsPut,
+} from "@/lib/firestore-catalog-variants";
 import {
   VARIANT_TRACKED_FIELDS,
   parseCatalogChangeActor,
@@ -387,6 +394,7 @@ function toVariantResponse(variantId: string, payload: VariantPayload) {
 
 export async function GET(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogVariantsGet(request);
     const url = new URL(request.url);
     const itemId = url.searchParams.get("item_id")?.trim() || undefined;
     const id = url.searchParams.get("id")?.trim() || undefined;
@@ -610,6 +618,7 @@ async function enrichVariants(
 
 export async function POST(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogVariantsPost(request);
     const body = await request.json().catch(() => ({}));
     const itemId = cleanUuid(body.item_id);
     if (!itemId) return NextResponse.json({ error: "Parent product (item_id) is required" }, { status: 400 });
@@ -792,6 +801,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogVariantsPut(request);
     const body = await request.json().catch(() => ({}));
     const id = cleanText(body.id);
     if (!id) return NextResponse.json({ error: "id is required for update" }, { status: 400 });
@@ -1040,6 +1050,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogVariantsDelete(request);
     const url = new URL(request.url);
     let id = url.searchParams.get("id")?.trim() || "";
     let itemId = url.searchParams.get("item_id")?.trim() || "";

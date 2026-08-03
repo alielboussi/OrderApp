@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { getFirestoreDb } from "@/lib/firebase-server";
 import { getServiceClient } from "@/lib/supabase-server";
 
 function isUuid(value: string): boolean {
@@ -12,6 +14,31 @@ export async function GET(request: Request) {
     const storageHomeIds = rawIds.filter((id) => isUuid(id));
     if (!storageHomeIds.length) {
       return NextResponse.json({ items: [] });
+    }
+
+    if (useFirebaseBackend()) {
+      const db = getFirestoreDb();
+      const itemIds = new Set<string>();
+      const snapshot = await db.collection("item_storage_homes").get();
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        const warehouseId = data.storage_warehouse_id;
+        const itemId = data.item_id;
+        if (typeof warehouseId === "string" && storageHomeIds.includes(warehouseId) && typeof itemId === "string") {
+          itemIds.add(itemId);
+        }
+      }
+
+      const items: Array<Record<string, unknown> & { id: string }> = [];
+      for (const itemId of itemIds) {
+        const snap = await db.collection("catalog_items").doc(itemId).get();
+        if (!snap.exists) continue;
+        const data = snap.data()!;
+        if (data.item_kind !== "ingredient" || data.active === false) continue;
+        items.push({ id: snap.id, ...data });
+      }
+      items.sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
+      return NextResponse.json({ items, cloud_backend: "firebase" });
     }
 
     const supabase = getServiceClient();

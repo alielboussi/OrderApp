@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { fetchOutletWarehouseLinks, fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
 import styles from "../reports/reports.module.css";
 
 type WarehouseOption = {
@@ -78,7 +78,6 @@ function formatVariantLabel(value: string): string {
 export default function WarehouseReportsPage() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
 
   const today = useMemo(() => new Date(), []);
   const lastWeek = useMemo(() => {
@@ -127,23 +126,8 @@ export default function WarehouseReportsPage() {
         setBooting(true);
         setError(null);
 
-        const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-        if (whoamiError) throw whoamiError;
-
-        const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-        const outletList = record?.outlets ?? [];
-        const mapped = outletList
-          .map((outlet) => outlet?.outlet_id)
-          .filter((outletId): outletId is string => Boolean(outletId));
-
-        if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push(fallbackOutlet.outlet_id);
-          }
-        }
+        const outlets = await fetchSellingOutlets("selling");
+        const mapped = outlets.map((outlet) => outlet.id);
 
         if (!active) return;
         setOutletIds(mapped);
@@ -161,7 +145,7 @@ export default function WarehouseReportsPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase]);
+  }, [status]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -176,16 +160,8 @@ export default function WarehouseReportsPage() {
       try {
         setError(null);
 
-        const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
-          .from("outlet_warehouses")
-          .select("warehouse_id")
-          .in("outlet_id", outletIds);
-
-        if (outletWarehouseError) throw outletWarehouseError;
-
-        const warehouseIds = Array.from(
-          new Set((outletWarehouseRows ?? []).map((row) => row?.warehouse_id).filter(Boolean))
-        ) as string[];
+        const links = await fetchOutletWarehouseLinks({ outletIds, scope: "outlet" });
+        const warehouseIds = Array.from(new Set(links.map((link) => link.warehouse_id)));
 
         if (!warehouseIds.length) {
           if (!active) return;
@@ -194,16 +170,24 @@ export default function WarehouseReportsPage() {
           return;
         }
 
-        const { data: warehouseRows, error: warehouseError } = await supabase
-          .from("warehouses")
-          .select("id,name,code,active")
-          .in("id", warehouseIds)
-          .order("name", { ascending: true });
+        const res = await fetch("/api/warehouses", { cache: "no-store" });
+        const json = (await res.json()) as {
+          warehouses?: Array<{ id: string; name: string | null; active?: boolean | null }>;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(json.error || "Unable to load warehouses");
 
-        if (warehouseError) throw warehouseError;
+        const filtered = (json.warehouses ?? [])
+          .filter((row) => warehouseIds.includes(row.id) && (row.active ?? true))
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            code: null,
+            active: row.active ?? true,
+          })) as WarehouseOption[];
+
         if (!active) return;
 
-        const filtered = (warehouseRows ?? []).filter((row) => row?.active ?? true) as WarehouseOption[];
         setWarehouses(filtered);
         if (!selectedWarehouseId || !filtered.some((warehouse) => warehouse.id === selectedWarehouseId)) {
           setSelectedWarehouseId(filtered[0]?.id ?? "");
@@ -221,7 +205,7 @@ export default function WarehouseReportsPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, outletIds, selectedWarehouseId]);
+  }, [status, outletIds, selectedWarehouseId]);
 
   const runReport = useCallback(async () => {
     if (status !== "ok") return;
@@ -235,65 +219,17 @@ export default function WarehouseReportsPage() {
       setError(null);
 
       const searchTerm = search.trim();
-      const { data: listItems, error: listError } = await supabase.rpc("list_warehouse_items", {
-        p_warehouse_id: selectedWarehouseId,
-        p_outlet_id: null,
-        p_search: searchTerm || null,
-      });
+      const params = new URLSearchParams();
+      params.set("warehouse_id", selectedWarehouseId);
+      if (searchTerm) params.set("search", searchTerm);
+      if (startDate) params.set("start_date", startDate);
+      if (endDate) params.set("end_date", endDate);
 
-      if (listError) throw listError;
+      const res = await fetch(`/api/warehouse-reports/items?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as { rows?: ReportRow[]; error?: string };
+      if (!res.ok) throw new Error(json.error || "Unable to load warehouse report");
 
-      const items = ((listItems ?? []) as WarehouseItem[]).filter((item) => item?.item_id);
-      const itemsByKey = new Map<string, WarehouseItem>();
-      items.forEach((item) => {
-        const key = makeKey(item.item_id, item.variant_key);
-        if (!itemsByKey.has(key)) itemsByKey.set(key, item);
-      });
-
-      let ledgerQuery = supabase
-        .from("stock_ledger")
-        .select("item_id,variant_key,delta_units")
-        .eq("location_type", "warehouse")
-        .eq("warehouse_id", selectedWarehouseId);
-
-      if (startDate) {
-        const startIso = new Date(`${startDate}T00:00:00`).toISOString();
-        ledgerQuery = ledgerQuery.gte("occurred_at", startIso);
-      }
-
-      if (endDate) {
-        const end = new Date(`${endDate}T00:00:00`);
-        end.setDate(end.getDate() + 1);
-        ledgerQuery = ledgerQuery.lt("occurred_at", end.toISOString());
-      }
-
-      const { data: ledgerRows, error: ledgerError } = await ledgerQuery;
-      if (ledgerError) throw ledgerError;
-
-      const totals = new Map<string, number>();
-      ((ledgerRows ?? []) as LedgerRow[]).forEach((row) => {
-        if (!row?.item_id) return;
-        const key = makeKey(row.item_id, row.variant_key);
-        if (!itemsByKey.has(key)) return;
-        const delta = Number(row.delta_units ?? 0);
-        if (!Number.isFinite(delta)) return;
-        totals.set(key, (totals.get(key) ?? 0) + delta);
-      });
-
-      const nextRows: ReportRow[] = Array.from(itemsByKey.values()).map((item) => {
-        const key = makeKey(item.item_id, item.variant_key);
-        return {
-          item_id: item.item_id,
-          item_name: item.item_name ?? "Item",
-          variant_key: normalizeVariantKey(item.variant_key),
-          item_kind: item.item_kind ?? "unknown",
-          total_units: totals.get(key) ?? 0,
-        };
-      });
-
-      nextRows.sort((a, b) => a.item_name.localeCompare(b.item_name) || a.variant_key.localeCompare(b.variant_key));
-
-      setRows(nextRows);
+      setRows(json.rows ?? []);
       setReportAt(new Date().toLocaleString());
     } catch (err) {
       setError(toErrorMessage(err));
@@ -301,7 +237,7 @@ export default function WarehouseReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, supabase, selectedWarehouseId, startDate, endDate, search]);
+  }, [status, selectedWarehouseId, startDate, endDate, search]);
 
   useEffect(() => {
     if (status !== "ok" || !selectedWarehouseId || hasAutoRun) return;

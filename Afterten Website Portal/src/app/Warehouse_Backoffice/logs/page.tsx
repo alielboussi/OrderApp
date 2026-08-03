@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import {
   WAREHOUSE_AUDIT_ACTION_OPTIONS,
   formatAuditDetails,
@@ -26,17 +25,9 @@ type LogRow = {
   details: Record<string, unknown> | null;
 };
 
-function toIsoDate(value: string, endOfDay: boolean) {
-  if (!value) return null;
-  const [y, m, d] = value.split("-").map((v) => Number(v));
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
-  const date = new Date(Date.UTC(y, m - 1, d, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0));
-  return date.toISOString();
-}
 
 export default function WarehouseBackofficeLogsPage() {
   const router = useRouter();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status, canViewLogs } = useWarehouseAuth();
 
   const [loading, setLoading] = useState(false);
@@ -59,35 +50,19 @@ export default function WarehouseBackofficeLogsPage() {
         setLoading(true);
         setError(null);
 
-        let queryBuilder = supabase
-          .from("warehouse_backoffice_logs")
-          .select(
-            "id,created_at,user_id,user_email,action,page,method,status,entity_type,entity_id,entity_name,details",
-          )
-          .order("created_at", { ascending: false })
-          .limit(500);
+        const params = new URLSearchParams();
+        if (query.trim()) params.set("search", query.trim());
+        if (userQuery.trim()) params.set("user_email", userQuery.trim());
+        if (actionQuery.trim()) params.set("action", actionQuery.trim());
+        if (pageQuery.trim()) params.set("page", pageQuery.trim());
+        if (startDate) params.set("start_date", startDate);
+        if (endDate) params.set("end_date", endDate);
 
-        const searchTerm = query.trim();
-        if (searchTerm) {
-          const encoded = `%${searchTerm}%`;
-          queryBuilder = queryBuilder.or(
-            `user_email.ilike.${encoded},action.ilike.${encoded},page.ilike.${encoded},entity_name.ilike.${encoded},entity_id.ilike.${encoded}`,
-          );
-        }
-
-        if (userQuery.trim()) queryBuilder = queryBuilder.ilike("user_email", `%${userQuery.trim()}%`);
-        if (actionQuery.trim()) queryBuilder = queryBuilder.eq("action", actionQuery.trim());
-        if (pageQuery.trim()) queryBuilder = queryBuilder.ilike("page", `%${pageQuery.trim()}%`);
-
-        const startIso = toIsoDate(startDate, false);
-        const endIso = toIsoDate(endDate, true);
-        if (startIso) queryBuilder = queryBuilder.gte("created_at", startIso);
-        if (endIso) queryBuilder = queryBuilder.lte("created_at", endIso);
-
-        const { data, error: fetchError } = await queryBuilder;
-        if (fetchError) throw fetchError;
+        const res = await fetch(`/api/warehouse-backoffice-logs?${params.toString()}`, { cache: "no-store" });
+        const json = (await res.json()) as { rows?: LogRow[]; error?: string };
+        if (!res.ok) throw new Error(json.error || "Failed to load logs");
         if (!active) return;
-        setRows((data as LogRow[]) ?? []);
+        setRows(json.rows ?? []);
       } catch (err) {
         if (!active) return;
         const message = err instanceof Error ? err.message : "Failed to load logs";
@@ -107,7 +82,7 @@ export default function WarehouseBackofficeLogsPage() {
     return () => {
       active = false;
     };
-  }, [status, canViewLogs, query, userQuery, actionQuery, pageQuery, startDate, endDate, supabase]);
+  }, [status, canViewLogs, query, userQuery, actionQuery, pageQuery, startDate, endDate]);
 
   if (status !== "ok") return null;
   if (!canViewLogs) {

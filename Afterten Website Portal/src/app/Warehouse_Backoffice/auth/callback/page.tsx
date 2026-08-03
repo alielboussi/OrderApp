@@ -1,40 +1,32 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
-import { requireActiveWarehouseAccount } from "@/lib/warehouse-account";
+import {
+  getWarehouseAuthSession,
+  warehouseCompleteGoogleCallback,
+  warehouseSignOut,
+} from "@/lib/warehouse-auth-client";
+import { requireActiveWarehouseAccountFromToken } from "@/lib/warehouse-account-api";
 
 export default function WarehouseAuthCallbackPage() {
   const router = useRouter();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
 
   useEffect(() => {
     let active = true;
 
     const finish = async () => {
       try {
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
-        const errorDescription = url.searchParams.get("error_description");
+        await warehouseCompleteGoogleCallback();
 
-        if (errorDescription) {
-          throw new Error(errorDescription);
+        const session = await getWarehouseAuthSession();
+        if (!session) {
+          throw new Error("No session returned from Google sign-in.");
         }
 
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-        } else {
-          const { data, error } = await supabase.auth.getSession();
-          if (error) throw error;
-          if (!data.session) {
-            throw new Error("No session returned from Google sign-in.");
-          }
-        }
-
-        const approval = await requireActiveWarehouseAccount(supabase);
+        const approval = await requireActiveWarehouseAccountFromToken(session.accessToken);
         if (!approval.ok) {
+          await warehouseSignOut();
           throw new Error(approval.message);
         }
 
@@ -42,6 +34,7 @@ export default function WarehouseAuthCallbackPage() {
         router.replace("/Warehouse_Backoffice");
       } catch (err) {
         if (!active) return;
+        await warehouseSignOut();
         const text = err instanceof Error ? err.message : "Google sign-in failed";
         router.replace(`/Warehouse_Backoffice/login?error=${encodeURIComponent(text)}`);
       }
@@ -51,7 +44,7 @@ export default function WarehouseAuthCallbackPage() {
     return () => {
       active = false;
     };
-  }, [router, supabase]);
+  }, [router]);
 
   return (
     <div

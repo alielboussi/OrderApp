@@ -37,6 +37,9 @@ pos-sync-service/installation.rar
 *.rar
 *.xlsx
 pos-sync-service/publish/
+pos-sync-service/appsettings.till1.json
+pos-sync-service/appsettings.till2.json
+pos-sync-service/appsettings.quickcorner.json
 
 # Logs and dumps
 *.hprof
@@ -61,5 +64,12 @@ $RECYCLE.BIN/
 !.env.example
 
 # Local OAuth / API secrets (never commit)
-**/google-oauth-credentials.txt
+secrets/
 client_secret_*.json
+**/google-oauth-credentials.txt
+**/*firebase-adminsdk*.json
+**/service-account*.json
+firebase/**/secrets/
+
+# Local Expo app checkout (large; use separate repo or deploy)
+afterten-orders-expo/

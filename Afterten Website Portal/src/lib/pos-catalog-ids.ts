@@ -27,14 +27,14 @@ export function isValidPosVariantMintSku(sku: string | null | undefined): boolea
   return parsePosVariantMintSku(sku) !== null;
 }
 
-function assertAllocatablePosSku(value: number): string {
+export function assertAllocatablePosSku(value: number): string {
   if (!parsePosNumericSku(String(value))) {
     throw new Error(`No available MintPOS SKU IDs left (max ${POS_NUMERIC_SKU_MAX})`);
   }
   return String(value);
 }
 
-function nextAllocatablePosSku(currentMax: number): number {
+export function nextAllocatablePosSku(currentMax: number): number {
   const next = currentMax + 1;
   if (!parsePosNumericSku(String(next))) {
     throw new Error(`No available MintPOS SKU IDs left (max ${POS_NUMERIC_SKU_MAX})`);
@@ -42,7 +42,7 @@ function nextAllocatablePosSku(currentMax: number): number {
   return next;
 }
 
-function maxPosNumericSku(rows: Array<{ sku?: string | null }> | null | undefined): number {
+export function maxPosNumericSku(rows: Array<{ sku?: string | null }> | null | undefined): number {
   let max = 0;
   for (const row of rows ?? []) {
     const parsed = parsePosNumericSku(row.sku ?? null);

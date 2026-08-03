@@ -20,8 +20,14 @@ public sealed record PosOrder(
     IReadOnlyList<PosLineItem> Items,
     IReadOnlyList<PosPayment> Payments,
     PosCustomer? Customer,
-    IReadOnlyList<PosInventoryConsumed> Inventory,
-    PosShift? Shift
+    PosShift? Shift,
+    PosCashier? Cashier
+);
+
+public sealed record PosCashier(
+    int? UserId,
+    string? Name,
+    string? Username
 );
 
 public sealed record PosShift(
@@ -66,18 +72,6 @@ public sealed record PosCustomer(
     string? Email
 );
 
-public sealed record PosInventoryConsumed(
-    string PosId,
-    string RawItemId,
-    decimal QuantityConsumed,
-    decimal? RemainingQuantity,
-    DateTime? PosDate,
-    string? KdsId,
-    string? Typec,
-    int? BranchId,
-    string? BranchMissingNote
-);
-
 public sealed record SupabaseResult(bool IsSuccess, string? ErrorMessage = null);
 
 public sealed record PosValidationResult(
@@ -118,4 +112,6 @@ public sealed record SyncRunResult(
 public sealed record HeartbeatMetrics(
     int PendingSalesCount,
     string? LastSyncError = null,
-    DateTimeOffset? LastSaleUploadedUtc = null);
+    DateTimeOffset? LastSaleUploadedUtc = null,
+    string? BlockedBillId = null,
+    string? BlockedSourceEventId = null);

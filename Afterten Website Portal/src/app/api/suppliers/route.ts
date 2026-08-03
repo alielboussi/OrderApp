@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { listFirestoreSuppliers } from "@/lib/firestore-suppliers";
 import { getServiceClient } from "@/lib/supabase-server";
 
 export async function GET() {
   try {
+    if (useFirebaseBackend()) {
+      const suppliers = await listFirestoreSuppliers();
+      return NextResponse.json({ suppliers, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
     const primary = await supabase
       .from("suppliers")
@@ -11,8 +18,7 @@ export async function GET() {
 
     if (primary.error) throw primary.error;
 
-    const baseSuppliers = primary.data ?? [];
-    return NextResponse.json({ suppliers: baseSuppliers });
+    return NextResponse.json({ suppliers: primary.data ?? [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load suppliers";
     return NextResponse.json({ error: message }, { status: 500 });

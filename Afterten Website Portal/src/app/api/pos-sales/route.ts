@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { fetchFirestorePosSales } from "@/lib/firestore-pos-sales";
 
 const MAX_LIMIT = 2000;
 const DEFAULT_LIMIT = 500;
@@ -85,6 +87,21 @@ export async function GET(request: NextRequest) {
         .includes("sales") === true;
 
     const limit = parseLimit(url.searchParams.get("limit"), DEFAULT_LIMIT);
+
+    if (useFirebaseBackend()) {
+      const payload = await fetchFirestorePosSales({
+        outletId,
+        since: effectiveSince,
+        until: effectiveUntil,
+        sourceEventId: sourceEventId || undefined,
+        sourceEventPrefix: sourceEventId ? undefined : sourceEventPrefix || undefined,
+        branchId,
+        limit,
+        includeSales,
+      });
+      return NextResponse.json(payload);
+    }
+
     const supabase = getServiceClient();
 
     let orderQuery = supabase

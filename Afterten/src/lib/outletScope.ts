@@ -16,6 +16,10 @@ export const TILL_OUTLET_IDS = new Set([
 
 export const QUICK_CORNER_OUTLET_ID = "a406fede-7aab-4473-8e9f-ff645267466f";
 
+/** Orders app pilot outlet (no POS middleware). */
+export const ONEWAY_OUTLET_ID = "7f3e9a2b-1c4d-5e6f-8a9b-0c1d2e3f4a5b";
+export const ONEWAY_WAREHOUSE_ID = "8a4f0b3c-2d5e-6f70-9b0c-1d2e3f405a6b";
+
 export const POS_ONLY_OUTLET_IDS = new Set([
   ...TILL_OUTLET_IDS,
   QUICK_CORNER_OUTLET_ID, // Quick Corner

@@ -11,19 +11,19 @@ namespace PosSyncService;
 
 public sealed class ScpgtCoordinator
 {
-    private readonly SupabaseClient _supabase;
+    private readonly IOutletCloudClient _cloud;
     private readonly SyncRunner _syncRunner;
     private readonly OutletOptions _outlet;
     private readonly ILogger<ScpgtCoordinator> _logger;
     private readonly string _contentRoot;
 
-    public ScpgtCoordinator(SupabaseClient supabase,
+    public ScpgtCoordinator(IOutletCloudClient cloud,
                              SyncRunner syncRunner,
                              IOptions<OutletOptions> outlet,
                              IHostEnvironment hostEnvironment,
                              ILogger<ScpgtCoordinator> logger)
     {
-        _supabase = supabase;
+        _cloud = cloud;
         _syncRunner = syncRunner;
         _outlet = outlet.Value;
         _contentRoot = hostEnvironment.ContentRootPath;
@@ -37,7 +37,7 @@ public sealed class ScpgtCoordinator
             return BuildSnapshot("Outlet Id is not configured.", "Update Outlet:Id in appsettings.json.", null, false, null);
         }
 
-        var context = await _supabase.GetOutletSyncContextAsync(cancellationToken);
+        var context = await _cloud.GetOutletSyncContextAsync(cancellationToken);
         if (context is null)
         {
             return BuildSnapshot("Unable to load outlet.", "Check Supabase URL/key and outlet id.", null, false, null);
@@ -72,7 +72,7 @@ public sealed class ScpgtCoordinator
         string? overrideDetail,
         OutletSyncContext? cachedContext)
     {
-        var context = cachedContext ?? await _supabase.GetOutletSyncContextAsync(cancellationToken);
+        var context = cachedContext ?? await _cloud.GetOutletSyncContextAsync(cancellationToken);
         if (context is null)
         {
             return BuildSnapshot(
@@ -93,12 +93,12 @@ public sealed class ScpgtCoordinator
                 null);
         }
 
-        var lastHeartbeatUtc = await _supabase.GetLastHeartbeatUtcAsync(cancellationToken);
+        var lastHeartbeatUtc = await _cloud.GetLastHeartbeatUtcAsync(cancellationToken);
 
         var syncActive = true;
         return BuildSnapshot(
             overrideTitle ?? "Sync active.",
-            overrideDetail ?? "POS sales upload to Supabase (no stocktake window required).",
+            overrideDetail ?? "POS sales upload to cloud backend.",
             context,
             overrideTitle is null,
             lastHeartbeatUtc);

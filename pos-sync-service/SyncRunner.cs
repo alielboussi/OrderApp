@@ -15,24 +15,31 @@ public sealed class SyncRunner
     private readonly OutletOptions _outlet;
     private readonly PosRepository _repository;
     private readonly PosCatalogRepository _catalogRepository;
-    private readonly SupabaseClient _supabaseClient;
+    private readonly PosCashierRepository _cashierRepository;
+    private readonly IOutletCloudClient _cloudClient;
     private readonly ILogger<SyncRunner> _logger;
     private DateTimeOffset? _lastPosCatalogSyncUtc;
     private string? _lastSyncError;
     private DateTimeOffset? _lastSaleUploadedUtc;
+    private string? _blockedBillId;
+    private string? _blockedSourceEventId;
+    private string? _blockedSyncError;
+    private string? _reclaimAfterBillId;
 
     public SyncRunner(IOptionsMonitor<SyncOptions> syncOptions,
                       IOptions<OutletOptions> outlet,
                       PosRepository repository,
                       PosCatalogRepository catalogRepository,
-                      SupabaseClient supabaseClient,
+                      PosCashierRepository cashierRepository,
+                      IOutletCloudClient cloudClient,
                       ILogger<SyncRunner> logger)
     {
         _syncOptions = syncOptions;
         _outlet = outlet.Value;
         _repository = repository;
         _catalogRepository = catalogRepository;
-        _supabaseClient = supabaseClient;
+        _cashierRepository = cashierRepository;
+        _cloudClient = cloudClient;
         _logger = logger;
     }
 
@@ -41,15 +48,18 @@ public sealed class SyncRunner
         var failures = new List<SyncFailure>();
 
         var pendingSales = await _repository.CountUnsyncedSalesAsync(cancellationToken);
-        await _supabaseClient.SendHeartbeatAsync(
+        await _cloudClient.SendHeartbeatAsync(
             new HeartbeatMetrics(
                 PendingSalesCount: pendingSales,
-                LastSyncError: _lastSyncError,
-                LastSaleUploadedUtc: _lastSaleUploadedUtc),
+                LastSyncError: _blockedSyncError ?? _lastSyncError,
+                LastSaleUploadedUtc: _lastSaleUploadedUtc,
+                BlockedBillId: _blockedBillId,
+                BlockedSourceEventId: _blockedSourceEventId),
             cancellationToken);
 
         await TrySyncPosCatalogMapAsync(force: false, syncOptions: null, cancellationToken);
         await ApplyCatalogSyncAsync(cancellationToken);
+        await ApplyCashierSyncAsync(cancellationToken);
 
         var salesResult = await SyncSalesAsync(cancellationToken);
         failures.AddRange(salesResult.Failures);
@@ -76,7 +86,7 @@ public sealed class SyncRunner
         var processed = 0;
         var reconciled = 0;
 
-        var syncContext = await _supabaseClient.GetOutletSyncContextAsync(cancellationToken);
+        var syncContext = await _cloudClient.GetOutletSyncContextAsync(cancellationToken);
         if (syncContext is null)
         {
             _logger.LogWarning("Unable to load outlet sync context; skipping POS sales this cycle.");
@@ -111,8 +121,18 @@ public sealed class SyncRunner
         var unsyncedBefore = await _repository.CountExportableUnsyncedSalesAsync(cancellationToken);
         var maxBatches = Math.Max(1, syncOptions.MaxBatchesPerCycle);
         var batchSize = Math.Max(1, syncOptions.BatchSize);
+        var queueBlocked = false;
 
-        for (var batchIndex = 0; batchIndex < maxBatches; batchIndex++)
+        if (!string.IsNullOrWhiteSpace(_blockedBillId))
+        {
+            _logger.LogWarning(
+                "Sales sync queue blocked on bill={BillId} source={SourceEventId} — will retry head before newer pending bills. Error={Error}",
+                _blockedBillId,
+                _blockedSourceEventId,
+                _blockedSyncError ?? "Unknown error");
+        }
+
+        for (var batchIndex = 0; batchIndex < maxBatches && !queueBlocked; batchIndex++)
         {
             var pending = await _repository.ReadPendingOrdersAsync(
                 batchSize,
@@ -136,39 +156,10 @@ public sealed class SyncRunner
                 unsyncedBefore,
                 pending.Count);
 
-            var syncStates = await _supabaseClient.GetOrderSyncStatesAsync(
-                pending.Select(order => order.SourceEventId).ToArray(),
-                cancellationToken);
-
-            foreach (var order in pending)
-            {
-                try
-                {
-                    syncStates.TryGetValue(order.SourceEventId, out var state);
-                    state ??= new PosOrderSyncState(false, false);
-
-                    var outcome = await ProcessOrderAsync(order, state, cancellationToken);
-                    if (outcome.Failure is not null)
-                    {
-                        failures.Add(outcome.Failure);
-                    }
-
-                    processed += outcome.Processed;
-                    reconciled += outcome.Reconciled;
-                }
-                catch (Exception ex)
-                {
-                    var failure = new SyncFailure(order.PosOrderId, ex.Message);
-                    failures.Add(failure);
-                    _logger.LogError(
-                        ex,
-                        "Sale upload exception bill={BillId} sale={SaleId} source={SourceEventId}",
-                        order.PosOrderId,
-                        order.PosSaleId,
-                        order.SourceEventId);
-                    await _supabaseClient.LogFailureAsync(order, "exception", ex.Message, new { ex.StackTrace }, cancellationToken);
-                }
-            }
+            var batchResult = await ProcessPendingSalesBatchAsync(pending, failures, cancellationToken);
+            processed += batchResult.Processed;
+            reconciled += batchResult.Reconciled;
+            queueBlocked = batchResult.QueueBlocked;
 
             if (pending.Count < batchSize)
             {
@@ -178,13 +169,13 @@ public sealed class SyncRunner
 
         var shiftBackfilled = await BackfillMissingShiftsAsync(cancellationToken);
 
-        var reclaimed = await ReclaimProcessedMissingFromSupabaseAsync(
+        var reclaimed = await ReclaimProcessedMissingFromCloudAsync(
             syncContext.SyncOpeningUtc,
             cancellationToken);
-        if (reclaimed > 0)
+        if (reclaimed > 0 && !queueBlocked)
         {
             // Pull reclaimed bills in the same cycle when possible.
-            for (var batchIndex = 0; batchIndex < maxBatches && reclaimed > 0; batchIndex++)
+            for (var batchIndex = 0; batchIndex < maxBatches && reclaimed > 0 && !queueBlocked; batchIndex++)
             {
                 var pending = await _repository.ReadPendingOrdersAsync(
                     batchSize,
@@ -196,36 +187,10 @@ public sealed class SyncRunner
                     break;
                 }
 
-                var syncStates = await _supabaseClient.GetOrderSyncStatesAsync(
-                    pending.Select(order => order.SourceEventId).ToArray(),
-                    cancellationToken);
-
-                foreach (var order in pending)
-                {
-                    try
-                    {
-                        syncStates.TryGetValue(order.SourceEventId, out var state);
-                        state ??= new PosOrderSyncState(false, false);
-                        var outcome = await ProcessOrderAsync(order, state, cancellationToken);
-                        if (outcome.Failure is not null)
-                        {
-                            failures.Add(outcome.Failure);
-                        }
-
-                        processed += outcome.Processed;
-                        reconciled += outcome.Reconciled;
-                    }
-                    catch (Exception ex)
-                    {
-                        failures.Add(new SyncFailure(order.PosOrderId, ex.Message));
-                        _logger.LogError(
-                            ex,
-                            "Sale reclaim upload exception bill={BillId} sale={SaleId} source={SourceEventId}",
-                            order.PosOrderId,
-                            order.PosSaleId,
-                            order.SourceEventId);
-                    }
-                }
+                var batchResult = await ProcessPendingSalesBatchAsync(pending, failures, cancellationToken);
+                processed += batchResult.Processed;
+                reconciled += batchResult.Reconciled;
+                queueBlocked = batchResult.QueueBlocked;
 
                 if (pending.Count < batchSize)
                 {
@@ -242,19 +207,147 @@ public sealed class SyncRunner
 
         var unsyncedAfter = await _repository.CountExportableUnsyncedSalesAsync(cancellationToken);
         _logger.LogInformation(
-            "Sales sync cycle finished: uploaded={UploadedCount} reconciled={ReconciledCount} shift_backfilled={ShiftBackfilled} reclaimed={ReclaimedCount} failures={FailureCount} lines_repaired={LinesRepaired} unsynced_remaining={UnsyncedRemaining}",
+            "Sales sync cycle finished: uploaded={UploadedCount} reconciled={ReconciledCount} shift_backfilled={ShiftBackfilled} reclaimed={ReclaimedCount} failures={FailureCount} lines_repaired={LinesRepaired} unsynced_remaining={UnsyncedRemaining} queue_blocked={QueueBlocked} blocked_bill={BlockedBillId}",
             processed,
             reconciled,
             shiftBackfilled,
             reclaimed,
             failures.Count,
             linesRepaired,
-            unsyncedAfter);
+            unsyncedAfter,
+            queueBlocked,
+            _blockedBillId ?? "(none)");
 
         return new SyncRunResult(processed, reconciled, linesRepaired, failures);
     }
 
     private sealed record OrderProcessOutcome(int Processed, int Reconciled, SyncFailure? Failure);
+
+    private sealed record PendingSalesBatchResult(int Processed, int Reconciled, bool QueueBlocked);
+
+    private async Task<PendingSalesBatchResult> ProcessPendingSalesBatchAsync(
+        IReadOnlyList<PosOrder> pending,
+        List<SyncFailure> failures,
+        CancellationToken cancellationToken)
+    {
+        var processed = 0;
+        var reconciled = 0;
+        var syncStates = await _cloudClient.GetOrderSyncStatesAsync(
+            pending.Select(order => order.SourceEventId).ToArray(),
+            cancellationToken);
+
+        foreach (var order in pending)
+        {
+            try
+            {
+                syncStates.TryGetValue(order.SourceEventId, out var state);
+                state ??= new PosOrderSyncState(false, false);
+
+                var outcome = await ProcessOrderWithRetriesAsync(order, state, cancellationToken);
+                if (outcome.Failure is not null)
+                {
+                    failures.Add(outcome.Failure);
+                }
+
+                processed += outcome.Processed;
+                reconciled += outcome.Reconciled;
+
+                if (outcome.Processed > 0 || outcome.Reconciled > 0)
+                {
+                    ClearBlockedSaleHead();
+                }
+
+                if (ShouldBlockQueueOnFailure(outcome.Failure))
+                {
+                    SetBlockedSaleHead(order, outcome.Failure!.Error);
+                    return new PendingSalesBatchResult(processed, reconciled, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                var failure = new SyncFailure(order.PosOrderId, ex.Message);
+                failures.Add(failure);
+                _logger.LogError(
+                    ex,
+                    "Sale upload exception bill={BillId} sale={SaleId} source={SourceEventId}",
+                    order.PosOrderId,
+                    order.PosSaleId,
+                    order.SourceEventId);
+                await _cloudClient.LogFailureAsync(order, "exception", ex.Message, new { ex.StackTrace }, cancellationToken);
+
+                if (ShouldBlockQueueOnFailure(failure))
+                {
+                    SetBlockedSaleHead(order, ex.Message);
+                    return new PendingSalesBatchResult(processed, reconciled, true);
+                }
+            }
+        }
+
+        return new PendingSalesBatchResult(processed, reconciled, false);
+    }
+
+    private async Task<OrderProcessOutcome> ProcessOrderWithRetriesAsync(
+        PosOrder order,
+        PosOrderSyncState state,
+        CancellationToken cancellationToken)
+    {
+        var options = _syncOptions.CurrentValue;
+        var maxAttempts = Math.Max(1, options.SaleSyncFailureRetries + 1);
+        var delayMs = Math.Max(0, options.SaleSyncFailureRetryDelayMs);
+
+        OrderProcessOutcome last = new(0, 0, null);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            last = await ProcessOrderAsync(order, state, cancellationToken);
+            if (last.Failure is null || last.Processed > 0 || last.Reconciled > 0)
+            {
+                return last;
+            }
+
+            if (attempt >= maxAttempts)
+            {
+                break;
+            }
+
+            _logger.LogWarning(
+                "Sale upload retry {Attempt}/{MaxRetries} bill={BillId} source={SourceEventId}: {Error}",
+                attempt,
+                options.SaleSyncFailureRetries,
+                order.PosOrderId,
+                order.SourceEventId,
+                last.Failure.Error ?? "Unknown error");
+
+            if (delayMs > 0)
+            {
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
+
+        return last;
+    }
+
+    private bool ShouldBlockQueueOnFailure(SyncFailure? failure) =>
+        failure is not null && _syncOptions.CurrentValue.BlockOnSaleSyncFailure;
+
+    private void SetBlockedSaleHead(PosOrder order, string? error)
+    {
+        _blockedBillId = order.PosOrderId;
+        _blockedSourceEventId = order.SourceEventId;
+        _blockedSyncError = error;
+        _lastSyncError = error;
+        _logger.LogError(
+            "Sales sync blocked on bill={BillId} source={SourceEventId} — fix error before newer pending bills upload. Error={Error}",
+            order.PosOrderId,
+            order.SourceEventId,
+            error ?? "Unknown error");
+    }
+
+    private void ClearBlockedSaleHead()
+    {
+        _blockedBillId = null;
+        _blockedSourceEventId = null;
+        _blockedSyncError = null;
+    }
 
     private async Task<OrderProcessOutcome> ProcessOrderAsync(
         PosOrder order,
@@ -263,12 +356,19 @@ public sealed class SyncRunner
     {
         if (order.Items.Count == 0)
         {
-            await _repository.MarkOrderProcessedAsync(
-                order.PosOrderId,
-                order.PosSaleId,
-                cancellationToken,
-                allowZeroLines: true);
-            await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+            if (!await _repository.MarkOrderProcessedAsync(
+                    order.PosOrderId,
+                    order.PosSaleId,
+                    cancellationToken,
+                    allowZeroLines: true))
+            {
+                return new OrderProcessOutcome(
+                    0,
+                    0,
+                    new SyncFailure(order.PosOrderId, "zero_line_mark_failed"));
+            }
+
+            await _cloudClient.ClearSyncFailureAsync(order, cancellationToken);
             _logger.LogInformation(
                 "Zero-line bill marked Processed bill={BillId} source={SourceEventId}",
                 order.PosOrderId,
@@ -279,7 +379,7 @@ public sealed class SyncRunner
         // Never trust a cached "complete" flag across shift open/close — re-verify outlet_sales.
         if (state.IsComplete)
         {
-            if (await _supabaseClient.HasOutletSalesAsync(order.SourceEventId, cancellationToken))
+            if (await _cloudClient.HasOutletSalesAsync(order.SourceEventId, cancellationToken))
             {
                 return await ReconcileAndMarkProcessedAsync(order, cancellationToken);
             }
@@ -288,7 +388,7 @@ public sealed class SyncRunner
                 "Sale looked complete but outlet_sales missing — forcing re-upload bill={BillId} source={SourceEventId}",
                 order.PosOrderId,
                 order.SourceEventId);
-            var hasOrder = await _supabaseClient.OrderExistsAsync(order.SourceEventId, cancellationToken);
+            var hasOrder = await _cloudClient.OrderExistsAsync(order.SourceEventId, cancellationToken);
             state = new PosOrderSyncState(hasOrder, false);
         }
 
@@ -304,7 +404,7 @@ public sealed class SyncRunner
             LogSaleUploadAttempt(order);
         }
 
-        var validation = await _supabaseClient.ValidateOrderAsync(order, cancellationToken);
+        var validation = await _cloudClient.ValidateOrderAsync(order, cancellationToken);
         if (!validation.IsSuccess)
         {
             if (validation.ErrorMessage?.Contains("no_mappable_items", StringComparison.OrdinalIgnoreCase) == true)
@@ -314,13 +414,16 @@ public sealed class SyncRunner
                     order.PosOrderId,
                     order.PosSaleId,
                     order.SourceEventId);
-                await _supabaseClient.LogFailureAsync(
+                await _cloudClient.LogFailureAsync(
                     order,
                     "validation",
                     validation.ErrorMessage ?? "no_mappable_items",
                     null,
                     cancellationToken);
-                return new OrderProcessOutcome(0, 0, null);
+                return new OrderProcessOutcome(
+                    0,
+                    0,
+                    new SyncFailure(order.PosOrderId, validation.ErrorMessage ?? "no_mappable_items"));
             }
 
             if (!ShouldAttemptUploadDespiteValidation(validation.ErrorMessage))
@@ -331,7 +434,7 @@ public sealed class SyncRunner
                     order.PosSaleId,
                     order.SourceEventId,
                     validation.ErrorMessage ?? "Unknown error");
-                await _supabaseClient.LogFailureAsync(
+                await _cloudClient.LogFailureAsync(
                     order,
                     "validation",
                     validation.ErrorMessage ?? "Validation failed",
@@ -346,7 +449,7 @@ public sealed class SyncRunner
                 order.SourceEventId);
         }
 
-        var syncResult = await _supabaseClient.SendOrderAsync(order, cancellationToken);
+        var syncResult = await _cloudClient.SendOrderAsync(order, cancellationToken);
         if (!syncResult.IsSuccess && !IsDuplicateSourceEventError(syncResult.ErrorMessage))
         {
             _logger.LogWarning(
@@ -355,7 +458,7 @@ public sealed class SyncRunner
                 order.PosSaleId,
                 order.SourceEventId,
                 syncResult.ErrorMessage ?? "Unknown error");
-            await _supabaseClient.LogFailureAsync(
+            await _cloudClient.LogFailureAsync(
                 order,
                 "sync",
                 syncResult.ErrorMessage ?? "Sync failed",
@@ -364,18 +467,21 @@ public sealed class SyncRunner
             return new OrderProcessOutcome(0, 0, new SyncFailure(order.PosOrderId, syncResult.ErrorMessage));
         }
 
-        if (!await TryMarkProcessedOnlyIfInSupabaseAsync(order, cancellationToken))
+        if (!await TryMarkProcessedOnlyIfInCloudAsync(order, cancellationToken))
         {
-            await _supabaseClient.LogFailureAsync(
+            await _cloudClient.LogFailureAsync(
                 order,
                 "verify",
                 "rpc_ok_but_no_outlet_sales",
                 null,
                 cancellationToken);
-            return new OrderProcessOutcome(0, 0, null);
+            return new OrderProcessOutcome(
+                0,
+                0,
+                new SyncFailure(order.PosOrderId, "verify_failed_no_outlet_sales"));
         }
 
-        var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
+        var patchResult = await _cloudClient.PatchOrderPayloadAsync(order, cancellationToken);
         if (!patchResult.IsSuccess)
         {
             _logger.LogWarning(
@@ -385,13 +491,7 @@ public sealed class SyncRunner
                 patchResult.ErrorMessage ?? "Unknown error");
         }
 
-        await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
-
-        var inventoryIds = order.Inventory.Select(ic => ic.PosId).ToArray();
-        if (inventoryIds.Length > 0)
-        {
-            await _repository.MarkInventoryProcessedAsync(inventoryIds, cancellationToken);
-        }
+        await _cloudClient.ClearSyncFailureAsync(order, cancellationToken);
 
         if (state.NeedsLineBackfill || validation.IsDuplicate || IsDuplicateSourceEventError(syncResult.ErrorMessage))
         {
@@ -418,13 +518,13 @@ public sealed class SyncRunner
         PosOrder order,
         CancellationToken cancellationToken)
     {
-        // Hard gate: never mark Processed on reconcile unless lines exist in Supabase.
-        if (!await TryMarkProcessedOnlyIfInSupabaseAsync(order, cancellationToken))
+        // Hard gate: never mark Processed on reconcile unless lines exist in the cloud.
+        if (!await TryMarkProcessedOnlyIfInCloudAsync(order, cancellationToken))
         {
             return new OrderProcessOutcome(0, 0, null);
         }
 
-        var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
+        var patchResult = await _cloudClient.PatchOrderPayloadAsync(order, cancellationToken);
         if (!patchResult.IsSuccess)
         {
             _logger.LogWarning(
@@ -434,10 +534,10 @@ public sealed class SyncRunner
                 patchResult.ErrorMessage ?? "Unknown error");
         }
 
-        await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+        await _cloudClient.ClearSyncFailureAsync(order, cancellationToken);
 
         _logger.LogInformation(
-            "Sale reconciled (Supabase complete) bill={BillId} sale={SaleId} source={SourceEventId} patched={Patched}",
+            "Sale reconciled (cloud complete) bill={BillId} sale={SaleId} source={SourceEventId} patched={Patched}",
             order.PosOrderId,
             order.PosSaleId,
             order.SourceEventId,
@@ -446,82 +546,150 @@ public sealed class SyncRunner
     }
 
     /// <summary>
-    /// Marks MintPOS Processed only after a live Supabase outlet_sales check.
-    /// Shift start/stop must never bypass this.
+    /// Marks MintPOS Processed only after a live cloud outlet_sales check, then re-verifies and rolls back on failure.
     /// </summary>
-    private async Task<bool> TryMarkProcessedOnlyIfInSupabaseAsync(
+    private async Task<bool> TryMarkProcessedOnlyIfInCloudAsync(
         PosOrder order,
         CancellationToken cancellationToken)
     {
-        if (!await _supabaseClient.HasOutletSalesAsync(order.SourceEventId, cancellationToken))
+        if (!await VerifyOutletSalesWithRetryAsync(order.SourceEventId, cancellationToken))
         {
             _logger.LogWarning(
-                "Refusing Processed flag — no outlet_sales in Supabase bill={BillId} source={SourceEventId}",
+                "Refusing Processed flag — no outlet_sales in cloud bill={BillId} source={SourceEventId}",
                 order.PosOrderId,
                 order.SourceEventId);
             return false;
         }
 
-        await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken);
-        return true;
+        if (!await _repository.MarkOrderProcessedAsync(order.PosOrderId, order.PosSaleId, cancellationToken))
+        {
+            return false;
+        }
+
+        if (await VerifyOutletSalesWithRetryAsync(order.SourceEventId, cancellationToken))
+        {
+            return true;
+        }
+
+        var rolledBack = await _repository.RequeueBillsAsPendingAsync(
+            new[] { order.PosOrderId },
+            cancellationToken);
+        _logger.LogError(
+            "Rolled back Processed flag after post-mark cloud verify failed bill={BillId} source={SourceEventId} rows={Rows}",
+            order.PosOrderId,
+            order.SourceEventId,
+            rolledBack);
+        return false;
+    }
+
+    private async Task<bool> VerifyOutletSalesWithRetryAsync(
+        string sourceEventId,
+        CancellationToken cancellationToken)
+    {
+        var options = _syncOptions.CurrentValue;
+        var attempts = Math.Max(1, options.PostMarkVerifyRetries);
+        var delayMs = Math.Max(0, options.PostMarkVerifyRetryDelayMs);
+
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            if (await _cloudClient.HasOutletSalesAsync(sourceEventId, cancellationToken))
+            {
+                return true;
+            }
+
+            if (attempt < attempts && delayMs > 0)
+            {
+                await Task.Delay(delayMs, cancellationToken);
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
-    /// Finds MintPOS Processed bills missing from Supabase and re-queues them as Pending.
+    /// Finds MintPOS Processed bills missing from the cloud and re-queues them as Pending.
+    /// Scans the full Processed queue in batches (oldest-first cursor) every sync cycle.
     /// </summary>
-    private async Task<int> ReclaimProcessedMissingFromSupabaseAsync(
+    private async Task<int> ReclaimProcessedMissingFromCloudAsync(
         DateTime? syncOpeningUtc,
         CancellationToken cancellationToken)
     {
         var options = _syncOptions.CurrentValue;
-        var lookbackDays = Math.Max(1, options.ReclaimProcessedLookbackDays);
         var batchSize = Math.Max(1, options.ReclaimProcessedBatchSize);
+        var maxPasses = Math.Max(1, options.ReclaimProcessedMaxPassesPerCycle);
+        var minDate = ResolveReclaimMinDate(syncOpeningUtc, options.ReclaimProcessedLookbackDays);
+        var totalReclaimed = 0;
 
-        var minDate = DateTime.UtcNow.Date.AddDays(-lookbackDays);
-        if (syncOpeningUtc.HasValue && syncOpeningUtc.Value.Date < minDate)
+        for (var pass = 0; pass < maxPasses; pass++)
         {
-            minDate = syncOpeningUtc.Value.Date;
+            var candidates = await _repository.ReadProcessedBillsForReclaimAsync(
+                minDate,
+                batchSize,
+                _reclaimAfterBillId,
+                cancellationToken);
+            if (candidates.Count == 0)
+            {
+                _reclaimAfterBillId = null;
+                break;
+            }
+
+            var sourceByBill = candidates.ToDictionary(
+                row => $"{_outlet.Id}-{row.BillId}",
+                row => row.BillId,
+                StringComparer.OrdinalIgnoreCase);
+
+            var present = await _cloudClient.GetSourceEventIdsWithOutletSalesAsync(
+                sourceByBill.Keys.ToArray(),
+                cancellationToken);
+
+            var missingBillIds = sourceByBill
+                .Where(pair => !present.Contains(pair.Key))
+                .Select(pair => pair.Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (missingBillIds.Length > 0)
+            {
+                var affected = await _repository.RequeueBillsAsPendingAsync(missingBillIds, cancellationToken);
+                totalReclaimed += missingBillIds.Length;
+                _logger.LogWarning(
+                    "Reclaimed {MissingCount} Processed bills missing from cloud (MintPOS rows touched={AffectedRows}). Sample bill_ids={Sample}",
+                    missingBillIds.Length,
+                    affected,
+                    string.Join(",", missingBillIds.Take(10)));
+            }
+
+            _reclaimAfterBillId = candidates[^1].BillId;
+            if (candidates.Count < batchSize)
+            {
+                _reclaimAfterBillId = null;
+                break;
+            }
         }
 
-        var candidates = await _repository.ReadRecentProcessedBillsAsync(minDate, batchSize, cancellationToken);
-        if (candidates.Count == 0)
+        return totalReclaimed;
+    }
+
+    private static DateTime? ResolveReclaimMinDate(DateTime? syncOpeningUtc, int lookbackDays)
+    {
+        if (lookbackDays > 0)
         {
-            return 0;
+            var minDate = DateTime.UtcNow.Date.AddDays(-lookbackDays);
+            if (syncOpeningUtc.HasValue && syncOpeningUtc.Value.Date > minDate)
+            {
+                return syncOpeningUtc.Value.Date;
+            }
+
+            return minDate;
         }
 
-        var sourceByBill = candidates.ToDictionary(
-            row => $"{_outlet.Id}-{row.BillId}",
-            row => row.BillId,
-            StringComparer.OrdinalIgnoreCase);
-
-        var present = await _supabaseClient.GetSourceEventIdsWithOutletSalesAsync(
-            sourceByBill.Keys.ToArray(),
-            cancellationToken);
-
-        var missingBillIds = sourceByBill
-            .Where(pair => !present.Contains(pair.Key))
-            .Select(pair => pair.Value)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (missingBillIds.Length == 0)
-        {
-            return 0;
-        }
-
-        var affected = await _repository.RequeueBillsAsPendingAsync(missingBillIds, cancellationToken);
-        _logger.LogWarning(
-            "Reclaimed {MissingCount} Processed bills missing from Supabase (MintPOS rows touched={AffectedRows}). Sample bill_ids={Sample}",
-            missingBillIds.Length,
-            affected,
-            string.Join(",", missingBillIds.Take(10)));
-        return missingBillIds.Length;
+        return syncOpeningUtc?.Date;
     }
 
     private async Task<int> BackfillMissingShiftsAsync(CancellationToken cancellationToken)
     {
         var batchSize = Math.Max(1, _syncOptions.CurrentValue.BatchSize);
-        var missing = await _supabaseClient.FetchOrdersMissingShiftAsync(batchSize, cancellationToken);
+        var missing = await _cloudClient.FetchOrdersMissingShiftAsync(batchSize, cancellationToken);
         if (missing.Count == 0)
         {
             return 0;
@@ -553,11 +721,11 @@ public sealed class SyncRunner
                 continue;
             }
 
-            var patchResult = await _supabaseClient.PatchOrderPayloadAsync(order, cancellationToken);
+            var patchResult = await _cloudClient.PatchOrderPayloadAsync(order, cancellationToken);
             if (patchResult.IsSuccess)
             {
                 patched++;
-                await _supabaseClient.ClearSyncFailureAsync(order, cancellationToken);
+                await _cloudClient.ClearSyncFailureAsync(order, cancellationToken);
             }
         }
 
@@ -571,7 +739,7 @@ public sealed class SyncRunner
 
     private async Task ApplyCatalogSyncAsync(CancellationToken cancellationToken)
     {
-        var events = await _supabaseClient.FetchPendingCatalogSyncAsync(cancellationToken);
+        var events = await _cloudClient.FetchPendingCatalogSyncAsync(cancellationToken);
         if (events.Count == 0)
         {
             return;
@@ -613,8 +781,119 @@ public sealed class SyncRunner
 
         if (delivered.Count > 0)
         {
-            await _supabaseClient.MarkCatalogSyncDeliveredAsync(delivered, cancellationToken);
+            await _cloudClient.MarkCatalogSyncDeliveredAsync(delivered, cancellationToken);
         }
+    }
+
+    private async Task ApplyCashierSyncAsync(CancellationToken cancellationToken)
+    {
+        var events = await _cloudClient.FetchPendingCashierSyncAsync(cancellationToken);
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        var delivered = new List<Guid>();
+        foreach (var evt in events)
+        {
+            try
+            {
+                var action = evt.Action?.Trim().ToLowerInvariant() ?? string.Empty;
+                switch (action)
+                {
+                    case "insert":
+                        await ApplyCashierInsertAsync(evt, cancellationToken);
+                        break;
+                    case "delete":
+                        await ApplyCashierDeleteAsync(evt, cancellationToken);
+                        break;
+                    case "pull":
+                        await ApplyCashierPullAsync(evt, cancellationToken);
+                        break;
+                    default:
+                        _logger.LogWarning("Unknown cashier sync action: {Action}", evt.Action);
+                        break;
+                }
+
+                delivered.Add(evt.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to apply cashier sync event {EventId}", evt.Id);
+                await _cloudClient.MarkCashierSyncFailedAsync(evt.Id, ex.Message, cancellationToken);
+            }
+        }
+
+        if (delivered.Count > 0)
+        {
+            await _cloudClient.MarkCashierSyncDeliveredAsync(delivered, cancellationToken);
+        }
+    }
+
+    private async Task ApplyCashierInsertAsync(CashierSyncEvent evt, CancellationToken cancellationToken)
+    {
+        if (evt.CashierId is null || evt.CashierId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Cashier insert event is missing cashier_id.");
+        }
+
+        var name = evt.Payload.Name?.Trim();
+        var username = evt.Payload.Username?.Trim();
+        var password = evt.Payload.Password;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("Cashier insert event is missing name.");
+        }
+
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            throw new InvalidOperationException("Cashier insert event is missing username.");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("Cashier insert event is missing password.");
+        }
+
+        var posUserId = await _cashierRepository.InsertCashierAsync(name, username, password, cancellationToken);
+        var result = await _cloudClient.CompleteCashierInsertSyncAsync(evt.CashierId.Value, posUserId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException(result.ErrorMessage ?? "Failed to mark cashier insert as synced.");
+        }
+    }
+
+    private async Task ApplyCashierDeleteAsync(CashierSyncEvent evt, CancellationToken cancellationToken)
+    {
+        if (evt.CashierId is null || evt.CashierId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Cashier delete event is missing cashier_id.");
+        }
+
+        var posUserId = evt.Payload.PosUserId;
+        if (!posUserId.HasValue || posUserId.Value <= 0)
+        {
+            throw new InvalidOperationException("Cashier delete event is missing pos_user_id.");
+        }
+
+        await _cashierRepository.DeleteCashierAsync(posUserId.Value, cancellationToken);
+        var result = await _cloudClient.CompleteCashierDeleteSyncAsync(evt.CashierId.Value, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException(result.ErrorMessage ?? "Failed to mark cashier delete as synced.");
+        }
+    }
+
+    private async Task ApplyCashierPullAsync(CashierSyncEvent evt, CancellationToken cancellationToken)
+    {
+        var rows = await _cashierRepository.ListCashiersAsync(cancellationToken);
+        var result = await _cloudClient.UpsertOutletCashiersFromPosAsync(rows, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException(result.ErrorMessage ?? "Failed to upsert cashiers pulled from MintPOS.");
+        }
+
+        _logger.LogInformation("Pulled {Count} cashier(s) from MintPOS into portal.", rows.Count);
     }
 
     private void LogSaleUploadAttempt(PosOrder order)
@@ -693,14 +972,14 @@ public sealed class SyncRunner
 
                 if (rows.Count > 0)
                 {
-                    var result = await _supabaseClient.SyncPosCatalogSkuMapAsync(rows, syncProducts, syncVariants, cancellationToken);
+                    var result = await _cloudClient.SyncPosCatalogSkuMapAsync(rows, syncProducts, syncVariants, cancellationToken);
                     if (!result.IsSuccess)
                     {
                         _logger.LogError("POS catalog SKU sync failed: {Error}", result.ErrorMessage ?? "Unknown error");
                         return;
                     }
 
-                    var bindingResult = await _supabaseClient.SyncOutletPosCatalogBindingsAsync(rows, cancellationToken);
+                    var bindingResult = await _cloudClient.SyncOutletPosCatalogBindingsAsync(rows, cancellationToken);
                     if (!bindingResult.IsSuccess)
                     {
                         _logger.LogWarning(
@@ -728,7 +1007,7 @@ public sealed class SyncRunner
 
                 if (groupRows.Count > 0)
                 {
-                    var groupResult = await _supabaseClient.SyncPosMenuGroupsAsync(groupRows, cancellationToken);
+                    var groupResult = await _cloudClient.SyncPosMenuGroupsAsync(groupRows, cancellationToken);
                     if (!groupResult.IsSuccess)
                     {
                         _logger.LogError("POS menu group sync failed: {Error}", groupResult.ErrorMessage ?? "Unknown error");

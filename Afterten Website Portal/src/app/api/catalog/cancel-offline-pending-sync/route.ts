@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-
-const OFFLINE_MS = 10 * 60 * 1000;
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  cancelFirestorePendingCatalogSyncForOfflineOutlets,
+} from "@/lib/firestore-catalog-sync";
+import { OFFLINE_MS } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
 
 type HeartbeatRow = {
   outlet_id: string;
@@ -25,6 +28,11 @@ function isOutletOnline(lastSeenAt: string | null | undefined, cutoffIso: string
 
 export async function POST() {
   try {
+    if (useFirebaseBackend()) {
+      const result = await cancelFirestorePendingCatalogSyncForOfflineOutlets(OFFLINE_MS);
+      return NextResponse.json({ ok: true, ...result, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
     const cutoffIso = new Date(Date.now() - OFFLINE_MS).toISOString();
 

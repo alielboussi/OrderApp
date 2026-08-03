@@ -1,4 +1,9 @@
+import "server-only";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { recordFirestoreCatalogChangeEvent } from "@/lib/firestore-catalog-change-events";
+import { getServiceClient } from "@/lib/supabase-server";
 
 export const CATALOG_CHANGE_TYPES = [
   "product_added",
@@ -77,7 +82,7 @@ export function diffTrackedFields(
   return result;
 }
 
-function classifyItemChange(
+export function classifyItemChange(
   operation: "insert" | "update" | "delete",
   changes: CatalogFieldChange[]
 ): CatalogChangeType {
@@ -92,7 +97,7 @@ function classifyItemChange(
   return "product_updated";
 }
 
-function classifyVariantChange(
+export function classifyVariantChange(
   operation: "insert" | "update" | "delete",
   changes: CatalogFieldChange[]
 ): CatalogChangeType {
@@ -107,7 +112,7 @@ function classifyVariantChange(
   return "variant_updated";
 }
 
-function classifyMenuGroupChange(
+export function classifyMenuGroupChange(
   operation: "insert" | "update" | "delete",
   changes: CatalogFieldChange[]
 ): CatalogChangeType {
@@ -122,6 +127,29 @@ export function parseCatalogChangeActor(request: Request): CatalogChangeActor {
   const userId = request.headers.get("x-warehouse-user-id")?.trim() || null;
   const userEmail = request.headers.get("x-warehouse-user-email")?.trim() || null;
   return { user_id: userId, user_email: userEmail };
+}
+
+export async function recordCatalogChange(
+  input: {
+    operation: "insert" | "update" | "delete";
+    entityType: CatalogEntityType;
+    entityId: string;
+    entityName?: string | null;
+    sku?: string | null;
+    menuGroupId?: string | null;
+    itemId?: string | null;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    trackedFields: string[];
+    actor?: CatalogChangeActor;
+    snapshot?: Record<string, unknown> | null;
+  },
+) {
+  if (useFirebaseBackend()) {
+    await recordFirestoreCatalogChangeEvent(input);
+    return;
+  }
+  await recordCatalogChangeEvent(getServiceClient(), input);
 }
 
 export async function recordCatalogChangeEvent(
@@ -149,6 +177,11 @@ export async function recordCatalogChangeEvent(
         : diffTrackedFields(input.before, input.after, input.trackedFields);
 
   if (input.operation === "update" && changes.length === 0) {
+    return;
+  }
+
+  if (useFirebaseBackend()) {
+    await recordFirestoreCatalogChangeEvent(input);
     return;
   }
 

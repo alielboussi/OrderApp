@@ -1,0 +1,44 @@
+import { initializeApp } from "firebase-admin/app";
+import { onCall } from "firebase-functions/v2/https";
+import { COLLECTIONS } from "./schema";
+import {
+  acceptTransferOrder,
+  completeTransferOrder,
+  dispatchTransferOrder,
+  getTransferOrderSignatureUrl,
+  peekNextOrderNumber,
+  placeTransferOrder,
+  updateTransferOrderItems,
+} from "./transfer-orders";
+
+initializeApp({
+  storageBucket: "afterten-portal-system.firebasestorage.app",
+});
+
+/**
+ * Step 1 gate: proves Functions deploy + SCPGT can call Firebase later.
+ * Callable from portal or firebase CLI after deploy.
+ */
+export const health = onCall({ region: "africa-south1" }, async () => {
+  return {
+    ok: true,
+    service: "afterten-firebase",
+    step: 2,
+    region: "africa-south1",
+    collections: COLLECTIONS,
+    message: "Firebase foundation + schema ready",
+    at: new Date().toISOString(),
+  };
+});
+
+export {
+  placeTransferOrder,
+  completeTransferOrder,
+  acceptTransferOrder,
+  dispatchTransferOrder,
+  getTransferOrderSignatureUrl,
+  peekNextOrderNumber,
+  updateTransferOrderItems,
+};
+export { getStockControlSnapshot } from "./stock-control";
+export { syncStockCatalog, syncStockCatalogScheduled } from "./stock-catalog-sync";

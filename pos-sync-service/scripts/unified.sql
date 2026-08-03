@@ -2,7 +2,7 @@
 -- Run once in SQL Server Management Studio against the outlet MintPOS database.
 --
 -- Grants the middleware SQL login permission to:
---   • read pending sales and mark them Processed (BillType, Sale, Saledetails, InventoryConsumed)
+--   • read pending sales and mark them Processed (BillType, Sale, Saledetails)
 --   • read shift metadata (Shifts, ShiftStart, Users)
 --   • push/pull catalog (MenuGroup, MenuItem, ModifierFlavour)
 --
@@ -50,9 +50,6 @@ BEGIN
     RAISERROR('Neither dbo.Saledetails nor dbo.SaleDetails exists.', 16, 1);
 END
 
-SET @sql = N'GRANT SELECT, UPDATE ON dbo.InventoryConsumed TO ' + QUOTENAME(@Principal) + N';';
-EXEC sp_executesql @sql;
-
 -- Shift metadata (read only)
 SET @sql = N'GRANT SELECT ON dbo.Shifts TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
@@ -61,6 +58,12 @@ SET @sql = N'GRANT SELECT ON dbo.ShiftStart TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
 
 SET @sql = N'GRANT SELECT ON dbo.Users TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+
+SET @sql = N'GRANT INSERT, DELETE ON dbo.Users TO ' + QUOTENAME(@Principal) + N';';
+EXEC sp_executesql @sql;
+
+SET @sql = N'GRANT DELETE ON dbo.Rights TO ' + QUOTENAME(@Principal) + N';';
 EXEC sp_executesql @sql;
 
 -- Catalog push/pull (menu groups, products, variants)
@@ -85,8 +88,8 @@ JOIN sys.database_principals dp ON p.grantee_principal_id = dp.principal_id
 JOIN sys.objects o ON p.major_id = o.object_id
 WHERE dp.name = N'mint'
   AND o.name IN (
-      'BillType', 'Sale', 'Saledetails', 'SaleDetails', 'InventoryConsumed',
-      'Shifts', 'ShiftStart', 'Users',
+      'BillType', 'Sale', 'Saledetails', 'SaleDetails',
+      'Shifts', 'ShiftStart', 'Users', 'Rights',
       'MenuGroup', 'MenuItem', 'ModifierFlavour'
   )
 ORDER BY o.name, p.permission_name;

@@ -29,6 +29,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
       { label: "Add Groups", href: "/Warehouse_Backoffice/catalog/menu-groups" },
       { label: "Add Product", href: "/Warehouse_Backoffice/catalog/product" },
       { label: "Add Variants", href: "/Warehouse_Backoffice/catalog/variants" },
+      { label: "UOM's", href: "/Warehouse_Backoffice/catalog/uoms" },
       { label: "Bulk Updates", href: "/Warehouse_Backoffice/variant-bulk-update" },
     ],
     tone: "catalog",
@@ -36,7 +37,19 @@ export const BACKOFFICE_NAV: NavGroup[] = [
   {
     label: "Outlets",
     items: [
+      { label: "Create Outlet", href: "/Warehouse_Backoffice/outlets/create" },
       { label: "Outlet Catalog Access", href: "/Warehouse_Backoffice/outlets/catalog-access" },
+      { label: "Orders Supervisors", href: "/Warehouse_Backoffice/outlets/supervisors" },
+      { label: "Outlets", href: "/Warehouse_Backoffice/outlets" },
+    ],
+    tone: "outlets",
+  },
+  {
+    label: "Cashiers",
+    items: [
+      { label: "All Cashiers", href: "/Warehouse_Backoffice/cashiers" },
+      { label: "Add Cashier", href: "/Warehouse_Backoffice/cashiers/add" },
+      { label: "Delete Cashier", href: "/Warehouse_Backoffice/cashiers/delete" },
     ],
     tone: "outlets",
   },
@@ -83,6 +96,13 @@ export function pageTitleForPath(pathname: string, hash?: string): string {
     }
   }
   if (pathname === "/Warehouse_Backoffice/catalog/menu") return "View Products & Variants";
+  if (pathname === "/Warehouse_Backoffice/cashiers") return "All Cashiers";
+  if (pathname === "/Warehouse_Backoffice/cashiers/add") return "Add Cashier";
+  if (pathname === "/Warehouse_Backoffice/cashiers/delete") return "Delete Cashier";
+  if (pathname === "/Warehouse_Backoffice/outlets/create") return "Create Outlet";
+  if (pathname === "/Warehouse_Backoffice/outlets/catalog-access") return "Outlet Catalog Access";
+  if (pathname === "/Warehouse_Backoffice/outlets/supervisors") return "Orders Supervisors";
+  if (pathname === "/Warehouse_Backoffice/outlets") return "Outlets";
   if (pathname === "/Warehouse_Backoffice/logs") return "User Activity";
   if (pathname === "/Warehouse_Backoffice/account/approvals") return "Approvals";
   return "Warehouse Backoffice";

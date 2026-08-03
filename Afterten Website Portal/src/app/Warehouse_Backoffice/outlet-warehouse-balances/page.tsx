@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { fetchOutletWarehouseLinks, fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
 import styles from "./outlet-warehouse-balances.module.css";
 
 type OutletOption = {
@@ -29,9 +29,6 @@ type OrderTotals = {
   amount: number;
 };
 
-type WhoAmIRoles = {
-  outlets: Array<{ outlet_id: string; outlet_name: string }> | null;
-};
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -164,7 +161,6 @@ function normalizeVariantKey(value?: string | null): string {
 
 export default function OutletWarehouseBalancesPage() {
   const router = useRouter();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
@@ -224,25 +220,9 @@ export default function OutletWarehouseBalancesPage() {
         setBooting(true);
         setError(null);
 
-        const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-        if (whoamiError) throw whoamiError;
-
-        const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-        const outletList = record?.outlets ?? [];
-        const mapped = outletList
-          .filter((outlet) => outlet?.outlet_id)
-          .map((outlet) => ({ id: outlet.outlet_id, name: outlet.outlet_name }));
+        const mapped = await fetchSellingOutlets("selling");
 
         if (!active) return;
-
-        if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
-          }
-        }
 
         setOutlets(mapped);
       } catch (err) {
@@ -258,7 +238,7 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletIds.length]);
+  }, [status, selectedOutletIds.length]);
 
   const toggleOutlet = (id: string) => {
     setSelectedOutletIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -284,17 +264,8 @@ export default function OutletWarehouseBalancesPage() {
     const loadWarehouses = async () => {
       try {
         setError(null);
-        const { data: outletWarehouseRows, error: outletWarehouseError } = await supabase
-          .from("outlet_warehouses")
-          .select("outlet_id,warehouse_id")
-          .in("outlet_id", selectedOutletIds);
-
-        if (outletWarehouseError) throw outletWarehouseError;
-        const safeRows = (outletWarehouseRows ?? []).filter((row) => row?.outlet_id && row?.warehouse_id) as Array<{
-          outlet_id: string;
-          warehouse_id: string;
-        }>;
-        const warehouseIds = Array.from(new Set(safeRows.map((row) => row.warehouse_id)));
+        const links = await fetchOutletWarehouseLinks({ outletIds: selectedOutletIds, scope: "outlet" });
+        const warehouseIds = Array.from(new Set(links.map((link) => link.warehouse_id)));
 
         setLinkedWarehouseIds(warehouseIds);
         if (!active) return;
@@ -315,7 +286,7 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, selectedOutletIds, supabase]);
+  }, [status, selectedOutletIds]);
 
   useEffect(() => {
     if (status !== "ok") return;
@@ -328,48 +299,18 @@ export default function OutletWarehouseBalancesPage() {
     const loadOrderTotals = async () => {
       try {
         setOrdersLoading(true);
-        const start = new Date(orderDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(start);
-        end.setDate(start.getDate() + 1);
+        const params = new URLSearchParams();
+        params.set("date", orderDate);
+        selectedOutletIds.forEach((id) => params.append("outlet_id", id));
 
-        const { data: ordersData, error: ordersError } = await supabase
-          .from("orders")
-          .select("id")
-          .in("outlet_id", selectedOutletIds)
-          .gte("created_at", start.toISOString())
-          .lt("created_at", end.toISOString());
-
-        if (ordersError) throw ordersError;
-        const orderIds = (ordersData || []).map((row) => row.id).filter(Boolean) as string[];
+        const res = await fetch(`/api/outlet-warehouse-balances/order-totals?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as OrderTotals & { error?: string };
+        if (!res.ok) throw new Error(json.error || "Unable to load order totals");
 
         if (!active) return;
-        if (orderIds.length === 0) {
-          setOrderTotals({ count: 0, qty: 0, amount: 0 });
-          return;
-        }
-
-        const { data: itemsData, error: itemsError } = await supabase
-          .from("order_items")
-          .select("order_id,qty,cost,amount")
-          .in("order_id", orderIds);
-
-        if (itemsError) throw itemsError;
-
-        const totals = (itemsData || []).reduce(
-          (acc, row) => {
-            const qty = typeof row.qty === "number" ? row.qty : 0;
-            const cost = typeof row.cost === "number" ? row.cost : 0;
-            const amount = typeof row.amount === "number" ? row.amount : cost * qty;
-            acc.qty += qty;
-            acc.amount += amount;
-            return acc;
-          },
-          { count: orderIds.length, qty: 0, amount: 0 }
-        );
-
-        if (!active) return;
-        setOrderTotals(totals);
+        setOrderTotals({ count: json.count, qty: json.qty, amount: json.amount });
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -383,7 +324,7 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [status, selectedOutletIds, orderDate, supabase]);
+  }, [status, selectedOutletIds, orderDate]);
 
   useEffect(() => {
     if (status !== "ok" || !selectedWarehouseId) {
@@ -421,102 +362,22 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
-        const searchValue = search.trim() || null;
+        const searchValue = search.trim();
 
-        const { data: warehouseRows, error: warehouseError } = await supabase
-          .from("warehouses")
-          .select("id,name,parent_warehouse_id")
-          .in("id", warehouseIds);
-
-        if (warehouseError) throw warehouseError;
-
-        const warehouseNameMap = new Map<string, string>();
-        (warehouseRows || []).forEach((row) => {
-          if (!row?.id) return;
-          const label = row.name?.trim() || row.id;
-          warehouseNameMap.set(row.id, label);
+        const res = await fetch("/api/outlet-warehouse-balances/stock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            warehouse_ids: warehouseIds,
+            kinds,
+            search: searchValue,
+            base_only: baseOnly,
+          }),
         });
+        const json = (await res.json()) as { items?: StockItem[]; error?: string };
+        if (!res.ok) throw new Error(json.error || "Unable to load warehouse balances");
 
-        let stockQuery = supabase
-          .from("warehouse_live_items")
-          .select("warehouse_id,item_id,item_name,variant_key,net_units,item_kind")
-          .in("warehouse_id", warehouseIds);
-
-        if (searchValue) {
-          stockQuery = stockQuery.ilike("item_name", `%${searchValue}%`);
-        }
-
-        const { data: stockRows, error: stockError } = await stockQuery;
-        if (stockError) throw stockError;
-
-        const rows = ((stockRows as Array<{
-          warehouse_id: string;
-          item_id: string;
-          item_name: string | null;
-          variant_key: string | null;
-          net_units: number | null;
-          item_kind: string | null;
-        }>) || []).map((row) => ({
-          warehouse_id: row.warehouse_id,
-          warehouse_name: warehouseNameMap.get(row.warehouse_id) || row.warehouse_id,
-          item_id: row.item_id,
-          item_name: row.item_name,
-          variant_key: row.variant_key,
-          net_units: row.net_units,
-          item_kind: row.item_kind
-        }));
-        const itemIds = Array.from(new Set(rows.map((row) => row.item_id).filter(Boolean)));
-
-        const { data: variantRows, error: variantError } = await supabase
-          .from("catalog_variants")
-          .select("id,item_id,active")
-          .in("item_id", itemIds);
-
-        if (variantError) throw variantError;
-
-        const itemsWithVariants = new Set<string>();
-        (variantRows ?? []).forEach((row) => {
-          if (row?.active === false) return;
-          if (row?.item_id) itemsWithVariants.add(row.item_id);
-        });
-
-        const map = new Map<string, StockItem>();
-        rows.forEach((row) => {
-          const kind = row.item_kind ?? "";
-          if (!kinds.includes(kind)) return;
-          const vKey = normalizeVariantKey(row.variant_key).toLowerCase();
-          if (baseOnly && vKey !== "base") return;
-          if (vKey === "base" && itemsWithVariants.has(row.item_id)) return;
-
-          const key = `${row.warehouse_id}::${row.item_id}::${vKey}`;
-          const existing = map.get(key);
-          const onHandUnits = typeof row.net_units === "number" ? row.net_units : 0;
-
-          if (existing) {
-            existing.net_units = (existing.net_units ?? 0) + onHandUnits;
-          } else {
-            map.set(key, {
-              warehouse_id: row.warehouse_id,
-              warehouse_name: row.warehouse_name,
-              item_id: row.item_id,
-              item_name: row.item_name,
-              variant_key: normalizeVariantKey(row.variant_key),
-              item_kind: kind,
-              net_units: onHandUnits,
-            });
-          }
-        });
-
-        const aggregated = Array.from(map.values());
-
-        aggregated.sort((a, b) => {
-          const warehouseCompare = (a.warehouse_name ?? a.warehouse_id).localeCompare(
-            b.warehouse_name ?? b.warehouse_id
-          );
-          if (warehouseCompare !== 0) return warehouseCompare;
-          return (a.item_name ?? "").localeCompare(b.item_name ?? "");
-        });
-        setItems(aggregated);
+        setItems(json.items ?? []);
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -540,7 +401,7 @@ export default function OutletWarehouseBalancesPage() {
     baseOnly,
     selectedOutletIds,
     refreshTick,
-    supabase,
+    search,
   ]);
 
   useEffect(() => {
@@ -555,55 +416,62 @@ export default function OutletWarehouseBalancesPage() {
           return;
         }
 
-        const [{ data: itemData, error: itemError }, { data: variantData, error: variantError }] = await Promise.all([
-          supabase
-            .from("catalog_items")
-            .select(
-              "id,consumption_unit,consumption_uom,purchase_pack_unit,purchase_unit_mass,purchase_unit_mass_uom"
-            )
-            .in("id", ids),
-          supabase
-            .from("catalog_variants")
-            .select("id,item_id,name,active,consumption_uom")
-            .in("item_id", ids),
-        ]);
+        const itemResponses = await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch(`/api/catalog/items?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+            if (!res.ok) return null;
+            const json = (await res.json()) as { item?: Record<string, unknown> };
+            return json.item ?? null;
+          }),
+        );
+        const variantResponses = await Promise.all(
+          ids.map(async (itemId) => {
+            const res = await fetch(`/api/catalog/variants?item_id=${encodeURIComponent(itemId)}`, {
+              cache: "no-store",
+            });
+            if (!res.ok) return [] as Array<Record<string, unknown>>;
+            const json = (await res.json()) as { variants?: Array<Record<string, unknown>> };
+            return json.variants ?? [];
+          }),
+        );
 
-        if (itemError) throw itemError;
-        if (variantError) throw variantError;
         if (!active) return;
 
         const map: Record<string, string> = {};
         const uomMap: Record<string, string> = {};
         const variantUomMap: Record<string, string> = {};
         const packMap: Record<string, { mass: number | null; uom: string | null }> = {};
-        (itemData || []).forEach((row) => {
-          const fallbackUom = row.consumption_unit ?? row.consumption_uom ?? row.purchase_pack_unit ?? "each";
-          if (row.id) {
-            uomMap[row.id] = fallbackUom;
-          }
-          if (row.id) {
-            packMap[row.id] = {
-              mass: typeof row.purchase_unit_mass === "number" ? row.purchase_unit_mass : null,
-              uom: row.purchase_unit_mass_uom ?? null,
-            };
-          }
+
+        itemResponses.forEach((row) => {
+          if (!row || typeof row.id !== "string") return;
+          const fallbackUom =
+            (typeof row.consumption_unit === "string" && row.consumption_unit) ||
+            (typeof row.consumption_uom === "string" && row.consumption_uom) ||
+            (typeof row.purchase_pack_unit === "string" && row.purchase_pack_unit) ||
+            "each";
+          uomMap[row.id] = fallbackUom;
+          packMap[row.id] = {
+            mass: typeof row.purchase_unit_mass === "number" ? row.purchase_unit_mass : null,
+            uom: typeof row.purchase_unit_mass_uom === "string" ? row.purchase_unit_mass_uom : null,
+          };
         });
 
-        const normalizeVariantKey = (value?: string | null) => {
+        const normalizeVariantKeyLocal = (value?: string | null) => {
           const trimmed = value?.trim();
           return trimmed && trimmed.length ? trimmed : "base";
         };
 
-        (variantData || []).forEach((variant) => {
+        variantResponses.flat().forEach((variant) => {
           if (variant?.active === false) return;
-          const name = variant?.name?.trim();
-          if (!name || !variant?.id) return;
-          map[variant.id] = name;
-          map[normalizeVariantKey(variant.id)] = name;
-          const uom = variant.consumption_uom?.trim();
+          const name = typeof variant?.name === "string" ? variant.name.trim() : "";
+          const id = typeof variant?.id === "string" ? variant.id : "";
+          if (!name || !id) return;
+          map[id] = name;
+          map[normalizeVariantKeyLocal(id)] = name;
+          const uom = typeof variant.consumption_uom === "string" ? variant.consumption_uom.trim() : "";
           if (uom) {
-            variantUomMap[variant.id] = uom;
-            variantUomMap[normalizeVariantKey(variant.id)] = uom;
+            variantUomMap[id] = uom;
+            variantUomMap[normalizeVariantKeyLocal(id)] = uom;
           }
         });
 
@@ -626,7 +494,7 @@ export default function OutletWarehouseBalancesPage() {
     return () => {
       active = false;
     };
-  }, [items, status, supabase]);
+  }, [items, status]);
 
   if (status !== "ok") return null;
 

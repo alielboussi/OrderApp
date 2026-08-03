@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
 import styles from "../reports/reports.module.css";
 import { buildFlowTracePdfHtml } from "./reportpdf";
 
@@ -69,10 +69,6 @@ type BatchSummary = {
   levels: string;
 };
 
-type WhoAmIRoles = {
-  outlets: Array<{ outlet_id: string; outlet_name: string }> | null;
-};
-
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -128,7 +124,6 @@ async function loadLogoDataUrl(): Promise<string | undefined> {
 export default function FlowTraceReportsPage() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
 
   const today = useMemo(() => new Date(), []);
   const lastWeek = useMemo(() => {
@@ -172,25 +167,9 @@ export default function FlowTraceReportsPage() {
         setBooting(true);
         setError(null);
 
-        const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-        if (whoamiError) throw whoamiError;
-
-        const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-        const outletList = record?.outlets ?? [];
-        const mapped = outletList
-          .filter((outlet) => outlet?.outlet_id)
-          .map((outlet) => ({ id: outlet.outlet_id, name: outlet.outlet_name }));
+        const mapped = await fetchSellingOutlets("selling");
 
         if (!active) return;
-
-        if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
-          }
-        }
 
         setOutlets(mapped);
         if (mapped.length > 0 && selectedOutletIds.length === 0) {
@@ -209,7 +188,7 @@ export default function FlowTraceReportsPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletIds.length]);
+  }, [status, selectedOutletIds.length]);
 
   const toggleOutlet = (id: string) => {
     setSelectedOutletIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -355,146 +334,31 @@ export default function FlowTraceReportsPage() {
         return;
       }
 
-      let query = supabase
-        .from("flow_traces")
-        .select("id,created_at,flow_batch_id,outlet_id,level,item_id,variant_key,warehouse_id,context")
-        .order("created_at", { ascending: false })
-        .limit(2000);
+      const params = new URLSearchParams();
+      selectedOutletIds.forEach((id) => params.append("outlet_id", id));
+      levels.forEach((level) => params.append("level", level));
+      if (startDate) params.set("start_date", startDate);
+      if (endDate) params.set("end_date", endDate);
+      if (startTime) params.set("start_time", startTime);
+      if (endTime) params.set("end_time", endTime);
 
-      if (selectedOutletIds.length > 0) {
-        query = query.in("outlet_id", selectedOutletIds);
-      }
+      const res = await fetch(`/api/flow-traces?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as {
+        rows?: AggregatedTrace[];
+        variant_names?: Record<string, string>;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error || "Unable to load flow traces");
 
-      if (levels.length > 0) {
-        query = query.in("level", levels);
-      }
-
-      if (startDate) {
-        const startIso = new Date(`${startDate}T${startTime || "00:00"}:00`).toISOString();
-        query = query.gte("created_at", startIso);
-      }
-
-      if (endDate) {
-        if (endTime) {
-          const endIso = new Date(`${endDate}T${endTime}:00`).toISOString();
-          query = query.lte("created_at", endIso);
-        } else {
-          const end = new Date(`${endDate}T00:00:00`);
-          end.setDate(end.getDate() + 1);
-          query = query.lt("created_at", end.toISOString());
-        }
-      }
-
-      const { data: traceData, error: traceError } = await query;
-      if (traceError) throw traceError;
-
-      const traces = (traceData ?? []) as FlowTraceRow[];
-      if (traces.length === 0) {
-        setRows([]);
-        setReportAt(new Date().toLocaleString());
-        return;
-      }
-
-      const traceIds = traces.map((trace) => trace.id);
-      const itemIds = Array.from(new Set(traces.map((trace) => trace.item_id)));
-      const outletIds = Array.from(new Set(traces.map((trace) => trace.outlet_id).filter(Boolean))) as string[];
-      const warehouseIds = Array.from(new Set(traces.map((trace) => trace.warehouse_id).filter(Boolean))) as string[];
-      const variantKeys = Array.from(
-        new Set(
-          traces
-            .map((trace) => (trace.variant_key ?? "base").trim())
-            .filter((key) => key && key.toLowerCase() !== "base")
-        )
-      );
-
-      const [stepsRes, itemRes, outletRes, warehouseRes, variantRes] = await Promise.all([
-        supabase
-          .from("flow_trace_steps")
-          .select("trace_id,occurred_at,delta_units,available_units,negative")
-          .in("trace_id", traceIds)
-          .order("occurred_at", { ascending: true }),
-        supabase.from("catalog_items").select("id,name,item_kind").in("id", itemIds),
-        outletIds.length > 0
-          ? supabase.from("outlets").select("id,name").in("id", outletIds)
-          : Promise.resolve({ data: [], error: null }),
-        warehouseIds.length > 0
-          ? supabase.from("warehouses").select("id,name").in("id", warehouseIds)
-          : Promise.resolve({ data: [], error: null }),
-        variantKeys.length > 0
-          ? supabase.from("catalog_variants").select("id,name").in("id", variantKeys)
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-
-      if (stepsRes.error) throw stepsRes.error;
-      if (itemRes.error) throw itemRes.error;
-      if (outletRes.error) throw outletRes.error;
-      if (warehouseRes.error) throw warehouseRes.error;
-      if (variantRes.error) throw variantRes.error;
-
-      const steps = (stepsRes.data ?? []) as FlowTraceStep[];
-      const items = (itemRes.data ?? []) as CatalogItem[];
-      const outletsList = (outletRes.data ?? []) as OutletRow[];
-      const warehousesList = (warehouseRes.data ?? []) as WarehouseRow[];
-
-      const itemMap = new Map(items.map((item) => [item.id, item]));
-      const outletMap = new Map(outletsList.map((outlet) => [outlet.id, outlet.name ?? outlet.id]));
-      const warehouseMap = new Map(warehousesList.map((warehouse) => [warehouse.id, warehouse.name ?? warehouse.id]));
-
-      const variantMap: Record<string, string> = {};
-      (variantRes.data ?? []).forEach((variant: { id?: string; name?: string | null }) => {
-        if (variant?.id) {
-          variantMap[variant.id] = (variant.name ?? "").trim() || variant.id;
-        }
-      });
-      setVariantNameMap(variantMap);
-
-      const stepsByTrace = new Map<string, FlowTraceStep[]>();
-      steps.forEach((step) => {
-        const list = stepsByTrace.get(step.trace_id) ?? [];
-        list.push(step);
-        stepsByTrace.set(step.trace_id, list);
-      });
-
-      const aggregated = traces.map((trace) => {
-        const traceSteps = stepsByTrace.get(trace.id) ?? [];
-        const totalDelta = traceSteps.reduce((sum, step) => sum + parseNumber(step.delta_units), 0);
-        const lastStep = traceSteps.length ? traceSteps[traceSteps.length - 1] : null;
-        const available = lastStep?.available_units ?? null;
-        const negative = traceSteps.some((step) => Boolean(step.negative));
-        const item = itemMap.get(trace.item_id);
-        const variantKey = (trace.variant_key ?? "base").trim();
-        const variantLabel = !variantKey || variantKey.toLowerCase() === "base"
-          ? "Base"
-          : variantMap[variantKey] ?? variantKey;
-
-        return {
-          id: trace.id,
-          created_at: new Date(trace.created_at).toLocaleString(),
-          created_at_epoch: new Date(trace.created_at).getTime(),
-          flow_batch_id: trace.flow_batch_id ?? null,
-          outlet_id: trace.outlet_id,
-          outlet_name: trace.outlet_id ? outletMap.get(trace.outlet_id) ?? trace.outlet_id : "Unknown",
-          level: trace.level,
-          item_id: trace.item_id,
-          item_name: item?.name ?? trace.item_id,
-          variant_key: variantKey || "base",
-          variant_label: variantLabel,
-          warehouse_id: trace.warehouse_id,
-          warehouse_name: trace.warehouse_id ? warehouseMap.get(trace.warehouse_id) ?? trace.warehouse_id : "Unknown",
-          total_delta: totalDelta,
-          available_units: available,
-          negative,
-        };
-      });
-
-      setRows(aggregated);
+      setRows(json.rows ?? []);
+      setVariantNameMap(json.variant_names ?? {});
       setReportAt(new Date().toLocaleString());
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [status, supabase, selectedOutletIds, startDate, startTime, endDate, endTime, includeFinished, includeIngredient, includeRaw]);
+  }, [status, selectedOutletIds, startDate, startTime, endDate, endTime, includeFinished, includeIngredient, includeRaw]);
 
   useEffect(() => {
     if (status !== "ok" || booting || selectedOutletIds.length === 0 || hasAutoRun) return;

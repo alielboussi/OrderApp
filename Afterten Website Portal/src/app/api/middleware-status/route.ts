@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { getFirestoreMiddlewareStatus } from "@/lib/firestore-middleware-status";
 import {
   type CatalogSyncEventRow,
   type HeartbeatRow,
@@ -11,6 +13,10 @@ import {
 
 export async function GET() {
   try {
+    if (useFirebaseBackend()) {
+      return NextResponse.json(await getFirestoreMiddlewareStatus());
+    }
+
     const supabase = getServiceClient();
 
     const [hbRes, outRes, catalogSyncRes, linkRes] = await Promise.all([
@@ -86,6 +92,18 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[middleware-status] GET failed", error);
-    return NextResponse.json({ error: "Unable to load middleware status" }, { status: 500 });
+    return NextResponse.json(
+      {
+        online_count: 0,
+        offline_count: 0,
+        outlets: [],
+        cloud_backend: useFirebaseBackend() ? "firebase" : "supabase",
+        error: "Unable to load middleware status",
+        debug: {
+          message: error instanceof Error ? error.message : "Unknown error",
+        },
+      },
+      { status: 200 },
+    );
   }
 }

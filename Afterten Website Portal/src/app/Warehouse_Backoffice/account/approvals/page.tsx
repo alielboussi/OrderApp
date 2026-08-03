@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { warehouseAuthedFetch, type PendingWarehouseAccount } from "@/lib/warehouse-api";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import eb from "../../enterprise.module.css";
@@ -23,7 +22,6 @@ function displayName(email: string | null | undefined): string {
 
 export default function WarehouseAccountApprovalsPage() {
   const router = useRouter();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status, canViewLogs } = useWarehouseAuth();
 
   const [loading, setLoading] = useState(false);
@@ -42,7 +40,7 @@ export default function WarehouseAccountApprovalsPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await warehouseAuthedFetch(supabase, "/api/warehouse-account-approvals", {
+      const response = await warehouseAuthedFetch(null, "/api/warehouse-account-approvals", {
         cache: "no-store",
       });
       const payload = await response.json().catch(() => ({}));
@@ -62,7 +60,7 @@ export default function WarehouseAccountApprovalsPage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     if (status !== "ok" || !canViewLogs) return;
@@ -74,7 +72,7 @@ export default function WarehouseAccountApprovalsPage() {
 
     if (action === "decline") {
       const confirmed = window.confirm(
-        `Decline ${selected.email ?? "this account"}? This permanently removes the user from Supabase Auth.`,
+        `Decline ${selected.email ?? "this account"}? This permanently removes the user from authentication.`,
       );
       if (!confirmed) return;
     }
@@ -83,7 +81,7 @@ export default function WarehouseAccountApprovalsPage() {
     setError(null);
     setSuccess(null);
     try {
-      const response = await warehouseAuthedFetch(supabase, "/api/warehouse-account-approvals", {
+      const response = await warehouseAuthedFetch(null, "/api/warehouse-account-approvals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, user_id: selected.user_id }),
@@ -96,7 +94,7 @@ export default function WarehouseAccountApprovalsPage() {
       setSuccess(
         action === "approve"
           ? `${selected.email ?? "Account"} approved. They can sign in now.`
-          : `${selected.email ?? "Account"} declined and removed from Supabase Auth.`,
+          : `${selected.email ?? "Account"} declined and removed from authentication.`,
       );
       await loadAccounts();
     } catch (err) {

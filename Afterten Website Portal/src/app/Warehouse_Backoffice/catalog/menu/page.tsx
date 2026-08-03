@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logMiddlewareDispatch, logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
-import { vatExcludedFromSellingPrice } from "@/lib/catalog-middleware";
+import { vatExcludedFromSellingPrice } from "@/lib/catalog-middleware-utils";
 import eb from "../../enterprise.module.css";
 import styles from "./menu.module.css";
 
@@ -168,7 +169,7 @@ function ProductCard({
           <div className={styles.cardTitleBlock}>
             <div className={styles.rowTop}>
               <p className={styles.itemKind}>{item.item_kind || "product"}</p>
-              <a
+              <Link
                 className={styles.iconButton}
                 href={`/Warehouse_Backoffice/catalog/product?id=${item.id}`}
                 aria-label="Edit product"
@@ -180,7 +181,7 @@ function ProductCard({
                     fill="currentColor"
                   />
                 </svg>
-              </a>
+              </Link>
             </div>
             {isFinished ? (
               <p
@@ -268,7 +269,7 @@ function VariantsPopup({
                 <SellingPriceLine sellingPrice={variant.selling_price} />
               </div>
               <div className={styles.rowActions}>
-                <a
+                <Link
                   className={styles.iconButton}
                   href={`/Warehouse_Backoffice/catalog/variants?id=${variant.id}&item_id=${variant.item_id}`}
                   aria-label={`Edit ${variant.name}`}
@@ -280,7 +281,7 @@ function VariantsPopup({
                       fill="currentColor"
                     />
                   </svg>
-                </a>
+                </Link>
                 <button
                   type="button"
                   className={`${styles.iconButton} ${styles.deleteButton}`}
@@ -298,9 +299,9 @@ function VariantsPopup({
           )}
         </ul>
         <div className={styles.dialogFooter}>
-          <a className={eb.btnAdd} href={`/Warehouse_Backoffice/catalog/variants?item_id=${item.id}`}>
+          <Link className={eb.btnAdd} href={`/Warehouse_Backoffice/catalog/variants?item_id=${item.id}`}>
             Add variant
-          </a>
+          </Link>
           <button type="button" className={eb.btnSecondary} onClick={onClose}>
             Close
           </button>

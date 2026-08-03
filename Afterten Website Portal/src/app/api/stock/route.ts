@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { useFirebaseBackend } from '@/lib/cloud-backend';
+import { listFirestoreWarehouses } from '@/lib/firestore-warehouses';
+import { listFirestoreWarehouseLiveItems } from '@/lib/firestore-warehouse-stock';
 import { getServiceClient } from '@/lib/supabase-server';
 import { aggregateStockRows, collectDescendantIds, filterRowsBySearch } from '@/lib/warehouse-helpers';
 import type { Warehouse, WarehouseStockRow } from '@/types/warehouse';
@@ -38,6 +41,39 @@ export async function POST(req: NextRequest) {
 
     if (!warehouseId) {
       return NextResponse.json({ error: 'warehouseId is required' }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      const warehouses = await listFirestoreWarehouses();
+      if (!warehouses.some((wh) => wh.id === warehouseId)) {
+        return NextResponse.json({ error: 'Warehouse not found or inactive' }, { status: 404 });
+      }
+      const targetIds = collectDescendantIds(warehouses, warehouseId);
+      const liveItems = await listFirestoreWarehouseLiveItems({
+        warehouseIds: targetIds,
+        kinds: ['finished', 'ingredient', 'raw', 'packaging', 'consumable', 'other'],
+        search: search || null,
+      });
+
+      const normalizedRows: WarehouseStockRow[] = liveItems.map((row) => ({
+        warehouse_id: row.warehouse_id,
+        warehouse_name: row.warehouse_name,
+        product_id: row.item_id,
+        product_name: row.item_name ?? 'Product',
+        variant_key: row.variant_key,
+        variant_name: row.variant_key,
+        qty: row.net_units,
+      }));
+
+      const filteredRows = filterRowsBySearch(normalizedRows, search);
+      const aggregates = aggregateStockRows(filteredRows);
+
+      return NextResponse.json({
+        rows: filteredRows,
+        aggregates,
+        warehouseCount: targetIds.length,
+        cloud_backend: 'firebase',
+      });
     }
 
     const supabase = getServiceClient();

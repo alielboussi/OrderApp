@@ -4,9 +4,19 @@ import {
   normalizeFutureScheduledAt,
   upsertGlobalCatalogSyncSchedule,
 } from "@/lib/catalogSyncSchedule";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  getFirestoreGlobalCatalogSyncSchedule,
+  upsertFirestoreGlobalCatalogSyncSchedule,
+} from "@/lib/firestore-catalog-sync-schedule";
 
 export async function GET() {
   try {
+    if (useFirebaseBackend()) {
+      const schedule = await getFirestoreGlobalCatalogSyncSchedule();
+      return NextResponse.json({ schedule, cloud_backend: "firebase" });
+    }
+
     const schedule = await getGlobalCatalogSyncSchedule();
     return NextResponse.json({ schedule });
   } catch (error) {
@@ -20,6 +30,11 @@ export async function PUT(request: Request) {
     const body = await request.json().catch(() => ({}));
     const raw = typeof body?.scheduled_at === "string" ? body.scheduled_at : null;
     const normalized = normalizeFutureScheduledAt(raw);
+
+    if (useFirebaseBackend()) {
+      const saved = await upsertFirestoreGlobalCatalogSyncSchedule(normalized);
+      return NextResponse.json({ schedule: saved, cloud_backend: "firebase" });
+    }
 
     const saved = await upsertGlobalCatalogSyncSchedule(normalized);
     return NextResponse.json({ schedule: saved });

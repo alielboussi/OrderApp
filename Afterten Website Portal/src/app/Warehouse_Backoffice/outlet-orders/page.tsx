@@ -1,9 +1,23 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
+import { getWarehouseAccessToken } from "@/lib/warehouse-auth-client";
+import { formatTransferOrderDateKey } from "@/lib/transfer-order-dates";
+import {
+  formatTransferOrderStatus,
+  getTransferOrderStatusTone,
+} from "@/lib/transfer-order-status";
+import { buildOutletOrderPdfFilename, buildOutletOrderPdfHtml, formatOutletOrderMoney } from "@/lib/outlet-order-pdf";
+import {
+  resolveBaseProductNameFromCatalog,
+  sumPortalOrderItems,
+  type PortalCatalogProduct,
+  type PortalOrderItem,
+} from "@/lib/portal-transfer-order-edit";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { OrderExpandPanel } from "./OrderExpandPanel";
 import eb from "../enterprise.module.css";
 import styles from "./outlet-orders.module.css";
 
@@ -21,21 +35,26 @@ type OrderRow = {
   outlets?: { name?: string | null } | Array<{ name?: string | null }> | null;
   employee_signed_name?: string | null;
   employee_signature_path?: string | null;
+  employee_signature_data?: string | null;
   employee_signed_at?: string | null;
   supervisor_signed_name?: string | null;
   supervisor_signature_path?: string | null;
   supervisor_signed_at?: string | null;
   driver_signed_name?: string | null;
   driver_signature_path?: string | null;
+  driver_signature_data?: string | null;
   driver_signed_at?: string | null;
   offloader_signed_name?: string | null;
   offloader_signature_path?: string | null;
+  offloader_signature_data?: string | null;
   offloader_signed_at?: string | null;
   created_by?: string | null;
 };
 
 type OrderItemRow = {
   order_id: string;
+  product_id?: string | null;
+  variant_key?: string | null;
   name: string | null;
   receiving_uom: string | null;
   qty: number | null;
@@ -46,10 +65,6 @@ type OrderItemRow = {
 type OrderTotals = {
   qty: number;
   amount: number;
-};
-
-type WhoAmIRoles = {
-  outlets: Array<{ outlet_id: string; outlet_name: string }> | null;
 };
 
 function toErrorMessage(error: unknown): string {
@@ -67,11 +82,6 @@ function formatStamp(raw?: string | null): string {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
   return date.toLocaleString();
-}
-
-function formatMoney(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatQty(value: number): string {
@@ -96,17 +106,23 @@ function getOutletName(order: OrderRow, nameById?: ReadonlyMap<string, string>):
   return order.outlet_id ?? "-";
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function PdfIcon() {
+  return (
+    <svg className={styles.pdfIconSvg} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#DC2626"
+        d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm-1 16H6V4h7v5h5v10Z"
+      />
+      <path
+        fill="#FFFFFF"
+        d="M8.5 11h1.5v5H8.5v-5Zm3.25 0H10v5h1.25l1.75-2.92V16H14v-5h-1.5l-1.75 2.92V11h-1.5Z"
+      />
+    </svg>
+  );
 }
 
 async function loadLogoDataUrl(): Promise<string | undefined> {
-  const candidates = ["/afterten-logo.png", "/afterten_logo.png"];
+  const candidates = ["/Logo.jpg", "/afterten-logo.png", "/afterten_logo.png"];
   for (const path of candidates) {
     try {
       const resp = await fetch(path);
@@ -135,206 +151,91 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-function buildOutletOrderPdfHtml(options: {
-  logoDataUrl?: string;
-  outletName: string;
-  orderNumber: string;
-  orderId: string;
-  status: string;
-  createdAt: string;
-  placedBy: string;
-  rows: Array<{ name: string; qty: number; uom: string; cost: number; amount: number }>;
-  signatures: Array<{ label: string; name: string; signedAt?: string; dataUrl?: string }>;
-  totalQty: number;
-  totalAmount: number;
-}): string {
-  const { logoDataUrl, outletName, orderNumber, orderId, status, createdAt, placedBy, rows, signatures, totalQty, totalAmount } = options;
+function inlineSignatureDataUrl(data?: string | null): string | undefined {
+  const trimmed = data?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.startsWith("data:") ? trimmed : `data:image/png;base64,${trimmed}`;
+}
 
-  const signatureBlocks = signatures
-    .filter((sig) => sig.name || sig.dataUrl)
-    .map(
-      (sig) => `
-      <div class="signature-block">
-        <div class="signature-meta">
-          <div class="signature-label">${escapeHtml(sig.label)}</div>
-          <div class="signature-name">${escapeHtml(sig.name || "-")}</div>
-          ${sig.signedAt ? `<div class="signature-date">${escapeHtml(sig.signedAt)}</div>` : ""}
-        </div>
-        <div class="signature-box">
-          ${sig.dataUrl ? `<img src="${sig.dataUrl}" alt="${escapeHtml(sig.label)}" />` : "<span>—</span>"}
-        </div>
-      </div>
-    `
-    )
-    .join("");
+async function resolveSignatureDataUrl(options: {
+  path?: string | null;
+  inlineData?: string | null;
+}): Promise<string | undefined> {
+  const inline = inlineSignatureDataUrl(options.inlineData);
+  if (inline) return inline;
+  if (!options.path?.trim()) return undefined;
 
-  const tableRows = rows
-    .map(
-      (row) => `
-      <tr>
-        <td>${escapeHtml(row.name)}</td>
-        <td>${formatQty(row.qty)}</td>
-        <td>${escapeHtml(row.uom)}</td>
-        <td>${formatMoney(row.cost)}</td>
-        <td>${formatMoney(row.amount)}</td>
-      </tr>
-    `
-    )
-    .join("");
+  const signRes = await fetch(`/api/outlet-orders/signature?path=${encodeURIComponent(options.path)}`, {
+    cache: "no-store",
+  });
+  if (!signRes.ok) return undefined;
 
-  return `
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Outlet Order</title>
-        <style>
-          @page { size: A4; margin: 6mm 6mm; }
-          * { box-sizing: border-box; }
-          body {
-            font-family: "Segoe UI", Arial, sans-serif;
-            color: #111827;
-            margin: 0;
-            padding: 0;
-            background: #fff;
-          }
-          .page {
-            border: 1.5mm solid #b91c1c;
-            padding: 6mm 6mm 8mm;
-            min-height: 277mm;
-          }
-          .header {
-            display: grid;
-            grid-template-columns: 64px 1fr 64px;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
-          }
-          .logo { width: 64px; height: 64px; object-fit: contain; }
-          .title { text-align: center; font-size: 16px; font-weight: 700; letter-spacing: 0.4px; }
-          .subheader {
-            display: grid;
-            gap: 4px;
-            text-align: center;
-            font-size: 11px;
-            color: #374151;
-            margin-bottom: 8px;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 6px;
-            border: 2px solid #b91c1c;
-          }
-          th, td {
-            border: 1px solid #f2b6b6;
-            padding: 6px 6px;
-            font-size: 10.5px;
-            text-align: center;
-          }
-          th {
-            text-transform: uppercase;
-            font-size: 9.5px;
-            letter-spacing: 0.6px;
-            color: #6b7280;
-          }
-          tbody tr:last-child td { border-bottom: none; }
-          tfoot td {
-            font-weight: 700;
-            border-top: 1px solid #f2b6b6;
-            border-left: none;
-            border-right: none;
-            border-bottom: none;
-            background: rgba(185, 28, 28, 0.05);
-          }
-          .signature-grid {
-            margin-top: 16px;
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-          }
-          .signature-block {
-            border: 1px solid #f2b6b6;
-            padding: 8px;
-            border-radius: 8px;
-          }
-          .signature-meta { margin-bottom: 8px; font-size: 10px; color: #374151; }
-          .signature-label { font-weight: 700; color: #111827; }
-          .signature-name { font-size: 11px; margin-top: 2px; }
-          .signature-date { font-size: 10px; margin-top: 2px; }
-          .signature-box {
-            border: 1px solid #b91c1c;
-            border-radius: 6px;
-            min-height: 70px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #fff;
-          }
-          .signature-box img { max-height: 64px; max-width: 100%; object-fit: contain; }
-        </style>
-      </head>
-      <body>
-        <div class="page">
-          <div class="header">
-            ${logoDataUrl ? `<img class="logo" src="${logoDataUrl}" alt="Afterten" />` : "<div></div>"}
-            <div class="title">Outlet Order Details</div>
-            <div></div>
-          </div>
-          <div class="subheader">
-            <div><strong>Outlet:</strong> ${escapeHtml(outletName)}</div>
-            <div><strong>Order #:</strong> ${escapeHtml(orderNumber)} · <strong>Status:</strong> ${escapeHtml(status)}</div>
-            <div><strong>Order ID:</strong> ${escapeHtml(orderId)}</div>
-            <div><strong>Created:</strong> ${escapeHtml(createdAt)} · <strong>Placed By:</strong> ${escapeHtml(placedBy)}</div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>UOM</th>
-                <th>Cost</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRows || `<tr><td colspan="5">No items found.</td></tr>`}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>Total</td>
-                <td>${formatQty(totalQty)}</td>
-                <td></td>
-                <td></td>
-                <td>${formatMoney(totalAmount)}</td>
-              </tr>
-            </tfoot>
-          </table>
-          ${signatureBlocks ? `<div class="signature-grid">${signatureBlocks}</div>` : ""}
-        </div>
-      </body>
-    </html>
-  `;
+  const signJson = (await signRes.json()) as { signed_url?: string | null };
+  if (!signJson.signed_url) return undefined;
+
+  const resp = await fetch(signJson.signed_url);
+  if (!resp.ok) return undefined;
+  const blob = await resp.blob();
+  return blobToDataUrl(blob);
 }
 
 function OutletOrdersPage() {
   const searchParams = useSearchParams();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [selectedOutletId, setSelectedOutletId] = useState<string>("all");
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const now = new Date();
-    return now.toISOString().slice(0, 10);
-  });
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatTransferOrderDateKey(new Date()));
   const [orderQuery, setOrderQuery] = useState<string>("");
   const [initialQueryApplied, setInitialQueryApplied] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [totals, setTotals] = useState<Record<string, OrderTotals>>({});
   const [loading, setLoading] = useState(false);
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+  const handleOrderSaved = useCallback((orderId: string, items: PortalOrderItem[]) => {
+    const totalsForOrder = sumPortalOrderItems(items);
+    setTotals((current) => ({ ...current, [orderId]: totalsForOrder }));
+    setError(null);
+  }, []);
+
+  const loadOrders = useCallback(async (options?: { silent?: boolean }) => {
+    if (status !== "ok" || !selectedDate) return;
+
+    try {
+      if (!options?.silent) {
+        setLoading(true);
+      }
+      setError(null);
+
+      const params = new URLSearchParams();
+      params.set("date", selectedDate);
+      if (selectedOutletId !== "all") {
+        params.set("outlet_id", selectedOutletId);
+      }
+
+      const res = await fetch(`/api/outlet-orders?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as {
+        orders?: OrderRow[];
+        totals?: Record<string, OrderTotals>;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error || "Unable to load orders");
+
+      setOrders(json.orders ?? []);
+      setTotals(json.totals ?? {});
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      if (!options?.silent) {
+        setLoading(false);
+      }
+    }
+  }, [selectedDate, selectedOutletId, status]);
 
   const outletNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -366,39 +267,7 @@ function OutletOrdersPage() {
     const loadOutlets = async () => {
       try {
         setError(null);
-        const mapped: OutletOption[] = [];
-
-        try {
-          const res = await fetch("/api/outlets", { cache: "no-store" });
-          if (res.ok) {
-            const json = await res.json();
-            const list = Array.isArray(json?.outlets) ? json.outlets : [];
-            list.forEach((outlet: { id?: string; name?: string | null }) => {
-              if (outlet?.id) mapped.push({ id: outlet.id, name: (outlet.name ?? "Outlet").trim() });
-            });
-          }
-        } catch {
-          // fall through to whoami
-        }
-
-        if (mapped.length === 0) {
-          const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-          if (whoamiError) throw whoamiError;
-          const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-          const outletList = record?.outlets ?? [];
-          outletList
-            .filter((outlet) => outlet?.outlet_id)
-            .forEach((outlet) => mapped.push({ id: outlet.outlet_id, name: outlet.outlet_name }));
-
-          if (mapped.length === 0) {
-            const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-            if (fallbackError) throw fallbackError;
-            const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-            if (fallbackOutlet?.outlet_id) {
-              mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
-            }
-          }
-        }
+        const mapped = await fetchSellingOutlets("selling");
 
         if (!active) return;
         setOutlets(mapped);
@@ -414,76 +283,60 @@ function OutletOrdersPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletId]);
+  }, [status, selectedOutletId]);
 
   useEffect(() => {
-    if (status !== "ok") return;
-    if (!selectedDate) return;
-    let active = true;
-    const loadOrders = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const start = new Date(selectedDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(start);
-        end.setDate(start.getDate() + 1);
+    void loadOrders();
+  }, [loadOrders, refreshKey]);
 
-        let query = supabase
-          .from("orders")
-          .select(
-            "id,order_number,created_at,status,outlet_id,outlets(name),employee_signed_name,employee_signature_path,employee_signed_at,supervisor_signed_name,supervisor_signature_path,supervisor_signed_at,driver_signed_name,driver_signature_path,driver_signed_at,offloader_signed_name,offloader_signature_path,offloader_signed_at,created_by"
-          )
-          .is("source_event_id", null)
-          .gte("created_at", start.toISOString())
-          .lt("created_at", end.toISOString())
-          .order("created_at", { ascending: false });
+  useEffect(() => {
+    if (status !== "ok" || !selectedDate) return;
+    const intervalId = window.setInterval(() => {
+      void loadOrders({ silent: true });
+    }, 20000);
+    return () => window.clearInterval(intervalId);
+  }, [loadOrders, selectedDate, status]);
 
-        if (selectedOutletId !== "all") {
-          query = query.eq("outlet_id", selectedOutletId);
-        }
+  useEffect(() => {
+    const handleFocus = () => setRefreshKey((current) => current + 1);
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
-        const { data, error: ordersError } = await query;
-        if (ordersError) throw ordersError;
-        const rows = (data ?? []) as OrderRow[];
+  const handleDeleteOrder = async (order: OrderRow) => {
+    const orderLabel = order.order_number ?? order.id.slice(0, 8);
+    const confirmed = window.confirm(
+      `Delete order ${orderLabel}?\n\nThis permanently removes the order and its line items.`,
+    );
+    if (!confirmed) return;
 
-        const orderIds = rows.map((row) => row.id).filter(Boolean);
-        const totalsMap: Record<string, OrderTotals> = {};
+    try {
+      setDeleteBusyId(order.id);
+      setError(null);
+      const token = await getWarehouseAccessToken();
+      if (!token) throw new Error("Not signed in");
 
-        if (orderIds.length > 0) {
-          const { data: itemRows, error: itemsError } = await supabase
-            .from("order_items")
-            .select("order_id,name,receiving_uom,qty,cost,amount")
-            .in("order_id", orderIds);
-          if (itemsError) throw itemsError;
-          (itemRows as OrderItemRow[]).forEach((row) => {
-            const qty = row.qty ?? 0;
-            const amount = row.amount ?? (row.cost ?? 0) * qty;
-            const existing = totalsMap[row.order_id] ?? { qty: 0, amount: 0 };
-            existing.qty += qty;
-            existing.amount += amount;
-            totalsMap[row.order_id] = existing;
-          });
-        }
+      const res = await fetch(`/api/outlet-orders/${encodeURIComponent(order.id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "Unable to delete order");
 
-        if (!active) return;
-        setOrders(rows);
-        setTotals(totalsMap);
-      } catch (err) {
-        if (!active) return;
-        setError(toErrorMessage(err));
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    loadOrders();
-    return () => {
-      active = false;
-    };
-  }, [status, selectedDate, selectedOutletId, supabase]);
+      setOrders((current) => current.filter((row) => row.id !== order.id));
+      setTotals((current) => {
+        const next = { ...current };
+        delete next[order.id];
+        return next;
+      });
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setDeleteBusyId(null);
+    }
+  };
 
   const handleDownloadPdf = async (order: OrderRow) => {
-    if ((order.status ?? "").toLowerCase() !== "offloaded") return;
     try {
       setPdfBusyId(order.id);
       setError(null);
@@ -495,18 +348,48 @@ function OutletOrdersPage() {
       const createdAt = formatStamp(order.created_at);
       const placedBy = order.employee_signed_name || order.created_by || "-";
 
-      const { data: items, error: itemsError } = await supabase
-        .from("order_items")
-        .select("order_id,name,receiving_uom,qty,cost,amount")
-        .eq("order_id", orderId);
-      if (itemsError) throw itemsError;
+      const itemsRes = await fetch(`/api/outlet-orders/${encodeURIComponent(orderId)}/items`, { cache: "no-store" });
+      const itemsJson = (await itemsRes.json()) as { items?: OrderItemRow[]; error?: string };
+      if (!itemsRes.ok) throw new Error(itemsJson.error || "Unable to load order items");
 
-      const rows = (items as OrderItemRow[]).map((row) => {
+      let catalog: PortalCatalogProduct[] = [];
+      if (order.outlet_id) {
+        try {
+          const catalogRes = await fetch(
+            `/api/outlet-orders/catalog?outlet_id=${encodeURIComponent(order.outlet_id)}`,
+            { cache: "no-store" },
+          );
+          const catalogJson = (await catalogRes.json()) as { catalog?: PortalCatalogProduct[] };
+          if (catalogRes.ok) {
+            catalog = catalogJson.catalog ?? [];
+          }
+        } catch {
+          catalog = [];
+        }
+      }
+
+      const items = (itemsJson.items ?? []).map((row) => {
         const qty = row.qty ?? 0;
         const cost = row.cost ?? 0;
         const amount = row.amount ?? cost * qty;
+        const portalItem: PortalOrderItem = {
+          id: row.order_id,
+          order_id: row.order_id,
+          product_id: row.product_id ?? null,
+          variant_key: row.variant_key ?? null,
+          name: row.name ?? "Item",
+          receiving_uom: row.receiving_uom,
+          consumption_uom: null,
+          qty,
+          cost,
+          amount,
+          package_contains: null,
+        };
         return {
           name: row.name ?? "Item",
+          productId: row.product_id ?? null,
+          variantKey: row.variant_key ?? null,
+          productName: resolveBaseProductNameFromCatalog(row.product_id, catalog, portalItem) || undefined,
           qty,
           uom: row.receiving_uom ?? "each",
           cost,
@@ -514,68 +397,73 @@ function OutletOrdersPage() {
         };
       });
 
-      const totalQty = rows.reduce((sum, row) => sum + row.qty, 0);
-      const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
+      const totalQty = items.reduce((sum, row) => sum + row.qty, 0);
+      const totalAmount = items.reduce((sum, row) => sum + row.amount, 0);
 
       const logoDataUrl = await loadLogoDataUrl();
 
       const signatureEntries = [
         {
-          label: "Outlet Employee",
+          role: "employee" as const,
           name: order.employee_signed_name ?? "",
-          signedAt: order.employee_signed_at ?? undefined,
+          signedAt: order.employee_signed_at ? formatStamp(order.employee_signed_at) : undefined,
           path: order.employee_signature_path ?? undefined,
+          inlineData: order.employee_signature_data ?? undefined,
         },
         {
-          label: "Supervisor",
-          name: order.supervisor_signed_name ?? "",
-          signedAt: order.supervisor_signed_at ?? undefined,
-          path: order.supervisor_signature_path ?? undefined,
-        },
-        {
-          label: "Driver",
+          role: "driver" as const,
           name: order.driver_signed_name ?? "",
-          signedAt: order.driver_signed_at ?? undefined,
+          signedAt: order.driver_signed_at ? formatStamp(order.driver_signed_at) : undefined,
           path: order.driver_signature_path ?? undefined,
+          inlineData: order.driver_signature_data ?? undefined,
         },
         {
-          label: "Offloader",
+          role: "offloader" as const,
           name: order.offloader_signed_name ?? "",
-          signedAt: order.offloader_signed_at ?? undefined,
+          signedAt: order.offloader_signed_at ? formatStamp(order.offloader_signed_at) : undefined,
           path: order.offloader_signature_path ?? undefined,
+          inlineData: order.offloader_signature_data ?? undefined,
         },
       ];
 
-      const signatures = [] as Array<{ label: string; name: string; signedAt?: string; dataUrl?: string }>;
+      const signatures = [] as Array<{
+        role: "employee" | "driver" | "offloader";
+        name: string;
+        signedAt?: string;
+        dataUrl?: string;
+      }>;
       for (const sig of signatureEntries) {
-        let dataUrl: string | undefined;
-        if (sig.path) {
-          const { data: signed, error: signedError } = await supabase.storage
-            .from("signatures")
-            .createSignedUrl(sig.path, 3600);
-          if (!signedError && signed?.signedUrl) {
-            const resp = await fetch(signed.signedUrl);
-            if (resp.ok) {
-              const blob = await resp.blob();
-              dataUrl = await blobToDataUrl(blob);
-            }
-          }
-        }
-        signatures.push({ label: sig.label, name: sig.name, signedAt: sig.signedAt ?? undefined, dataUrl });
+        const dataUrl = await resolveSignatureDataUrl({
+          path: sig.path,
+          inlineData: sig.inlineData,
+        });
+        signatures.push({
+          role: sig.role,
+          name: sig.name,
+          signedAt: sig.signedAt,
+          dataUrl,
+        });
       }
+
+      const downloadFilename = buildOutletOrderPdfFilename({
+        outletName,
+        createdAt: order.created_at,
+        orderNumber,
+      });
 
       const html = buildOutletOrderPdfHtml({
         logoDataUrl,
         outletName,
         orderNumber,
         orderId,
-        status: order.status ?? "",
+        status: formatTransferOrderStatus(order.status),
         createdAt,
         placedBy,
-        rows,
+        items,
         signatures,
         totalQty,
         totalAmount,
+        downloadFilename,
       });
 
       const frame = document.createElement("iframe");
@@ -679,6 +567,14 @@ function OutletOrdersPage() {
               placeholder="Search order number"
             />
           </label>
+          <button
+            type="button"
+            className={styles.refreshButton}
+            disabled={loading}
+            onClick={() => setRefreshKey((current) => current + 1)}
+          >
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
           {loading && <span className={styles.loadingTag}>Loading…</span>}
         </div>
       </section>
@@ -699,6 +595,7 @@ function OutletOrdersPage() {
           </div>
           <div className={styles.table}>
             <div className={`${styles.tableRow} ${styles.tableHead}`}>
+              <span />
               <span>Order #</span>
               <span>Outlet</span>
               <span>Placed By</span>
@@ -707,33 +604,81 @@ function OutletOrdersPage() {
               <span className={styles.alignRight}>Total Qty</span>
               <span className={styles.alignRight}>Total Amount</span>
               <span className={styles.alignCenter}>PDF</span>
+              <span className={styles.alignCenter}>Delete</span>
             </div>
             {filteredOrders.map((order) => {
               const total = totals[order.id] ?? { qty: 0, amount: 0 };
-              const statusText = order.status ?? "-";
-              const canDownload = statusText.toLowerCase() === "offloaded";
+              const statusText = formatTransferOrderStatus(order.status);
+              const statusTone = getTransferOrderStatusTone(order.status);
               const query = orderQuery.trim().toLowerCase();
               const orderNumber = (order.order_number ?? order.id).toLowerCase();
               const isMatch = query.length > 0 && (orderNumber.includes(query) || order.id.toLowerCase().includes(query));
+              const isExpanded = expandedOrderId === order.id;
               return (
-                <div key={order.id} className={`${styles.tableRow} ${isMatch ? styles.highlightRow : ""}`}>
-                  <span>{order.order_number ?? order.id.slice(0, 8)}</span>
-                  <span>{getOutletName(order, outletNameById)}</span>
-                  <span>{order.employee_signed_name ?? order.created_by ?? "-"}</span>
-                  <span>{formatStamp(order.created_at)}</span>
-                  <span className={styles.statusTag}>{statusText}</span>
-                  <span className={styles.alignRight}>{formatQty(total.qty)}</span>
-                  <span className={styles.alignRight}>{formatMoney(total.amount)}</span>
-                  <span className={styles.alignCenter}>
-                    <button
-                      type="button"
-                      className={styles.pdfButton}
-                      disabled={!canDownload || pdfBusyId === order.id}
-                      onClick={() => handleDownloadPdf(order)}
-                    >
-                      {pdfBusyId === order.id ? "Preparing…" : "Download"}
-                    </button>
-                  </span>
+                <div key={order.id} className={styles.orderBlock}>
+                  <div className={`${styles.tableRow} ${isMatch ? styles.highlightRow : ""}`}>
+                    <span className={styles.alignCenter}>
+                      <button
+                        type="button"
+                        className={styles.expandButton}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? "Collapse order details" : "Expand order details"}
+                        onClick={() =>
+                          setExpandedOrderId((current) => (current === order.id ? null : order.id))
+                        }
+                      >
+                        {isExpanded ? "▼" : "▶"}
+                      </button>
+                    </span>
+                    <span>{order.order_number ?? order.id.slice(0, 8)}</span>
+                    <span>{getOutletName(order, outletNameById)}</span>
+                    <span>{order.employee_signed_name ?? order.created_by ?? "-"}</span>
+                    <span>{formatStamp(order.created_at)}</span>
+                    <span className={`${styles.statusTag} ${styles[`statusTag_${statusTone}`]}`}>
+                      {statusText}
+                    </span>
+                    <span className={styles.alignRight}>{formatQty(total.qty)}</span>
+                    <span className={styles.alignRight}>{formatOutletOrderMoney(total.amount)}</span>
+                    <span className={styles.alignCenter}>
+                      <button
+                        type="button"
+                        className={styles.pdfIconButton}
+                        disabled={pdfBusyId === order.id}
+                        aria-label={
+                          pdfBusyId === order.id
+                            ? `Preparing PDF for order ${order.order_number ?? order.id}`
+                            : `Download PDF for order ${order.order_number ?? order.id}`
+                        }
+                        title="Download PDF"
+                        onClick={() => void handleDownloadPdf(order)}
+                      >
+                        {pdfBusyId === order.id ? (
+                          <span className={styles.pdfBusyDot} aria-hidden="true" />
+                        ) : (
+                          <PdfIcon />
+                        )}
+                      </button>
+                    </span>
+                    <span className={styles.alignCenter}>
+                      <button
+                        type="button"
+                        className={styles.deleteButton}
+                        disabled={deleteBusyId === order.id}
+                        onClick={() => void handleDeleteOrder(order)}
+                      >
+                        {deleteBusyId === order.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </span>
+                  </div>
+                  {isExpanded ? (
+                    <OrderExpandPanel
+                      orderId={order.id}
+                      outletId={order.outlet_id}
+                      status={order.status}
+                      onSaved={handleOrderSaved}
+                      onError={setError}
+                    />
+                  ) : null}
                 </div>
               );
             })}

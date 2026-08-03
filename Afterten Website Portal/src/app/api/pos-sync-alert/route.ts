@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { listFirestorePosSyncFailures } from "@/lib/firestore-pos-sync-failures";
 import { getServiceClient } from "@/lib/supabase-server";
 
 type PosMapRow = {
@@ -24,9 +26,32 @@ const normalize = (value?: string | null) => (typeof value === "string" && value
 
 export async function GET() {
   try {
-    const supabase = getServiceClient();
     const since = new Date();
     since.setDate(since.getDate() - 7);
+    const sinceDate = since.toISOString().slice(0, 10);
+
+    if (useFirebaseBackend()) {
+      const failures = await listFirestorePosSyncFailures({
+        startDate: sinceDate,
+        limit: 50,
+      });
+      const syncFailureSamples = failures.slice(0, 5).map((row) => ({
+        outlet_id: row.outlet_id,
+        source_event_id: row.source_event_id,
+        stage: row.stage ?? "",
+        error_message: row.error_message ?? "",
+      }));
+      return NextResponse.json({
+        mappingMismatchCount: 0,
+        mappingMismatchSamples: [],
+        syncFailureCount: failures.length,
+        syncFailureSamples,
+        warning: "POS mapping mismatch checks require orders/pos_item_map in Firestore.",
+        cloud_backend: "firebase",
+      });
+    }
+
+    const supabase = getServiceClient();
 
     const { data: orders, error: orderError } = await supabase
       .from("orders")

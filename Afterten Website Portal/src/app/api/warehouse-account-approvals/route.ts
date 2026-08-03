@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  approveFirestoreWarehouseAuthAccount,
+  declineFirestoreWarehouseAuthAccount,
+  listPendingFirestoreWarehouseAuthAccounts,
+} from "@/lib/firestore-warehouse-auth";
 import { requireWarehouseAdmin } from "@/lib/warehouse-api-auth";
 import { getServiceClient, hasServiceRoleKey } from "@/lib/supabase-server";
 
@@ -15,6 +21,11 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
+    if (useFirebaseBackend()) {
+      const accounts = await listPendingFirestoreWarehouseAuthAccounts();
+      return NextResponse.json({ accounts, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
     const { data, error } = await supabase
       .from("warehouse_auth_accounts")
@@ -50,6 +61,15 @@ export async function POST(request: Request) {
     }
     if (action === "decline" && userId === auth.actor.userId) {
       return NextResponse.json({ error: "You cannot decline your own account" }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      if (action === "approve") {
+        await approveFirestoreWarehouseAuthAccount(userId);
+      } else {
+        await declineFirestoreWarehouseAuthAccount(userId);
+      }
+      return NextResponse.json({ ok: true, action, user_id: userId });
     }
 
     const supabase = getServiceClient();

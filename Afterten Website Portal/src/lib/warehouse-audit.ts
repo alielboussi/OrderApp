@@ -2,9 +2,29 @@ export const WAREHOUSE_AUDIT_VIEWER_USER_IDS = [
   "282b9e25-f146-42d1-856f-8fee071fe2e7",
 ] as const;
 
-export function canViewWarehouseAuditLogs(userId: string | null | undefined): boolean {
+export const WAREHOUSE_AUDIT_VIEWER_EMAILS = [
+  "alielboussi00@gmail.com",
+  "husseinelboussizam@gmail.com",
+  "mohammadalboussi@gmail.com",
+] as const;
+
+export function canViewWarehouseAuditLogs(
+  userId: string | null | undefined,
+  email?: string | null,
+): boolean {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (
+    normalizedEmail &&
+    WAREHOUSE_AUDIT_VIEWER_EMAILS.includes(
+      normalizedEmail as (typeof WAREHOUSE_AUDIT_VIEWER_EMAILS)[number],
+    )
+  ) {
+    return true;
+  }
   if (!userId) return false;
-  return WAREHOUSE_AUDIT_VIEWER_USER_IDS.includes(userId as (typeof WAREHOUSE_AUDIT_VIEWER_USER_IDS)[number]);
+  return WAREHOUSE_AUDIT_VIEWER_USER_IDS.includes(
+    userId as (typeof WAREHOUSE_AUDIT_VIEWER_USER_IDS)[number],
+  );
 }
 
 export const WAREHOUSE_AUDIT_ACTIONS = {

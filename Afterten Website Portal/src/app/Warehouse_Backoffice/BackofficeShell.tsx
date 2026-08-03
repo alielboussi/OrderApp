@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { useEffect, useState } from "react";
+import { warehouseSignOut } from "@/lib/warehouse-auth-client";
 import { useWarehouseAuth } from "./useWarehouseAuth";
 import { BACKOFFICE_NAV, pageTitleForPath, navGroupLabelClass } from "./navigation";
 import MiddlewareStatusBadge from "./MiddlewareStatusBadge";
@@ -35,9 +35,7 @@ function usernameForEmail(email: string | null): string {
 export default function BackofficeShell({ children }: BackofficeShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { status, canViewLogs } = useWarehouseAuth();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
-  const [email, setEmail] = useState<string | null>(null);
+  const { status, canViewLogs, userEmail } = useWarehouseAuth();
   const [hash, setHash] = useState("");
 
   useEffect(() => {
@@ -47,30 +45,25 @@ export default function BackofficeShell({ children }: BackofficeShellProps) {
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
 
-  useEffect(() => {
-    if (status !== "ok") return;
-    let active = true;
-    supabase.auth.getUser().then(({ data }) => {
-      if (!active) return;
-      const user = data.user;
-      setEmail(user?.email ?? null);
-    });
-    return () => {
-      active = false;
-    };
-  }, [status, supabase]);
-
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await warehouseSignOut();
     router.replace("/Warehouse_Backoffice/login");
   };
+
+  if (status === "checking") {
+    return (
+      <div className={styles.shell}>
+        <div className={styles.content}>Checking session…</div>
+      </div>
+    );
+  }
 
   if (status !== "ok") {
     return null;
   }
 
   const pageTitle = pageTitleForPath(pathname ?? "", hash);
-  const emailUsername = usernameForEmail(email);
+  const emailUsername = usernameForEmail(userEmail);
 
   return (
     <div className={styles.shell}>

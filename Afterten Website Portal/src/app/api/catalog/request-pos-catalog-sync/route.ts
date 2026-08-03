@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { normalizeFutureScheduledAt } from "@/lib/catalogSyncSchedule";
 import { isMiddlewareCatalogSyncOutlet } from "@/lib/outletScope";
 import { getServiceClient } from "@/lib/supabase-server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { insertFirestoreCatalogSyncRows } from "@/lib/firestore-catalog-sync";
+import { listFirestoreOutlets } from "@/lib/firestore-outlets";
 
 type OutletSyncOptions = {
   sync_products?: boolean;
@@ -58,6 +61,35 @@ export async function POST(request: Request) {
       outlet_options?: Record<string, OutletSyncOptions>;
       scheduled_at?: string | null;
     };
+
+    if (useFirebaseBackend()) {
+      const outlets = (await listFirestoreOutlets()).filter(
+        (row) => row.active && row.has_pos_middleware,
+      );
+      const allowedIds = new Set(outlets.map((row) => row.id));
+      const requestedIds = (body.outlet_ids ?? [])
+        .map((id) => id.trim())
+        .filter((id) => allowedIds.has(id));
+      const outletIds = requestedIds.length > 0 ? requestedIds : Array.from(allowedIds);
+
+      if (!outletIds.length) {
+        return NextResponse.json({ ok: true, requested: 0, cloud_backend: "firebase" });
+      }
+
+      const requestedAt = new Date().toISOString();
+      const outletOptions = body.outlet_options ?? {};
+      const scheduledAt =
+        typeof body.scheduled_at === "string" && body.scheduled_at.trim()
+          ? normalizeFutureScheduledAt(body.scheduled_at)
+          : null;
+      if (typeof body.scheduled_at === "string" && body.scheduled_at.trim() && !scheduledAt) {
+        return NextResponse.json({ error: "Scheduled time must be in the future" }, { status: 400 });
+      }
+
+      const rows = buildRows(outletIds, "sync_pos_catalog", outletOptions, requestedAt, scheduledAt);
+      await insertFirestoreCatalogSyncRows(rows);
+      return NextResponse.json({ ok: true, requested: rows.length, scheduled_at: scheduledAt, cloud_backend: "firebase" });
+    }
 
     const supabase = getServiceClient();
     const { data: outlets, error: outletError } = await supabase

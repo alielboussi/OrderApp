@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  listFirestoreOutletOrderRoutes,
+  saveFirestoreOutletOrderRoutes,
+} from "@/lib/firestore-outlet-order-routes";
 import { getServiceClient } from "@/lib/supabase-server";
 
 type RouteRow = {
@@ -31,6 +36,12 @@ export async function GET(request: Request) {
     if (!itemId) return NextResponse.json({ error: "item_id is required" }, { status: 400 });
 
     const variantKey = normalizeVariantKey(url.searchParams.get("variant_key") || url.searchParams.get("normalized_variant_key"));
+
+    if (useFirebaseBackend()) {
+      const routes = await listFirestoreOutletOrderRoutes(itemId, variantKey);
+      return NextResponse.json({ routes, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
     const { data, error } = await supabase
       .from("outlet_order_routes")
@@ -77,6 +88,15 @@ export async function PUT(request: Request) {
         variant_key: variantKey,
         normalized_variant_key: variantKey,
       });
+    }
+
+    if (useFirebaseBackend()) {
+      const routes = [
+        ...upserts.map((row) => ({ outlet_id: row.outlet_id, warehouse_id: row.warehouse_id })),
+        ...deleteOutletIds.map((outlet_id) => ({ outlet_id, warehouse_id: null })),
+      ];
+      await saveFirestoreOutletOrderRoutes(itemId, variantKey, routes);
+      return NextResponse.json({ ok: true, cloud_backend: "firebase" });
     }
 
     const supabase = getServiceClient();

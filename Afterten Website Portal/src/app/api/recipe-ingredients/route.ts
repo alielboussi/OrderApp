@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { listFirestoreRecipeIngredientIds } from "@/lib/firestore-recipes";
 import { getServiceClient } from "@/lib/supabase-server";
 
 type RecipeRow = {
@@ -27,6 +29,12 @@ export async function GET(request: Request) {
     if (!finishedItemId) return NextResponse.json({ error: "finished_item_id is required" }, { status: 400 });
 
     const finishedVariantKey = normalizeVariantKey(url.searchParams.get("finished_variant_key"));
+
+    if (useFirebaseBackend()) {
+      const ingredientIds = await listFirestoreRecipeIngredientIds(finishedItemId, finishedVariantKey);
+      return NextResponse.json({ ingredient_item_ids: ingredientIds, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
 
     const { data, error } = await supabase

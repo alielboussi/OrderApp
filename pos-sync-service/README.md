@@ -89,8 +89,6 @@ This service posts to the RPCs defined in Supabase Schema.sql. Before deployment
 - RPCs exist: `sync_pos_order(payload jsonb)`, `validate_pos_order(payload jsonb)`, `log_pos_sync_failure(payload jsonb)`.
 - Migration `20260617100000_middleware_pos_sync_alignment.sql` applied (sync window + `uses_orders_app` guards).
 - Outlet has `has_pos_middleware = true` and catalog SKUs on POS (`MenuItem.Code`).
-- An **outlet stocktake period** is open in the Afterten Orders app (sets `pos_sync_opening` counter).
-- For POS sale deductions: `uses_orders_app = true` and rules in `outlet_pos_deduction_rules`.
 - POS orders are separate from warehouse app orders (`orders.source_event_id` set; status `synced`).
 
 ## Runtime notes

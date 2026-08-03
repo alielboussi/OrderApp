@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
+import { fetchSellingOutlets, fetchVariantNames } from "@/lib/warehouse-outlet-api";
 import styles from "./reports.module.css";
 import { buildReportPdfHtml } from "./reportpdf";
 
@@ -24,11 +24,6 @@ type SalesRow = {
   flavour_price: number | null;
   catalog_items?: { name: string | null; item_kind: string | null } | null;
   outlets?: { name: string | null } | null;
-};
-
-type RawSalesRow = Omit<SalesRow, "catalog_items" | "outlets"> & {
-  catalog_items?: { name: string | null; item_kind: string | null }[] | { name: string | null; item_kind: string | null } | null;
-  outlets?: { name: string | null }[] | { name: string | null } | null;
 };
 
 type ProductOption = {
@@ -68,11 +63,6 @@ type PosSalesResponse = {
   sales_count?: number;
 };
 
-function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null;
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
 type AggregatedRow = {
   item_id: string;
   item_name: string;
@@ -82,10 +72,6 @@ type AggregatedRow = {
   qty_units: number;
   before_tax: number;
   after_tax: number;
-};
-
-type WhoAmIRoles = {
-  outlets: Array<{ outlet_id: string; outlet_name: string }> | null;
 };
 
 function toErrorMessage(error: unknown): string {
@@ -146,7 +132,6 @@ async function loadLogoDataUrl(): Promise<string | undefined> {
 export default function WarehouseSalesReportsPage() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
 
   const today = useMemo(() => new Date(), []);
   const lastWeek = useMemo(() => {
@@ -201,25 +186,9 @@ export default function WarehouseSalesReportsPage() {
         setBooting(true);
         setError(null);
 
-        const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-        if (whoamiError) throw whoamiError;
-
-        const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-        const outletList = record?.outlets ?? [];
-        const mapped = outletList
-          .filter((outlet) => outlet?.outlet_id)
-          .map((outlet) => ({ id: outlet.outlet_id, name: outlet.outlet_name }));
+        const mapped = await fetchSellingOutlets("selling");
 
         if (!active) return;
-
-        if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
-          }
-        }
 
         setOutlets(mapped);
         if (mapped.length > 0 && selectedOutletIds.length === 0) {
@@ -237,15 +206,12 @@ export default function WarehouseSalesReportsPage() {
 
     const loadProducts = async () => {
       try {
-        const { data, error: productError } = await supabase
-          .from("catalog_items")
-          .select("id,name,item_kind")
-          .order("name", { ascending: true });
-
-        if (productError) throw productError;
+        const res = await fetch("/api/catalog/items", { cache: "no-store" });
+        const json = (await res.json()) as { items?: ProductOption[]; error?: string };
+        if (!res.ok) throw new Error(json.error || "Unable to load products");
         if (!active) return;
 
-        setProductOptions((data ?? []) as ProductOption[]);
+        setProductOptions((json.items ?? []) as ProductOption[]);
       } catch (err) {
         if (!active) return;
         setError(toErrorMessage(err));
@@ -257,7 +223,7 @@ export default function WarehouseSalesReportsPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletIds.length]);
+  }, [status, selectedOutletIds.length]);
 
 
   const toggleOutlet = (id: string) => {
@@ -457,50 +423,25 @@ export default function WarehouseSalesReportsPage() {
       setLoading(true);
       setError(null);
 
-      let query = supabase
-        .from("outlet_sales")
-        .select(
-          "id,outlet_id,item_id,variant_key,qty_units,sold_at,sale_price,vat_exc_price,flavour_price,catalog_items:catalog_items!outlet_sales_item_id_fkey(name,item_kind),outlets:outlets!outlet_sales_outlet_id_fkey(name)"
-        )
-        .order("sold_at", { ascending: false })
-        .limit(5000);
+      const params = new URLSearchParams();
+      selectedOutletIds.forEach((id) => params.append("outlet_id", id));
+      if (startDate) params.set("start_date", startDate);
+      if (endDate) params.set("end_date", endDate);
+      if (startTime) params.set("start_time", startTime);
+      if (endTime) params.set("end_time", endTime);
 
-      if (selectedOutletIds.length > 0) {
-        query = query.in("outlet_id", selectedOutletIds);
-      }
+      const res = await fetch(`/api/outlet-sales?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as { rows?: SalesRow[]; error?: string };
+      if (!res.ok) throw new Error(json.error || "Unable to load outlet sales");
 
-      if (startDate) {
-        const startIso = new Date(`${startDate}T${startTime || "00:00"}:00`).toISOString();
-        query = query.gte("sold_at", startIso);
-      }
-
-      if (endDate) {
-        if (endTime) {
-          const endIso = new Date(`${endDate}T${endTime}:00`).toISOString();
-          query = query.lte("sold_at", endIso);
-        } else {
-          const end = new Date(`${endDate}T00:00:00`);
-          end.setDate(end.getDate() + 1);
-          query = query.lt("sold_at", end.toISOString());
-        }
-      }
-
-      const { data, error: queryError } = await query;
-      if (queryError) throw queryError;
-
-      const normalized = ((data ?? []) as RawSalesRow[]).map((row) => ({
-        ...row,
-        catalog_items: normalizeRelation(row.catalog_items),
-        outlets: normalizeRelation(row.outlets),
-      }));
-      setRows(normalized);
+      setRows(json.rows ?? []);
       setReportAt(new Date().toLocaleString());
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [status, supabase, selectedOutletIds, startDate, startTime, endDate, endTime]);
+  }, [status, selectedOutletIds, startDate, startTime, endDate, endTime]);
 
   useEffect(() => {
     if (status !== "ok" || booting || selectedOutletIds.length === 0 || hasAutoRun) return;
@@ -527,16 +468,8 @@ export default function WarehouseSalesReportsPage() {
     let active = true;
     const loadVariants = async () => {
       try {
-        const { data, error: variantError } = await supabase.from("catalog_variants").select("id,name").in("id", keys);
-        if (variantError) throw variantError;
+        const map = await fetchVariantNames(keys);
         if (!active) return;
-
-        const map: Record<string, string> = {};
-        (data ?? []).forEach((variant) => {
-          if (variant?.id) {
-            map[variant.id] = (variant.name ?? "").trim() || variant.id;
-          }
-        });
         setVariantNameMap(map);
       } catch (err) {
         console.error("[reports] load variants failed", err);
@@ -547,7 +480,7 @@ export default function WarehouseSalesReportsPage() {
     return () => {
       active = false;
     };
-  }, [rows, status, supabase]);
+  }, [rows, status]);
 
   const filteredRows = useMemo(() => {
     const includeKinds: string[] = [];

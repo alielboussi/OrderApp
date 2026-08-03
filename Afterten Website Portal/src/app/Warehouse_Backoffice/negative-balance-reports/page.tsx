@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "../useWarehouseAuth";
+import { fetchCatalogItemNames, fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
 import styles from "../reports/reports.module.css";
 import { buildNegativeBalancePdfHtml } from "./reportpdf";
 
@@ -105,7 +105,6 @@ function getString(value: unknown): string | null {
 
 export default function NegativeBalanceReportsPage() {
   const router = useRouter();
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
   const today = useMemo(() => new Date(), []);
@@ -143,25 +142,9 @@ export default function NegativeBalanceReportsPage() {
         setBooting(true);
         setError(null);
 
-        const { data: whoami, error: whoamiError } = await supabase.rpc("whoami_roles");
-        if (whoamiError) throw whoamiError;
-
-        const record = (whoami?.[0] ?? null) as WhoAmIRoles | null;
-        const outletList = record?.outlets ?? [];
-        const mapped = outletList
-          .filter((outlet) => outlet?.outlet_id)
-          .map((outlet) => ({ id: outlet.outlet_id, name: outlet.outlet_name }));
+        const mapped = await fetchSellingOutlets("selling");
 
         if (!active) return;
-
-        if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as { outlet_id: string; outlet_name: string } | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
-          }
-        }
 
         setOutlets(mapped);
         if (mapped.length > 0 && selectedOutletIds.length === 0) {
@@ -180,7 +163,7 @@ export default function NegativeBalanceReportsPage() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletIds.length]);
+  }, [status, selectedOutletIds.length]);
 
   const toggleOutlet = (id: string) => {
     setSelectedOutletIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -224,28 +207,17 @@ export default function NegativeBalanceReportsPage() {
         return;
       }
 
-      let query = supabase
-        .from("warehouse_backoffice_logs")
-        .select("id,created_at,action,details")
-        .order("created_at", { ascending: false })
-        .limit(2000)
-        .in("action", actions);
+      const params = new URLSearchParams();
+      actions.forEach((action) => params.append("action_in", action));
+      if (startDate) params.set("start_date", startDate);
+      if (endDate) params.set("end_date", endDate);
+      params.set("limit", "2000");
 
-      if (startDate) {
-        const startIso = new Date(`${startDate}T00:00:00`).toISOString();
-        query = query.gte("created_at", startIso);
-      }
+      const res = await fetch(`/api/warehouse-backoffice-logs?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as { rows?: LogRow[]; error?: string };
+      if (!res.ok) throw new Error(json.error || "Unable to load negative balance logs");
 
-      if (endDate) {
-        const end = new Date(`${endDate}T00:00:00`);
-        end.setDate(end.getDate() + 1);
-        query = query.lt("created_at", end.toISOString());
-      }
-
-      const { data: logData, error: logError } = await query;
-      if (logError) throw logError;
-
-      const logs = (logData ?? []) as LogRow[];
+      const logs = json.rows ?? [];
       if (logs.length === 0) {
         setRows([]);
         setReportAt(new Date().toLocaleString());
@@ -268,27 +240,32 @@ export default function NegativeBalanceReportsPage() {
         if (recipeForId) itemIds.add(recipeForId);
       });
 
-      const [outletRes, warehouseRes, itemRes] = await Promise.all([
+      const [outletRes, warehouseRes, itemMap] = await Promise.all([
         outletIds.size > 0
-          ? supabase.from("outlets").select("id,name").in("id", Array.from(outletIds))
-          : Promise.resolve({ data: [], error: null }),
+          ? fetchSellingOutlets("selling").then((outlets) => ({
+              data: outlets.filter((outlet) => outletIds.has(outlet.id)).map((outlet) => ({
+                id: outlet.id,
+                name: outlet.name,
+              })),
+            }))
+          : Promise.resolve({ data: [] as OutletRow[] }),
         warehouseIds.size > 0
-          ? supabase.from("warehouses").select("id,name").in("id", Array.from(warehouseIds))
-          : Promise.resolve({ data: [], error: null }),
-        itemIds.size > 0
-          ? supabase.from("catalog_items").select("id,name").in("id", Array.from(itemIds))
-          : Promise.resolve({ data: [], error: null }),
+          ? fetch("/api/warehouses", { cache: "no-store" }).then(async (response) => {
+              const body = (await response.json()) as {
+                warehouses?: Array<{ id: string; name: string | null }>;
+              };
+              return {
+                data: (body.warehouses ?? []).filter((warehouse) => warehouseIds.has(warehouse.id)),
+              };
+            })
+          : Promise.resolve({ data: [] as WarehouseRow[] }),
+        fetchCatalogItemNames(Array.from(itemIds)),
       ]);
-
-      if (outletRes.error) throw outletRes.error;
-      if (warehouseRes.error) throw warehouseRes.error;
-      if (itemRes.error) throw itemRes.error;
 
       const outletMap = new Map((outletRes.data ?? []).map((outlet: OutletRow) => [outlet.id, outlet.name ?? outlet.id]));
       const warehouseMap = new Map(
-        (warehouseRes.data ?? []).map((warehouse: WarehouseRow) => [warehouse.id, warehouse.name ?? warehouse.id])
+        (warehouseRes.data ?? []).map((warehouse: WarehouseRow) => [warehouse.id, warehouse.name ?? warehouse.id]),
       );
-      const itemMap = new Map((itemRes.data ?? []).map((item: CatalogItem) => [item.id, item.name ?? item.id]));
 
       const mapped = logs.map((log) => {
         const details = log.details ?? {};

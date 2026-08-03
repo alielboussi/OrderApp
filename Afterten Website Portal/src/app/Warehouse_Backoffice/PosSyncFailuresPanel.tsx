@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import { useWarehouseAuth } from "./useWarehouseAuth";
+import { fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
 import styles from "./enterprise.module.css";
 
 type OutletOption = { id: string; name: string };
@@ -12,25 +12,6 @@ type FailureRow = {
   created_at: string;
   outlet_id: string | null;
   outlet_name: string;
-  stage: string | null;
-  error_message: string | null;
-  source_event_id: string | null;
-  pos_order_id: string | null;
-  sale_id: string | null;
-  details: Record<string, unknown> | null;
-};
-
-type WhoAmIOutlet = {
-  outlet_id: string;
-  outlet_name: string;
-};
-
-type OutletRow = { id: string; name: string | null };
-
-type RawFailureRow = {
-  id: string;
-  created_at: string;
-  outlet_id: string | null;
   stage: string | null;
   error_message: string | null;
   source_event_id: string | null;
@@ -55,7 +36,6 @@ function toDateInputValue(date: Date): string {
 }
 
 export default function PosSyncFailuresPanel() {
-  const supabase = useMemo(() => getWarehouseBrowserClient(), []);
   const { status } = useWarehouseAuth();
 
   const today = useMemo(() => new Date(), []);
@@ -85,27 +65,9 @@ export default function PosSyncFailuresPanel() {
         setBooting(true);
         setError(null);
 
-        const mapped: OutletOption[] = [];
-        const res = await fetch("/api/outlets?scope=selling", { cache: "no-store" });
-        if (res.ok) {
-          const json = (await res.json()) as { outlets?: Array<{ id: string; name?: string | null }> };
-          for (const outlet of json.outlets ?? []) {
-            if (outlet?.id) {
-              mapped.push({ id: outlet.id, name: (outlet.name ?? outlet.id).trim() });
-            }
-          }
-        }
+        const mapped = await fetchSellingOutlets("selling");
 
         if (!active) return;
-
-        if (mapped.length === 0) {
-          const { data: fallback, error: fallbackError } = await supabase.rpc("whoami_outlet");
-          if (fallbackError) throw fallbackError;
-          const fallbackOutlet = fallback?.[0] as WhoAmIOutlet | undefined;
-          if (fallbackOutlet?.outlet_id) {
-            mapped.push({ id: fallbackOutlet.outlet_id, name: fallbackOutlet.outlet_name });
-          }
-        }
 
         setOutlets(mapped);
         if (mapped.length > 0 && selectedOutletIds.length === 0) {
@@ -124,7 +86,7 @@ export default function PosSyncFailuresPanel() {
     return () => {
       active = false;
     };
-  }, [status, supabase, selectedOutletIds.length]);
+  }, [status, selectedOutletIds.length]);
 
   const toggleOutlet = (id: string) => {
     setSelectedOutletIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
@@ -145,67 +107,21 @@ export default function PosSyncFailuresPanel() {
       setLoading(true);
       setError(null);
 
-      let query = supabase
-        .from("pos_sync_failures")
-        .select("id,created_at,outlet_id,stage,error_message,source_event_id,pos_order_id,sale_id,details")
-        .order("created_at", { ascending: false })
-        .limit(2000);
+      const params = new URLSearchParams();
+      selectedOutletIds.forEach((id) => params.append("outlet_id", id));
+      if (startDate) params.set("start_date", startDate);
+      if (endDate) params.set("end_date", endDate);
+      if (search.trim()) params.set("search", search.trim());
 
-      if (selectedOutletIds.length > 0) {
-        query = query.in("outlet_id", selectedOutletIds);
-      }
+      const res = await fetch(`/api/pos-sync-failures?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as { rows?: FailureRow[]; error?: string };
+      if (!res.ok) throw new Error(json.error || "Unable to load POS sync failures");
 
-      if (startDate) {
-        const startIso = new Date(`${startDate}T00:00:00`).toISOString();
-        query = query.gte("created_at", startIso);
-      }
-
-      if (endDate) {
-        const end = new Date(`${endDate}T00:00:00`);
-        end.setDate(end.getDate() + 1);
-        query = query.lt("created_at", end.toISOString());
-      }
-
-      const searchTerm = search.trim();
-      if (searchTerm) {
-        const encoded = `%${searchTerm}%`;
-        query = query.or(
-          `stage.ilike.${encoded},error_message.ilike.${encoded},pos_order_id.ilike.${encoded},sale_id.ilike.${encoded},source_event_id.ilike.${encoded}`
-        );
-      }
-
-      const { data: failureData, error: failureError } = await query;
-      if (failureError) throw failureError;
-
-      const failures = (failureData ?? []) as RawFailureRow[];
-      if (failures.length === 0) {
-        setRows([]);
-        setReportAt(new Date().toLocaleString());
-        return;
-      }
-
-      const outletIds = Array.from(new Set(failures.map((row) => row.outlet_id).filter(Boolean))) as string[];
-      const { data: outletRows, error: outletError } = outletIds.length
-        ? await supabase.from("outlets").select("id,name").in("id", outletIds)
-        : { data: [] as OutletRow[] };
-
-      if (outletError) throw outletError;
-
-      const outletMap = new Map(
-        (outletRows ?? []).map((outlet) => [outlet.id, outlet.name ?? outlet.id])
-      );
-
+      const failures = json.rows ?? [];
       const mapped = failures.map((row) => ({
-        id: row.id,
+        ...row,
         created_at: new Date(row.created_at).toLocaleString(),
-        outlet_id: row.outlet_id,
-        outlet_name: row.outlet_id ? outletMap.get(row.outlet_id) ?? row.outlet_id : "Unknown",
-        stage: row.stage,
-        error_message: row.error_message,
-        source_event_id: row.source_event_id,
-        pos_order_id: row.pos_order_id,
-        sale_id: row.sale_id,
-        details: row.details,
+        outlet_name: row.outlet_name || row.outlet_id || "Unknown",
       }));
 
       setRows(mapped);

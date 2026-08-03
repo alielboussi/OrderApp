@@ -39,7 +39,7 @@ export default function MiddlewareStatusPanel() {
         if (!res.ok) throw new Error(json.error || "Unable to load middleware status");
         if (!active) return;
         setMerged(json.outlets ?? []);
-        setLoadError(null);
+        setLoadError(json.error ?? null);
       } catch (err) {
         if (active) {
           setMerged([]);

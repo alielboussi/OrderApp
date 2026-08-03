@@ -2836,8 +2836,20 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE UNIQUE INDEX ux_catalog_menu_groups_pos_menu_group_id ON public.catalog_menu_groups USING btree (pos_menu_group_id) WHERE (pos_menu_group_id IS NOT NULL)",
+          "indexname": "ux_catalog_menu_groups_pos_menu_group_id",
+          "table_name": "catalog_menu_groups",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE UNIQUE INDEX catalog_variants_item_key ON public.catalog_variants USING btree (item_id, id)",
           "indexname": "catalog_variants_item_key",
+          "table_name": "catalog_variants",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX catalog_variants_pkey ON public.catalog_variants USING btree (id)",
+          "indexname": "catalog_variants_pkey",
           "table_name": "catalog_variants",
           "table_schema": "public"
         },
@@ -2878,9 +2890,27 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_order_items_product_id ON public.order_items USING btree (product_id)",
+          "indexname": "idx_order_items_product_id",
+          "table_name": "order_items",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE UNIQUE INDEX order_items_pkey ON public.order_items USING btree (id)",
           "indexname": "order_items_pkey",
           "table_name": "order_items",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_orders_approved_by ON public.orders USING btree (approved_by) WHERE (approved_by IS NOT NULL)",
+          "indexname": "idx_orders_approved_by",
+          "table_name": "orders",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_orders_created_by ON public.orders USING btree (created_by) WHERE (created_by IS NOT NULL)",
+          "indexname": "idx_orders_created_by",
+          "table_name": "orders",
           "table_schema": "public"
         },
         {
@@ -2920,14 +2950,20 @@
           "table_schema": "public"
         },
         {
-          "indexdef": "CREATE INDEX outlet_catalog_allowlist_item_idx ON public.outlet_catalog_allowlist USING btree (item_id)",
-          "indexname": "outlet_catalog_allowlist_item_idx",
+          "indexdef": "CREATE INDEX idx_outlet_catalog_allowlist_outlet_id ON public.outlet_catalog_allowlist USING btree (outlet_id)",
+          "indexname": "idx_outlet_catalog_allowlist_outlet_id",
           "table_name": "outlet_catalog_allowlist",
           "table_schema": "public"
         },
         {
-          "indexdef": "CREATE INDEX outlet_catalog_allowlist_outlet_idx ON public.outlet_catalog_allowlist USING btree (outlet_id)",
-          "indexname": "outlet_catalog_allowlist_outlet_idx",
+          "indexdef": "CREATE INDEX idx_outlet_catalog_allowlist_variant_id ON public.outlet_catalog_allowlist USING btree (variant_id)",
+          "indexname": "idx_outlet_catalog_allowlist_variant_id",
+          "table_name": "outlet_catalog_allowlist",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX outlet_catalog_allowlist_item_idx ON public.outlet_catalog_allowlist USING btree (item_id)",
+          "indexname": "outlet_catalog_allowlist_item_idx",
           "table_name": "outlet_catalog_allowlist",
           "table_schema": "public"
         },
@@ -2980,6 +3016,18 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_outlet_sales_created_by ON public.outlet_sales USING btree (created_by) WHERE (created_by IS NOT NULL)",
+          "indexname": "idx_outlet_sales_created_by",
+          "table_name": "outlet_sales",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_outlet_sales_item_id ON public.outlet_sales USING btree (item_id)",
+          "indexname": "idx_outlet_sales_item_id",
+          "table_name": "outlet_sales",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE INDEX idx_outlet_sales_outlet ON public.outlet_sales USING btree (outlet_id, sold_at DESC)",
           "indexname": "idx_outlet_sales_outlet",
           "table_name": "outlet_sales",
@@ -2992,9 +3040,33 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_outlet_sales_warehouse_id ON public.outlet_sales USING btree (warehouse_id) WHERE (warehouse_id IS NOT NULL)",
+          "indexname": "idx_outlet_sales_warehouse_id",
+          "table_name": "outlet_sales",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE UNIQUE INDEX outlet_sales_pkey ON public.outlet_sales USING btree (id)",
           "indexname": "outlet_sales_pkey",
           "table_name": "outlet_sales",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_outlet_wh_order_receipts_order_id ON public.outlet_warehouse_order_receipts USING btree (order_id)",
+          "indexname": "idx_outlet_wh_order_receipts_order_id",
+          "table_name": "outlet_warehouse_order_receipts",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_outlet_wh_order_receipts_outlet_id ON public.outlet_warehouse_order_receipts USING btree (outlet_id)",
+          "indexname": "idx_outlet_wh_order_receipts_outlet_id",
+          "table_name": "outlet_warehouse_order_receipts",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_outlet_wh_order_receipts_warehouse_id ON public.outlet_warehouse_order_receipts USING btree (warehouse_id)",
+          "indexname": "idx_outlet_wh_order_receipts_warehouse_id",
+          "table_name": "outlet_warehouse_order_receipts",
           "table_schema": "public"
         },
         {
@@ -3028,6 +3100,18 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_outlets_default_receiving_wh ON public.outlets USING btree (default_receiving_warehouse_id) WHERE (default_receiving_warehouse_id IS NOT NULL)",
+          "indexname": "idx_outlets_default_receiving_wh",
+          "table_name": "outlets",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_outlets_default_sales_wh ON public.outlets USING btree (default_sales_warehouse_id) WHERE (default_sales_warehouse_id IS NOT NULL)",
+          "indexname": "idx_outlets_default_sales_wh",
+          "table_name": "outlets",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE UNIQUE INDEX outlets_auth_user_id_key ON public.outlets USING btree (auth_user_id)",
           "indexname": "outlets_auth_user_id_key",
           "table_name": "outlets",
@@ -3046,14 +3130,14 @@
           "table_schema": "public"
         },
         {
-          "indexdef": "CREATE INDEX idx_pos_inventory_consumed_outlet ON public.pos_inventory_consumed USING btree (outlet_id)",
-          "indexname": "idx_pos_inventory_consumed_outlet",
+          "indexdef": "CREATE INDEX idx_pos_inventory_consumed_order_id ON public.pos_inventory_consumed USING btree (order_id) WHERE (order_id IS NOT NULL)",
+          "indexname": "idx_pos_inventory_consumed_order_id",
           "table_name": "pos_inventory_consumed",
           "table_schema": "public"
         },
         {
-          "indexdef": "CREATE UNIQUE INDEX idx_pos_inventory_consumed_source ON public.pos_inventory_consumed USING btree (source_event_id)",
-          "indexname": "idx_pos_inventory_consumed_source",
+          "indexdef": "CREATE INDEX idx_pos_inventory_consumed_outlet ON public.pos_inventory_consumed USING btree (outlet_id)",
+          "indexname": "idx_pos_inventory_consumed_outlet",
           "table_name": "pos_inventory_consumed",
           "table_schema": "public"
         },
@@ -3112,6 +3196,12 @@
           "table_schema": "public"
         },
         {
+          "indexdef": "CREATE INDEX idx_warehouse_backoffice_logs_user_id ON public.warehouse_backoffice_logs USING btree (user_id)",
+          "indexname": "idx_warehouse_backoffice_logs_user_id",
+          "table_name": "warehouse_backoffice_logs",
+          "table_schema": "public"
+        },
+        {
           "indexdef": "CREATE INDEX warehouse_backoffice_logs_action_idx ON public.warehouse_backoffice_logs USING btree (action)",
           "indexname": "warehouse_backoffice_logs_action_idx",
           "table_name": "warehouse_backoffice_logs",
@@ -3144,6 +3234,12 @@
         {
           "indexdef": "CREATE INDEX idx_warehouses_outlet_id ON public.warehouses USING btree (outlet_id)",
           "indexname": "idx_warehouses_outlet_id",
+          "table_name": "warehouses",
+          "table_schema": "public"
+        },
+        {
+          "indexdef": "CREATE INDEX idx_warehouses_parent_warehouse_id ON public.warehouses USING btree (parent_warehouse_id) WHERE (parent_warehouse_id IS NOT NULL)",
+          "indexname": "idx_warehouses_parent_warehouse_id",
           "table_name": "warehouses",
           "table_schema": "public"
         },
@@ -3185,9 +3281,9 @@
           "command": "SELECT",
           "permissive": "PERMISSIVE",
           "table_name": "catalog_items",
-          "policy_name": "catalog_items_select_active",
+          "policy_name": "catalog_items_select_any_auth",
           "table_schema": "public",
-          "using_expression": "((auth.uid() IS NOT NULL) AND active)",
+          "using_expression": "true",
           "with_check_expression": null
         },
         {
@@ -3196,11 +3292,23 @@
           ],
           "command": "SELECT",
           "permissive": "PERMISSIVE",
-          "table_name": "catalog_items",
-          "policy_name": "catalog_items_select_any_auth",
+          "table_name": "catalog_menu_groups",
+          "policy_name": "catalog_menu_groups_authenticated_select",
+          "table_schema": "public",
+          "using_expression": "warehouse_account_is_active()",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "catalog_menu_groups",
+          "policy_name": "catalog_menu_groups_service",
           "table_schema": "public",
           "using_expression": "true",
-          "with_check_expression": null
+          "with_check_expression": "true"
         },
         {
           "roles": [
@@ -3212,18 +3320,6 @@
           "policy_name": "catalog_variants_read_kiosk_anon",
           "table_schema": "public",
           "using_expression": "(active = true)",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "catalog_variants",
-          "policy_name": "catalog_variants_select_active",
-          "table_schema": "public",
-          "using_expression": "((auth.uid() IS NOT NULL) AND active)",
           "with_check_expression": null
         },
         {
@@ -3247,8 +3343,32 @@
           "table_name": "counter_values",
           "policy_name": "counter_values_service_all",
           "table_schema": "public",
-          "using_expression": "(auth.role() = 'service_role'::text)",
-          "with_check_expression": "(auth.role() = 'service_role'::text)"
+          "using_expression": "(( SELECT auth.role() AS role) = 'service_role'::text)",
+          "with_check_expression": "(( SELECT auth.role() AS role) = 'service_role'::text)"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "middleware_catalog_schedule",
+          "policy_name": "middleware_catalog_schedule_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "middleware_update_drafts",
+          "policy_name": "middleware_update_drafts_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
         },
         {
           "roles": [
@@ -3269,9 +3389,9 @@
           "command": "SELECT",
           "permissive": "PERMISSIVE",
           "table_name": "order_items",
-          "policy_name": "order_items_policy_select",
+          "policy_name": "order_items_select",
           "table_schema": "public",
-          "using_expression": "order_is_accessible(order_id, ( SELECT auth.uid() AS uid))",
+          "using_expression": "(order_is_accessible(order_id, ( SELECT auth.uid() AS uid)) OR (is_supervisor(( SELECT auth.uid() AS uid)) AND is_warehouse_app_order(order_id)))",
           "with_check_expression": null
         },
         {
@@ -3281,34 +3401,10 @@
           "command": "UPDATE",
           "permissive": "PERMISSIVE",
           "table_name": "order_items",
-          "policy_name": "order_items_policy_update",
+          "policy_name": "order_items_update",
           "table_schema": "public",
-          "using_expression": "order_is_accessible(order_id, ( SELECT auth.uid() AS uid))",
-          "with_check_expression": "order_is_accessible(order_id, ( SELECT auth.uid() AS uid))"
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "SELECT",
-          "permissive": "PERMISSIVE",
-          "table_name": "order_items",
-          "policy_name": "order_items_supervisor_select",
-          "table_schema": "public",
-          "using_expression": "(is_supervisor(auth.uid()) AND is_warehouse_app_order(order_id))",
-          "with_check_expression": null
-        },
-        {
-          "roles": [
-            "authenticated"
-          ],
-          "command": "UPDATE",
-          "permissive": "PERMISSIVE",
-          "table_name": "order_items",
-          "policy_name": "order_items_supervisor_update",
-          "table_schema": "public",
-          "using_expression": "(is_supervisor(auth.uid()) AND is_warehouse_app_order(order_id) AND (EXISTS ( SELECT 1\n   FROM orders o\n  WHERE ((o.id = order_items.order_id) AND (lower(o.status) = 'placed'::text)))))",
-          "with_check_expression": "(is_supervisor(auth.uid()) AND is_warehouse_app_order(order_id) AND (EXISTS ( SELECT 1\n   FROM orders o\n  WHERE ((o.id = order_items.order_id) AND (lower(o.status) = 'placed'::text)))))"
+          "using_expression": "(order_is_accessible(order_id, ( SELECT auth.uid() AS uid)) OR (is_supervisor(( SELECT auth.uid() AS uid)) AND is_warehouse_app_order(order_id) AND (EXISTS ( SELECT 1\n   FROM orders o\n  WHERE ((o.id = order_items.order_id) AND (lower(o.status) = 'placed'::text))))))",
+          "with_check_expression": "(order_is_accessible(order_id, ( SELECT auth.uid() AS uid)) OR (is_supervisor(( SELECT auth.uid() AS uid)) AND is_warehouse_app_order(order_id) AND (EXISTS ( SELECT 1\n   FROM orders o\n  WHERE ((o.id = order_items.order_id) AND (lower(o.status) = 'placed'::text))))))"
         },
         {
           "roles": [
@@ -3319,7 +3415,7 @@
           "table_name": "orders",
           "policy_name": "orders_supervisor_select",
           "table_schema": "public",
-          "using_expression": "(is_supervisor(auth.uid()) AND (source_event_id IS NULL))",
+          "using_expression": "(is_supervisor(( SELECT auth.uid() AS uid)) AND (source_event_id IS NULL))",
           "with_check_expression": null
         },
         {
@@ -3372,7 +3468,7 @@
         },
         {
           "roles": [
-            "public"
+            "service_role"
           ],
           "command": "ALL",
           "permissive": "PERMISSIVE",
@@ -3424,8 +3520,68 @@
           ],
           "command": "ALL",
           "permissive": "PERMISSIVE",
+          "table_name": "outlet_warehouses",
+          "policy_name": "outlet_warehouses_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "outlets",
+          "policy_name": "outlets_authenticated_select",
+          "table_schema": "public",
+          "using_expression": "(warehouse_account_is_active() OR is_supervisor(( SELECT auth.uid() AS uid)) OR (id = ANY (COALESCE(member_outlet_ids(( SELECT auth.uid() AS uid)), ARRAY[]::uuid[]))))",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "pos_inventory_consumed",
+          "policy_name": "pos_inventory_consumed_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
           "table_name": "pos_sync_failures",
           "policy_name": "pos_sync_failures_service_only",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "stg_mintpos_menuitem",
+          "policy_name": "stg_mintpos_menuitem_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "stg_mintpos_modifierflavour",
+          "policy_name": "stg_mintpos_modifierflavour_service",
           "table_schema": "public",
           "using_expression": "true",
           "with_check_expression": "true"
@@ -3444,6 +3600,18 @@
         },
         {
           "roles": [
+            "service_role"
+          ],
+          "command": "ALL",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouse_audit_viewers",
+          "policy_name": "warehouse_audit_viewers_service",
+          "table_schema": "public",
+          "using_expression": "true",
+          "with_check_expression": "true"
+        },
+        {
+          "roles": [
             "authenticated"
           ],
           "command": "SELECT",
@@ -3451,7 +3619,7 @@
           "table_name": "warehouse_auth_accounts",
           "policy_name": "warehouse_auth_accounts_read_own",
           "table_schema": "public",
-          "using_expression": "(user_id = auth.uid())",
+          "using_expression": "(user_id = ( SELECT auth.uid() AS uid))",
           "with_check_expression": null
         },
         {
@@ -3464,7 +3632,7 @@
           "policy_name": "warehouse_backoffice_logs_insert_own",
           "table_schema": "public",
           "using_expression": null,
-          "with_check_expression": "(user_id = auth.uid())"
+          "with_check_expression": "(user_id = ( SELECT auth.uid() AS uid))"
         },
         {
           "roles": [
@@ -3476,6 +3644,18 @@
           "policy_name": "warehouse_backoffice_logs_select_viewer",
           "table_schema": "public",
           "using_expression": "warehouse_can_view_audit_logs()",
+          "with_check_expression": null
+        },
+        {
+          "roles": [
+            "authenticated"
+          ],
+          "command": "SELECT",
+          "permissive": "PERMISSIVE",
+          "table_name": "warehouses",
+          "policy_name": "warehouses_authenticated_select",
+          "table_schema": "public",
+          "using_expression": "(warehouse_account_is_active() OR is_supervisor(( SELECT auth.uid() AS uid)))",
           "with_check_expression": null
         }
       ],
@@ -3568,7 +3748,7 @@
         },
         {
           "arguments": "p_qty numeric, p_from_uom text, p_to_uom text",
-          "definition": "CREATE OR REPLACE FUNCTION public.convert_catalog_uom_qty(p_qty numeric, p_from_uom text, p_to_uom text)\n RETURNS numeric\n LANGUAGE plpgsql\n IMMUTABLE\nAS $function$\r\nDECLARE\r\n  v_from text := public.normalize_uom_token(p_from_uom);\r\n  v_to text := public.normalize_uom_token(p_to_uom);\r\n  v_grams numeric;\r\nBEGIN\r\n  IF p_qty IS NULL OR p_qty <= 0 THEN\r\n    RETURN 0;\r\n  END IF;\r\n\r\n  IF v_from = v_to THEN\r\n    RETURN p_qty;\r\n  END IF;\r\n\r\n  -- Mass units convert via grams\r\n  IF v_from IN ('mg', 'g', 'kg') AND v_to IN ('mg', 'g', 'kg') THEN\r\n    v_grams := CASE v_from\r\n      WHEN 'mg' THEN p_qty / 1000.0\r\n      WHEN 'kg' THEN p_qty * 1000.0\r\n      ELSE p_qty\r\n    END;\r\n    RETURN CASE v_to\r\n      WHEN 'mg' THEN v_grams * 1000.0\r\n      WHEN 'kg' THEN v_grams / 1000.0\r\n      ELSE v_grams\r\n    END;\r\n  END IF;\r\n\r\n  -- Volume units convert via millilitres\r\n  IF v_from IN ('ml', 'l') AND v_to IN ('ml', 'l') THEN\r\n    v_grams := CASE v_from WHEN 'l' THEN p_qty * 1000.0 ELSE p_qty END;\r\n    RETURN CASE v_to WHEN 'l' THEN v_grams / 1000.0 ELSE v_grams END;\r\n  END IF;\r\n\r\n  -- Count / pack units: no cross-family conversion\r\n  RETURN p_qty;\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.convert_catalog_uom_qty(p_qty numeric, p_from_uom text, p_to_uom text)\n RETURNS numeric\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_from text := public.normalize_uom_token(p_from_uom);\r\n  v_to text := public.normalize_uom_token(p_to_uom);\r\n  v_grams numeric;\r\nBEGIN\r\n  IF p_qty IS NULL OR p_qty <= 0 THEN\r\n    RETURN 0;\r\n  END IF;\r\n\r\n  IF v_from = v_to THEN\r\n    RETURN p_qty;\r\n  END IF;\r\n\r\n  -- Mass units convert via grams\r\n  IF v_from IN ('mg', 'g', 'kg') AND v_to IN ('mg', 'g', 'kg') THEN\r\n    v_grams := CASE v_from\r\n      WHEN 'mg' THEN p_qty / 1000.0\r\n      WHEN 'kg' THEN p_qty * 1000.0\r\n      ELSE p_qty\r\n    END;\r\n    RETURN CASE v_to\r\n      WHEN 'mg' THEN v_grams * 1000.0\r\n      WHEN 'kg' THEN v_grams / 1000.0\r\n      ELSE v_grams\r\n    END;\r\n  END IF;\r\n\r\n  -- Volume units convert via millilitres\r\n  IF v_from IN ('ml', 'l') AND v_to IN ('ml', 'l') THEN\r\n    v_grams := CASE v_from WHEN 'l' THEN p_qty * 1000.0 ELSE p_qty END;\r\n    RETURN CASE v_to WHEN 'l' THEN v_grams / 1000.0 ELSE v_grams END;\r\n  END IF;\r\n\r\n  -- Count / pack units: no cross-family conversion\r\n  RETURN p_qty;\r\nEND;\r\n$function$\n",
           "function_name": "convert_catalog_uom_qty",
           "function_schema": "public"
         },
@@ -3646,7 +3826,7 @@
         },
         {
           "arguments": "p_uom text",
-          "definition": "CREATE OR REPLACE FUNCTION public.is_pack_receiving_uom(p_uom text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\nAS $function$\r\n  SELECT public.normalize_uom_token(p_uom) = ANY (\r\n    ARRAY['plastic', 'case', 'crate', 'bottle', 'tin can', 'jar', 'bag', 'box', 'packet', 'tray', 'bucket', 'block']\r\n  );\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.is_pack_receiving_uom(p_uom text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public'\nAS $function$\r\n  SELECT public.normalize_uom_token(p_uom) = ANY (\r\n    ARRAY['plastic', 'case', 'crate', 'bottle', 'tin can', 'jar', 'bag', 'box', 'packet', 'tray', 'bucket', 'block']\r\n  );\r\n$function$\n",
           "function_name": "is_pack_receiving_uom",
           "function_schema": "public"
         },
@@ -3684,6 +3864,12 @@
           "arguments": "payload jsonb",
           "definition": "CREATE OR REPLACE FUNCTION public.log_pos_sync_failure(payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  if coalesce(payload->>'stage','') ilike '%pos_item_match%'\r\n     or coalesce(payload->>'error_message','') ilike '%pos_item_match%'\r\n     or coalesce(payload->>'stage','') = 'missing_mapping'\r\n     or coalesce(payload->>'error_message','') ilike '%missing_mapping%'\r\n     or coalesce(payload->>'error_message','') ilike '%pos_item_map missing%'\r\n     or coalesce(payload->>'error_message','') ilike '%no_mappable_items%'\r\n     or coalesce(payload->>'error_message','') ilike '%no items had a valid pos_item_map%'\r\n     or payload->'error_message' @> '[{\"code\":\"no_mappable_items\"}]'::jsonb\r\n     or coalesce(payload->>'error_message','') ilike '%missing_open_stock_period%'\r\n     or coalesce(payload->>'error_message','') ilike '%open stock period required%'\r\n     or payload->'error_message' @> '[{\"code\":\"missing_open_stock_period\"}]'::jsonb\r\n     or payload->'details' @> '[{\"code\":\"missing_open_stock_period\"}]'::jsonb\r\n  then\r\n    return;\r\n  end if;\r\n\r\n  insert into public.pos_sync_failures(\r\n    outlet_id,\r\n    source_event_id,\r\n    pos_order_id,\r\n    sale_id,\r\n    stage,\r\n    error_message,\r\n    details\r\n  ) values (\r\n    nullif(payload->>'outlet_id','')::uuid,\r\n    nullif(payload->>'source_event_id',''),\r\n    nullif(payload->>'pos_order_id',''),\r\n    nullif(payload->>'sale_id',''),\r\n    coalesce(nullif(payload->>'stage',''),'unknown'),\r\n    coalesce(nullif(payload->>'error_message',''), 'unknown error'),\r\n    payload->'details'\r\n  );\r\nend;\r\n$function$\n",
           "function_name": "log_pos_sync_failure",
+          "function_schema": "public"
+        },
+        {
+          "arguments": "p_retention_days integer DEFAULT 30",
+          "definition": "CREATE OR REPLACE FUNCTION public.maintenance_purge_old_pos_sync_failures(p_retention_days integer DEFAULT 30)\n RETURNS bigint\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nDECLARE\r\n  v_deleted bigint;\r\n  v_days integer;\r\nBEGIN\r\n  v_days := GREATEST(COALESCE(p_retention_days, 30), 7);\r\n\r\n  DELETE FROM public.pos_sync_failures\r\n  WHERE created_at < now() - (v_days || ' days')::interval;\r\n\r\n  GET DIAGNOSTICS v_deleted = ROW_COUNT;\r\n  RETURN v_deleted;\r\nEND;\r\n$function$\n",
+          "function_name": "maintenance_purge_old_pos_sync_failures",
           "function_schema": "public"
         },
         {
@@ -3736,13 +3922,13 @@
         },
         {
           "arguments": "p_uom text",
-          "definition": "CREATE OR REPLACE FUNCTION public.normalize_uom_token(p_uom text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\nAS $function$\r\n  SELECT CASE lower(trim(coalesce(p_uom, 'each')))\r\n    WHEN 'pc' THEN 'each'\r\n    WHEN 'pcs' THEN 'each'\r\n    WHEN 'piece' THEN 'each'\r\n    WHEN 'pieces' THEN 'each'\r\n    WHEN 'plastic' THEN 'plastic'\r\n    WHEN 'plastics' THEN 'plastic'\r\n    WHEN 'tin can' THEN 'tin can'\r\n    ELSE lower(trim(coalesce(p_uom, 'each')))\r\n  END;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.normalize_uom_token(p_uom text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public'\nAS $function$\r\n  SELECT CASE lower(trim(coalesce(p_uom, 'each')))\r\n    WHEN 'pc' THEN 'each'\r\n    WHEN 'pcs' THEN 'each'\r\n    WHEN 'piece' THEN 'each'\r\n    WHEN 'pieces' THEN 'each'\r\n    WHEN 'plastic' THEN 'plastic'\r\n    WHEN 'plastics' THEN 'plastic'\r\n    WHEN 'tin can' THEN 'tin can'\r\n    ELSE lower(trim(coalesce(p_uom, 'each')))\r\n  END;\r\n$function$\n",
           "function_name": "normalize_uom_token",
           "function_schema": "public"
         },
         {
           "arguments": "p_variant_key text",
-          "definition": "CREATE OR REPLACE FUNCTION public.normalize_variant_key(p_variant_key text)\n RETURNS text\n LANGUAGE sql\nAS $function$\r\n  select coalesce(nullif($1, ''), 'base');\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.normalize_variant_key(p_variant_key text)\n RETURNS text\n LANGUAGE sql\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(nullif($1, ''), 'base');\r\n$function$\n",
           "function_name": "normalize_variant_key",
           "function_schema": "public"
         },
@@ -3880,7 +4066,7 @@
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.set_production_assignment_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.set_production_assignment_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
           "function_name": "set_production_assignment_updated_at",
           "function_schema": "public"
         },
@@ -3892,19 +4078,19 @@
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.set_uom_conversion_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.set_uom_conversion_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
           "function_name": "set_uom_conversion_updated_at",
           "function_schema": "public"
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.set_uom_options_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nbegin\r\n  new.updated_at := now();\r\n  return new;\r\nend;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.set_uom_options_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  new.updated_at := now();\r\n  return new;\r\nend;\r\n$function$\n",
           "function_name": "set_uom_options_updated_at",
           "function_schema": "public"
         },
         {
           "arguments": "",
-          "definition": "CREATE OR REPLACE FUNCTION public.set_warehouse_auth_account_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  IF NEW.active IS TRUE AND (OLD.active IS DISTINCT FROM TRUE) THEN\r\n    NEW.activated_at := now();\r\n  END IF;\r\n  IF NEW.active IS FALSE THEN\r\n    NEW.activated_at := NULL;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
+          "definition": "CREATE OR REPLACE FUNCTION public.set_warehouse_auth_account_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\nBEGIN\r\n  NEW.updated_at := now();\r\n  IF NEW.active IS TRUE AND (OLD.active IS DISTINCT FROM TRUE) THEN\r\n    NEW.activated_at := now();\r\n  END IF;\r\n  IF NEW.active IS FALSE THEN\r\n    NEW.activated_at := NULL;\r\n  END IF;\r\n  RETURN NEW;\r\nEND;\r\n$function$\n",
           "function_name": "set_warehouse_auth_account_updated_at",
           "function_schema": "public"
         },
@@ -4468,12 +4654,12 @@
         },
         {
           "table_name": "catalog_variants",
-          "column_name": "item_id",
+          "column_name": "id",
           "table_schema": "public",
-          "constraint_name": "catalog_variants_item_key",
-          "constraint_type": "UNIQUE",
+          "constraint_name": "catalog_variants_pkey",
+          "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -4484,6 +4670,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "catalog_variants",
           "foreign_column_name": "id",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "catalog_variants",
+          "column_name": "item_id",
+          "table_schema": "public",
+          "constraint_name": "catalog_variants_item_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "catalog_variants",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -4553,7 +4749,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "counter_key",
+          "foreign_column_name": "scope_id",
           "foreign_table_schema": "public"
         },
         {
@@ -4563,7 +4759,7 @@
           "constraint_name": "counter_values_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "counter_values",
-          "foreign_column_name": "scope_id",
+          "foreign_column_name": "counter_key",
           "foreign_table_schema": "public"
         },
         {
@@ -4703,7 +4899,7 @@
           "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
-          "foreign_column_name": "entity_id",
+          "foreign_column_name": "entity_type",
           "foreign_table_schema": "public"
         },
         {
@@ -4713,16 +4909,6 @@
           "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
-          "foreign_column_name": "entity_type",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "middleware_update_drafts",
-          "column_name": "entity_id",
-          "table_schema": "public",
-          "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
-          "constraint_type": "UNIQUE",
-          "foreign_table_name": "middleware_update_drafts",
           "foreign_column_name": "entity_id",
           "foreign_table_schema": "public"
         },
@@ -4734,6 +4920,16 @@
           "constraint_type": "UNIQUE",
           "foreign_table_name": "middleware_update_drafts",
           "foreign_column_name": "entity_type",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "middleware_update_drafts",
+          "column_name": "entity_id",
+          "table_schema": "public",
+          "constraint_name": "middleware_update_drafts_entity_type_entity_id_key",
+          "constraint_type": "UNIQUE",
+          "foreign_table_name": "middleware_update_drafts",
+          "foreign_column_name": "entity_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5073,7 +5269,7 @@
           "constraint_name": "outlet_auth_assignments_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_auth_assignments",
-          "foreign_column_name": "auth_user_id",
+          "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5083,7 +5279,7 @@
           "constraint_name": "outlet_auth_assignments_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_auth_assignments",
-          "foreign_column_name": "outlet_id",
+          "foreign_column_name": "auth_user_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5213,7 +5409,7 @@
           "constraint_name": "outlet_catalog_allowlist_variant_fkey",
           "constraint_type": "FOREIGN KEY",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "item_id",
+          "foreign_column_name": "id",
           "foreign_table_schema": "public"
         },
         {
@@ -5223,7 +5419,7 @@
           "constraint_name": "outlet_catalog_allowlist_variant_fkey",
           "constraint_type": "FOREIGN KEY",
           "foreign_table_name": "catalog_variants",
-          "foreign_column_name": "id",
+          "foreign_column_name": "item_id",
           "foreign_table_schema": "public"
         },
         {
@@ -5453,16 +5649,6 @@
           "constraint_name": "outlet_pos_catalog_bindings_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_pos_catalog_bindings",
-          "foreign_column_name": "variant_sku",
-          "foreign_table_schema": "public"
-        },
-        {
-          "table_name": "outlet_pos_catalog_bindings",
-          "column_name": "item_sku",
-          "table_schema": "public",
-          "constraint_name": "outlet_pos_catalog_bindings_pkey",
-          "constraint_type": "PRIMARY KEY",
-          "foreign_table_name": "outlet_pos_catalog_bindings",
           "foreign_column_name": "outlet_id",
           "foreign_table_schema": "public"
         },
@@ -5473,12 +5659,12 @@
           "constraint_name": "outlet_pos_catalog_bindings_pkey",
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_pos_catalog_bindings",
-          "foreign_column_name": "item_sku",
+          "foreign_column_name": "variant_sku",
           "foreign_table_schema": "public"
         },
         {
           "table_name": "outlet_pos_catalog_bindings",
-          "column_name": "variant_sku",
+          "column_name": "item_sku",
           "table_schema": "public",
           "constraint_name": "outlet_pos_catalog_bindings_pkey",
           "constraint_type": "PRIMARY KEY",
@@ -5494,6 +5680,16 @@
           "constraint_type": "PRIMARY KEY",
           "foreign_table_name": "outlet_pos_catalog_bindings",
           "foreign_column_name": "variant_sku",
+          "foreign_table_schema": "public"
+        },
+        {
+          "table_name": "outlet_pos_catalog_bindings",
+          "column_name": "variant_sku",
+          "table_schema": "public",
+          "constraint_name": "outlet_pos_catalog_bindings_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "foreign_table_name": "outlet_pos_catalog_bindings",
+          "foreign_column_name": "item_sku",
           "foreign_table_schema": "public"
         },
         {

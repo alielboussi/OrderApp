@@ -44,6 +44,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
     label: "Reports",
     items: [
       { label: "Reports Hub", href: "/Warehouse_Backoffice/reports-hub" },
+      { label: "Outlet Sales Detail", href: "/Warehouse_Backoffice/reports-hub/outlet-sales-detail" },
     ],
     tone: "default",
   },

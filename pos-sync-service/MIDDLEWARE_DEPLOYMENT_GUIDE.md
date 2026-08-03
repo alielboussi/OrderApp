@@ -47,7 +47,7 @@ Produces **only** `publish\SCPGT.exe` (~77 MB self-contained).
 | Service stopped | `Start-Service SCPGT` |
 | Wrong outlet/keys | Edit `C:\ProgramData\SCPGT\appsettings.json` → `Restart-Service SCPGT` |
 | SQL permission errors | Re-run MintPOS grants (`unified.sql`) |
-| No sales syncing | Confirm outlet `has_pos_middleware` + stocktake window open |
+| No sales syncing | Confirm outlet `has_pos_middleware` is true |
 | MintPOS shows pending but Supabase has sales | Deploy latest SCPGT — reconciles from Supabase and repairs line flags automatically |
 | Sales stuck (BillType Processed, not in Supabase) | `Sale.uploadstatus` must be `Processed` after sync; latest SCPGT queues by **Sale** status, not BillType |
 
@@ -56,7 +56,7 @@ Produces **only** `publish\SCPGT.exe` (~77 MB self-contained).
 - **Queue**: any sale where `Sale.uploadstatus` is `Pending` (ignores MintPOS marking `BillType` Processed early).
 - **No duplicates**: Supabase `sync_pos_order` skips when `outlet_sales` already exist; middleware reconciles on **`outlet_sales`**, not empty `orders` headers.
 - **Backlog**: up to `BatchSize` × `MaxBatchesPerCycle` sales per poll (default 200 × 50 = 10,000).
-- **Historical backfill**: pending MintPOS queue is **not** filtered by stocktake opening date (all `Pending` sales upload); Supabase `validate_pos_order` + `sync_pos_order` (12a+) handle API lines.
+- **Historical backfill**: all `Pending` sales in the MintPOS queue upload regardless of date window.
 - **Line flags**: after each cycle, repairs `Saledetails` / `BillType` when `Sale` is already `Processed`.
 - **One-time SQL** (optional): `scripts/repair-mintpos-upload-flags.sql` on MINTPOS.
 

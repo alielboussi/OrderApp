@@ -64,7 +64,10 @@ SELECT TOP (@Batch)
     sess.EndTime    AS ShiftSessionEnd,
     sh.Id           AS ResolvedShiftId,
     sh.Name         AS ShiftName,
-    uStart.Name     AS ShiftOpenedBy
+    uStart.Name     AS ShiftOpenedBy,
+    s.UserId        AS CashierUserId,
+    uCashier.Name   AS CashierName,
+    uCashier.UserName AS CashierUserName
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
 OUTER APPLY (
@@ -84,6 +87,7 @@ OUTER APPLY (
 ) sess
 LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = COALESCE(s.Shiftid, sess.shiftid)
 LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = sess.useridstart
+LEFT JOIN dbo.Users uCashier WITH (NOLOCK) ON uCashier.Id = s.UserId
 WHERE (
     -- Sale.uploadstatus is the middleware source of truth (BillType may be Processed before upload).
     s.uploadstatus IS NULL
@@ -150,7 +154,6 @@ ORDER BY bt.id ASC;";
             }
 
             var items = await LoadLineItemsAsync(saleId, cancellationToken);
-            var inventory = await LoadInventoryConsumedAsync(saleDate.Date, branchId, billId, saleId, cancellationToken);
 
             var payments = new List<PosPayment>();
             if (!reader.IsDBNull(reader.GetOrdinal("PaymentAmount")))
@@ -179,8 +182,8 @@ ORDER BY bt.id ASC;";
                 Items: items,
                 Payments: payments,
                 Customer: BuildCustomer(reader),
-                Inventory: inventory,
-                Shift: BuildShift(reader)
+                Shift: BuildShift(reader),
+                Cashier: BuildCashier(reader)
             );
 
             orders.Add(order);
@@ -228,7 +231,10 @@ SELECT
     sess.EndTime    AS ShiftSessionEnd,
     sh.Id           AS ResolvedShiftId,
     sh.Name         AS ShiftName,
-    uStart.Name     AS ShiftOpenedBy
+    uStart.Name     AS ShiftOpenedBy,
+    s.UserId        AS CashierUserId,
+    uCashier.Name   AS CashierName,
+    uCashier.UserName AS CashierUserName
 FROM dbo.BillType bt WITH (NOLOCK)
 JOIN dbo.Sale s    WITH (NOLOCK) ON s.Id = bt.saleid
 OUTER APPLY (
@@ -248,6 +254,7 @@ OUTER APPLY (
 ) sess
 LEFT JOIN dbo.Shifts sh WITH (NOLOCK) ON sh.Id = COALESCE(s.Shiftid, sess.shiftid)
 LEFT JOIN dbo.Users uStart WITH (NOLOCK) ON uStart.Id = sess.useridstart
+LEFT JOIN dbo.Users uCashier WITH (NOLOCK) ON uCashier.Id = s.UserId
 WHERE bt.id IN ({0});";
 
         var paramNames = billIds.Select((_, idx) => "@b" + idx).ToArray();
@@ -317,8 +324,8 @@ WHERE bt.id IN ({0});";
                 Items: Array.Empty<PosLineItem>(),
                 Payments: payments,
                 Customer: BuildCustomer(reader),
-                Inventory: Array.Empty<PosInventoryConsumed>(),
-                Shift: BuildShift(reader)
+                Shift: BuildShift(reader),
+                Cashier: BuildCashier(reader)
             ));
         }
 
@@ -385,7 +392,7 @@ ORDER BY bt.id DESC;";
         return recent;
     }
 
-    public async Task MarkOrderProcessedAsync(
+    public async Task<bool> MarkOrderProcessedAsync(
         string billId,
         string saleId,
         CancellationToken cancellationToken,
@@ -405,18 +412,21 @@ ORDER BY bt.id DESC;";
             var saleRows = await ExecuteProcessedUpdateAsync(conn, transaction, saleSql, billId, saleId, cancellationToken);
             var lineRows = await ExecuteProcessedUpdateAsync(conn, transaction, linesSql, billId, saleId, cancellationToken);
 
-            await transaction.CommitAsync(cancellationToken);
-
             if (saleRows == 0 || (!allowZeroLines && lineRows == 0))
             {
+                await transaction.RollbackAsync(cancellationToken);
                 _logger.LogWarning(
-                    "Processed flags incomplete after upload bill={BillId} sale={SaleId}: billRows={BillRows} saleRows={SaleRows} lineRows={LineRows}",
+                    "Refusing Processed flag — MintPOS rows not updated bill={BillId} sale={SaleId}: billRows={BillRows} saleRows={SaleRows} lineRows={LineRows}",
                     billId,
                     saleId,
                     billRows,
                     saleRows,
                     lineRows);
+                return false;
             }
+
+            await transaction.CommitAsync(cancellationToken);
+            return true;
         }
         catch
         {
@@ -497,11 +507,13 @@ WHERE s.uploadstatus = 'Processed'
     public sealed record ProcessedBillRef(string BillId, string SaleId);
 
     /// <summary>
-    /// Recent Processed bills that have product lines — candidates for Supabase orphan reclaim.
+    /// Processed bills that have product lines — candidates for cloud orphan reclaim.
+    /// Scans oldest-first with an optional cursor so every Processed bill is checked over time.
     /// </summary>
-    public async Task<IReadOnlyList<ProcessedBillRef>> ReadRecentProcessedBillsAsync(
+    public async Task<IReadOnlyList<ProcessedBillRef>> ReadProcessedBillsForReclaimAsync(
         DateTime? minSaleDate,
         int limit,
+        string? afterBillId,
         CancellationToken cancellationToken)
     {
         const string sql = @"
@@ -513,7 +525,8 @@ INNER JOIN dbo.BillType bt WITH (NOLOCK) ON bt.saleid = s.Id
 WHERE s.uploadstatus = 'Processed'
   AND EXISTS (SELECT 1 FROM dbo.Saledetails sd WITH (NOLOCK) WHERE sd.saleid = s.Id)
   AND (@MinSaleDate IS NULL OR CAST(s.Date AS date) >= CAST(@MinSaleDate AS date))
-ORDER BY s.Date DESC, s.Id DESC;";
+  AND (@AfterBillId IS NULL OR CAST(bt.id AS nvarchar(64)) > @AfterBillId)
+ORDER BY CAST(bt.id AS nvarchar(64)) ASC;";
 
         var rows = new List<ProcessedBillRef>();
         await using var conn = new SqlConnection(ConnectionString);
@@ -521,6 +534,7 @@ ORDER BY s.Date DESC, s.Id DESC;";
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@Limit", Math.Max(1, limit));
         cmd.Parameters.AddWithValue("@MinSaleDate", (object?)minSaleDate?.Date ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@AfterBillId", (object?)afterBillId ?? DBNull.Value);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -634,38 +648,6 @@ WHERE s.uploadstatus = 'Processed'
         await conn.OpenAsync(cancellationToken);
         await using var cmd = new SqlCommand(sql, conn);
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    public async Task MarkInventoryProcessedAsync(IEnumerable<string> inventoryIds, CancellationToken cancellationToken)
-    {
-        var idList = inventoryIds
-            .Select(id => int.TryParse(id, out var parsed) ? parsed : (int?)null)
-            .Where(v => v.HasValue)
-            .Select(v => v!.Value)
-            .ToList();
-
-        if (idList.Count == 0)
-        {
-            return;
-        }
-
-        var paramNames = idList.Select((_, idx) => "@p" + idx).ToArray();
-        var sql = $"UPDATE dbo.InventoryConsumed SET uploadstatus = 'Processed' WHERE Id IN ({string.Join(",", paramNames)})";
-
-        await using var conn = new SqlConnection(ConnectionString);
-        await conn.OpenAsync(cancellationToken);
-
-        await using var cmd = new SqlCommand(sql, conn)
-        {
-            CommandType = CommandType.Text
-        };
-
-        for (var i = 0; i < idList.Count; i++)
-        {
-            cmd.Parameters.AddWithValue(paramNames[i], idList[i]);
-        }
-
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<PosCatalogSkuMapRow>> ReadPosCatalogSkuMapAsync(CancellationToken cancellationToken)
@@ -836,58 +818,22 @@ WHERE NULLIF(LTRIM(RTRIM(mg.Name)), '') IS NOT NULL;";
         return items;
     }
 
-    private async Task<IReadOnlyList<PosInventoryConsumed>> LoadInventoryConsumedAsync(DateTime saleDate, int? branchId, string billId, string saleId, CancellationToken cancellationToken)
+    private static PosCashier? BuildCashier(SqlDataReader reader)
     {
-        // Heuristic match: same sale date + pending, optionally narrowed by branchid if present.
-        const string sql = @"
-SELECT Id,
-       RawItemId,
-       QuantityConsumed,
-       RemainingQuantity,
-       Date,
-       kdsid,
-       typec,
-       uploadstatus
-FROM dbo.InventoryConsumed WITH (NOLOCK)
-WHERE (uploadstatus IS NULL OR uploadstatus = 'Pending')
-  AND Date = @SaleDate
-  AND (@BranchId IS NULL OR branchid = @BranchId);";
+        var userId = TryGetInt32(reader, "CashierUserId");
+        var name = TryGetString(reader, "CashierName");
+        var username = TryGetString(reader, "CashierUserName");
 
-        var rows = new List<PosInventoryConsumed>();
-
-        var branchMissingNote = branchId is null ? $"Branch missing for sale {saleId} (bill {billId})" : null;
-        if (branchMissingNote is not null)
+        if (userId is null && string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(username))
         {
-            _logger.LogWarning("Inventory match using date-only; branchid missing for sale on {SaleDate}", saleDate.Date);
+            return null;
         }
 
-        await using var conn = new SqlConnection(ConnectionString);
-        await conn.OpenAsync(cancellationToken);
-
-        await using var cmd = new SqlCommand(sql, conn)
-        {
-            CommandType = CommandType.Text
-        };
-        cmd.Parameters.AddWithValue("@SaleDate", saleDate);
-        cmd.Parameters.AddWithValue("@BranchId", (object?)branchId ?? DBNull.Value);
-
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            rows.Add(new PosInventoryConsumed(
-                PosId: reader["Id"].ToString() ?? string.Empty,
-                RawItemId: reader["RawItemId"].ToString() ?? string.Empty,
-                QuantityConsumed: Convert.ToDecimal(reader["QuantityConsumed"]),
-                RemainingQuantity: reader.IsDBNull(reader.GetOrdinal("RemainingQuantity")) ? null : Convert.ToDecimal(reader["RemainingQuantity"]),
-                PosDate: reader.IsDBNull(reader.GetOrdinal("Date")) ? null : reader.GetDateTime(reader.GetOrdinal("Date")),
-                KdsId: reader["kdsid"]?.ToString(),
-                Typec: reader["typec"]?.ToString(),
-                BranchId: branchId,
-                BranchMissingNote: branchMissingNote
-            ));
-        }
-
-        return rows;
+        return new PosCashier(
+            UserId: userId,
+            Name: name,
+            Username: username
+        );
     }
 
     private PosCustomer? BuildCustomer(SqlDataReader reader)

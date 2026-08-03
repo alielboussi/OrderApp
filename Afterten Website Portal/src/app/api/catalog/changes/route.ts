@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { listFirestoreCatalogChangeEvents } from "@/lib/firestore-catalog-change-events";
 import {
   CATALOG_CHANGE_TYPES,
   type CatalogChangeEventRow,
@@ -47,6 +49,25 @@ export async function GET(request: Request) {
     const entityTypes = parseList(url.searchParams.get("entity_type")).filter(
       (value): value is CatalogEntityType => value === "item" || value === "variant" || value === "menu_group"
     );
+
+    if (useFirebaseBackend()) {
+      const changes = (await listFirestoreCatalogChangeEvents({
+        since,
+        until,
+        limit,
+        entityId,
+        sku,
+        changeTypes,
+        entityTypes,
+      })) as CatalogChangeEventRow[];
+      return NextResponse.json({
+        changes,
+        count: changes.length,
+        latest_at: changes[0]?.created_at ?? null,
+        polled_at: new Date().toISOString(),
+        backend: "firebase",
+      });
+    }
 
     const supabase = getServiceClient();
     let query = supabase

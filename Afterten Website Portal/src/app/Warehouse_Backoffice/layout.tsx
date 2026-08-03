@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { logWarehouseAction } from "./logging";
 import BackofficeShell from "./BackofficeShell";
+import { WarehouseAuthProvider } from "./WarehouseAuthProvider";
 import "./backoffice-globals.css";
 
 export default function WarehouseBackofficeLayout({ children }: { children: React.ReactNode }) {
@@ -23,7 +24,14 @@ export default function WarehouseBackofficeLayout({ children }: { children: Reac
     if (!win.__wbFetchPatched) {
       win.__wbOriginalFetch = window.fetch.bind(window);
       window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === "string" ? input : (input as Request).url;
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input instanceof Request
+                ? input.url
+                : "";
         const method = init?.method?.toUpperCase?.() ?? "GET";
         const isWarehouse = url.includes("/Warehouse_Backoffice") || url.includes("/api/");
         const res = await win.__wbOriginalFetch!(input, init);
@@ -66,5 +74,9 @@ export default function WarehouseBackofficeLayout({ children }: { children: Reac
     return <>{children}</>;
   }
 
-  return <BackofficeShell>{children}</BackofficeShell>;
+  return (
+    <WarehouseAuthProvider>
+      <BackofficeShell>{children}</BackofficeShell>
+    </WarehouseAuthProvider>
+  );
 }

@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "afterten-portal-system",
+    "staging": "afterten-portal-system"
+  }
+}

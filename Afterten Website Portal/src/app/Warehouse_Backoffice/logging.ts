@@ -1,7 +1,7 @@
 "use client";
 
-import { getWarehouseBrowserClient } from "@/lib/supabase-browser";
 import type { WarehouseAuditPayload } from "@/lib/warehouse-audit";
+import { getWarehouseAuthSession } from "@/lib/warehouse-auth-client";
 
 type WarehouseLogPayload = WarehouseAuditPayload;
 
@@ -13,23 +13,25 @@ export async function logWarehouseAction(payload: WarehouseLogPayload) {
     if (now - lastLoggedAt < 150) return;
     lastLoggedAt = now;
 
-    const supabase = getWarehouseBrowserClient();
-    const session = await supabase.auth.getSession();
-    const user = session.data.session?.user ?? null;
-    const userId = user?.id ?? null;
-    const userEmail = user?.email ?? null;
+    const session = await getWarehouseAuthSession();
+    const userId = session?.userId ?? null;
+    const userEmail = session?.email ?? null;
 
-    await supabase.from("warehouse_backoffice_logs").insert({
-      user_id: userId,
-      user_email: userEmail,
-      action: payload.action,
-      page: payload.page ?? null,
-      method: payload.method ?? null,
-      status: payload.status ?? null,
-      entity_type: payload.entity_type ?? null,
-      entity_id: payload.entity_id ?? null,
-      entity_name: payload.entity_name ?? null,
-      details: payload.details ?? null,
+    await fetch("/api/warehouse-backoffice-logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        user_email: userEmail,
+        action: payload.action,
+        page: payload.page ?? null,
+        method: payload.method ?? null,
+        status: payload.status ?? null,
+        entity_type: payload.entity_type ?? null,
+        entity_id: payload.entity_id ?? null,
+        entity_name: payload.entity_name ?? null,
+        details: payload.details ?? null,
+      }),
     });
   } catch {
     // ignore logging failures

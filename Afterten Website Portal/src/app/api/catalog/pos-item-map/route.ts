@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  createFirestorePosItemMap,
+  deleteFirestorePosItemMap,
+  listFirestorePosItemMap,
+} from "@/lib/firestore-pos-item-map";
 import { getServiceClient } from "@/lib/supabase-server";
 
 type PosMapRow = {
@@ -81,6 +87,11 @@ const buildEnricher = (supabase: ReturnType<typeof getServiceClient>) => {
 
 export async function GET() {
   try {
+    if (useFirebaseBackend()) {
+      const mappings = await listFirestorePosItemMap();
+      return NextResponse.json({ mappings, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
     const enrichWithCatalog = buildEnricher(supabase);
 
@@ -182,6 +193,23 @@ export async function POST(request: Request) {
     if (!outlet_id) return NextResponse.json({ error: "outlet_id is required" }, { status: 400 });
     if (pos_item_id === catalog_item_id) {
       return NextResponse.json({ error: "pos_item_id cannot be the same as catalog_item_id" }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      const result = await createFirestorePosItemMap({
+        pos_item_id,
+        pos_item_name,
+        pos_flavour_id,
+        pos_flavour_name,
+        catalog_item_id,
+        catalog_variant_key,
+        warehouse_id,
+        outlet_id,
+      });
+      return NextResponse.json(
+        { mapping: result.mapping, duplicate: result.duplicate, cloud_backend: "firebase" },
+        { status: result.duplicate ? 200 : 201 },
+      );
     }
 
     const supabase = getServiceClient();
@@ -330,6 +358,18 @@ export async function DELETE(request: Request) {
 
     if (!pos_item_id || !catalog_item_id || !outlet_id) {
       return NextResponse.json({ error: "pos_item_id, catalog_item_id, and outlet_id are required" }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      await deleteFirestorePosItemMap({
+        pos_item_id,
+        catalog_item_id,
+        outlet_id,
+        pos_flavour_id,
+        catalog_variant_key,
+        warehouse_id,
+      });
+      return NextResponse.json({ ok: true, cloud_backend: "firebase" });
     }
 
     const supabase = getServiceClient();

@@ -1,22 +1,12 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  getFirestoreRecipeUomProfile,
+  upsertFirestoreRecipeUomProfile,
+} from "@/lib/firestore-recipes";
 import { getServiceClient } from "@/lib/supabase-server";
 
 type ChainStepPayload = {
-  step_order: number;
-  from_uom: string;
-  to_uom: string;
-  multiplier: number;
-};
-
-type RecipeUomProfile = {
-  id: string;
-  item_id: string;
-  variant_key: string;
-  source_uom: string;
-  target_uom: string;
-};
-
-type RecipeUomStep = {
   step_order: number;
   from_uom: string;
   to_uom: string;
@@ -49,6 +39,12 @@ export async function GET(request: Request) {
     if (!itemId) return NextResponse.json({ error: "item_id is required" }, { status: 400 });
 
     const variantKey = normalizeVariantKey(url.searchParams.get("variant_key"));
+
+    if (useFirebaseBackend()) {
+      const result = await getFirestoreRecipeUomProfile(itemId, variantKey);
+      return NextResponse.json({ ...result, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
 
     const { data: profile, error: profileError } = await supabase
@@ -106,6 +102,17 @@ export async function POST(request: Request) {
         (step: ChainStepPayload) =>
           step.from_uom && step.to_uom && Number.isFinite(step.multiplier) && step.multiplier > 0
       );
+
+    if (useFirebaseBackend()) {
+      const result = await upsertFirestoreRecipeUomProfile({
+        itemId,
+        variantKey,
+        sourceUom,
+        targetUom,
+        steps,
+      });
+      return NextResponse.json({ ...result, cloud_backend: "firebase" });
+    }
 
     const supabase = getServiceClient();
 

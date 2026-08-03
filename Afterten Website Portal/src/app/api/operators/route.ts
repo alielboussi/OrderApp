@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { useFirebaseBackend } from '@/lib/cloud-backend';
+import { listFirestoreOperators } from '@/lib/firestore-operators';
 import { getServiceClient } from '@/lib/supabase-server';
 
 type OperatorRecord = {
@@ -31,6 +33,11 @@ function isSupervisorUser(user: { user_metadata?: Record<string, unknown> | null
 
 export async function GET() {
   try {
+    if (useFirebaseBackend()) {
+      const operators = await listFirestoreOperators();
+      return NextResponse.json({ operators, cloud_backend: 'firebase' });
+    }
+
     const supabase = getServiceClient();
     const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (error) {

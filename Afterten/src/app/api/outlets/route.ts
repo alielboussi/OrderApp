@@ -7,6 +7,8 @@ import {
   MIDDLEWARE_SALES_API_PATHS,
 } from "@/lib/outletScope";
 import { isHeartbeatMonitoredOutlet } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { filterFirestoreOutletsByScope, listFirestoreOutlets } from "@/lib/firestore-outlets";
 
 type OutletRow = {
   id: string;
@@ -49,6 +51,12 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const scope = url.searchParams.get("scope")?.trim().toLowerCase() || null;
+
+    if (useFirebaseBackend()) {
+      let outlets = (await listFirestoreOutlets()).sort((a, b) => a.name.localeCompare(b.name));
+      outlets = filterFirestoreOutletsByScope(outlets, scope);
+      return NextResponse.json({ outlets, cloud_backend: "firebase" });
+    }
 
     const supabase = getServiceClient();
     const { data, error } = await supabase

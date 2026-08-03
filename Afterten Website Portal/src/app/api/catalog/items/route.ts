@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { allocatePosItemSku } from "@/lib/pos-catalog-ids";
 import { isMissingRelationError } from "@/lib/supabase-errors";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  firestoreCatalogItemsDelete,
+  firestoreCatalogItemsGet,
+  firestoreCatalogItemsPost,
+  firestoreCatalogItemsPut,
+} from "@/lib/firestore-catalog-items";
 import {
   ITEM_TRACKED_FIELDS,
   parseCatalogChangeActor,
@@ -303,6 +310,7 @@ async function syncBaseStorageHomes(
 
 export async function GET(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogItemsGet(request);
     const url = new URL(request.url);
     const id = url.searchParams.get("id")?.trim() || null;
     const search = url.searchParams.get("q")?.trim().toLowerCase() || "";
@@ -439,6 +447,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogItemsPost(request);
     const body = await request.json().catch(() => ({}));
     const name = cleanText(body.name);
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -642,6 +651,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogItemsPut(request);
     const body = await request.json().catch(() => ({}));
     const id = cleanText(body.id);
     if (!id || !isUuid(id)) return NextResponse.json({ error: "id is required for update" }, { status: 400 });
@@ -830,6 +840,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreCatalogItemsDelete(request);
     const url = new URL(request.url);
     let id = url.searchParams.get("id")?.trim() || "";
     if (!id) {

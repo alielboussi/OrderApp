@@ -146,7 +146,7 @@ public sealed class ScpgtWindow : Window
 
         var note = new TextBlock
         {
-            Text = "Stocktake periods are opened in Afterten Orders → Outlet Stocktake. This service uploads POS sales within the sync window.",
+            Text = "This service uploads POS sales and catalog updates to the cloud backend.",
             FontSize = 12,
             Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105)),
             Margin = new Thickness(0, 18, 0, 0),

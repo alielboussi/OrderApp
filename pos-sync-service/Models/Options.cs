@@ -54,6 +54,21 @@ public sealed class SupabaseOptions
     public string ServiceKey { get; init; } = string.Empty;
 }
 
+/// <summary>Which cloud backend SCPGT uses.</summary>
+public sealed class CloudBackendOptions
+{
+  public string Backend { get; init; } = "Firebase";
+}
+
+public sealed class FirebaseOptions
+{
+    public string ProjectId { get; init; } = string.Empty;
+    /// <summary>Path to service account JSON, or leave empty to use GOOGLE_APPLICATION_CREDENTIALS.</summary>
+    public string CredentialsPath { get; init; } = string.Empty;
+    /// <summary>Optional Cloud Functions base URL for validate/sync RPC equivalents.</summary>
+    public string FunctionsBaseUrl { get; init; } = string.Empty;
+}
+
 public sealed class SyncOptions
 {
     public int PollSeconds { get; init; } = 60;
@@ -67,10 +82,22 @@ public sealed class SyncOptions
     /// <summary>How often to pull MintPOS SKUs into Supabase catalog (same poll loop as heartbeat).</summary>
     public int PosCatalogSyncMinutes { get; init; } = 5;
     /// <summary>
-    /// Re-check recent MintPOS Processed bills against Supabase and re-queue any missing as Pending.
-    /// Covers false Processed after shift changes / failed verifies.
+    /// Re-check MintPOS Processed bills against the cloud and re-queue any missing as Pending.
+    /// 0 = no day cap (use full history from pos_sync_opening when set).
     /// </summary>
-    public int ReclaimProcessedLookbackDays { get; init; } = 3;
-    /// <summary>Max Processed bills to verify against Supabase per reclaim pass.</summary>
-    public int ReclaimProcessedBatchSize { get; init; } = 400;
+    public int ReclaimProcessedLookbackDays { get; init; } = 0;
+    /// <summary>Max Processed bills to verify against the cloud per reclaim pass.</summary>
+    public int ReclaimProcessedBatchSize { get; init; } = 500;
+    /// <summary>How many reclaim passes to run per sync cycle (scans the full Processed queue over time).</summary>
+    public int ReclaimProcessedMaxPassesPerCycle { get; init; } = 30;
+    /// <summary>Retries when verifying outlet_sales immediately after upload/mark.</summary>
+    public int PostMarkVerifyRetries { get; init; } = 3;
+    /// <summary>Delay between post-mark verify retries (milliseconds).</summary>
+    public int PostMarkVerifyRetryDelayMs { get; init; } = 250;
+    /// <summary>When true, stop processing newer pending bills after a hard sync failure (queue head blocks).</summary>
+    public bool BlockOnSaleSyncFailure { get; init; } = true;
+    /// <summary>Retries for the same bill before blocking the queue for this cycle.</summary>
+    public int SaleSyncFailureRetries { get; init; } = 2;
+    /// <summary>Delay between sale sync retries (milliseconds).</summary>
+    public int SaleSyncFailureRetryDelayMs { get; init; } = 500;
 }

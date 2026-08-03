@@ -3,6 +3,11 @@ import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
 import { loadPosSalesStats, parseShiftFilterFromUrl } from "@/lib/posSalesStats";
 import { getServiceClient } from "@/lib/supabase-server";
 import { isMissingRelationError } from "@/lib/supabase-errors";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  loadFirestorePosSalesStats,
+  loadFirestoreTransferOrderStats,
+} from "@/lib/firestore-pos-sales";
 
 type OrderItemRow = {
   name: string | null;
@@ -91,6 +96,43 @@ export async function GET(request: NextRequest) {
 
     if (salesRange.from > salesRange.to || ordersRange.from > ordersRange.to) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      let sales = {
+        total_qty: 0,
+        total_revenue: 0,
+        bill_count: 0,
+        line_count: 0,
+        most_sold: null as { name: string; qty: number } | null,
+        least_sold: null as { name: string; qty: number } | null,
+      };
+
+      if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
+        sales = await loadFirestorePosSalesStats({
+          outletIds: salesOutletIds,
+          fromIso: salesRange.from.toISOString(),
+          toIso: salesRange.to.toISOString(),
+          shiftIds,
+          includeUnknownShift,
+        });
+      }
+
+      const outlet_orders = await loadFirestoreTransferOrderStats(
+        salesOutletIds,
+        ordersRange.from.toISOString(),
+        ordersRange.to.toISOString(),
+      );
+
+      return NextResponse.json({
+        sales,
+        outlet_orders,
+        ranges: {
+          sales: { from: salesRange.from.toISOString(), to: salesRange.to.toISOString() },
+          orders: { from: ordersRange.from.toISOString(), to: ordersRange.to.toISOString() },
+        },
+        backend: "firebase",
+      });
     }
 
     const supabase = getServiceClient();

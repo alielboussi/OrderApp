@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  listFirestoreRecipeSourceWarehouses,
+  saveFirestoreRecipeSourceWarehouses,
+} from "@/lib/firestore-recipes";
 import { getServiceClient } from "@/lib/supabase-server";
 
 function isUuid(value: unknown): value is string {
@@ -24,6 +29,11 @@ export async function GET(request: Request) {
 
     if (!ids.length) {
       return NextResponse.json({ selections: {} });
+    }
+
+    if (useFirebaseBackend()) {
+      const selections = await listFirestoreRecipeSourceWarehouses(ids);
+      return NextResponse.json({ selections, cloud_backend: "firebase" });
     }
 
     const supabase = getServiceClient();
@@ -56,6 +66,19 @@ export async function PUT(request: Request) {
     const body = await request.json().catch(() => ({}));
     const selections = Array.isArray(body?.selections) ? body.selections : [];
 
+    if (useFirebaseBackend()) {
+      const normalized: Array<{ item_id: string; warehouse_ids: string[] }> = [];
+      for (const entry of selections) {
+        const itemId = cleanUuid(entry?.item_id);
+        if (!itemId) continue;
+        const rawWarehouseIds: unknown[] = Array.isArray(entry?.warehouse_ids) ? entry.warehouse_ids : [];
+        const warehouseIds = rawWarehouseIds.map((rawId) => cleanUuid(rawId)).filter((id): id is string => Boolean(id));
+        normalized.push({ item_id: itemId, warehouse_ids: warehouseIds });
+      }
+      await saveFirestoreRecipeSourceWarehouses(normalized);
+      return NextResponse.json({ ok: true, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
 
     for (const entry of selections) {
@@ -81,11 +104,8 @@ export async function PUT(request: Request) {
         item_id: itemId,
         warehouse_id: warehouseId,
         recipe_source: true,
-        deduction_uom: "each",
-        damage_unit: "each",
         variant_key: "base",
       }));
-
       const { error: insertError } = await supabase.from("item_warehouse_handling_policies").insert(rows);
       if (insertError) throw insertError;
     }

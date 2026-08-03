@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { insertFirestoreCatalogSyncRows } from "@/lib/firestore-catalog-sync";
 
 type CandidateRow = {
   key: string;
@@ -183,8 +185,12 @@ export async function POST(request: Request) {
     }
 
     const supabase = getServiceClient();
-    const { error: insertError } = await supabase.from("outlet_catalog_sync_events").insert(rows);
-    if (insertError) throw insertError;
+    if (useFirebaseBackend()) {
+      await insertFirestoreCatalogSyncRows(rows);
+    } else {
+      const { error: insertError } = await supabase.from("outlet_catalog_sync_events").insert(rows);
+      if (insertError) throw insertError;
+    }
 
     return NextResponse.json({
       ok: true,

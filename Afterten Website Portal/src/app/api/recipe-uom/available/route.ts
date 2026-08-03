@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { getFirestoreRecipeUomAvailableQty } from "@/lib/firestore-recipes";
 import { getServiceClient } from "@/lib/supabase-server";
 
 const normalizeVariantKey = (value?: string | null) => {
@@ -22,6 +24,12 @@ export async function POST(request: Request) {
     }
 
     const variantKey = normalizeVariantKey(payload.variant_key);
+
+    if (useFirebaseBackend()) {
+      const row = await getFirestoreRecipeUomAvailableQty(warehouseId, itemId, variantKey);
+      return NextResponse.json({ row, cloud_backend: "firebase" });
+    }
+
     const supabase = getServiceClient();
 
     const { data, error } = await supabase.rpc("recipe_uom_available_qty", {

@@ -26,6 +26,8 @@ type FormState = {
   units_per_pack: string;
   cost: string;
   selling_price: string;
+  orders_app_uom: string;
+  orders_app_cost_price: string;
   has_variations: boolean;
   image_url: string;
   active: boolean;
@@ -40,6 +42,8 @@ const defaultForm: FormState = {
   units_per_pack: "1",
   cost: "0",
   selling_price: "0",
+  orders_app_uom: "pc",
+  orders_app_cost_price: "0",
   has_variations: false,
   image_url: "",
   active: true,
@@ -124,6 +128,9 @@ function ProductCreatePage() {
             units_per_pack: String(item.units_per_purchase_pack ?? 1),
             cost: (item.cost ?? 0).toString(),
             selling_price: (item.selling_price ?? 0).toString(),
+            orders_app_uom:
+              normalizeUomValue(item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
+            orders_app_cost_price: (item.orders_app_cost_price ?? item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
             image_url: item.image_url ?? "",
             active: item.active ?? true,
@@ -196,6 +203,8 @@ function ProductCreatePage() {
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
+        orders_app_uom: form.orders_app_uom,
+        orders_app_cost_price: toNumber(form.orders_app_cost_price, 0),
         has_variations: form.has_variations,
         image_url: form.image_url,
         active: form.active,
@@ -274,6 +283,9 @@ function ProductCreatePage() {
               units_per_pack: String(item.units_per_purchase_pack ?? 1),
               cost: (item.cost ?? 0).toString(),
               selling_price: (item.selling_price ?? 0).toString(),
+              orders_app_uom:
+                normalizeUomValue(item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
+              orders_app_cost_price: (item.orders_app_cost_price ?? item.selling_price ?? 0).toString(),
               has_variations: Boolean(item.has_variations),
               image_url: item.image_url ?? "",
               active: item.active ?? true,
@@ -359,6 +371,31 @@ function ProductCreatePage() {
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
             />
+          </div>
+
+          <div className={styles.sectionCard}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Orders App</h3>
+              <p className={styles.sectionHint}>UOM and price shown in the outlet Orders mobile app.</p>
+            </div>
+            <div className={styles.sectionGrid}>
+              <Select
+                label="OrdersApp Uom"
+                hint="Unit of measure displayed when outlets order this product"
+                value={form.orders_app_uom}
+                onChange={(v) => handleChange("orders_app_uom", v)}
+                options={uomOptions}
+              />
+              <Field
+                type="number"
+                label="Orders app cost price"
+                hint="Selling price shown in the Orders app review screen"
+                value={form.orders_app_cost_price}
+                onChange={(v) => handleChange("orders_app_cost_price", v)}
+                step="0.01"
+                min="0"
+              />
+            </div>
           </div>
 
           {!form.has_variations && (

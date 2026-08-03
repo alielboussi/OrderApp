@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { getFirestoreCatalogSyncStatus } from "@/lib/firestore-catalog-sync";
 
 function parseEventIds(request: Request): string[] {
   const url = new URL(request.url);
@@ -20,6 +22,11 @@ export async function GET(request: Request) {
     const eventIds = parseEventIds(request);
     if (!eventIds.length) {
       return NextResponse.json({ error: "ids query parameter is required" }, { status: 400 });
+    }
+
+    if (useFirebaseBackend()) {
+      const status = await getFirestoreCatalogSyncStatus(eventIds);
+      return NextResponse.json({ ...status, cloud_backend: "firebase" });
     }
 
     const supabase = getServiceClient();

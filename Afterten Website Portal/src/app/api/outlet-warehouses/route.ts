@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import { listFirestoreOutletWarehouseLinks } from "@/lib/firestore-outlet-warehouses";
 import { getServiceClient } from "@/lib/supabase-server";
 import {
   isOutletDeductionWarehouse,
@@ -43,6 +45,11 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const outletId = url.searchParams.get("outlet_id")?.trim();
     const scope = url.searchParams.get("scope")?.trim().toLowerCase() || null;
+
+    if (useFirebaseBackend()) {
+      const links = await listFirestoreOutletWarehouseLinks({ outletId, scope });
+      return NextResponse.json({ links, cloud_backend: "firebase" });
+    }
 
     const supabase = getServiceClient();
     let query = supabase

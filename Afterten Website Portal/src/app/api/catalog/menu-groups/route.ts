@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { nextPosMenuGroupId } from "@/lib/pos-catalog-ids";
+import { useFirebaseBackend } from "@/lib/cloud-backend";
+import {
+  firestoreMenuGroupsGet,
+  firestoreMenuGroupsPost,
+  firestoreMenuGroupsPut,
+} from "@/lib/firestore-catalog-menu-groups";
 import {
   MENU_GROUP_TRACKED_FIELDS,
   parseCatalogChangeActor,
@@ -29,6 +35,7 @@ function isUuid(value: string): boolean {
 
 export async function GET(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreMenuGroupsGet(request);
     const url = new URL(request.url);
     const id = cleanText(url.searchParams.get("id"));
     const supabase = getServiceClient();
@@ -63,6 +70,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreMenuGroupsPost(request);
     const body = await request.json().catch(() => ({}));
     const name = cleanText(body.name);
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -114,6 +122,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    if (useFirebaseBackend()) return firestoreMenuGroupsPut(request);
     const body = await request.json().catch(() => ({}));
     const id = cleanText(body.id);
     if (!id || !isUuid(id)) {
