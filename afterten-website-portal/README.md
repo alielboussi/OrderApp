@@ -2,48 +2,35 @@
 
 Next.js app for the AfterTen warehouse backoffice, outlet management, and supporting API routes.
 
-**Vercel:** set the project **Root Directory** to **`Afterten`** (repo folder; no spaces in the path).
+**Vercel:** set the project **Root Directory** to **`afterten-website-portal`**.
 
-Legacy per-storeroom transfer scanner UIs (Beverages, Coldrooms, Ingredients, etc.) have been removed. Hub inventory is handled through **Warehouse Backoffice → Purchases / Transfers / Damages**. Outlet workflows use the **Afterten Orders** Android app.
+Outlet transfer orders use the **Expo orders app** (`afterten-orders-expo/`). Legacy Kotlin Android apps have been removed.
 
 ### Prerequisites
 
-- Supabase project with warehouse, catalog, outlet, and stock ledger schema applied.
+- Firebase project `afterten-portal-system` with Firestore data and Firebase Auth enabled.
 - Vercel account (or any Next.js-compatible host).
 
 ### Local setup
 
 ```bash
-cp Afterten/.env.example Afterten/.env.local
-cd Afterten
+cp .env.example .env.local
 npm install
 npm run dev
 ```
 
-Fill `.env.local` with your Supabase credentials before running `npm run dev`.
-
-### Environment variables
-
-| Name | Description |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL exposed to the browser. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for backoffice auth + client queries. |
-| `SUPABASE_URL` | (Optional) Server-side Supabase URL; defaults to `NEXT_PUBLIC_SUPABASE_URL`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key used in API routes. Keep secret. |
-| `STOCK_VIEW_NAME` | Optional warehouse stock view override. Defaults to `warehouse_stock_current`. |
+Fill `.env.local` with Firebase credentials (see `.env.example`).
 
 ### Deploying to Vercel
 
-1. In Vercel → **Project Settings → General → Root Directory**, set **`Afterten`**.
-2. Configure environment variables in the Vercel project settings.
-3. Connect the repo and deploy. Primary URLs:
-   - `https://<vercel-domain>/` → landing page
-   - `https://<vercel-domain>/Warehouse_Backoffice` → warehouse backoffice dashboard
-   - `https://<vercel-domain>/api/warehouses` → warehouse list API
-   - `https://<vercel-domain>/api/stock` → stock aggregation API
+1. **Root Directory:** `afterten-website-portal`
+2. Set Firebase env vars from `.env.example` (no Supabase variables).
+3. Deploy. Primary URLs:
+   - `https://<vercel-domain>/Warehouse_Backoffice` — backoffice dashboard
+   - `https://<vercel-domain>/api/outlet-middleware-sales/tills` — middleware sales API
 
 ### Architecture
 
-- `src/app/Warehouse_Backoffice/` – Backoffice UI (catalog, purchases, outlets, stocktakes, live balances).
-- `src/app/api/` – Server routes for warehouses, stock, transfers, catalog, outlets, POS deductions, etc.
-- `src/lib/outletScope.ts` / `src/lib/sellingOutlets.ts` – Shared outlet filtering for backoffice pages.
+- `src/app/Warehouse_Backoffice/` — Backoffice UI
+- `src/app/api/` — Server routes (Firestore-backed)
+- `src/lib/firestore-*.ts` — Firestore data access

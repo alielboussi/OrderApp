@@ -2,19 +2,18 @@
 
 Last updated: 2026-08-03
 
-The **Website Portal** (`afterten-website-portal/`), **SCPGT** (`pos-sync-service/`), and **Firebase** (`firebase/`) stacks are Firebase/Firestore-only in this repo. Supabase schema, clients, dual-backend switches, and migration scripts have been removed.
+## Codebase
 
-## Still outside this cleanup
+| Component | Backend | Status |
+|-----------|---------|--------|
+| Website portal (`afterten-website-portal/`) | Firebase / Firestore | **Active** — no Supabase code |
+| SCPGT (`pos-sync-service/`) | Firebase / Firestore | **Active** — no Supabase code |
+| Orders app (`afterten-orders-expo/`) | Firebase / Firestore | **Active** — Expo replacement for Kotlin app |
+| Kotlin Android apps | — | **Removed** (were Supabase-only) |
 
-| Area | Notes |
-|------|--------|
-| **Kotlin Orders / Stocktake apps** (`Afterten Orders/`, `Shared/`) | Still reference Supabase in Gradle and Kotlin sources — use **`afterten-orders-expo/`** for Firebase orders |
-| **Supabase cloud project** | Delete manually in Supabase dashboard when pilot verification is complete |
-| **Brother's stock API** | Separate system; portal syncs catalog via stock API, not Supabase |
+## Remaining manual steps
 
-## Production checklist
-
-1. Vercel Root Directory: `afterten-website-portal`
-2. Firebase env vars set (no `SUPABASE_*` or `CLOUD_BACKEND`)
-3. Till 1 / Till 2 / Quick Corner SCPGT on Firebase with `pending_bills = 0`
-4. Smoke-test `aftertentransfers.app` login + sales APIs
+1. Vercel: Root Directory = `afterten-website-portal`, Firebase env vars only (no `SUPABASE_*`)
+2. Pilot outlets: Till 1, Till 2, Quick Corner — SCPGT `pending_bills = 0`
+3. Delete Supabase cloud project when stable on Firebase
+4. Rotate any credentials that were ever committed to `gradle.properties` (legacy Android config)
