@@ -36,7 +36,9 @@ export type PosItemMapRow = {
 export type MiddlewareSalesCatalogIndex = {
   itemById: Map<string, CatalogItemRow>;
   itemIdBySku: Map<string, string>;
+  itemIdByNormalizedName: Map<string, string>;
   variantByItemAndKey: Map<string, CatalogVariantRow>;
+  variantByItemAndName: Map<string, CatalogVariantRow>;
   menuGroupById: Map<string, CatalogMenuGroupRow>;
   posMapByOutletPosFlavour: Map<string, PosItemMapRow>;
 };
@@ -49,6 +51,18 @@ export function isCatalogUuid(value: string | null | undefined): boolean {
 function normalizeKey(value: string | null | undefined): string {
   const trimmed = value?.trim();
   return trimmed && trimmed.length ? trimmed.toLowerCase() : "";
+}
+
+function normalizeName(value: string | null | undefined): string {
+  return normalizeKey(value).replace(/\s+/g, " ");
+}
+
+function variantNameLookupKey(itemId: string, name: string): string {
+  return `${itemId.toLowerCase()}::${normalizeName(name)}`;
+}
+
+function itemNameLookupKey(name: string): string {
+  return normalizeName(name);
 }
 
 function normalizeVariantKey(value: string | null | undefined): string {
@@ -92,6 +106,7 @@ export async function loadMiddlewareSalesCatalogIndex(
 
   const itemById = new Map<string, CatalogItemRow>();
   const itemIdBySku = new Map<string, string>();
+  const itemIdByNormalizedName = new Map<string, string>();
 
   for (const doc of itemsSnap.docs) {
     const data = doc.data();
@@ -111,11 +126,22 @@ export async function loadMiddlewareSalesCatalogIndex(
       }
     }
     if (!isCatalogUuid(doc.id)) {
-      itemIdBySku.set(doc.id.toLowerCase(), doc.id);
+      const existingSkuDoc = itemIdBySku.get(doc.id.toLowerCase());
+      if (!existingSkuDoc || !isCatalogUuid(existingSkuDoc)) {
+        itemIdBySku.set(doc.id.toLowerCase(), doc.id);
+      }
+    }
+    if (row.name) {
+      const nameKey = itemNameLookupKey(row.name);
+      const existing = itemIdByNormalizedName.get(nameKey);
+      if (!existing || (!isCatalogUuid(existing) && isCatalogUuid(doc.id))) {
+        itemIdByNormalizedName.set(nameKey, doc.id);
+      }
     }
   }
 
   const variantByItemAndKey = new Map<string, CatalogVariantRow>();
+  const variantByItemAndName = new Map<string, CatalogVariantRow>();
   for (const doc of variantsSnap.docs) {
     const data = doc.data();
     const itemId = asText(data.item_id) ?? asText(data.itemId) ?? asText(data.itemSku);
@@ -131,6 +157,13 @@ export async function loadMiddlewareSalesCatalogIndex(
     if (row.sku) variantByItemAndKey.set(variantLookupKey(resolvedItemId, row.sku), row);
     const variantKey = asText(data.variant_key) ?? asText(data.variantKey);
     if (variantKey) variantByItemAndKey.set(variantLookupKey(resolvedItemId, variantKey), row);
+    if (row.name) {
+      const nameKey = variantNameLookupKey(resolvedItemId, row.name);
+      const existing = variantByItemAndName.get(nameKey);
+      if (!existing || (!isCatalogUuid(existing.id) && isCatalogUuid(row.id))) {
+        variantByItemAndName.set(nameKey, row);
+      }
+    }
   }
 
   const menuGroupById = new Map<string, CatalogMenuGroupRow>();
@@ -170,7 +203,9 @@ export async function loadMiddlewareSalesCatalogIndex(
   return {
     itemById,
     itemIdBySku,
+    itemIdByNormalizedName,
     variantByItemAndKey,
+    variantByItemAndName,
     menuGroupById,
     posMapByOutletPosFlavour,
   };
@@ -224,6 +259,8 @@ function resolveItemId(
     catalogItemId: string | null;
     itemSku: string | null;
     posItemId: string | null;
+    lineName: string | null;
+    flavourName: string | null;
   },
 ): string | null {
   const candidates: string[] = [];
@@ -247,7 +284,45 @@ function resolveItemId(
     if (preferred) return preferred;
   }
 
+  for (const name of [options.lineName, options.flavourName]) {
+    if (!name) continue;
+    const byName = index.itemIdByNormalizedName.get(itemNameLookupKey(name));
+    if (byName) {
+      const preferred = preferUuidCatalogId(index, byName);
+      if (preferred) return preferred;
+    }
+    if (normalizeName(name) === "muffin") {
+      const muffins = index.itemIdByNormalizedName.get("muffins");
+      if (muffins) return preferUuidCatalogId(index, muffins);
+    }
+  }
+
   return null;
+}
+
+function preferUuidVariant(
+  index: MiddlewareSalesCatalogIndex,
+  itemId: string,
+  variant: CatalogVariantRow | null,
+  flavourName: string | null,
+): CatalogVariantRow | null {
+  if (!variant) return null;
+  if (isCatalogUuid(variant.id)) return variant;
+
+  const names = [variant.name, flavourName].filter((value): value is string => Boolean(value?.trim()));
+  for (const name of names) {
+    const byName = index.variantByItemAndName.get(variantNameLookupKey(itemId, name));
+    if (byName && isCatalogUuid(byName.id)) return byName;
+  }
+
+  for (const candidate of index.variantByItemAndName.values()) {
+    if (candidate.item_id !== itemId || !isCatalogUuid(candidate.id) || !candidate.name) continue;
+    for (const name of names) {
+      if (normalizeName(candidate.name) === normalizeName(name)) return candidate;
+    }
+  }
+
+  return variant;
 }
 
 function resolveVariant(
@@ -258,12 +333,13 @@ function resolveVariant(
     variantKey: string | null;
     variantSku: string | null;
     flavourId: string | null;
+    flavourName: string | null;
     mapVariantKey: string | null;
   },
 ): CatalogVariantRow | null {
   const candidates = [
-    options.variantId,
     options.mapVariantKey,
+    options.variantId,
     options.variantKey,
     options.variantSku,
     options.flavourId,
@@ -274,19 +350,37 @@ function resolveVariant(
     const hit =
       index.variantByItemAndKey.get(variantLookupKey(itemId, candidate)) ??
       index.variantByItemAndKey.get(variantLookupKey(itemId, normalized));
-    if (hit) return hit;
-    if (isCatalogUuid(candidate) && index.variantByItemAndKey.has(variantLookupKey(itemId, candidate))) {
-      return index.variantByItemAndKey.get(variantLookupKey(itemId, candidate)) ?? null;
+    if (hit) return preferUuidVariant(index, itemId, hit, options.flavourName);
+    if (isCatalogUuid(candidate)) {
+      for (const variant of index.variantByItemAndKey.values()) {
+        if (variant.id === candidate && variant.item_id === itemId) {
+          return preferUuidVariant(index, itemId, variant, options.flavourName);
+        }
+      }
     }
   }
 
-  if (isCatalogUuid(options.variantId)) {
-    for (const variant of index.variantByItemAndKey.values()) {
-      if (variant.id === options.variantId && variant.item_id === itemId) return variant;
-    }
+  if (options.flavourName) {
+    const byName = index.variantByItemAndName.get(variantNameLookupKey(itemId, options.flavourName));
+    if (byName) return preferUuidVariant(index, itemId, byName, options.flavourName);
   }
 
   return null;
+}
+
+function lookupPosItemMap(
+  index: MiddlewareSalesCatalogIndex,
+  outletId: string,
+  posItemId: string,
+  flavourId: string | null,
+): PosItemMapRow | null {
+  return (
+    index.posMapByOutletPosFlavour.get(posMapLookupKey(outletId, posItemId, flavourId)) ??
+    index.posMapByOutletPosFlavour.get(posMapLookupKey("*", posItemId, flavourId)) ??
+    index.posMapByOutletPosFlavour.get(posMapLookupKey(outletId, posItemId, null)) ??
+    index.posMapByOutletPosFlavour.get(posMapLookupKey("*", posItemId, null)) ??
+    null
+  );
 }
 
 export function resolveMiddlewareSaleCatalogLine(
@@ -301,16 +395,16 @@ export function resolveMiddlewareSaleCatalogLine(
   const variantId = asText(row.variant_id);
   const variantKey = asText(row.variant_key);
 
-  const mapRow =
-    (posItemId
-      ? index.posMapByOutletPosFlavour.get(posMapLookupKey(outletId, posItemId, flavourId)) ??
-        index.posMapByOutletPosFlavour.get(posMapLookupKey("*", posItemId, flavourId))
-      : null) ?? null;
+  const lineName = asText(row.name);
+  const flavourName = asText(row.flavour_name);
+  const mapRow = posItemId ? lookupPosItemMap(index, outletId, posItemId, flavourId) : null;
 
   const itemId = resolveItemId(index, {
     catalogItemId: mapRow?.catalog_item_id ?? null,
     itemSku,
     posItemId,
+    lineName,
+    flavourName,
   });
 
   const item = itemId ? index.itemById.get(itemId) : undefined;
@@ -320,6 +414,7 @@ export function resolveMiddlewareSaleCatalogLine(
         variantKey,
         variantSku,
         flavourId,
+        flavourName,
         mapVariantKey: mapRow?.catalog_variant_key ?? null,
       })
     : null;
@@ -328,16 +423,19 @@ export function resolveMiddlewareSaleCatalogLine(
   const menuGroup = menuGroupId ? index.menuGroupById.get(menuGroupId) : undefined;
   const groupUuid = menuGroup?.id ?? (isCatalogUuid(menuGroupId) ? menuGroupId : null);
 
-  const productUuid = itemId ? (isCatalogUuid(itemId) ? itemId : preferUuidCatalogId(index, itemId) ?? itemId) : "unknown";
-  const variantUuid = variant ? (isCatalogUuid(variant.id) ? variant.id : null) : null;
+  const resolvedItemId = itemId ? preferUuidCatalogId(index, itemId) ?? itemId : null;
+  const variantUuid = variant && isCatalogUuid(variant.id) ? variant.id : null;
+  const productUuid =
+    variantUuid ??
+    (resolvedItemId && isCatalogUuid(resolvedItemId) ? resolvedItemId : resolvedItemId ?? "unknown");
 
   return {
     product_uuid: productUuid,
-    product_name: item?.name ?? asText(row.name),
+    product_name: variant?.name ?? item?.name ?? lineName,
     group_uuid: groupUuid,
     group_name: menuGroup?.name ?? null,
     variant_uuid: variantUuid,
-    variant_name: variant?.name ?? asText(row.flavour_name),
+    variant_name: variant?.name ?? flavourName,
     variant_sku: variant?.sku ?? variantSku,
     menu_group_uuid: groupUuid,
     menu_group_name: menuGroup?.name ?? null,
