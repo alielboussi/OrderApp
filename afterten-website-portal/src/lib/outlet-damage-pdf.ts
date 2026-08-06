@@ -1,4 +1,4 @@
-import { formatOrdersAppUom } from "./orders-app-uom";
+import { DAMAGE_UOM } from "./damage-uom";
 
 export type OutletDamagePdfItem = {
   name: string;
@@ -283,7 +283,7 @@ function groupPdfItems(items: OutletDamagePdfItem[]): PdfProductGroup[] {
       productName: group.productName,
       showAsVariant,
       qty: item.qty,
-      uom: item.uom,
+      uom: DAMAGE_UOM,
     });
     groups.set(key, group);
   }
@@ -306,7 +306,7 @@ function buildTableRows(groups: PdfProductGroup[], totalQty: number): PdfTableRo
           kind: "line",
           label: line.showAsVariant ? line.displayLabel : line.label,
           qty: line.qty,
-          uom: formatOrdersAppUom(line.uom, line.qty),
+          uom: DAMAGE_UOM,
         });
       }
       continue;
@@ -316,7 +316,7 @@ function buildTableRows(groups: PdfProductGroup[], totalQty: number): PdfTableRo
         kind: "line",
         label: line.label,
         qty: line.qty,
-        uom: formatOrdersAppUom(line.uom, line.qty),
+        uom: DAMAGE_UOM,
       });
     }
   }

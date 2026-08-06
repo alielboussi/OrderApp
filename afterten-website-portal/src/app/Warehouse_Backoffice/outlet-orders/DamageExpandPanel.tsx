@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DamageReportLineRow } from "@/lib/firestore-damage-reports";
+import { DAMAGE_UOM } from "@/lib/damage-uom";
 import styles from "./outlet-orders.module.css";
 
 type DamageExpandPanelProps = {
@@ -66,7 +67,7 @@ export function DamageExpandPanel({ reportId, onError }: DamageExpandPanelProps)
           <div key={line.id} className={styles.damageLineRow}>
             <span>{line.name ?? "Item"}</span>
             <span className={styles.alignRight}>{formatQty(line.qty ?? 0)}</span>
-            <span>{line.uom ?? "Pc(s)"}</span>
+            <span>{DAMAGE_UOM}</span>
           </div>
         ))}
       </div>

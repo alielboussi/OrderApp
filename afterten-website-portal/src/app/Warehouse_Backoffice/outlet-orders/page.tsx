@@ -11,6 +11,7 @@ import {
 } from "@/lib/transfer-order-status";
 import { buildOutletOrderPdfFilename, buildOutletOrderPdfHtml, formatOutletOrderMoney } from "@/lib/outlet-order-pdf";
 import { buildOutletDamagePdfFilename, buildOutletDamagePdfHtml } from "@/lib/outlet-damage-pdf";
+import { DAMAGE_UOM } from "@/lib/damage-uom";
 import {
   resolveBaseProductNameFromCatalog,
   sumPortalOrderItems,
@@ -632,7 +633,7 @@ function OutletOrdersPage() {
         variantKey: row.variant_key ?? null,
         productName: productBaseNameFromLabel(row.name ?? "Item"),
         qty: row.qty ?? 0,
-        uom: row.uom ?? "Pc(s)",
+        uom: DAMAGE_UOM,
       }));
       const totalQty = items.reduce((sum, row) => sum + row.qty, 0);
       const logoDataUrl = await loadLogoDataUrl();

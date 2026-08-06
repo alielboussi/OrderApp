@@ -1,4 +1,5 @@
 import { getFirestoreDb } from "@/lib/firebase-server";
+import { DAMAGE_UOM } from "@/lib/damage-uom";
 import { isTransferOrderOnDate } from "@/lib/transfer-order-dates";
 
 export type DamageReportRow = {
@@ -144,7 +145,7 @@ export async function listFirestoreDamageReportLines(reportId: string): Promise<
       id: doc.id,
       name: (data.name as string | null | undefined) ?? null,
       qty: data.qty == null ? null : Number(data.qty),
-      uom: (data.uom as string | null | undefined) ?? null,
+      uom: DAMAGE_UOM,
       product_id: (data.productId as string | null | undefined) ?? null,
       variant_key: (data.variantKey as string | null | undefined) ?? null,
     };
