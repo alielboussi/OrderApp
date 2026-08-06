@@ -10,6 +10,8 @@ import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import { vatExcludedFromSellingPrice } from "@/lib/catalog-middleware-utils";
 import eb from "../../enterprise.module.css";
 import styles from "./menu.module.css";
+import { CatalogImageThumb } from "../CatalogImageThumb";
+import { CatalogCardImageMenu } from "../CatalogCardImageMenu";
 
 type Item = {
   id: string;
@@ -141,20 +143,37 @@ function ProductCard({
   menuGroupName,
   onShowVariants,
   onDeleteItem,
+  onItemImageUpdated,
   readOnly,
+  userId,
+  userEmail,
 }: {
   item: Item;
   itemVariants: Variant[];
   menuGroupName?: string | null;
   onShowVariants: (item: Item, variants: Variant[]) => void;
   onDeleteItem: (item: Item) => void;
+  onItemImageUpdated: (itemId: string, imageUrl: string) => void;
   readOnly: boolean;
+  userId?: string | null;
+  userEmail?: string | null;
 }) {
   const hasVariants = Boolean(item.has_variations) || itemVariants.length > 0;
   const isFinished = (item.item_kind ?? "finished").trim().toLowerCase() === "finished";
 
   return (
     <article className={styles.card}>
+      <div className={styles.cardImageWrap}>
+        <CatalogImageThumb url={item.image_url} alt={item.name} />
+        {!readOnly ? (
+          <CatalogCardImageMenu
+            entityType="product"
+            entityId={item.id}
+            actor={{ userId, userEmail }}
+            onImageUpdated={(imageUrl) => onItemImageUpdated(item.id, imageUrl)}
+          />
+        ) : null}
+      </div>
       <div className={styles.cardHeader}>
         <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>SKU: {item.sku ?? "—"}</p>
         <div className={styles.cardTopRow}>
@@ -228,18 +247,94 @@ function ProductCard({
   );
 }
 
+function VariantCard({
+  variant,
+  parentItem,
+  readOnly,
+  onDeleteVariant,
+  onVariantImageUpdated,
+  userId,
+  userEmail,
+}: {
+  variant: Variant;
+  parentItem: Item;
+  readOnly: boolean;
+  onDeleteVariant: (variant: Variant, item: Item) => void;
+  onVariantImageUpdated: (variantId: string, imageUrl: string) => void;
+  userId?: string | null;
+  userEmail?: string | null;
+}) {
+  return (
+    <article className={`${styles.card} ${styles.variantCard}`}>
+      <div className={styles.cardImageWrap}>
+        <CatalogImageThumb url={variant.image_url ?? parentItem.image_url} alt={variant.name} />
+        {!readOnly ? (
+          <CatalogCardImageMenu
+            entityType="variant"
+            entityId={variant.id}
+            itemId={variant.item_id}
+            actor={{ userId, userEmail }}
+            onImageUpdated={(imageUrl) => onVariantImageUpdated(variant.id, imageUrl)}
+          />
+        ) : null}
+      </div>
+      <div className={styles.cardHeader}>
+        <p className={`${styles.skuTop} ${!variant.sku ? styles.skuTopMuted : ""}`}>SKU: {variant.sku ?? "—"}</p>
+        <div className={styles.cardMain}>
+          <div className={styles.cardTitleBlock}>
+            <div className={styles.rowTop}>
+              <p className={styles.itemKind}>Variant</p>
+              <Link
+                className={styles.iconButton}
+                href={`/Warehouse_Backoffice/catalog/variants?id=${variant.id}&item_id=${variant.item_id}`}
+                aria-label={`Edit ${variant.name}`}
+                title="Edit variant"
+              >
+                <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </Link>
+            </div>
+            <h2 className={styles.itemName}>{variant.name}</h2>
+            <SellingPriceLine sellingPrice={variant.selling_price} />
+          </div>
+        </div>
+      </div>
+      <button
+        type="button"
+        className={`${styles.iconButton} ${styles.deleteButton}`}
+        onClick={() => onDeleteVariant(variant, parentItem)}
+        disabled={readOnly}
+        aria-label={`Delete ${variant.name}`}
+        title="Delete variant"
+      >
+        <DeleteIcon />
+      </button>
+    </article>
+  );
+}
+
 function VariantsPopup({
   item,
   itemVariants,
   readOnly,
   onClose,
   onDeleteVariant,
+  onVariantImageUpdated,
+  userId,
+  userEmail,
 }: {
   item: Item;
   itemVariants: Variant[];
   readOnly: boolean;
   onClose: () => void;
   onDeleteVariant: (variant: Variant, item: Item) => void;
+  onVariantImageUpdated: (variantId: string, imageUrl: string) => void;
+  userId?: string | null;
+  userEmail?: string | null;
 }) {
   return (
     <div className={styles.dialogOverlay} role="presentation" onClick={onClose}>
@@ -257,47 +352,24 @@ function VariantsPopup({
           {itemVariants.length} variant{itemVariants.length === 1 ? "" : "s"}
           {item.sku ? ` · Product SKU: ${item.sku}` : ""}
         </p>
-        <ul className={styles.variantList}>
+        <div className={styles.variantCardsGrid}>
           {itemVariants.length === 0 ? (
-            <li className={styles.dialogEmpty}>No variants yet for this product.</li>
+            <p className={styles.dialogEmpty}>No variants yet for this product.</p>
           ) : (
             itemVariants.map((variant) => (
-            <li key={variant.id} className={styles.variantRow}>
-              <div className={styles.variantMeta}>
-                <p className={styles.variantName}>{variant.name}</p>
-                <p className={styles.variantSku}>SKU: {variant.sku ?? "—"}</p>
-                <SellingPriceLine sellingPrice={variant.selling_price} />
-              </div>
-              <div className={styles.rowActions}>
-                <Link
-                  className={styles.iconButton}
-                  href={`/Warehouse_Backoffice/catalog/variants?id=${variant.id}&item_id=${variant.item_id}`}
-                  aria-label={`Edit ${variant.name}`}
-                  title="Edit variant"
-                >
-                  <svg className={styles.iconSvg} viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Zm15.7-9.8a1 1 0 0 0 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.5-1.7Z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                </Link>
-                <button
-                  type="button"
-                  className={`${styles.iconButton} ${styles.deleteButton}`}
-                  style={{ position: "static" }}
-                  onClick={() => onDeleteVariant(variant, item)}
-                  disabled={readOnly}
-                  aria-label={`Delete ${variant.name}`}
-                  title="Delete variant"
-                >
-                  <DeleteIcon />
-                </button>
-              </div>
-            </li>
+              <VariantCard
+                key={variant.id}
+                variant={variant}
+                parentItem={item}
+                readOnly={readOnly}
+                onDeleteVariant={onDeleteVariant}
+                onVariantImageUpdated={onVariantImageUpdated}
+                userId={userId}
+                userEmail={userEmail}
+              />
             ))
           )}
-        </ul>
+        </div>
         <div className={styles.dialogFooter}>
           <Link className={eb.btnAdd} href={`/Warehouse_Backoffice/catalog/variants?item_id=${item.id}`}>
             Add variant
@@ -497,6 +569,29 @@ export default function CatalogMenuPage() {
   const openVariantsPopup = (item: Item, itemVariants: Variant[]) => {
     setVariantsPopup({ item, variants: itemVariants });
   };
+
+  const handleItemImageUpdated = useCallback((itemId: string, imageUrl: string) => {
+    setItems((prev) => prev.map((entry) => (entry.id === itemId ? { ...entry, image_url: imageUrl } : entry)));
+    setVariantsPopup((prev) =>
+      prev && prev.item.id === itemId ? { ...prev, item: { ...prev.item, image_url: imageUrl } } : prev,
+    );
+  }, []);
+
+  const handleVariantImageUpdated = useCallback((variantId: string, imageUrl: string) => {
+    setVariants((prev) =>
+      prev.map((entry) => (entry.id === variantId ? { ...entry, image_url: imageUrl } : entry)),
+    );
+    setVariantsPopup((prev) =>
+      prev
+        ? {
+            ...prev,
+            variants: prev.variants.map((entry) =>
+              entry.id === variantId ? { ...entry, image_url: imageUrl } : entry,
+            ),
+          }
+        : prev,
+    );
+  }, []);
 
   const handleDeleteVariantFromPopup = (variant: Variant, item: Item) => {
     setVariantsPopup(null);
@@ -743,7 +838,10 @@ export default function CatalogMenuPage() {
                         }
                         onShowVariants={openVariantsPopup}
                         onDeleteItem={(entry) => openDeleteDialog({ kind: "item", item: entry })}
+                        onItemImageUpdated={handleItemImageUpdated}
                         readOnly={readOnly}
+                        userId={userId}
+                        userEmail={userEmail}
                       />
                     ))}
                   </div>
@@ -764,7 +862,10 @@ export default function CatalogMenuPage() {
                   }
                   onShowVariants={openVariantsPopup}
                   onDeleteItem={(entry) => openDeleteDialog({ kind: "item", item: entry })}
+                  onItemImageUpdated={handleItemImageUpdated}
                   readOnly={readOnly}
+                  userId={userId}
+                  userEmail={userEmail}
                 />
               ))}
             </div>
@@ -779,6 +880,9 @@ export default function CatalogMenuPage() {
           readOnly={readOnly}
           onClose={() => setVariantsPopup(null)}
           onDeleteVariant={handleDeleteVariantFromPopup}
+          onVariantImageUpdated={handleVariantImageUpdated}
+          userId={userId}
+          userEmail={userEmail}
         />
       ) : null}
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStorage } from "firebase-admin/storage";
+import { ensureFirebaseAdmin, getFirebaseStorageBucket } from "@/lib/firebase-server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,8 +9,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "path is required" }, { status: 400 });
     }
 
-    const [signedUrl] = await getStorage()
-  .bucket()
+    ensureFirebaseAdmin();
+    const [signedUrl] = await getFirebaseStorageBucket()
   .file(path)
   .getSignedUrl({
     action: "read",

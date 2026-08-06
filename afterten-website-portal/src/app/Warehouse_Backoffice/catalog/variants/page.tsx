@@ -11,6 +11,7 @@ import { POS_NUMERIC_SKU_MAX, isValidPosVariantMintSku } from "@/lib/pos-catalog
 import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "../product/product.module.css";
+import { CatalogImageField } from "../CatalogImageField";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -382,11 +383,14 @@ function VariantFormPage() {
               min="1"
             />
           ) : null}
-          <Field
+          <CatalogImageField
             label="Image URL (optional)"
             hint="Link to variant image"
             value={form.image_url}
             onChange={(v) => handleChange("image_url", v)}
+            entityType="variant"
+            entityId={editingId || undefined}
+            disabled={readOnly || saving}
           />
         </div>
 

@@ -202,6 +202,41 @@ export async function firestoreCatalogItemsPut(request: Request) {
   const id = cleanText(body.id);
   if (!id || !isUuid(id)) return NextResponse.json({ error: "id is required for update" }, { status: 400 });
 
+  const imageOnly =
+    body.image_url !== undefined &&
+    body.name === undefined &&
+    body.item_kind === undefined &&
+    body.selling_price === undefined &&
+    body.cost === undefined;
+
+  if (imageOnly) {
+    const existingRow = await getFirestoreCatalogItem(id);
+    if (!existingRow) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+
+    const data = await updateFirestoreCatalogItem(id, {
+      image_url: cleanText(body.image_url) ?? null,
+    });
+    if (!data) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+
+    const actor = parseCatalogChangeActor(request);
+    await recordCatalogChange({
+      operation: "update",
+      entityType: "item",
+      entityId: id,
+      entityName: String(existingRow.name ?? ""),
+      sku: (existingRow.sku as string | null) ?? null,
+      menuGroupId: (existingRow.menu_group_id as string | null) ?? null,
+      before: existingRow,
+      after: { ...existingRow, image_url: cleanText(body.image_url) ?? null },
+      trackedFields: ["image_url"],
+      actor,
+    });
+
+    const [enriched] = await enrichFirestoreItems([data]);
+    scheduleOutletOrderCatalogRefresh(id);
+    return NextResponse.json({ item: enriched, backend: "firebase" });
+  }
+
   const built = buildItemPayload(body);
   if ("error" in built) return NextResponse.json({ error: built.error }, { status: 400 });
 

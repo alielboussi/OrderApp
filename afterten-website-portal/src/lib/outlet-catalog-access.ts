@@ -21,6 +21,7 @@ export type CatalogAccessVariant = {
   item_id: string;
   name: string;
   sku?: string | null;
+  image_url?: string | null;
   allow_orders: boolean;
 };
 
@@ -30,6 +31,7 @@ export type CatalogAccessItem = {
   sku?: string | null;
   item_kind?: string;
   has_variations?: boolean;
+  image_url?: string | null;
   allow_orders: boolean;
   variants: CatalogAccessVariant[];
 };

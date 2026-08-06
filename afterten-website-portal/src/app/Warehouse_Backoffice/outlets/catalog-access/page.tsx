@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { buildCatalogAccessEntries } from "@/lib/outlet-catalog-access";
+import { CatalogImageThumb } from "../../catalog/CatalogImageThumb";
+import { CatalogCardImageMenu } from "../../catalog/CatalogCardImageMenu";
 import { useWarehouseAuth } from "../../useWarehouseAuth";
 import eb from "../../enterprise.module.css";
+import styles from "./catalog-access.module.css";
 
 type Outlet = { id: string; name: string; auth_user_id?: string | null };
 type LinkedUser = { uid: string; email: string | null } | null;
@@ -14,6 +17,7 @@ type CatalogVariant = {
   item_id: string;
   name: string;
   sku?: string | null;
+  image_url?: string | null;
   allow_orders: boolean;
 };
 type CatalogItem = {
@@ -22,6 +26,7 @@ type CatalogItem = {
   sku?: string | null;
   item_kind?: string;
   has_variations?: boolean;
+  image_url?: string | null;
   allow_orders: boolean;
   variants: CatalogVariant[];
 };
@@ -40,9 +45,33 @@ function kindLabel(kind?: string) {
   return "Product";
 }
 
+type ViewFilter = "all" | "assigned";
+
+function isCatalogItemAssigned(item: CatalogItem): boolean {
+  if (item.has_variations && item.variants.length > 0) {
+    return item.variants.some((variant) => variant.allow_orders);
+  }
+  return item.allow_orders;
+}
+
+function countAssignedCatalog(catalog: CatalogItem[]): { products: number; variants: number } {
+  let products = 0;
+  let variants = 0;
+  for (const item of catalog) {
+    if (item.has_variations && item.variants.length > 0) {
+      const assignedVariants = item.variants.filter((variant) => variant.allow_orders);
+      variants += assignedVariants.length;
+      if (assignedVariants.length > 0) products += 1;
+      continue;
+    }
+    if (item.allow_orders) products += 1;
+  }
+  return { products, variants };
+}
+
 export default function OutletCatalogAccessPage() {
   const searchParams = useSearchParams();
-  const { status, readOnly } = useWarehouseAuth();
+  const { status, readOnly, userId, userEmail } = useWarehouseAuth();
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [outletId, setOutletId] = useState("");
   const [linkedUser, setLinkedUser] = useState<LinkedUser>(null);
@@ -52,6 +81,7 @@ export default function OutletCatalogAccessPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
 
   const loadOutlets = useCallback(async () => {
     const res = await fetch("/api/outlet-catalog-access");
@@ -92,6 +122,10 @@ export default function OutletCatalogAccessPage() {
     if (outletId) void loadCatalog(outletId);
   }, [outletId, loadCatalog]);
 
+  useEffect(() => {
+    setViewFilter("all");
+  }, [outletId]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return catalog.filter((item) => {
@@ -104,6 +138,21 @@ export default function OutletCatalogAccessPage() {
       );
     });
   }, [catalog, search, kindFilter]);
+
+  const assignedCounts = useMemo(() => countAssignedCatalog(catalog), [catalog]);
+
+  const visibleItems = useMemo(() => {
+    const base = viewFilter === "assigned" ? filtered.filter((item) => isCatalogItemAssigned(item)) : filtered;
+    if (viewFilter !== "assigned") return base;
+
+    return base.map((item) => {
+      if (!item.has_variations || item.variants.length === 0) return item;
+      return {
+        ...item,
+        variants: item.variants.filter((variant) => variant.allow_orders),
+      };
+    });
+  }, [filtered, viewFilter]);
 
   const toggleItem = (itemId: string, value: boolean) => {
     setCatalog((prev) =>
@@ -136,6 +185,23 @@ export default function OutletCatalogAccessPage() {
       }),
     );
   };
+
+  const handleItemImageUpdated = useCallback((itemId: string, imageUrl: string) => {
+    setCatalog((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, image_url: imageUrl } : item)),
+    );
+  }, []);
+
+  const handleVariantImageUpdated = useCallback((variantId: string, imageUrl: string) => {
+    setCatalog((prev) =>
+      prev.map((item) => ({
+        ...item,
+        variants: item.variants.map((variant) =>
+          variant.id === variantId ? { ...variant, image_url: imageUrl } : variant,
+        ),
+      })),
+    );
+  }, []);
 
   const save = async () => {
     if (!outletId || readOnly) return;
@@ -232,6 +298,19 @@ export default function OutletCatalogAccessPage() {
               {kind === "all" ? "All" : KIND_LABELS[kind]}
             </button>
           ))}
+          <button
+            type="button"
+            className={viewFilter === "assigned" ? eb.btnAdd : eb.btnSecondary}
+            onClick={() => setViewFilter((current) => (current === "assigned" ? "all" : "assigned"))}
+            disabled={!outletId}
+            title="Show only products and variants already assigned to this outlet"
+          >
+            Assigned to outlet
+            {outletId
+              ? ` (${assignedCounts.products} product${assignedCounts.products === 1 ? "" : "s"}`
+                + `${assignedCounts.variants > 0 ? `, ${assignedCounts.variants} variant${assignedCounts.variants === 1 ? "" : "s"}` : ""})`
+              : ""}
+          </button>
         </div>
 
         <input
@@ -246,37 +325,54 @@ export default function OutletCatalogAccessPage() {
 
       {outletId ? (
         <section className={eb.pageCard}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
-              Catalog items
-            </h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
+                Catalog items
+              </h3>
+              {viewFilter === "assigned" ? (
+                <p className={eb.pageCardBody} style={{ margin: "6px 0 0", color: "#57606a" }}>
+                  Showing {visibleItems.length} assigned product{visibleItems.length === 1 ? "" : "s"}
+                  {assignedCounts.variants > 0
+                    ? ` and ${assignedCounts.variants} variant${assignedCounts.variants === 1 ? "" : "s"}`
+                    : ""}{" "}
+                  for this outlet.
+                </p>
+              ) : null}
+            </div>
             <button type="button" className={eb.btnAdd} disabled={saving || readOnly || !linkedUser?.uid} onClick={() => void save()}>
               {saving ? "Saving…" : "Save access rules"}
             </button>
           </div>
           {loading ? <p className={eb.pageCardBody}>Loading…</p> : null}
-          {!loading && filtered.length === 0 ? <p className={eb.pageCardBody}>No items in this filter.</p> : null}
+          {!loading && visibleItems.length === 0 ? (
+            <p className={eb.pageCardBody}>
+              {viewFilter === "assigned" ? "No products or variants assigned to this outlet yet." : "No items in this filter."}
+            </p>
+          ) : null}
           <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-            {filtered.map((item) => (
-              <div key={item.id} style={{ border: "1px solid #e0e0e0", borderRadius: 8, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                  <div style={{ fontWeight: 600 }}>{item.name}</div>
-                  <span style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase" }}>
-                    {kindLabel(item.item_kind)}
-                  </span>
+            {visibleItems.map((item) => (
+              <div key={item.id} className={styles.accessRow}>
+                <div className={styles.accessImageWrap}>
+                  <CatalogImageThumb url={item.image_url} alt={item.name} rounded placeholder="No image" />
+                  {!readOnly ? (
+                    <CatalogCardImageMenu
+                      entityType="product"
+                      entityId={item.id}
+                      overlay={false}
+                      menuClassName={styles.imageMenuOverlay}
+                      actor={{ userId, userEmail }}
+                      onImageUpdated={(imageUrl) => handleItemImageUpdated(item.id, imageUrl)}
+                    />
+                  ) : null}
                 </div>
-                <div style={{ fontSize: 13, color: "#57606a" }}>{item.sku ?? "—"}</div>
-                {!item.has_variations || item.variants.length === 0 ? (
-                  <label style={{ display: "block", marginTop: 8 }}>
-                    <input
-                      type="checkbox"
-                      checked={item.allow_orders}
-                      onChange={(e) => toggleItem(item.id, e.target.checked)}
-                    />{" "}
-                    Show in Orders app
-                  </label>
-                ) : (
-                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                <div className={styles.accessBody}>
+                  <div className={styles.accessHeader}>
+                    <div className={styles.accessTitle}>{item.name}</div>
+                    <span className={styles.accessKind}>{kindLabel(item.item_kind)}</span>
+                  </div>
+                  <div className={styles.accessSku}>{item.sku ?? "—"}</div>
+                  {!item.has_variations || item.variants.length === 0 ? (
                     <label>
                       <input
                         type="checkbox"
@@ -285,25 +381,55 @@ export default function OutletCatalogAccessPage() {
                       />{" "}
                       Show in Orders app
                     </label>
-                    <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-                      Select at least one variant below.
-                    </p>
-                    {item.variants.map((variant) => (
-                      <div key={variant.id} style={{ paddingLeft: 12, borderLeft: "3px solid #d4af37" }}>
-                        <div style={{ fontWeight: 500 }}>{variant.name}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280" }}>{variant.sku ?? "—"}</div>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={variant.allow_orders}
-                            onChange={(e) => toggleVariant(item.id, variant.id, e.target.checked)}
-                          />{" "}
-                          Show variant in Orders app
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={item.allow_orders}
+                          onChange={(e) => toggleItem(item.id, e.target.checked)}
+                        />{" "}
+                        Show in Orders app
+                      </label>
+                      <p className={styles.variantHint}>Select at least one variant below.</p>
+                      {item.variants.map((variant) => (
+                        <div key={variant.id} className={styles.variantBlock}>
+                          <div className={styles.variantImageWrap}>
+                            <CatalogImageThumb
+                              url={variant.image_url ?? item.image_url}
+                              alt={variant.name}
+                              compact
+                              placeholder="No image"
+                            />
+                            {!readOnly ? (
+                              <CatalogCardImageMenu
+                                entityType="variant"
+                                entityId={variant.id}
+                                itemId={variant.item_id}
+                                overlay={false}
+                                menuClassName={styles.imageMenuCompact}
+                                actor={{ userId, userEmail }}
+                                onImageUpdated={(imageUrl) => handleVariantImageUpdated(variant.id, imageUrl)}
+                              />
+                            ) : null}
+                          </div>
+                          <div>
+                            <div className={styles.variantName}>{variant.name}</div>
+                            <div className={styles.variantSku}>{variant.sku ?? "—"}</div>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={variant.allow_orders}
+                                onChange={(e) => toggleVariant(item.id, variant.id, e.target.checked)}
+                              />{" "}
+                              Show variant in Orders app
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

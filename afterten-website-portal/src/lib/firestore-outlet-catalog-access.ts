@@ -7,6 +7,15 @@ import {
 import { isOrdersAppOutlet } from "@/lib/firestore-outlets";
 import type { AllowlistEntry, OutletAuthAssignment } from "@/lib/outlet-catalog-access";
 import { normalizeCatalogAccessItems } from "@/lib/outlet-catalog-access";
+import { resolveCatalogImageUrl } from "@/lib/catalog-image-url";
+
+function readCatalogImageUrl(...values: unknown[]): string | null {
+  for (const value of values) {
+    const resolved = resolveCatalogImageUrl(typeof value === "string" ? value : null);
+    if (resolved) return resolved;
+  }
+  return null;
+}
 
 function toNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -77,6 +86,7 @@ async function materializeOutletOrderCatalog(
         0,
       );
       const docId = `${outletId}_${row.item_id}_${row.variant_id}`;
+      const variantImageUrl = readCatalogImageUrl(variant.image_url, item.image_url);
       catalogDocs.push({
         id: docId,
         data: {
@@ -93,9 +103,8 @@ async function materializeOutletOrderCatalog(
           sellingPrice: variantOrdersAppCostPrice,
           ordersAppUom: variantOrdersAppUom,
           ordersAppCostPrice: variantOrdersAppCostPrice,
-          imageUrl:
-            (typeof variant.image_url === "string" && variant.image_url.trim() ? variant.image_url.trim() : null) ??
-            (typeof item.image_url === "string" && item.image_url.trim() ? item.image_url.trim() : null),
+          imageUrl: variantImageUrl,
+          image_url: variantImageUrl,
           purchasePackUnit,
           consumptionUom: variantOrdersAppUom,
           unitsPerPurchasePack,
@@ -108,6 +117,7 @@ async function materializeOutletOrderCatalog(
     }
 
     const docId = `${outletId}_${row.item_id}`;
+    const productImageUrl = readCatalogImageUrl(item.image_url);
     catalogDocs.push({
       id: docId,
       data: {
@@ -124,7 +134,8 @@ async function materializeOutletOrderCatalog(
         sellingPrice: ordersAppCostPrice,
         ordersAppUom,
         ordersAppCostPrice,
-        imageUrl: typeof item.image_url === "string" && item.image_url.trim() ? item.image_url.trim() : null,
+        imageUrl: productImageUrl,
+        image_url: productImageUrl,
         purchasePackUnit,
         consumptionUom: ordersAppUom,
         unitsPerPurchasePack,
@@ -351,6 +362,7 @@ export async function fetchFirestoreOutletCatalogAccess(outletId: string) {
             item_id: itemId,
             name: String(variant.name ?? ""),
             sku: typeof variant.sku === "string" ? variant.sku : null,
+            image_url: typeof variant.image_url === "string" ? variant.image_url : null,
             active: variant.active !== false,
             allow_orders: variantAllow?.allow_orders ?? false,
           };

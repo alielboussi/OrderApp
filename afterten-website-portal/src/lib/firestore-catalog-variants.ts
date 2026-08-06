@@ -266,6 +266,7 @@ export async function firestoreCatalogVariantsPut(request: Request) {
     update.orders_app_cost_price = ordersAppCostPrice;
   }
   if (body.active !== undefined) update.active = cleanBoolean(body.active, true);
+  if (body.image_url !== undefined) update.image_url = cleanText(body.image_url) ?? null;
 
   const data = await updateFirestoreCatalogVariant(id, update);
   if (!data) return NextResponse.json({ error: "Variant not found" }, { status: 404 });

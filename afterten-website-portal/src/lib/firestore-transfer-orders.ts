@@ -151,6 +151,7 @@ export type FirestoreOutletCatalogProduct = {
   orders_app_uom: string;
   consumption_uom: string;
   units_per_purchase_pack: number;
+  image_url: string | null;
 };
 
 export type UpdateTransferOrderItemInput = {
@@ -301,6 +302,9 @@ export async function listFirestoreOutletOrderCatalog(
         (typeof data.productName === "string" && data.productName.trim()) ||
         (typeof data.product_name === "string" && data.product_name.trim()) ||
         name;
+      const imageUrl =
+        (typeof data.imageUrl === "string" && data.imageUrl.trim() ? data.imageUrl.trim() : null) ??
+        (typeof data.image_url === "string" && data.image_url.trim() ? data.image_url.trim() : null);
       return {
         id: doc.id,
         product_id: String(data.productId ?? data.product_id ?? doc.id),
@@ -312,6 +316,7 @@ export async function listFirestoreOutletOrderCatalog(
         orders_app_uom: resolveOrdersAppUom(data),
         consumption_uom: String(data.consumptionUom ?? data.consumption_uom ?? "each"),
         units_per_purchase_pack: Number(data.unitsPerPurchasePack ?? data.units_per_purchase_pack ?? 1),
+        image_url: imageUrl,
       } satisfies FirestoreOutletCatalogProduct;
     })
     .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));

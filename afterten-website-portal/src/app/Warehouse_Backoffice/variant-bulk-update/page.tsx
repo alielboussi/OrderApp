@@ -6,6 +6,8 @@ import { useWarehouseAuth } from "../useWarehouseAuth";
 import { useUomOptions } from "@/lib/use-uom-options";
 import eb from "../enterprise.module.css";
 import styles from "./variant-bulk-update.module.css";
+import { CatalogImageThumb } from "../catalog/CatalogImageThumb";
+import { CatalogCardImageMenu } from "../catalog/CatalogCardImageMenu";
 
 type Warehouse = { id: string; name: string };
 
@@ -95,7 +97,7 @@ function formatFieldValue(fieldKey: string, variant: VariantSummary) {
 
 export default function VariantBulkUpdatePage() {
   const router = useRouter();
-  const { status, readOnly } = useWarehouseAuth();
+  const { status, readOnly, userId, userEmail } = useWarehouseAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
@@ -234,6 +236,12 @@ export default function VariantBulkUpdatePage() {
         placeholder={fieldMeta.type.includes("null") ? "Leave blank for none" : "Enter value"}
         aria-label="Bulk field value"
       />
+    );
+  };
+
+  const handleVariantImageUpdated = (variantId: string, imageUrl: string) => {
+    setVariants((prev) =>
+      prev.map((entry) => (entry.id === variantId ? { ...entry, image_url: imageUrl } : entry)),
     );
   };
 
@@ -408,7 +416,19 @@ export default function VariantBulkUpdatePage() {
               ) : (
                 variants.map((variant) => (
                   <label key={variant.id} className={styles.variantCard}>
-                    <div>
+                    <div className={styles.variantCardImageWrap}>
+                      <CatalogImageThumb url={variant.image_url} alt={variant.name} />
+                      {!readOnly ? (
+                        <CatalogCardImageMenu
+                          entityType="variant"
+                          entityId={variant.id}
+                          itemId={variant.item_id}
+                          actor={{ userId, userEmail }}
+                          onImageUpdated={(imageUrl) => handleVariantImageUpdated(variant.id, imageUrl)}
+                        />
+                      ) : null}
+                    </div>
+                    <div className={styles.variantCardBody}>
                       <p className={styles.variantName}>{variant.name}</p>
                       <p className={styles.variantMeta}>Current: {formatFieldValue(selectedField, variant)}</p>
                     </div>

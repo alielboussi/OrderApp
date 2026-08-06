@@ -11,6 +11,7 @@ import { POS_NUMERIC_SKU_MAX, parsePosNumericSku } from "@/lib/pos-catalog-ids";
 import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "./product.module.css";
+import { CatalogImageField } from "../CatalogImageField";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -365,11 +366,14 @@ function ProductCreatePage() {
                 min="1"
               />
             )}
-            <Field
+            <CatalogImageField
               label="Image URL (optional)"
               hint="Link to product image"
               value={form.image_url}
               onChange={(v) => handleChange("image_url", v)}
+              entityType="product"
+              entityId={editingId || undefined}
+              disabled={readOnly || saving}
             />
           </div>
 

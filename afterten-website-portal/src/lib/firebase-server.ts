@@ -3,6 +3,9 @@ import "server-only";
 import { readFileSync } from "fs";
 import { getApps, initializeApp, applicationDefault, cert, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getStorage, type Bucket } from "firebase-admin/storage";
+
+const DEFAULT_STORAGE_BUCKET = "afterten-portal-system-catalog-images";
 
 let firestoreDb: Firestore | null = null;
 
@@ -30,10 +33,28 @@ function getFirebaseApp(): App {
     throw new Error("FIREBASE_PROJECT_ID is required when CLOUD_BACKEND=firebase");
   }
 
+  const storageBucket =
+    process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
+    process.env.STORAGE_BUCKET?.trim() ||
+    DEFAULT_STORAGE_BUCKET;
+
   return initializeApp({
     credential: resolveCredentials(),
     projectId,
+    storageBucket,
   });
+}
+
+export function resolveFirebaseStorageBucketName(): string {
+  return (
+    process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
+    process.env.STORAGE_BUCKET?.trim() ||
+    DEFAULT_STORAGE_BUCKET
+  );
+}
+
+export function getFirebaseStorageBucket(): Bucket {
+  return getStorage(getFirebaseApp()).bucket(resolveFirebaseStorageBucketName());
 }
 
 export function ensureFirebaseAdmin(): App {
