@@ -81,6 +81,24 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /outlet_damage_reports/{reportId} {
+      allow read: if isActiveAppUser() &&
+        (resource.data.outletId == appUser().outletId || isSupervisor());
+      allow create, update, delete: if false;
+
+      match /lines/{lineId} {
+        allow read: if isActiveAppUser() &&
+          (get(/databases/$(database)/documents/outlet_damage_reports/$(reportId)).data.outletId == appUser().outletId ||
+            isSupervisor());
+        allow write: if false;
+      }
+    }
+
+    match /outlet_damage_counters/{outletId} {
+      allow read: if isActiveAppUser() && appUser().outletId == outletId;
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

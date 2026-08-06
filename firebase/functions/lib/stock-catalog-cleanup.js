@@ -34,6 +34,12 @@ async function planCleanup(db, catalogPayload) {
     const apiUuids = new Set((catalogPayload.products ?? [])
         .map((product) => String(product.uuid ?? "").trim())
         .filter(Boolean));
+    function linkedToApi(docId, stockApiUuid) {
+        if (apiUuids.has(docId))
+            return true;
+        const linkedUuid = String(stockApiUuid ?? "").trim();
+        return Boolean(linkedUuid && apiUuids.has(linkedUuid));
+    }
     const variantsByItem = new Map();
     for (const doc of variantsSnap.docs) {
         const itemId = String(doc.get("item_id") ?? "").trim();
@@ -46,7 +52,7 @@ async function planCleanup(db, catalogPayload) {
     const variantsToDelete = [];
     const keptVariantIds = new Set();
     for (const doc of variantsSnap.docs) {
-        if (apiUuids.has(doc.id)) {
+        if (linkedToApi(doc.id, doc.get("stock_api_uuid"))) {
             keptVariantIds.add(doc.id);
             continue;
         }
@@ -66,7 +72,7 @@ async function planCleanup(db, catalogPayload) {
             keptItemIds.add(itemId);
             continue;
         }
-        if (apiUuids.has(itemId)) {
+        if (linkedToApi(itemId, doc.get("stock_api_uuid"))) {
             keptItemIds.add(itemId);
             continue;
         }

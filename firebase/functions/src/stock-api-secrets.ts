@@ -13,3 +13,11 @@ export const stockCatalogSyncDeactivateMissing = defineString("STOCK_CATALOG_SYN
 export const stockCatalogSyncDeleteMissing = defineString("STOCK_CATALOG_SYNC_DELETE_MISSING", {
   default: "true",
 });
+
+export const stockCatalogSyncCron = defineString("STOCK_CATALOG_SYNC_CRON", {
+  default: "every 1 minutes",
+});
+
+export const stockCatalogSyncIntervalSeconds = defineString("STOCK_CATALOG_SYNC_INTERVAL_SECONDS", {
+  default: "30",
+});

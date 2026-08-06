@@ -1,11 +1,6 @@
 /**
- * Stock Control — portal/server helpers.
- *
- * UUID alignment:
- * - catalog_items.id  ↔ stock API item.uuid (simple products)
- * - catalog_variants.id ↔ stock API item.uuid (variants)
- *
- * Keep STOCK_CONTROL_ENABLED=false until go-live.
+ * Operation A — portal/server stock gate helpers.
+ * See docs/orders-app-operations.md for Operation A vs Operation B.
  */
 
 import {

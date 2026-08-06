@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { loadLocalEnvFiles } from "./load-local-env.mjs";
+
+loadLocalEnvFiles([".env.local", ".env", "../firebase/functions/.env"]);
 
 const DEFAULT_STOCK_CATALOG_API_URL =
   "https://afterten-stock-api-896827614552.us-central1.run.app/sync/catalog";
@@ -67,6 +70,13 @@ const [catalogPayload, stockPayload, itemsSnap, variantsSnap] = await Promise.al
 const apiUuids = new Set(
   (catalogPayload.products ?? []).map((product) => String(product.uuid ?? "").trim()).filter(Boolean),
 );
+
+function linkedToApi(docId, stockApiUuid) {
+  if (apiUuids.has(docId)) return true;
+  const linkedUuid = String(stockApiUuid ?? "").trim();
+  return Boolean(linkedUuid && apiUuids.has(linkedUuid));
+}
+
 const stockUuids = new Set();
 for (const warehouse of stockPayload.warehouses ?? []) {
   for (const item of warehouse.items ?? []) {
@@ -91,7 +101,7 @@ const keptVariantIds = new Set();
 const activeMissingFromStock = [];
 
 for (const doc of variantsSnap.docs) {
-  if (apiUuids.has(doc.id)) {
+  if (linkedToApi(doc.id, doc.get("stock_api_uuid"))) {
     keptVariantIds.add(doc.id);
     continue;
   }
@@ -118,7 +128,7 @@ for (const doc of itemsSnap.docs) {
     continue;
   }
 
-  if (apiUuids.has(itemId)) {
+  if (linkedToApi(itemId, doc.get("stock_api_uuid"))) {
     keptItemIds.add(itemId);
     continue;
   }

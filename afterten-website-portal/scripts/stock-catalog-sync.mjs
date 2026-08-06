@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { loadLocalEnvFiles } from "./load-local-env.mjs";
+
+loadLocalEnvFiles([".env.local", ".env", "../firebase/functions/.env"]);
 
 const DEFAULT_STOCK_CATALOG_API_URL =
   "https://afterten-stock-api-896827614552.us-central1.run.app/sync/catalog";

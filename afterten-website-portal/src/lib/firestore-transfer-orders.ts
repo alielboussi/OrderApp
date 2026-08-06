@@ -149,6 +149,7 @@ export type FirestoreOutletCatalogProduct = {
   name: string;
   selling_price: number;
   orders_app_uom: string;
+  supervisor_uom: string | null;
   consumption_uom: string;
   units_per_purchase_pack: number;
   image_url: string | null;
@@ -264,6 +265,14 @@ function sumOrderItems(items: FirestoreTransferOrderItem[]) {
   );
 }
 
+function resolveSupervisorUom(data: FirebaseFirestore.DocumentData): string | null {
+  const direct =
+    (typeof data.supervisorUom === "string" && data.supervisorUom.trim()) ||
+    (typeof data.supervisor_uom === "string" && data.supervisor_uom.trim()) ||
+    "";
+  return direct || null;
+}
+
 function resolveOrdersAppUom(data: FirebaseFirestore.DocumentData): string {
   const direct =
     (typeof data.ordersAppUom === "string" && data.ordersAppUom.trim()) ||
@@ -314,6 +323,7 @@ export async function listFirestoreOutletOrderCatalog(
         name,
         selling_price: resolveSellingPrice(data),
         orders_app_uom: resolveOrdersAppUom(data),
+        supervisor_uom: resolveSupervisorUom(data),
         consumption_uom: String(data.consumptionUom ?? data.consumption_uom ?? "each"),
         units_per_purchase_pack: Number(data.unitsPerPurchasePack ?? data.units_per_purchase_pack ?? 1),
         image_url: imageUrl,

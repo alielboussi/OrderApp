@@ -37,6 +37,7 @@ type FormState = {
   cost: string;
   selling_price: string;
   orders_app_uom: string;
+  supervisor_uom: string;
   orders_app_cost_price: string;
   image_url: string;
   active: boolean;
@@ -52,6 +53,7 @@ const defaultForm: FormState = {
   cost: "0",
   selling_price: "0",
   orders_app_uom: "pc",
+  supervisor_uom: "pc",
   orders_app_cost_price: "0",
   image_url: "",
   active: true,
@@ -145,6 +147,8 @@ function VariantFormPage() {
           cost: (variant.cost ?? 0).toString(),
           selling_price: (variant.selling_price ?? 0).toString(),
           orders_app_uom: normalizeUomValue(variant.orders_app_uom ?? variant.consumption_uom) || "pc",
+          supervisor_uom:
+            normalizeUomValue(variant.supervisor_uom ?? variant.orders_app_uom ?? variant.consumption_uom) || "pc",
           orders_app_cost_price: (variant.orders_app_cost_price ?? variant.selling_price ?? 0).toString(),
           image_url: variant.image_url ?? "",
           active: variant.active ?? true,
@@ -248,6 +252,7 @@ function VariantFormPage() {
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
         orders_app_uom: form.orders_app_uom,
+        supervisor_uom: form.supervisor_uom,
         orders_app_cost_price: toNumber(form.orders_app_cost_price, 0, -0.0001),
         image_url: form.image_url,
         active: form.active,
@@ -303,6 +308,8 @@ function VariantFormPage() {
               selling_price: (variant.selling_price ?? 0).toString(),
               orders_app_uom:
                 normalizeUomValue(variant.orders_app_uom ?? variant.consumption_uom) || "pc",
+              supervisor_uom:
+                normalizeUomValue(variant.supervisor_uom ?? variant.orders_app_uom ?? variant.consumption_uom) || "pc",
               orders_app_cost_price: (
                 variant.orders_app_cost_price ??
                 variant.selling_price ??
@@ -405,6 +412,13 @@ function VariantFormPage() {
               hint="Unit of measure displayed when outlets order this variant"
               value={form.orders_app_uom}
               onChange={(v) => handleChange("orders_app_uom", v)}
+              options={uomOptions}
+            />
+            <Select
+              label="Supervisor Uom"
+              hint="Unit of measure shown on supervisor order screens and warehouse portal"
+              value={form.supervisor_uom}
+              onChange={(v) => handleChange("supervisor_uom", v)}
               options={uomOptions}
             />
             <Field

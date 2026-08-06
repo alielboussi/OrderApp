@@ -63,3 +63,41 @@ export function formatOrdersAppUom(uom: string, qty: number): string {
 
   return qty === 1 ? toSingularForm(trimmed) : toPluralForm(trimmed);
 }
+
+export function resolveOrdersAppUom(
+  data: Record<string, unknown>,
+  fallback = "each",
+): string {
+  for (const key of ["ordersAppUom", "orders_app_uom"] as const) {
+    const raw = data[key];
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+  }
+
+  for (const key of ["consumptionUom", "consumption_uom"] as const) {
+    const raw = data[key];
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+  }
+
+  return fallback;
+}
+
+export function resolveSupervisorUom(
+  data: Record<string, unknown>,
+  fallback = "each",
+): string {
+  for (const key of ["supervisorUom", "supervisor_uom"] as const) {
+    const raw = data[key];
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+  }
+  return resolveOrdersAppUom(data, fallback);
+}
+
+export function resolveSupervisorUomFromCatalogProduct(
+  product: Pick<{ supervisor_uom?: string | null; orders_app_uom?: string; consumption_uom?: string }, "supervisor_uom" | "orders_app_uom" | "consumption_uom">,
+): string {
+  const explicit = product.supervisor_uom?.trim();
+  if (explicit) return explicit;
+  const ordersAppUom = product.orders_app_uom?.trim();
+  if (ordersAppUom) return ordersAppUom;
+  return product.consumption_uom?.trim() || "each";
+}

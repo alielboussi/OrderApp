@@ -91,6 +91,22 @@
         { "fieldPath": "outletId", "order": "ASCENDING" },
         { "fieldPath": "active", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "outlet_damage_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outletId", "order": "ASCENDING" },
+        { "fieldPath": "reportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "outlet_damage_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outletId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

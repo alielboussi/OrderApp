@@ -38,7 +38,7 @@ exports.getStockControlSnapshot = (0, https_1.onCall)({ region: "africa-south1" 
     if (!request.auth?.uid) {
         throw new https_1.HttpsError("unauthenticated", "Sign in required.");
     }
-    const serverEnabled = process.env.STOCK_CONTROL_ENABLED === "true";
+    const serverEnabled = process.env.STOCK_CONTROL_ENABLED === "true"; // Operation A gate
     if (!serverEnabled) {
         return {
             enabled: false,

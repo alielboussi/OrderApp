@@ -1,3 +1,6 @@
+import { normalizeOrderQty } from "@/lib/order-qty-rules";
+import { resolveSupervisorUomFromCatalogProduct } from "@/lib/orders-app-uom";
+
 export type PortalOrderItem = {
   id: string;
   order_id: string;
@@ -21,6 +24,7 @@ export type PortalCatalogProduct = {
   name: string;
   selling_price: number;
   orders_app_uom: string;
+  supervisor_uom: string | null;
   consumption_uom: string;
   units_per_purchase_pack: number;
 };
@@ -49,7 +53,7 @@ export function portalOrderItemsMatch(left: PortalOrderItem[], right: PortalOrde
 }
 
 export function updatePortalOrderItemQty(item: PortalOrderItem, qty: number): PortalOrderItem {
-  const nextQty = Math.max(1, Math.floor(qty));
+  const nextQty = Math.max(1, normalizeOrderQty(qty, item.product_id));
   const packageContains = item.package_contains || 1;
   const cost = Number(item.cost ?? 0);
   return {
@@ -104,6 +108,15 @@ export function productBaseName(name: string | null | undefined): string {
   const trimmed = String(name ?? "").trim();
   const separator = trimmed.indexOf(" - ");
   return separator > 0 ? trimmed.slice(0, separator) : trimmed;
+}
+
+export function resolveSupervisorUomForOrderItem(
+  item: Pick<PortalOrderItem, "product_id" | "variant_key" | "name" | "receiving_uom" | "consumption_uom">,
+  catalog: PortalCatalogProduct[],
+): string {
+  const catalogRow = resolveCatalogRowForOrderItem(item, catalog);
+  if (catalogRow) return resolveSupervisorUomFromCatalogProduct(catalogRow);
+  return item.receiving_uom?.trim() || item.consumption_uom?.trim() || "each";
 }
 
 export function resolveCatalogRowForOrderItem(

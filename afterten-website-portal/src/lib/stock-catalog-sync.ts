@@ -16,6 +16,14 @@ import {
   type StockApiWarehouseRef,
 } from "@/lib/stock-api-client";
 import { runStockCatalogCleanup } from "@/lib/stock-catalog-cleanup";
+import {
+  buildCatalogSyncLookups,
+  catalogItemFieldsChanged,
+  catalogVariantFieldsChanged,
+  resolveSyncItemTarget,
+  resolveSyncVariantTarget,
+  rowLinkedToApiUuid,
+} from "@/lib/catalog-api-sync-matching";
 
 export const STOCK_CATALOG_SYNC_ENABLED =
   process.env.STOCK_CATALOG_SYNC_ENABLED === "true";
@@ -229,14 +237,9 @@ export async function syncStockCatalogToPortal(options?: {
     listFirestoreCatalogVariants({ activeOnly: false }),
   ]);
 
-  const itemsById = new Map(items.map((item) => [String(item.id ?? ""), item]));
-  const variantsById = new Map(variants.map((variant) => [String(variant.id ?? ""), variant]));
-  const variantParentIds = new Set(
-    variants.map((variant) => String(variant.item_id ?? "")).filter(Boolean),
-  );
-
+  const lookups = buildCatalogSyncLookups(items, variants);
   const apiUuidSet = new Set(products.map((product) => String(product.uuid).trim()));
-  const touchedItemIds = new Set<string>();
+  const changedItemIds = new Set<string>();
   const created: Array<{ uuid: string; name: string }> = [];
 
   let createdItems = 0;
@@ -254,38 +257,40 @@ export async function syncStockCatalogToPortal(options?: {
     const warehouseIds = collectWarehouseIds(product, warehouseMaps);
     const primaryWarehouseId = warehouseIds[0] ?? null;
     const syncedFields = buildSyncedFields(product, primaryWarehouseId);
-    const existingVariant = variantsById.get(uuid);
-    const existingItem = itemsById.get(uuid);
+    const existingVariant = resolveSyncVariantTarget(uuid, lookups);
 
     if (existingVariant) {
-      const itemId = String(existingVariant.item_id ?? "");
-      await updateFirestoreCatalogVariant(uuid, {
+      const variantPayload = {
         name: syncedFields.name,
         stock_api_uuid: uuid,
         stock_api_synced_at: syncedFields.stock_api_synced_at,
         stock_api_missing: false,
         active: true,
-      });
-      if (itemId && warehouseIds.length) {
-        await syncFirestoreVariantStorageHomes(itemId, uuid, warehouseIds);
-        touchedItemIds.add(itemId);
+      };
+      if (catalogVariantFieldsChanged(existingVariant.existing, variantPayload)) {
+        await updateFirestoreCatalogVariant(existingVariant.variantId, variantPayload);
+        updatedVariants += 1;
+        if (existingVariant.itemId) changedItemIds.add(existingVariant.itemId);
       }
-      updatedVariants += 1;
+      if (existingVariant.itemId && warehouseIds.length) {
+        await syncFirestoreVariantStorageHomes(existingVariant.itemId, existingVariant.variantId, warehouseIds);
+      }
       continue;
     }
 
+    const existingItem = resolveSyncItemTarget(uuid, lookups);
     if (existingItem) {
-      await updateFirestoreCatalogItem(uuid, syncedFields);
-      if (variantParentIds.has(uuid)) {
-        touchedItemIds.add(uuid);
+      if (catalogItemFieldsChanged(existingItem.existing, syncedFields)) {
+        await updateFirestoreCatalogItem(existingItem.itemId, syncedFields);
         updatedItems += 1;
+        changedItemIds.add(existingItem.itemId);
+      }
+      if (lookups.variantParentIds.has(existingItem.itemId)) {
         continue;
       }
       if (warehouseIds.length) {
-        await syncFirestoreBaseStorageHomes(uuid, warehouseIds);
+        await syncFirestoreBaseStorageHomes(existingItem.itemId, warehouseIds);
       }
-      touchedItemIds.add(uuid);
-      updatedItems += 1;
       continue;
     }
 
@@ -308,7 +313,7 @@ export async function syncStockCatalogToPortal(options?: {
     }
     created.push({ uuid, name: syncedFields.name });
     createdItems += 1;
-    touchedItemIds.add(uuid);
+    changedItemIds.add(uuid);
   }
 
   let deactivatedItems = 0;
@@ -320,8 +325,8 @@ export async function syncStockCatalogToPortal(options?: {
   if (deactivateMissing) {
     for (const item of items) {
       const itemId = String(item.id ?? "");
-      if (!itemId || variantParentIds.has(itemId)) continue;
-      if (apiUuidSet.has(itemId)) continue;
+      if (!itemId || lookups.variantParentIds.has(itemId)) continue;
+      if (rowLinkedToApiUuid(itemId, item.stock_api_uuid, apiUuidSet)) continue;
       if (item.active === false) continue;
       await updateFirestoreCatalogItem(itemId, {
         active: false,
@@ -329,12 +334,12 @@ export async function syncStockCatalogToPortal(options?: {
         stock_api_synced_at: nowIso(),
       });
       deactivatedItems += 1;
-      touchedItemIds.add(itemId);
+      changedItemIds.add(itemId);
     }
 
     for (const variant of variants) {
       const variantId = String(variant.id ?? "");
-      if (!variantId || apiUuidSet.has(variantId)) continue;
+      if (!variantId || rowLinkedToApiUuid(variantId, variant.stock_api_uuid, apiUuidSet)) continue;
       if (variant.active === false) continue;
       await updateFirestoreCatalogVariant(variantId, {
         active: false,
@@ -344,7 +349,7 @@ export async function syncStockCatalogToPortal(options?: {
       const itemId = String(variant.item_id ?? "");
       if (itemId) {
         await refreshFirestoreHasVariations(itemId);
-        touchedItemIds.add(itemId);
+        changedItemIds.add(itemId);
       }
       deactivatedVariants += 1;
     }
@@ -362,7 +367,7 @@ export async function syncStockCatalogToPortal(options?: {
   }
 
   let outletCatalogRefreshed = 0;
-  for (const itemId of touchedItemIds) {
+  for (const itemId of changedItemIds) {
     try {
       await refreshOutletOrderCatalogForItem(itemId);
       outletCatalogRefreshed += 1;
@@ -374,7 +379,7 @@ export async function syncStockCatalogToPortal(options?: {
   const apiMissingBefore = products
     .filter((product) => {
       const uuid = String(product.uuid).trim();
-      return !itemsById.has(uuid) && !variantsById.has(uuid);
+      return !resolveSyncItemTarget(uuid, lookups) && !resolveSyncVariantTarget(uuid, lookups);
     })
     .map((product) => ({ uuid: product.uuid, name: product.name }));
 

@@ -62,7 +62,7 @@ Portal API (warehouse auth):
 
 Env flags (server-side only):
 
-- `STOCK_CATALOG_SYNC_ENABLED=true` — enable scheduled Firebase sync (`syncStockCatalogScheduled`, every 5 min)
+- `STOCK_CATALOG_SYNC_ENABLED=true` — enable scheduled Firebase sync (`syncStockCatalogScheduled`, every 30 seconds)
 - `STOCK_CATALOG_SYNC_DEACTIVATE_MISSING=true` — mark portal-only UUIDs inactive during sync
 
 ## Brother stock API report

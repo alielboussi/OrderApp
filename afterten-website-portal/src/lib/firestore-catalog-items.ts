@@ -119,6 +119,7 @@ function buildItemPayload(body: Record<string, unknown>) {
       cost,
       selling_price: sellingPrice,
       orders_app_uom: cleanText(body.orders_app_uom) ?? consumptionUnit,
+      supervisor_uom: cleanText(body.supervisor_uom) ?? cleanText(body.orders_app_uom) ?? consumptionUnit,
       orders_app_cost_price: ordersAppCostPrice,
       has_variations: cleanBoolean(body.has_variations, false),
       has_recipe: cleanBoolean(body.has_recipe, false),

@@ -168,6 +168,7 @@ export async function firestoreCatalogVariantsPost(request: Request) {
     cost,
     selling_price: sellingPrice,
     orders_app_uom: cleanText(body.orders_app_uom) ?? consumptionUom,
+    supervisor_uom: cleanText(body.supervisor_uom) ?? cleanText(body.orders_app_uom) ?? consumptionUom,
     orders_app_cost_price: ordersAppCostPrice,
     outlet_order_visible: true,
     image_url: cleanText(body.image_url) ?? null,
@@ -259,6 +260,9 @@ export async function firestoreCatalogVariantsPut(request: Request) {
   }
   if (body.orders_app_uom !== undefined) {
     update.orders_app_uom = cleanText(body.orders_app_uom) ?? "each";
+  }
+  if (body.supervisor_uom !== undefined) {
+    update.supervisor_uom = cleanText(body.supervisor_uom) ?? cleanText(body.orders_app_uom) ?? "each";
   }
   if (body.orders_app_cost_price !== undefined) {
     const ordersAppCostPrice = toNumber(body.orders_app_cost_price, 0);

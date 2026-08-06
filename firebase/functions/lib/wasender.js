@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WasenderNotConfiguredError = exports.wasenderGroupId = exports.wasenderApiKey = void 0;
 exports.isWasenderConfigured = isWasenderConfigured;
 exports.sendWasenderGroupMessage = sendWasenderGroupMessage;
+exports.sendWasenderGroupMessageWithImage = sendWasenderGroupMessageWithImage;
 const params_1 = require("firebase-functions/params");
 exports.wasenderApiKey = (0, params_1.defineSecret)("WASENDER_API_KEY");
 exports.wasenderGroupId = (0, params_1.defineSecret)("WASENDER_GROUP_ID");
@@ -21,6 +22,16 @@ class WasenderNotConfiguredError extends Error {
 }
 exports.WasenderNotConfiguredError = WasenderNotConfiguredError;
 async function sendWasenderGroupMessage(text) {
+    await sendWasenderGroupPayload({ text });
+}
+async function sendWasenderGroupMessageWithImage(text, imageUrl) {
+    const trimmedUrl = imageUrl.trim();
+    if (!trimmedUrl) {
+        throw new Error("imageUrl is required for image messages.");
+    }
+    await sendWasenderGroupPayload({ text, imageUrl: trimmedUrl });
+}
+async function sendWasenderGroupPayload(payload) {
     const apiKey = exports.wasenderApiKey.value().trim();
     const groupId = exports.wasenderGroupId.value().trim();
     if (!apiKey || !groupId) {
@@ -35,7 +46,8 @@ async function sendWasenderGroupMessage(text) {
         },
         body: JSON.stringify({
             to: groupId,
-            text,
+            text: payload.text,
+            ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
         }),
     });
     const body = (await response.json().catch(() => ({})));

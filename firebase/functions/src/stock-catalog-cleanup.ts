@@ -62,6 +62,12 @@ async function planCleanup(
       .filter(Boolean),
   );
 
+  function linkedToApi(docId: string, stockApiUuid: unknown): boolean {
+    if (apiUuids.has(docId)) return true;
+    const linkedUuid = String(stockApiUuid ?? "").trim();
+    return Boolean(linkedUuid && apiUuids.has(linkedUuid));
+  }
+
   const variantsByItem = new Map<string, Array<{ id: string }>>();
   for (const doc of variantsSnap.docs) {
     const itemId = String(doc.get("item_id") ?? "").trim();
@@ -75,7 +81,7 @@ async function planCleanup(
   const keptVariantIds = new Set<string>();
 
   for (const doc of variantsSnap.docs) {
-    if (apiUuids.has(doc.id)) {
+    if (linkedToApi(doc.id, doc.get("stock_api_uuid"))) {
       keptVariantIds.add(doc.id);
       continue;
     }
@@ -99,7 +105,7 @@ async function planCleanup(
       continue;
     }
 
-    if (apiUuids.has(itemId)) {
+    if (linkedToApi(itemId, doc.get("stock_api_uuid"))) {
       keptItemIds.add(itemId);
       continue;
     }

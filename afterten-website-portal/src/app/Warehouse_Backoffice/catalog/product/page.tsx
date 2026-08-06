@@ -28,6 +28,7 @@ type FormState = {
   cost: string;
   selling_price: string;
   orders_app_uom: string;
+  supervisor_uom: string;
   orders_app_cost_price: string;
   has_variations: boolean;
   image_url: string;
@@ -44,6 +45,7 @@ const defaultForm: FormState = {
   cost: "0",
   selling_price: "0",
   orders_app_uom: "pc",
+  supervisor_uom: "pc",
   orders_app_cost_price: "0",
   has_variations: false,
   image_url: "",
@@ -131,6 +133,8 @@ function ProductCreatePage() {
             selling_price: (item.selling_price ?? 0).toString(),
             orders_app_uom:
               normalizeUomValue(item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
+            supervisor_uom:
+              normalizeUomValue(item.supervisor_uom ?? item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
             orders_app_cost_price: (item.orders_app_cost_price ?? item.selling_price ?? 0).toString(),
             has_variations: Boolean(item.has_variations),
             image_url: item.image_url ?? "",
@@ -205,6 +209,7 @@ function ProductCreatePage() {
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
         orders_app_uom: form.orders_app_uom,
+        supervisor_uom: form.supervisor_uom,
         orders_app_cost_price: toNumber(form.orders_app_cost_price, 0),
         has_variations: form.has_variations,
         image_url: form.image_url,
@@ -286,6 +291,8 @@ function ProductCreatePage() {
               selling_price: (item.selling_price ?? 0).toString(),
               orders_app_uom:
                 normalizeUomValue(item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
+              supervisor_uom:
+                normalizeUomValue(item.supervisor_uom ?? item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
               orders_app_cost_price: (item.orders_app_cost_price ?? item.selling_price ?? 0).toString(),
               has_variations: Boolean(item.has_variations),
               image_url: item.image_url ?? "",
@@ -388,6 +395,13 @@ function ProductCreatePage() {
                 hint="Unit of measure displayed when outlets order this product"
                 value={form.orders_app_uom}
                 onChange={(v) => handleChange("orders_app_uom", v)}
+                options={uomOptions}
+              />
+              <Select
+                label="Supervisor Uom"
+                hint="Unit of measure shown on supervisor order screens and warehouse portal"
+                value={form.supervisor_uom}
+                onChange={(v) => handleChange("supervisor_uom", v)}
                 options={uomOptions}
               />
               <Field

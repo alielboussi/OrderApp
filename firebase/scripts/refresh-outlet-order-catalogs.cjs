@@ -42,9 +42,11 @@ async function materializeOutlet(outletId, allowlistRows, itemsById, variantsByI
     if (row.variant_id) {
       const variant = variantsById.get(row.variant_id);
       if (!variant || variant.active === false) continue;
-      const imageUrl =
+      const variantImageUrl =
         asText(variant.image_url) ||
         asText(variant.imageUrl) ||
+        null;
+      const productImageUrl =
         asText(item.image_url) ||
         asText(item.imageUrl) ||
         null;
@@ -65,8 +67,10 @@ async function materializeOutlet(outletId, allowlistRows, itemsById, variantsByI
           consumptionUom: asText(variant.orders_app_uom) || asText(item.orders_app_uom) || asText(item.consumption_uom) || "each",
           unitsPerPurchasePack: Number(item.units_per_purchase_pack ?? 1),
           hasVariations: true,
-          imageUrl,
-          image_url: imageUrl,
+          imageUrl: variantImageUrl,
+          image_url: variantImageUrl,
+          productImageUrl,
+          product_image_url: productImageUrl,
           active: true,
           updatedAt: now,
         },
@@ -94,6 +98,8 @@ async function materializeOutlet(outletId, allowlistRows, itemsById, variantsByI
         hasVariations: item.has_variations === true,
         imageUrl,
         image_url: imageUrl,
+        productImageUrl: imageUrl,
+        product_image_url: imageUrl,
         active: true,
         updatedAt: now,
       },

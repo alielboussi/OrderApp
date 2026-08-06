@@ -10,6 +10,7 @@ import {
   getTransferOrderStatusTone,
 } from "@/lib/transfer-order-status";
 import { buildOutletOrderPdfFilename, buildOutletOrderPdfHtml, formatOutletOrderMoney } from "@/lib/outlet-order-pdf";
+import { buildOutletDamagePdfFilename, buildOutletDamagePdfHtml } from "@/lib/outlet-damage-pdf";
 import {
   resolveBaseProductNameFromCatalog,
   sumPortalOrderItems,
@@ -18,6 +19,13 @@ import {
 } from "@/lib/portal-transfer-order-edit";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { OrderExpandPanel } from "./OrderExpandPanel";
+import { DamageExpandPanel } from "./DamageExpandPanel";
+import {
+  formatDamageReportStatus,
+  getDamageReportStatusTone,
+  damageReportHasPhoto,
+} from "@/lib/damage-report-status";
+import type { DamageReportDetailRow, DamageReportRow } from "@/lib/firestore-damage-reports";
 import eb from "../enterprise.module.css";
 import styles from "./outlet-orders.module.css";
 
@@ -179,6 +187,82 @@ async function resolveSignatureDataUrl(options: {
   return blobToDataUrl(blob);
 }
 
+async function resolveDamagePhotoUrl(report: DamageReportRow): Promise<string | undefined> {
+  const inline = inlineSignatureDataUrl(report.photo_data);
+  if (inline) return inline;
+  if (!report.id) return undefined;
+
+  const photoRes = await fetch(`/api/outlet-damages/${encodeURIComponent(report.id)}/photo`, {
+    cache: "no-store",
+  });
+  if (!photoRes.ok) return undefined;
+
+  const photoJson = (await photoRes.json()) as { data_url?: string; signed_url?: string };
+  if (photoJson.data_url) return photoJson.data_url;
+  if (!photoJson.signed_url) return undefined;
+
+  const resp = await fetch(photoJson.signed_url);
+  if (!resp.ok) return undefined;
+  const blob = await resp.blob();
+  return blobToDataUrl(blob);
+}
+
+function groupDamageReportsByOutlet(
+  reports: DamageReportRow[],
+  nameById: ReadonlyMap<string, string>,
+): Array<{ outletName: string; reports: DamageReportRow[] }> {
+  const byOutlet = new Map<string, DamageReportRow[]>();
+  for (const report of reports) {
+    const outletName =
+      report.outlet_name?.trim() ||
+      (report.outlet_id && nameById.get(report.outlet_id)) ||
+      report.outlet_id ||
+      "Unknown outlet";
+    const bucket = byOutlet.get(outletName) ?? [];
+    bucket.push(report);
+    byOutlet.set(outletName, bucket);
+  }
+  return [...byOutlet.entries()]
+    .sort(([left], [right]) => left.localeCompare(right, undefined, { sensitivity: "base" }))
+    .map(([outletName, outletReports]) => ({
+      outletName,
+      reports: [...outletReports].sort(
+        (left, right) =>
+          new Date(right.reported_at ?? 0).getTime() - new Date(left.reported_at ?? 0).getTime(),
+      ),
+    }));
+}
+
+async function resolveDamageSignatureDataUrl(
+  reportId: string,
+  role: "driver" | "offloader",
+  inlineData?: string | null,
+): Promise<string | undefined> {
+  const inline = inlineSignatureDataUrl(inlineData);
+  if (inline) return inline;
+
+  const signRes = await fetch(
+    `/api/outlet-damages/${encodeURIComponent(reportId)}/signature?role=${encodeURIComponent(role)}`,
+    { cache: "no-store" },
+  );
+  if (!signRes.ok) return undefined;
+
+  const signJson = (await signRes.json()) as { data_url?: string; signed_url?: string };
+  if (signJson.data_url) return signJson.data_url;
+  if (!signJson.signed_url) return undefined;
+
+  const resp = await fetch(signJson.signed_url);
+  if (!resp.ok) return undefined;
+  const blob = await resp.blob();
+  return blobToDataUrl(blob);
+}
+
+function productBaseNameFromLabel(name: string): string {
+  const trimmed = name.trim();
+  const separator = trimmed.indexOf(" - ");
+  return separator > 0 ? trimmed.slice(0, separator) : trimmed;
+}
+
 function OutletOrdersPage() {
   const searchParams = useSearchParams();
   const { status } = useWarehouseAuth();
@@ -196,6 +280,12 @@ function OutletOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [damageReports, setDamageReports] = useState<DamageReportRow[]>([]);
+  const [expandedDamageId, setExpandedDamageId] = useState<string | null>(null);
+  const [damagePhotoUrls, setDamagePhotoUrls] = useState<Record<string, string>>({});
+  const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
+  const [photoLoadingId, setPhotoLoadingId] = useState<string | null>(null);
+  const [damagePdfBusyId, setDamagePdfBusyId] = useState<string | null>(null);
 
   const handleOrderSaved = useCallback((orderId: string, items: PortalOrderItem[]) => {
     const totalsForOrder = sumPortalOrderItems(items);
@@ -228,6 +318,11 @@ function OutletOrdersPage() {
 
       setOrders(json.orders ?? []);
       setTotals(json.totals ?? {});
+
+      const damageRes = await fetch(`/api/outlet-damages?${params.toString()}`, { cache: "no-store" });
+      const damageJson = (await damageRes.json()) as { reports?: DamageReportRow[]; error?: string };
+      if (!damageRes.ok) throw new Error(damageJson.error || "Unable to load damage reports");
+      setDamageReports(damageJson.reports ?? []);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -502,6 +597,134 @@ function OutletOrdersPage() {
     }
   };
 
+  const handleDownloadDamagePdf = async (report: DamageReportRow) => {
+    try {
+      setDamagePdfBusyId(report.id);
+      setError(null);
+
+      const reportId = report.id;
+      const outletName = report.outlet_name ?? getOutletName({ outlet_id: report.outlet_id } as OrderRow, outletNameById);
+      const reportNumber = report.report_number ?? report.id.slice(0, 8);
+      const reportedAt = formatStamp(report.reported_at);
+      const reportedBy = report.reported_by_name ?? "-";
+
+      const detailRes = await fetch(`/api/outlet-damages/${encodeURIComponent(reportId)}`, { cache: "no-store" });
+      const detailJson = (await detailRes.json()) as { report?: DamageReportDetailRow; error?: string };
+      if (!detailRes.ok) throw new Error(detailJson.error || "Unable to load damage report");
+
+      const detail = detailJson.report;
+      const linesRes = await fetch(`/api/outlet-damages/${encodeURIComponent(reportId)}/lines`, { cache: "no-store" });
+      const linesJson = (await linesRes.json()) as {
+        lines?: Array<{
+          name: string | null;
+          qty: number | null;
+          uom: string | null;
+          product_id: string | null;
+          variant_key: string | null;
+        }>;
+        error?: string;
+      };
+      if (!linesRes.ok) throw new Error(linesJson.error || "Unable to load damage report lines");
+
+      const items = (linesJson.lines ?? []).map((row) => ({
+        name: row.name ?? "Item",
+        productId: row.product_id ?? null,
+        variantKey: row.variant_key ?? null,
+        productName: productBaseNameFromLabel(row.name ?? "Item"),
+        qty: row.qty ?? 0,
+        uom: row.uom ?? "Pc(s)",
+      }));
+      const totalQty = items.reduce((sum, row) => sum + row.qty, 0);
+      const logoDataUrl = await loadLogoDataUrl();
+      const damagePhotoUrl = await resolveDamagePhotoUrl(report);
+      const driverSignatureUrl = detail
+        ? await resolveDamageSignatureDataUrl(reportId, "driver", detail.driver_signature_data)
+        : undefined;
+      const offloaderSignatureUrl = detail
+        ? await resolveDamageSignatureDataUrl(reportId, "offloader", detail.offloader_signature_data)
+        : undefined;
+
+      const downloadFilename = buildOutletDamagePdfFilename({
+        outletName: outletName === "-" ? "Outlet" : outletName,
+        reportedAt: report.reported_at,
+        reportNumber,
+      });
+
+      const html = buildOutletDamagePdfHtml({
+        logoDataUrl,
+        outletName: outletName === "-" ? "Outlet" : outletName,
+        reportNumber,
+        reportId,
+        status: formatDamageReportStatus(report.status),
+        reportedAt,
+        reportedBy,
+        supervisorName: detail?.supervisor_name ?? detail?.supervisor_reviewed_name ?? undefined,
+        items,
+        signatures: [
+          {
+            role: "reporter",
+            name: reportedBy,
+            signedAt: reportedAt,
+            dataUrl: damagePhotoUrl,
+          },
+          {
+            role: "supervisor",
+            name: detail?.supervisor_name ?? detail?.supervisor_reviewed_name ?? "",
+            signedAt: detail?.supervisor_reviewed_at ? formatStamp(detail.supervisor_reviewed_at) : undefined,
+          },
+          {
+            role: "driver",
+            name: detail?.driver_signed_name ?? "",
+            signedAt: detail?.driver_signed_at ? formatStamp(detail.driver_signed_at) : undefined,
+            dataUrl: driverSignatureUrl,
+          },
+          {
+            role: "offloader",
+            name: detail?.offloader_signed_name ?? "",
+            signedAt: detail?.offloader_signed_at ? formatStamp(detail.offloader_signed_at) : undefined,
+            dataUrl: offloaderSignatureUrl,
+          },
+        ],
+        totalQty,
+        downloadFilename,
+      });
+
+      const frame = document.createElement("iframe");
+      frame.style.position = "fixed";
+      frame.style.right = "0";
+      frame.style.bottom = "0";
+      frame.style.width = "0";
+      frame.style.height = "0";
+      frame.style.border = "0";
+      frame.setAttribute("aria-hidden", "true");
+      document.body.appendChild(frame);
+
+      const doc = frame.contentWindow?.document;
+      if (!doc) {
+        document.body.removeChild(frame);
+        return;
+      }
+
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      const cleanup = () => {
+        if (frame.parentNode) frame.parentNode.removeChild(frame);
+      };
+
+      setTimeout(() => {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+        setTimeout(cleanup, 1000);
+      }, 400);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setDamagePdfBusyId(null);
+    }
+  };
+
   const filteredOrders = useMemo(() => {
     const query = orderQuery.trim().toLowerCase();
     if (!query) return orders;
@@ -510,6 +733,48 @@ function OutletOrdersPage() {
       return orderNumber.includes(query) || order.id.toLowerCase().includes(query);
     });
   }, [orders, orderQuery]);
+
+  const filteredDamageReports = useMemo(() => {
+    const query = orderQuery.trim().toLowerCase();
+    if (!query) return damageReports;
+    return damageReports.filter((report) => {
+      const reportNumber = (report.report_number ?? report.id).toLowerCase();
+      const outletName = (report.outlet_name ?? "").toLowerCase();
+      const reporter = (report.reported_by_name ?? "").toLowerCase();
+      return (
+        reportNumber.includes(query) ||
+        report.id.toLowerCase().includes(query) ||
+        outletName.includes(query) ||
+        reporter.includes(query)
+      );
+    });
+  }, [damageReports, orderQuery]);
+
+  const damageGroups = useMemo(
+    () => groupDamageReportsByOutlet(filteredDamageReports, outletNameById),
+    [filteredDamageReports, outletNameById],
+  );
+
+  const handleOpenDamagePhoto = async (report: DamageReportRow) => {
+    if (!damageReportHasPhoto(report.status)) return;
+    const cached = damagePhotoUrls[report.id];
+    if (cached) {
+      setPhotoModalUrl(cached);
+      return;
+    }
+
+    try {
+      setPhotoLoadingId(report.id);
+      const dataUrl = await resolveDamagePhotoUrl(report);
+      if (!dataUrl) throw new Error("Damage photo is not available.");
+      setDamagePhotoUrls((current) => ({ ...current, [report.id]: dataUrl }));
+      setPhotoModalUrl(dataUrl);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setPhotoLoadingId(null);
+    }
+  };
 
   if (status !== "ok") {
     return (
@@ -688,6 +953,148 @@ function OutletOrdersPage() {
           </div>
         </div>
       </section>
+
+      <section className={eb.pageCard}>
+        <div className={styles.tableCard}>
+          <div className={styles.tableHeader}>
+            <div>
+              <p className={styles.tableTitle}>Damage reports</p>
+              <p className={styles.tableSubtitle}>
+                Showing {filteredDamageReports.length} damage reports grouped by outlet
+              </p>
+            </div>
+          </div>
+          {damageGroups.length === 0 ? (
+            <div className={styles.emptyState}>No damage reports found for the current filters.</div>
+          ) : (
+            damageGroups.map((group) => (
+              <div key={group.outletName}>
+                <div className={styles.outletGroupHeader}>{group.outletName}</div>
+                <div className={styles.table}>
+                  <div className={`${styles.damageTableRow} ${styles.damageTableHead}`}>
+                    <span />
+                    <span>Report #</span>
+                    <span>Reported By</span>
+                    <span>Reported At</span>
+                    <span>Status</span>
+                    <span>Photo</span>
+                    <span className={styles.alignCenter}>PDF</span>
+                    <span className={styles.alignRight}>Total Qty</span>
+                    <span className={styles.alignRight}>Lines</span>
+                  </div>
+                  {group.reports.map((report) => {
+                    const statusText = formatDamageReportStatus(report.status);
+                    const statusTone = getDamageReportStatusTone(report.status);
+                    const isExpanded = expandedDamageId === report.id;
+                    const isApproved = damageReportHasPhoto(report.status);
+                    const cachedPhoto = damagePhotoUrls[report.id];
+                    return (
+                      <div key={report.id} className={styles.orderBlock}>
+                        <div className={styles.damageTableRow}>
+                          <span className={styles.alignCenter}>
+                            <button
+                              type="button"
+                              className={styles.expandButton}
+                              aria-expanded={isExpanded}
+                              aria-label={isExpanded ? "Collapse damaged items" : "Expand damaged items"}
+                              onClick={() =>
+                                setExpandedDamageId((current) =>
+                                  current === report.id ? null : report.id,
+                                )
+                              }
+                            >
+                              {isExpanded ? "▼" : "▶"}
+                            </button>
+                          </span>
+                          <span>{report.report_number ?? report.id.slice(0, 8)}</span>
+                          <span>{report.reported_by_name ?? "-"}</span>
+                          <span>{formatStamp(report.reported_at)}</span>
+                          <span className={`${styles.statusTag} ${styles[`statusTag_${statusTone}`]}`}>
+                            {statusText}
+                          </span>
+                          <span>
+                            {isApproved ? (
+                              <button
+                                type="button"
+                                className={styles.photoThumbButton}
+                                aria-label="View damage photo"
+                                disabled={photoLoadingId === report.id}
+                                onClick={() => void handleOpenDamagePhoto(report)}
+                              >
+                                {cachedPhoto ? (
+                                  <img
+                                    src={cachedPhoto}
+                                    alt="Damage thumbnail"
+                                    className={styles.photoThumb}
+                                  />
+                                ) : (
+                                  <span className={styles.photoThumb}>
+                                    {photoLoadingId === report.id ? "…" : "📷"}
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              "-"
+                            )}
+                          </span>
+                          <span className={styles.alignCenter}>
+                            <button
+                              type="button"
+                              className={styles.pdfIconButton}
+                              disabled={damagePdfBusyId === report.id}
+                              aria-label={
+                                damagePdfBusyId === report.id
+                                  ? `Preparing PDF for damage report ${report.report_number ?? report.id}`
+                                  : `Download PDF for damage report ${report.report_number ?? report.id}`
+                              }
+                              title="Download damage PDF"
+                              onClick={() => void handleDownloadDamagePdf(report)}
+                            >
+                              {damagePdfBusyId === report.id ? (
+                                <span className={styles.pdfBusyDot} aria-hidden="true" />
+                              ) : (
+                                <PdfIcon />
+                              )}
+                            </button>
+                          </span>
+                          <span className={styles.alignRight}>{formatQty(report.total_qty ?? 0)}</span>
+                          <span className={styles.alignRight}>{report.line_count ?? 0}</span>
+                        </div>
+                        {isExpanded ? (
+                          <DamageExpandPanel reportId={report.id} onError={setError} />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      {photoModalUrl ? (
+        <div
+          className={styles.modalBackdrop}
+          role="presentation"
+          onClick={() => setPhotoModalUrl(null)}
+        >
+          <div
+            className={styles.modalCard}
+            role="dialog"
+            aria-label="Damage photo"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={styles.modalHeader}>
+              <h4 className={styles.modalTitle}>Damage photo</h4>
+              <button type="button" className={styles.modalClose} onClick={() => setPhotoModalUrl(null)}>
+                Close
+              </button>
+            </div>
+            <img src={photoModalUrl} alt="Damage" className={styles.photoModalImage} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

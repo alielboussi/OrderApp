@@ -21,6 +21,18 @@ export class WasenderNotConfiguredError extends Error {
 }
 
 export async function sendWasenderGroupMessage(text: string): Promise<void> {
+  await sendWasenderGroupPayload({ text });
+}
+
+export async function sendWasenderGroupMessageWithImage(text: string, imageUrl: string): Promise<void> {
+  const trimmedUrl = imageUrl.trim();
+  if (!trimmedUrl) {
+    throw new Error("imageUrl is required for image messages.");
+  }
+  await sendWasenderGroupPayload({ text, imageUrl: trimmedUrl });
+}
+
+async function sendWasenderGroupPayload(payload: { text: string; imageUrl?: string }): Promise<void> {
   const apiKey = wasenderApiKey.value().trim();
   const groupId = wasenderGroupId.value().trim();
   if (!apiKey || !groupId) {
@@ -36,7 +48,8 @@ export async function sendWasenderGroupMessage(text: string): Promise<void> {
     },
     body: JSON.stringify({
       to: groupId,
-      text,
+      text: payload.text,
+      ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
     }),
   });
 

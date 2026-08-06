@@ -6,12 +6,25 @@ import {
   stockCatalogSyncDeactivateMissing,
   stockCatalogSyncDeleteMissing,
   stockCatalogSyncEnabled,
+  stockCatalogSyncCron,
+  stockCatalogSyncIntervalSeconds,
   stockSyncApiToken,
 } from "./stock-api-secrets";
 import { deleteCatalogRowsMissingFromApi } from "./stock-catalog-cleanup";
+import {
+  buildCatalogSyncLookups,
+  catalogItemFieldsChanged,
+  catalogVariantFieldsChanged,
+  resolveSyncItemTarget,
+  resolveSyncVariantTarget,
+  rowLinkedToApiUuid,
+} from "./catalog-api-sync-matching";
+import { refreshOutletOrderCatalogForItem } from "./outlet-order-catalog-refresh";
 
 const DEFAULT_STOCK_CATALOG_API_URL =
   "https://afterten-stock-api-896827614552.us-central1.run.app/sync/catalog";
+const DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS = 30;
+const STOCK_CATALOG_SYNC_WINDOW_MS = 59_000;
 
 type StockApiUnit = {
   name?: string | null;
@@ -56,12 +69,26 @@ type SyncReport = {
     deleted_variants: number;
     deleted_related_docs: number;
     skipped_invalid_uuid: number;
+    outlet_catalog_refreshed: number;
   };
   created: Array<{ uuid: string; name: string }>;
 };
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function resolveStockCatalogSyncIntervalMs(): number {
+  const raw = stockCatalogSyncIntervalSeconds.value();
+  const seconds = raw ? Number(raw) : DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS;
+  if (!Number.isFinite(seconds) || seconds < 1) {
+    return DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS * 1000;
+  }
+  return Math.min(seconds, 60) * 1000;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeWarehouseName(value: unknown): string {
@@ -266,12 +293,12 @@ async function runStockCatalogSync(options?: {
     db.collection("catalog_variants").get(),
   ]);
 
-  const itemsById = new Map(itemsSnap.docs.map((doc) => [doc.id, doc.data()]));
-  const variantsById = new Map(variantsSnap.docs.map((doc) => [doc.id, doc.data()]));
-  const variantParentIds = new Set(
-    variantsSnap.docs.map((doc) => String(doc.get("item_id") ?? "")).filter(Boolean),
+  const lookups = buildCatalogSyncLookups(
+    itemsSnap.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
+    variantsSnap.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
   );
   const apiUuidSet = new Set(products.map((product) => String(product.uuid).trim()));
+  const changedItemIds = new Set<string>();
 
   let createdItems = 0;
   let updatedItems = 0;
@@ -282,6 +309,7 @@ async function runStockCatalogSync(options?: {
   let deletedItems = 0;
   let deletedVariants = 0;
   let deletedRelatedDocs = 0;
+  let outletCatalogRefreshed = 0;
   const created: Array<{ uuid: string; name: string }> = [];
 
   for (const product of products) {
@@ -306,39 +334,48 @@ async function runStockCatalogSync(options?: {
       active: true,
     };
 
-    if (variantsById.has(uuid)) {
-      const variant = variantsById.get(uuid)!;
-      const itemId = String(variant.item_id ?? "");
-      await db.collection("catalog_variants").doc(uuid).set(
-        {
-          name: syncedFields.name,
-          stock_api_uuid: uuid,
-          stock_api_synced_at: syncedFields.stock_api_synced_at,
-          stock_api_missing: false,
-          active: true,
-          updated_at: nowIso(),
-        },
-        { merge: true },
-      );
-      if (itemId && warehouseIds.length) {
-        await syncStorageHomes(db, itemId, uuid, warehouseIds);
+    const existingVariant = resolveSyncVariantTarget(uuid, lookups);
+    if (existingVariant) {
+      const variantPayload = {
+        name: syncedFields.name,
+        stock_api_uuid: uuid,
+        stock_api_synced_at: syncedFields.stock_api_synced_at,
+        stock_api_missing: false,
+        active: true,
+      };
+      if (catalogVariantFieldsChanged(existingVariant.existing, variantPayload)) {
+        await db.collection("catalog_variants").doc(existingVariant.variantId).set(
+          {
+            ...variantPayload,
+            updated_at: nowIso(),
+          },
+          { merge: true },
+        );
+        updatedVariants += 1;
+        if (existingVariant.itemId) changedItemIds.add(existingVariant.itemId);
       }
-      updatedVariants += 1;
+      if (existingVariant.itemId && warehouseIds.length) {
+        await syncStorageHomes(db, existingVariant.itemId, existingVariant.variantId, warehouseIds);
+      }
       continue;
     }
 
-    if (itemsById.has(uuid)) {
-      await db.collection("catalog_items").doc(uuid).set(
-        {
-          ...syncedFields,
-          updated_at: nowIso(),
-        },
-        { merge: true },
-      );
-      if (!variantParentIds.has(uuid) && warehouseIds.length) {
-        await syncStorageHomes(db, uuid, null, warehouseIds);
+    const existingItem = resolveSyncItemTarget(uuid, lookups);
+    if (existingItem) {
+      if (catalogItemFieldsChanged(existingItem.existing, syncedFields)) {
+        await db.collection("catalog_items").doc(existingItem.itemId).set(
+          {
+            ...syncedFields,
+            updated_at: nowIso(),
+          },
+          { merge: true },
+        );
+        updatedItems += 1;
+        changedItemIds.add(existingItem.itemId);
       }
-      updatedItems += 1;
+      if (!lookups.variantParentIds.has(existingItem.itemId) && warehouseIds.length) {
+        await syncStorageHomes(db, existingItem.itemId, null, warehouseIds);
+      }
       continue;
     }
 
@@ -367,22 +404,24 @@ async function runStockCatalogSync(options?: {
     }
     created.push({ uuid, name: syncedFields.name });
     createdItems += 1;
+    changedItemIds.add(uuid);
   }
 
   if (deactivateMissing) {
     for (const doc of itemsSnap.docs) {
-      if (variantParentIds.has(doc.id)) continue;
-      if (apiUuidSet.has(doc.id)) continue;
+      if (lookups.variantParentIds.has(doc.id)) continue;
+      if (rowLinkedToApiUuid(doc.id, doc.get("stock_api_uuid"), apiUuidSet)) continue;
       if (doc.get("active") === false) continue;
       await doc.ref.set(
         { active: false, stock_api_missing: true, stock_api_synced_at: nowIso(), updated_at: nowIso() },
         { merge: true },
       );
       deactivatedItems += 1;
+      changedItemIds.add(doc.id);
     }
 
     for (const doc of variantsSnap.docs) {
-      if (apiUuidSet.has(doc.id)) continue;
+      if (rowLinkedToApiUuid(doc.id, doc.get("stock_api_uuid"), apiUuidSet)) continue;
       if (doc.get("active") === false) continue;
       await doc.ref.set(
         { active: false, stock_api_missing: true, stock_api_synced_at: nowIso(), updated_at: nowIso() },
@@ -400,6 +439,7 @@ async function runStockCatalogSync(options?: {
           { has_variations: hasVariations, updated_at: nowIso() },
           { merge: true },
         );
+        changedItemIds.add(itemId);
       }
       deactivatedVariants += 1;
     }
@@ -410,6 +450,15 @@ async function runStockCatalogSync(options?: {
     deletedItems = cleanup.deleted_items;
     deletedVariants = cleanup.deleted_variants;
     deletedRelatedDocs = cleanup.deleted_related_docs;
+  }
+
+  for (const itemId of changedItemIds) {
+    try {
+      await refreshOutletOrderCatalogForItem(db, itemId);
+      outletCatalogRefreshed += 1;
+    } catch (error) {
+      logger.error(`Outlet catalog refresh failed for ${itemId}`, error);
+    }
   }
 
   const report: SyncReport = {
@@ -428,6 +477,7 @@ async function runStockCatalogSync(options?: {
       deleted_variants: deletedVariants,
       deleted_related_docs: deletedRelatedDocs,
       skipped_invalid_uuid: skippedInvalidUuid,
+      outlet_catalog_refreshed: outletCatalogRefreshed,
     },
     created,
   };
@@ -457,8 +507,10 @@ export const syncStockCatalogScheduled = onSchedule(
   {
     // Cloud Scheduler does not support africa-south1.
     region: "europe-west1",
-    schedule: process.env.STOCK_CATALOG_SYNC_CRON ?? "every 5 minutes",
+    // Sub-minute cadence is achieved by looping inside each 1-minute scheduler tick.
+    schedule: stockCatalogSyncCron.value(),
     timeZone: "Africa/Lusaka",
+    timeoutSeconds: 120,
     secrets: [stockSyncApiToken],
   },
   async () => {
@@ -467,7 +519,20 @@ export const syncStockCatalogScheduled = onSchedule(
       return;
     }
 
-    const report = await runStockCatalogSync();
-    logger.info("Stock catalog sync completed", report.summary);
+    const intervalMs = resolveStockCatalogSyncIntervalMs();
+    const deadlineMs = Date.now() + STOCK_CATALOG_SYNC_WINDOW_MS;
+
+    while (Date.now() < deadlineMs) {
+      try {
+        const report = await runStockCatalogSync();
+        logger.info("Stock catalog sync completed", report.summary);
+      } catch (error) {
+        logger.error("Stock catalog sync failed", error);
+      }
+
+      const remainingMs = deadlineMs - Date.now();
+      if (remainingMs < intervalMs) break;
+      await sleep(intervalMs);
+    }
   },
 );

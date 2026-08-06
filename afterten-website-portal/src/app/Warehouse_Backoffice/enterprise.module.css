@@ -1022,6 +1022,12 @@
   font-weight: 700;
 }
 
+.summaryHint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--eb-muted);
+}
+
 .navGroupLabelCatalog { color: var(--eb-blue); }
 .navGroupLabelInventory { color: var(--eb-green); }
 .navGroupLabelOutlets { color: var(--eb-gold); }

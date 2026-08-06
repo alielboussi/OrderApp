@@ -19,6 +19,8 @@ export const COLLECTIONS = {
   transferOrderCounters: "transfer_order_counters",
   outletOrderCatalog: "outlet_order_catalog",
   outletOrderRoutes: "outlet_order_routes",
+  outletDamageReports: "outlet_damage_reports",
+  outletDamageCounters: "outlet_damage_counters",
   appUsers: "app_users",
 } as const;
 

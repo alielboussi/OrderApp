@@ -40,5 +40,13 @@ export {
   peekNextOrderNumber,
   updateTransferOrderItems,
 };
+export {
+  submitDamageReport,
+  reviewDamageReport,
+  getDamageReportPhotoUrl,
+  getDamageReportSignatureUrl,
+  dispatchDamageReport,
+  completeDamageReport,
+} from "./damage-reports";
 export { getStockControlSnapshot } from "./stock-control";
 export { syncStockCatalog, syncStockCatalogScheduled } from "./stock-catalog-sync";

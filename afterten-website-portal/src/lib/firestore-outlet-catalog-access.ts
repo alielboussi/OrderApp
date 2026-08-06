@@ -68,6 +68,7 @@ async function materializeOutletOrderCatalog(
     const unitsPerPurchasePack = toNumber(item.units_per_purchase_pack, 1);
     const itemKind = asText(item.item_kind, "finished");
     const ordersAppUom = asText(item.orders_app_uom) || consumptionUom;
+    const supervisorUom = asText(item.supervisor_uom) || ordersAppUom;
     const ordersAppCostPrice = toNumber(item.orders_app_cost_price ?? item.selling_price ?? item.cost, 0);
 
     if (row.variant_id) {
@@ -76,6 +77,9 @@ async function materializeOutletOrderCatalog(
       const variantOrdersAppUom =
         asText(variant.orders_app_uom) ||
         ordersAppUom;
+      const variantSupervisorUom =
+        asText(variant.supervisor_uom) ||
+        supervisorUom;
       const variantOrdersAppCostPrice = toNumber(
         variant.orders_app_cost_price ??
           variant.selling_price ??
@@ -86,7 +90,8 @@ async function materializeOutletOrderCatalog(
         0,
       );
       const docId = `${outletId}_${row.item_id}_${row.variant_id}`;
-      const variantImageUrl = readCatalogImageUrl(variant.image_url, item.image_url);
+      const variantImageUrl = readCatalogImageUrl(variant.image_url);
+      const productImageUrl = readCatalogImageUrl(item.image_url);
       catalogDocs.push({
         id: docId,
         data: {
@@ -103,8 +108,11 @@ async function materializeOutletOrderCatalog(
           sellingPrice: variantOrdersAppCostPrice,
           ordersAppUom: variantOrdersAppUom,
           ordersAppCostPrice: variantOrdersAppCostPrice,
+          supervisorUom: variantSupervisorUom,
           imageUrl: variantImageUrl,
           image_url: variantImageUrl,
+          productImageUrl,
+          product_image_url: productImageUrl,
           purchasePackUnit,
           consumptionUom: variantOrdersAppUom,
           unitsPerPurchasePack,
@@ -134,8 +142,11 @@ async function materializeOutletOrderCatalog(
         sellingPrice: ordersAppCostPrice,
         ordersAppUom,
         ordersAppCostPrice,
+        supervisorUom,
         imageUrl: productImageUrl,
         image_url: productImageUrl,
+        productImageUrl,
+        product_image_url: productImageUrl,
         purchasePackUnit,
         consumptionUom: ordersAppUom,
         unitsPerPurchasePack,

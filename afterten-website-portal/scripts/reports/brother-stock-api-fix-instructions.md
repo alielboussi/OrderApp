@@ -114,7 +114,7 @@ These are almost certainly products with **qty &lt; 0** in your system.
 
 1. Product appears in **`/sync/catalog`** with a UUID.
 2. Product appears in **`/sync/stock`** with the **same UUID** (even if qty is 0 or negative).
-3. Portal auto-syncs within ~5 minutes.
+3. Portal auto-syncs within ~30 seconds.
 
 **Do not** omit products from `/sync/stock` just because qty is negative — return them with the real qty instead.
 

@@ -401,19 +401,27 @@ export default function CatalogMenuPage() {
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [dialogSuccess, setDialogSuccess] = useState<string | null>(null);
+  const [apiAlignment, setApiAlignment] = useState<{
+    api_product_count: number;
+    portal_products_linked: number;
+    portal_variants_linked: number;
+    aligned: boolean;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, variantsRes, groupsRes] = await Promise.all([
+      const [itemsRes, variantsRes, groupsRes, alignmentRes] = await Promise.all([
         fetch("/api/catalog/items"),
         fetch("/api/catalog/variants"),
         fetch("/api/catalog/menu-groups"),
+        fetch("/api/catalog/api-alignment"),
       ]);
       const itemsJson = await itemsRes.json().catch(() => ({}));
       const variantsJson = await variantsRes.json().catch(() => ({}));
       const groupsJson = await groupsRes.json().catch(() => ({}));
+      const alignmentJson = await alignmentRes.json().catch(() => ({}));
       if (!itemsRes.ok) {
         throw new Error(
           typeof itemsJson.error === "string" ? itemsJson.error : "Unable to load products",
@@ -439,6 +447,16 @@ export default function CatalogMenuPage() {
       setItems(Array.isArray(itemsJson.items) ? itemsJson.items : []);
       setVariants(Array.isArray(variantsJson.variants) ? variantsJson.variants : []);
       setMenuGroups(Array.isArray(groupsJson.groups) ? groupsJson.groups : []);
+      setApiAlignment(
+        alignmentRes.ok && alignmentJson.alignment
+          ? {
+              api_product_count: Number(alignmentJson.alignment.api_product_count ?? 0),
+              portal_products_linked: Number(alignmentJson.alignment.portal_products_linked ?? 0),
+              portal_variants_linked: Number(alignmentJson.alignment.portal_variants_linked ?? 0),
+              aligned: Boolean(alignmentJson.alignment.aligned),
+            }
+          : null,
+      );
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to load catalog");
@@ -559,6 +577,9 @@ export default function CatalogMenuPage() {
   }, [items, variants, search, typeFilter, matchesGroupFilter]);
 
   const variantCount = useMemo(() => variants.length, [variants]);
+  const productCount = apiAlignment?.portal_products_linked ?? items.length;
+  const apiVariantCount = apiAlignment?.portal_variants_linked ?? variantCount;
+  const apiProductTotal = apiAlignment?.api_product_count ?? null;
 
   const deleteLabel = useMemo(() => {
     if (!deleteTarget) return "";
@@ -746,7 +767,10 @@ export default function CatalogMenuPage() {
             Catalog menu
           </h3>
           <p className={eb.pageCardBody}>
-            Browse products and variants. Showing {items.length} products and {variantCount} variants.
+            Browse products and variants.
+            {apiProductTotal != null
+              ? ` API catalog: ${apiProductTotal} products (${productCount} in portal as products, ${apiVariantCount} as variants).`
+              : ` Showing ${items.length} products and ${variantCount} variants.`}
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -757,12 +781,29 @@ export default function CatalogMenuPage() {
         <div className={eb.summaryGrid} style={{ marginTop: 10 }}>
           <div className={`${eb.summaryCard} ${eb.summaryCardBlue}`}>
             <p className={eb.summaryLabel}>Products</p>
-            <p className={eb.summaryValue}>{items.length}</p>
+            <p className={eb.summaryValue}>{productCount}</p>
+            {apiProductTotal != null ? (
+              <p className={eb.summaryHint}>API-linked rows</p>
+            ) : null}
           </div>
           <div className={`${eb.summaryCard} ${eb.summaryCardGreen}`}>
             <p className={eb.summaryLabel}>Variants</p>
-            <p className={eb.summaryValue}>{variantCount}</p>
+            <p className={eb.summaryValue}>{apiVariantCount}</p>
+            {apiProductTotal != null ? (
+              <p className={eb.summaryHint}>
+                {apiAlignment?.aligned ? "Matches API" : "API-linked rows"}
+              </p>
+            ) : null}
           </div>
+          {apiProductTotal != null ? (
+            <div className={`${eb.summaryCard} ${eb.summaryCardBlue}`}>
+              <p className={eb.summaryLabel}>API total</p>
+              <p className={eb.summaryValue}>{apiProductTotal}</p>
+              <p className={eb.summaryHint}>
+                {productCount + apiVariantCount === apiProductTotal ? "In sync" : "Needs cleanup"}
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
 
