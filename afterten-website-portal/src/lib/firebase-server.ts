@@ -3,7 +3,7 @@ import "server-only";
 import { readFileSync } from "fs";
 import { getApps, initializeApp, applicationDefault, cert, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { getStorage, type Bucket } from "firebase-admin/storage";
+import { getStorage } from "firebase-admin/storage";
 
 const DEFAULT_STORAGE_BUCKET = "afterten-portal-system-catalog-images";
 
@@ -53,7 +53,7 @@ export function resolveFirebaseStorageBucketName(): string {
   );
 }
 
-export function getFirebaseStorageBucket(): Bucket {
+export function getFirebaseStorageBucket() {
   return getStorage(getFirebaseApp()).bucket(resolveFirebaseStorageBucketName());
 }
 
