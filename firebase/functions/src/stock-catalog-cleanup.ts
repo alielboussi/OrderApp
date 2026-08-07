@@ -1,4 +1,5 @@
 import { getFirestore } from "firebase-admin/firestore";
+import { isPortalOnlyCatalogItem } from "./catalog-api-sync-matching";
 
 type StockApiCatalogResponse = {
   generatedAt?: string;
@@ -79,8 +80,15 @@ async function planCleanup(
 
   const variantsToDelete: Array<{ id: string }> = [];
   const keptVariantIds = new Set<string>();
+  const itemsById = new Map(itemsSnap.docs.map((doc) => [doc.id, doc]));
 
   for (const doc of variantsSnap.docs) {
+    const itemId = String(doc.get("item_id") ?? "");
+    const parent = itemId ? itemsById.get(itemId) : undefined;
+    if (parent && isPortalOnlyCatalogItem(parent.data())) {
+      keptVariantIds.add(doc.id);
+      continue;
+    }
     if (linkedToApi(doc.id, doc.get("stock_api_uuid"))) {
       keptVariantIds.add(doc.id);
       continue;
@@ -93,6 +101,10 @@ async function planCleanup(
 
   for (const doc of itemsSnap.docs) {
     const itemId = doc.id;
+    if (isPortalOnlyCatalogItem(doc.data())) {
+      keptItemIds.add(itemId);
+      continue;
+    }
     const variants = variantsByItem.get(itemId) ?? [];
     const keptVariants = variants.filter((variant) => keptVariantIds.has(variant.id));
 

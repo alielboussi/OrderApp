@@ -1,5 +1,13 @@
 import { normalizeOrderQty } from "@/lib/order-qty-rules";
-import { resolveSupervisorUomFromCatalogProduct } from "@/lib/orders-app-uom";
+import {
+  resolveConsumptionUomFromCatalogProduct,
+  resolveSupervisorUomFromCatalogProduct,
+} from "@/lib/orders-app-uom";
+import {
+  fromSupervisorDisplayQty,
+  resolveSupervisorUomQtyPerUnit,
+  toSupervisorDisplayQty,
+} from "@/lib/supervisor-uom-qty";
 
 export type PortalOrderItem = {
   id: string;
@@ -27,6 +35,9 @@ export type PortalCatalogProduct = {
   supervisor_uom: string | null;
   consumption_uom: string;
   units_per_purchase_pack: number;
+  supervisor_uom_qty_per_unit: number;
+  uom_weight_enabled: boolean;
+  uom_weight_grams: number | null;
 };
 
 export function clonePortalOrderItems(items: PortalOrderItem[]): PortalOrderItem[] {
@@ -52,15 +63,30 @@ export function portalOrderItemsMatch(left: PortalOrderItem[], right: PortalOrde
   });
 }
 
-export function updatePortalOrderItemQty(item: PortalOrderItem, qty: number): PortalOrderItem {
-  const nextQty = Math.max(1, normalizeOrderQty(qty, item.product_id));
-  const packageContains = item.package_contains || 1;
+export function updatePortalOrderItemQty(
+  item: PortalOrderItem,
+  qty: number,
+  catalog?: PortalCatalogProduct[],
+): PortalOrderItem {
+  const catalogRow = catalog ? resolveCatalogRowForOrderItem(item, catalog) : undefined;
+  const perUnit = resolveSupervisorUomQtyPerUnit(catalogRow);
+  const storedQty = fromSupervisorDisplayQty(qty, perUnit);
+  const nextQty = Math.max(1, normalizeOrderQty(storedQty, item.product_id));
   const cost = Number(item.cost ?? 0);
   return {
     ...item,
     qty: nextQty,
     amount: nextQty * cost,
   };
+}
+
+export function getSupervisorDisplayQtyForOrderItem(
+  item: PortalOrderItem,
+  catalog: PortalCatalogProduct[],
+): number {
+  const catalogRow = resolveCatalogRowForOrderItem(item, catalog);
+  const perUnit = resolveSupervisorUomQtyPerUnit(catalogRow);
+  return toSupervisorDisplayQty(item.qty ?? 0, perUnit);
 }
 
 export function getCatalogVariantsForProduct(
@@ -87,7 +113,7 @@ export function applyCatalogProductToOrderItem(
   if (item.product_id && product.product_id !== item.product_id) {
     throw new Error("Variant must stay within the same base product.");
   }
-  const packageContains = product.units_per_purchase_pack || 1;
+  const packageContains = product.supervisor_uom_qty_per_unit || 1;
   const qty = Math.max(1, item.qty ?? 1);
   const cost = Number(product.selling_price ?? 0);
   return {
@@ -96,7 +122,7 @@ export function applyCatalogProductToOrderItem(
     variant_key: product.variant_key,
     name: product.name.trim(),
     receiving_uom: product.orders_app_uom,
-    consumption_uom: product.consumption_uom,
+    consumption_uom: resolveConsumptionUomFromCatalogProduct(product),
     cost,
     qty,
     package_contains: packageContains,
@@ -111,12 +137,12 @@ export function productBaseName(name: string | null | undefined): string {
 }
 
 export function resolveSupervisorUomForOrderItem(
-  item: Pick<PortalOrderItem, "product_id" | "variant_key" | "name" | "receiving_uom" | "consumption_uom">,
+  item: Pick<PortalOrderItem, "product_id" | "variant_key" | "name">,
   catalog: PortalCatalogProduct[],
 ): string {
   const catalogRow = resolveCatalogRowForOrderItem(item, catalog);
   if (catalogRow) return resolveSupervisorUomFromCatalogProduct(catalogRow);
-  return item.receiving_uom?.trim() || item.consumption_uom?.trim() || "each";
+  return "";
 }
 
 export function resolveCatalogRowForOrderItem(

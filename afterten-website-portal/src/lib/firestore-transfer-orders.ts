@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getFirestoreDb } from "@/lib/firebase-server";
+import { readCatalogOrderFieldsFromRow } from "@/lib/catalog-order-fields";
 import { isTransferOrderOnDate, resolveTransferOrderCreatedAt } from "@/lib/transfer-order-dates";
 
 export type TransferOrderRow = {
@@ -152,6 +153,9 @@ export type FirestoreOutletCatalogProduct = {
   supervisor_uom: string | null;
   consumption_uom: string;
   units_per_purchase_pack: number;
+  supervisor_uom_qty_per_unit: number;
+  uom_weight_enabled: boolean;
+  uom_weight_grams: number | null;
   image_url: string | null;
 };
 
@@ -265,7 +269,19 @@ function sumOrderItems(items: FirestoreTransferOrderItem[]) {
   );
 }
 
-function resolveSupervisorUom(data: FirebaseFirestore.DocumentData): string | null {
+function resolveOrdersAppUom(data: FirebaseFirestore.DocumentData): string {
+  return resolveOrdersAppUomFromLib(data as Record<string, unknown>);
+}
+
+function resolveOrdersAppUomFromLib(data: Record<string, unknown>): string {
+  const direct =
+    (typeof data.ordersAppUom === "string" && data.ordersAppUom.trim()) ||
+    (typeof data.orders_app_uom === "string" && data.orders_app_uom.trim()) ||
+    "";
+  return direct || "pc";
+}
+
+function resolveSupervisorUomLocal(data: FirebaseFirestore.DocumentData): string | null {
   const direct =
     (typeof data.supervisorUom === "string" && data.supervisorUom.trim()) ||
     (typeof data.supervisor_uom === "string" && data.supervisor_uom.trim()) ||
@@ -273,24 +289,9 @@ function resolveSupervisorUom(data: FirebaseFirestore.DocumentData): string | nu
   return direct || null;
 }
 
-function resolveOrdersAppUom(data: FirebaseFirestore.DocumentData): string {
-  const direct =
-    (typeof data.ordersAppUom === "string" && data.ordersAppUom.trim()) ||
-    (typeof data.orders_app_uom === "string" && data.orders_app_uom.trim()) ||
-    "";
-  if (direct) return direct;
-  const purchasePackUnit =
-    (typeof data.purchasePackUnit === "string" && data.purchasePackUnit.trim()) ||
-    (typeof data.purchase_pack_unit === "string" && data.purchase_pack_unit.trim()) ||
-    "each";
-  return purchasePackUnit;
-}
-
 function resolveSellingPrice(data: FirebaseFirestore.DocumentData): number {
   const ordersAppCost = Number(data.ordersAppCostPrice ?? data.orders_app_cost_price);
-  if (Number.isFinite(ordersAppCost) && ordersAppCost > 0) return ordersAppCost;
-  const sellingPrice = Number(data.sellingPrice ?? data.selling_price ?? data.cost ?? 0);
-  return Number.isFinite(sellingPrice) ? sellingPrice : 0;
+  return Number.isFinite(ordersAppCost) ? ordersAppCost : 0;
 }
 
 export async function listFirestoreOutletOrderCatalog(
@@ -314,6 +315,7 @@ export async function listFirestoreOutletOrderCatalog(
       const imageUrl =
         (typeof data.imageUrl === "string" && data.imageUrl.trim() ? data.imageUrl.trim() : null) ??
         (typeof data.image_url === "string" && data.image_url.trim() ? data.image_url.trim() : null);
+      const orderFields = readCatalogOrderFieldsFromRow(data);
       return {
         id: doc.id,
         product_id: String(data.productId ?? data.product_id ?? doc.id),
@@ -321,11 +323,14 @@ export async function listFirestoreOutletOrderCatalog(
         variant_id: (data.variantId as string | null | undefined) ?? (data.variant_id as string | null | undefined) ?? null,
         variant_key: (data.variantKey as string | null | undefined) ?? (data.variant_key as string | null | undefined) ?? null,
         name,
-        selling_price: resolveSellingPrice(data),
-        orders_app_uom: resolveOrdersAppUom(data),
-        supervisor_uom: resolveSupervisorUom(data),
-        consumption_uom: String(data.consumptionUom ?? data.consumption_uom ?? "each"),
-        units_per_purchase_pack: Number(data.unitsPerPurchasePack ?? data.units_per_purchase_pack ?? 1),
+        selling_price: orderFields.orders_app_cost_price,
+        orders_app_uom: orderFields.orders_app_uom,
+        supervisor_uom: orderFields.supervisor_uom,
+        consumption_uom: orderFields.consumption_uom,
+        units_per_purchase_pack: 1,
+        supervisor_uom_qty_per_unit: orderFields.supervisor_uom_qty_per_unit,
+        uom_weight_enabled: orderFields.uom_weight_enabled,
+        uom_weight_grams: orderFields.uom_weight_grams,
         image_url: imageUrl,
       } satisfies FirestoreOutletCatalogProduct;
     })
@@ -403,7 +408,7 @@ export async function updateFirestoreTransferOrderItems(
         productId: nextProductId,
         variantKey: item.variant_key ?? null,
         name,
-        receivingUom: String(item.receiving_uom ?? "each"),
+        receivingUom: String(item.receiving_uom ?? "pc"),
         consumptionUom: String(item.consumption_uom ?? "each"),
         cost,
         qty,

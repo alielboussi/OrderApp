@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DamageReportLineRow } from "@/lib/firestore-damage-reports";
-import { DAMAGE_UOM } from "@/lib/damage-uom";
+import { useUomCatalog } from "@/lib/use-uom-options";
 import styles from "./outlet-orders.module.css";
 
 type DamageExpandPanelProps = {
@@ -16,6 +16,7 @@ function formatQty(value: number): string {
 }
 
 export function DamageExpandPanel({ reportId, onError }: DamageExpandPanelProps) {
+  const { formatUom } = useUomCatalog();
   const [loading, setLoading] = useState(true);
   const [lines, setLines] = useState<DamageReportLineRow[]>([]);
 
@@ -67,7 +68,7 @@ export function DamageExpandPanel({ reportId, onError }: DamageExpandPanelProps)
           <div key={line.id} className={styles.damageLineRow}>
             <span>{line.name ?? "Item"}</span>
             <span className={styles.alignRight}>{formatQty(line.qty ?? 0)}</span>
-            <span>{DAMAGE_UOM}</span>
+            <span>{line.uom?.trim() || formatUom("pc")}</span>
           </div>
         ))}
       </div>

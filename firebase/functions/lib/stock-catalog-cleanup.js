@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteCatalogRowsMissingFromApi = deleteCatalogRowsMissingFromApi;
 const firestore_1 = require("firebase-admin/firestore");
+const catalog_api_sync_matching_1 = require("./catalog-api-sync-matching");
 function chunk(values, size) {
     const chunks = [];
     for (let index = 0; index < values.length; index += size) {
@@ -51,7 +52,14 @@ async function planCleanup(db, catalogPayload) {
     }
     const variantsToDelete = [];
     const keptVariantIds = new Set();
+    const itemsById = new Map(itemsSnap.docs.map((doc) => [doc.id, doc]));
     for (const doc of variantsSnap.docs) {
+        const itemId = String(doc.get("item_id") ?? "");
+        const parent = itemId ? itemsById.get(itemId) : undefined;
+        if (parent && (0, catalog_api_sync_matching_1.isPortalOnlyCatalogItem)(parent.data())) {
+            keptVariantIds.add(doc.id);
+            continue;
+        }
         if (linkedToApi(doc.id, doc.get("stock_api_uuid"))) {
             keptVariantIds.add(doc.id);
             continue;
@@ -62,6 +70,10 @@ async function planCleanup(db, catalogPayload) {
     const keptItemIds = new Set();
     for (const doc of itemsSnap.docs) {
         const itemId = doc.id;
+        if ((0, catalog_api_sync_matching_1.isPortalOnlyCatalogItem)(doc.data())) {
+            keptItemIds.add(itemId);
+            continue;
+        }
         const variants = variantsByItem.get(itemId) ?? [];
         const keptVariants = variants.filter((variant) => keptVariantIds.has(variant.id));
         if (variants.length > 0) {

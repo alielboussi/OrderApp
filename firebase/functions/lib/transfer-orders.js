@@ -4,6 +4,7 @@ exports.getTransferOrderSignatureUrl = exports.updateTransferOrderItems = export
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-admin/firestore");
 const order_whatsapp_1 = require("./order-whatsapp");
+const orders_app_uom_1 = require("./orders-app-uom");
 const storage_bucket_1 = require("./storage-bucket");
 const wasender_1 = require("./wasender");
 const schema_1 = require("./schema");
@@ -13,6 +14,54 @@ function orderNumberPrefix(outletName) {
 }
 function formatOrderNumber(outletName, sequence) {
     return `${orderNumberPrefix(outletName)}-${String(sequence).padStart(10, "0")}`;
+}
+function catalogLineKey(productId, variantKey) {
+    return `${productId}::${variantKey}`;
+}
+function buildOrdersAppUomLookup(docs) {
+    const lookup = new Map();
+    const fallbackByProduct = new Map();
+    for (const docSnap of docs) {
+        const data = docSnap.data();
+        const productId = String(data.productId ?? "").trim();
+        if (!productId)
+            continue;
+        const ordersAppUom = (0, orders_app_uom_1.resolveOrdersAppUom)(data);
+        const variantKey = String(data.variantKey ?? "").trim();
+        const variantId = String(data.variantId ?? "").trim();
+        lookup.set(catalogLineKey(productId, variantKey), ordersAppUom);
+        if (variantId)
+            lookup.set(catalogLineKey(productId, variantId), ordersAppUom);
+        if (!variantKey && !variantId) {
+            fallbackByProduct.set(productId, ordersAppUom);
+            continue;
+        }
+        if (!fallbackByProduct.has(productId)) {
+            fallbackByProduct.set(productId, ordersAppUom);
+        }
+    }
+    for (const [productId, uom] of fallbackByProduct.entries()) {
+        if (!lookup.has(catalogLineKey(productId, ""))) {
+            lookup.set(catalogLineKey(productId, ""), uom);
+        }
+    }
+    return lookup;
+}
+function resolveOrdersAppUomForWhatsAppLine(item, lookup) {
+    const productId = String(item.productId ?? "").trim();
+    const variantKey = String(item.variantKey ?? "").trim();
+    const qty = Number(item.qty ?? 1);
+    let code = "";
+    if (productId) {
+        code =
+            lookup.get(catalogLineKey(productId, variantKey)) ??
+                lookup.get(catalogLineKey(productId, "")) ??
+                "";
+    }
+    if (!code) {
+        code = "pc";
+    }
+    return (0, orders_app_uom_1.formatOrdersAppUomLabel)(code, qty);
 }
 function resolveSupervisorDisplayName(profile) {
     const displayName = String(profile.displayName ?? profile.supervisorName ?? "").trim();
@@ -77,8 +126,8 @@ function appendSupervisorItemUpdatesToBatch(batch, orderRef, items, existingById
             productId: nextProductId,
             variantKey: item.variantKey ?? null,
             name,
-            receivingUom: String(item.receivingUom ?? "each"),
-            consumptionUom: String(item.consumptionUom ?? "each"),
+            receivingUom: String(item.receivingUom ?? "pc"),
+            consumptionUom: String(item.consumptionUom ?? "pc"),
             cost: Number(item.cost ?? 0),
             qty,
             qtyCases: item.qtyCases == null ? null : Number(item.qtyCases),
@@ -320,13 +369,24 @@ exports.acceptTransferOrder = (0, https_1.onCall)({ region: "africa-south1", sec
     let whatsappError = null;
     try {
         const itemsSnap = await orderRef.collection("items").get();
+        const outletId = String(order.outletId ?? "").trim();
+        const catalogSnap = outletId
+            ? await db.collection(schema_1.COLLECTIONS.outletOrderCatalog).where("outletId", "==", outletId).get()
+            : null;
+        const ordersAppUomLookup = catalogSnap ? buildOrdersAppUomLookup(catalogSnap.docs) : new Map();
         const orderItems = itemsSnap.docs
             .map((docSnap) => ({
             sortOrder: Number(docSnap.data().sortOrder ?? 0),
             item: {
                 name: String(docSnap.data().name ?? ""),
                 qty: Number(docSnap.data().qty ?? 0),
-                receivingUom: String(docSnap.data().receivingUom ?? docSnap.data().consumptionUom ?? "each"),
+                receivingUom: resolveOrdersAppUomForWhatsAppLine({
+                    productId: docSnap.data().productId ?? null,
+                    variantKey: docSnap.data().variantKey ?? null,
+                    receivingUom: String(docSnap.data().receivingUom ?? "pc"),
+                    consumptionUom: String(docSnap.data().consumptionUom ?? "pc"),
+                    qty: Number(docSnap.data().qty ?? 0),
+                }, ordersAppUomLookup),
                 cost: Number(docSnap.data().cost ?? 0),
                 productId: docSnap.data().productId ?? null,
                 variantKey: docSnap.data().variantKey ?? null,

@@ -115,7 +115,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  min-height: 220px;
+  min-height: 248px;
   height: auto;
   cursor: pointer;
   overflow: hidden;

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { fetchOutletWarehouseLinks, fetchSellingOutlets } from "@/lib/warehouse-outlet-api";
+import { useUomCatalog } from "@/lib/use-uom-options";
 import styles from "./outlet-warehouse-balances.module.css";
 
 type OutletOption = {
@@ -41,96 +42,41 @@ function toErrorMessage(error: unknown): string {
 }
 
 
-function formatUomLabel(raw?: string | null): string {
-  const trimmed = raw?.trim() ?? "";
-  if (!trimmed) return "";
-  const key = trimmed.toLowerCase();
-  switch (key) {
-    case "g":
-    case "gram":
-    case "grams":
-    case "g(s)":
-      return "Gram(s)";
-    case "kg":
-    case "kilogram":
-    case "kilograms":
-    case "kg(s)":
-      return "Kilogram(s)";
-    case "mg":
-    case "milligram":
-    case "milligrams":
-    case "mg(s)":
-      return "Milligram(s)";
-    case "ml":
-    case "millilitre":
-    case "millilitres":
-    case "ml(s)":
-      return "Millilitre(s)";
-    case "l":
-    case "litre":
-    case "litres":
-    case "l(s)":
-      return "Litre(s)";
-    case "each":
-      return "Each";
-    case "pc":
-    case "pcs":
-    case "pc(s)":
-      return "Pc(s)";
-    case "case":
-    case "case(s)":
-      return "Case(s)";
-    case "crate":
-    case "crate(s)":
-      return "Crate(s)";
-    case "bottle":
-    case "bottle(s)":
-      return "Bottle(s)";
-    case "tin can":
-    case "tin can(s)":
-      return "Tin Can(s)";
-    case "jar":
-    case "jar(s)":
-      return "Jar(s)";
-    case "block":
-    case "block(s)":
-      return "Block(s)";
-    case "plastic":
-    case "plastic(s)":
-      return "Plastic(s)";
-    case "packet":
-    case "packet(s)":
-      return "Packet(s)";
-    case "box":
-    case "box(es)":
-      return "Box(es)";
-    case "bag":
-    case "bag(s)":
-      return "Bag(s)";
-    case "bucket":
-    case "bucket(s)":
-      return "Bucket(s)";
-    default: {
-      const capitalized = trimmed.replace(/\b\w/g, (char) => char.toUpperCase());
-      return capitalized.endsWith("(s)") ? capitalized : `${capitalized}(s)`;
-    }
+function readCatalogUomFromRow(row: Record<string, unknown>): string {
+  const keys = [
+    "orders_app_uom",
+    "ordersAppUom",
+    "supervisor_uom",
+    "supervisorUom",
+    "consumption_uom",
+    "consumptionUom",
+    "consumption_unit",
+  ];
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
+  return "";
 }
 
-function formatQtyWithUom(value: number | null, uom?: string): { text: string; uom: string; detail?: string } {
-  if (value === null || Number.isNaN(value)) return { text: "-", uom: formatUomLabel(uom) };
+function formatQtyWithUom(
+  value: number | null,
+  uom: string | undefined,
+  labelFor: (code: string) => string,
+): { text: string; uom: string; detail?: string } {
+  if (value === null || Number.isNaN(value)) return { text: "-", uom: labelFor(uom ?? "") };
   const unit = (uom ?? "").toLowerCase();
   const abs = Math.abs(value);
   const isKgUnit = unit === "kg" || unit === "kilogram" || unit === "kilograms" || unit === "kg(s)";
 
   if (unit === "g" && abs >= 1000) {
-    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("kg") };
+    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: labelFor("kg") };
   }
   if (unit === "mg" && abs >= 1000) {
-    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("g") };
+    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: labelFor("g") };
   }
   if (unit === "ml" && abs >= 1000) {
-    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel("l") };
+    return { text: (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: labelFor("l") };
   }
   if (isKgUnit) {
     const sign = value < 0 ? "-" : "";
@@ -142,16 +88,16 @@ function formatQtyWithUom(value: number | null, uom?: string): { text: string; u
       remainderGrams = 0;
     }
     const detail = remainderGrams > 0
-      ? `${remainderGrams.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${formatUomLabel("g")}`
+      ? `${remainderGrams.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${labelFor("g")}`
       : undefined;
     return {
       text: `${sign}${kgDisplay.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-      uom: formatUomLabel("kg"),
-      detail
+      uom: labelFor("kg"),
+      detail,
     };
   }
 
-  return { text: value.toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: formatUomLabel(uom) };
+  return { text: value.toLocaleString(undefined, { maximumFractionDigits: 3 }), uom: labelFor(uom ?? "") };
 }
 
 function normalizeVariantKey(value?: string | null): string {
@@ -162,6 +108,7 @@ function normalizeVariantKey(value?: string | null): string {
 export default function OutletWarehouseBalancesPage() {
   const router = useRouter();
   const { status } = useWarehouseAuth();
+  const { formatUom } = useUomCatalog();
 
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [selectedOutletIds, setSelectedOutletIds] = useState<string[]>([]);
@@ -444,12 +391,8 @@ export default function OutletWarehouseBalancesPage() {
 
         itemResponses.forEach((row) => {
           if (!row || typeof row.id !== "string") return;
-          const fallbackUom =
-            (typeof row.consumption_unit === "string" && row.consumption_unit) ||
-            (typeof row.consumption_uom === "string" && row.consumption_uom) ||
-            (typeof row.purchase_pack_unit === "string" && row.purchase_pack_unit) ||
-            "each";
-          uomMap[row.id] = fallbackUom;
+          const fallbackUom = readCatalogUomFromRow(row);
+          if (fallbackUom) uomMap[row.id] = fallbackUom;
           packMap[row.id] = {
             mass: typeof row.purchase_unit_mass === "number" ? row.purchase_unit_mass : null,
             uom: typeof row.purchase_unit_mass_uom === "string" ? row.purchase_unit_mass_uom : null,
@@ -468,7 +411,7 @@ export default function OutletWarehouseBalancesPage() {
           if (!name || !id) return;
           map[id] = name;
           map[normalizeVariantKeyLocal(id)] = name;
-          const uom = typeof variant.consumption_uom === "string" ? variant.consumption_uom.trim() : "";
+          const uom = readCatalogUomFromRow(variant);
           if (uom) {
             variantUomMap[id] = uom;
             variantUomMap[normalizeVariantKeyLocal(id)] = uom;
@@ -676,7 +619,7 @@ export default function OutletWarehouseBalancesPage() {
                   {(() => {
                     const variantKey = normalizeVariantKey(item.variant_key);
                     const uom = variantUoms[variantKey] || itemUoms[item.item_id];
-                    const formatted = formatQtyWithUom(item.net_units, uom);
+                    const formatted = formatQtyWithUom(item.net_units, uom, formatUom);
                     return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                   })()}
                 </span>
@@ -686,7 +629,7 @@ export default function OutletWarehouseBalancesPage() {
                       const packInfo = itemPackMass[item.item_id];
                       if (!packInfo || packInfo.mass == null || item.net_units == null) return "-";
                       const total = item.net_units * packInfo.mass;
-                      const formatted = formatQtyWithUom(total, packInfo.uom ?? undefined);
+                      const formatted = formatQtyWithUom(total, packInfo.uom ?? undefined, formatUom);
                       return `${formatted.text} ${formatted.uom}${formatted.detail ? " " + formatted.detail : ""}`.trim();
                     })()}
                   </span>

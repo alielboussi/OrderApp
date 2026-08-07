@@ -6,12 +6,13 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
+import { mapCatalogUomFieldsFromRow, mergeCatalogUomOptionsForStored, parseCatalogUomInput } from "@/lib/catalog-uom-fields";
 import { useUomOptions } from "@/lib/use-uom-options";
 import { POS_NUMERIC_SKU_MAX, parsePosNumericSku } from "@/lib/pos-catalog-ids";
-import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "./product.module.css";
 import { CatalogImageField } from "../CatalogImageField";
+import { resolvePosMenuGroupId } from "@/lib/menu-group-pos";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -23,13 +24,15 @@ type FormState = {
   name: string;
   sku: string;
   item_kind: "finished" | "ingredient" | "raw";
-  consumption_unit: string;
   units_per_pack: string;
   cost: string;
   selling_price: string;
   orders_app_uom: string;
   supervisor_uom: string;
   orders_app_cost_price: string;
+  supervisor_uom_qty_per_unit: string;
+  uom_weight_enabled: boolean;
+  uom_weight_grams: string;
   has_variations: boolean;
   image_url: string;
   active: boolean;
@@ -40,13 +43,15 @@ const defaultForm: FormState = {
   name: "",
   sku: "",
   item_kind: "finished",
-  consumption_unit: "pc",
   units_per_pack: "1",
   cost: "0",
   selling_price: "0",
-  orders_app_uom: "pc",
-  supervisor_uom: "pc",
+  orders_app_uom: "",
+  supervisor_uom: "",
   orders_app_cost_price: "0",
+  supervisor_uom_qty_per_unit: "1",
+  uom_weight_enabled: false,
+  uom_weight_grams: "",
   has_variations: false,
   image_url: "",
   active: true,
@@ -54,11 +59,51 @@ const defaultForm: FormState = {
 };
 
 
-const normalizeUomValue = (value?: string | null) => {
-  const trimmed = value?.trim();
+function mapItemToForm(
+  item: Record<string, unknown>,
+  menuGroupId: string,
+  uomOptions: { value: string; label: string }[],
+): FormState {
+  const uoms = mapCatalogUomFieldsFromRow(item, uomOptions);
+
+  return {
+    name: String(item.name ?? ""),
+    sku: String(item.sku ?? ""),
+    item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
+    units_per_pack: String(item.units_per_purchase_pack ?? 1),
+    cost: String(item.cost ?? 0),
+    selling_price: String(item.selling_price ?? 0),
+    orders_app_uom: uoms.orders_app_uom,
+    supervisor_uom: uoms.supervisor_uom,
+    orders_app_cost_price: String(item.orders_app_cost_price ?? item.selling_price ?? 0),
+    supervisor_uom_qty_per_unit: String(item.supervisor_uom_qty_per_unit ?? 1),
+    uom_weight_enabled: item.uom_weight_enabled === true || item.uomWeightEnabled === true,
+    uom_weight_grams: (() => {
+      const raw = item.uom_weight_grams ?? item.uomWeightGrams;
+      return raw == null || raw === "" ? "" : String(raw);
+    })(),
+    has_variations: Boolean(item.has_variations),
+    image_url: String(item.image_url ?? ""),
+    active: item.active !== false,
+    menu_group_id: menuGroupId,
+  };
+}
+
+async function resolveMenuGroupIdForForm(storedId: string | null | undefined): Promise<string> {
+  const trimmed = storedId?.trim() ?? "";
   if (!trimmed) return "";
-  return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
-};
+  if (/^\d+$/.test(trimmed)) return trimmed;
+
+  try {
+    const res = await fetch(`/api/catalog/menu-groups?id=${encodeURIComponent(trimmed)}`);
+    if (!res.ok) return "";
+    const json = (await res.json()) as { group?: Record<string, unknown> };
+    const posId = json.group ? resolvePosMenuGroupId(json.group) : null;
+    return posId != null ? String(posId) : "";
+  } catch {
+    return "";
+  }
+}
 
 function ProductCreatePage() {
   const searchParams = useSearchParams();
@@ -66,11 +111,17 @@ function ProductCreatePage() {
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [, setLoadingItem] = useState(false);
+  const [loadedItem, setLoadedItem] = useState<Record<string, unknown> | null>(null);
+  const [loadedMenuGroupId, setLoadedMenuGroupId] = useState("");
+  const [loadingItem, setLoadingItem] = useState(false);
   const [menuGroups, setMenuGroups] = useState<{ id: string; name: string }[]>([]);
   const [suggestedSku, setSuggestedSku] = useState("");
   const [skuManual, setSkuManual] = useState(false);
-  const uomOptions = useUomOptions();
+  const { uoms: uomOptions, ready: uomOptionsReady } = useUomOptions();
+  const formUomOptions = useMemo(
+    () => mergeCatalogUomOptionsForStored(uomOptions, form.orders_app_uom, form.supervisor_uom),
+    [uomOptions, form.orders_app_uom, form.supervisor_uom],
+  );
 
   const editingId = searchParams?.get("id")?.trim() || "";
 
@@ -96,11 +147,16 @@ function ProductCreatePage() {
   useEffect(() => {
     async function loadMenuGroups() {
       try {
-        const res = await fetch("/api/catalog/menu-groups");
+        const res = await fetch("/api/catalog/menu-groups?mintpos_only=true");
         if (!res.ok) return;
         const json = await res.json();
         const rows = Array.isArray(json.groups) ? json.groups : [];
-        setMenuGroups(rows.map((group: { id: string; name: string }) => ({ id: group.id, name: group.name })));
+        setMenuGroups(
+          rows.map((group: { id: string; name: string }) => ({
+            id: group.id,
+            name: group.name,
+          })),
+        );
       } catch (error) {
         console.error("Failed to load menu groups", error);
       }
@@ -122,25 +178,12 @@ function ProductCreatePage() {
         if (!res.ok) throw new Error("Failed to load product");
         const json = await res.json();
         if (json?.item) {
-          const item = json.item;
-          setForm({
-            name: item.name ?? "",
-            sku: item.sku ?? "",
-            item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
-            consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
-            units_per_pack: String(item.units_per_purchase_pack ?? 1),
-            cost: (item.cost ?? 0).toString(),
-            selling_price: (item.selling_price ?? 0).toString(),
-            orders_app_uom:
-              normalizeUomValue(item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
-            supervisor_uom:
-              normalizeUomValue(item.supervisor_uom ?? item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
-            orders_app_cost_price: (item.orders_app_cost_price ?? item.selling_price ?? 0).toString(),
-            has_variations: Boolean(item.has_variations),
-            image_url: item.image_url ?? "",
-            active: item.active ?? true,
-            menu_group_id: item.menu_group_id ?? "",
-          });
+          const item = json.item as Record<string, unknown>;
+          const menuGroupId = await resolveMenuGroupIdForForm(
+            typeof item.menu_group_id === "string" ? item.menu_group_id : "",
+          );
+          setLoadedItem(item);
+          setLoadedMenuGroupId(menuGroupId);
         }
       } catch (error) {
         console.error("product load failed", error);
@@ -150,8 +193,20 @@ function ProductCreatePage() {
       }
     }
 
-    if (editingId) loadItem(editingId);
+    if (editingId) {
+      setLoadedItem(null);
+      setLoadedMenuGroupId("");
+      void loadItem(editingId);
+    } else {
+      setLoadedItem(null);
+      setLoadedMenuGroupId("");
+    }
   }, [editingId]);
+
+  useEffect(() => {
+    if (!editingId || !loadedItem || !uomOptionsReady) return;
+    setForm({ ...defaultForm, ...mapItemToForm(loadedItem, loadedMenuGroupId, uomOptions) });
+  }, [editingId, loadedItem, loadedMenuGroupId, uomOptions, uomOptionsReady]);
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
     if (key === "sku" && typeof value === "string") {
@@ -195,6 +250,35 @@ function ProductCreatePage() {
       });
       return;
     }
+    if (!form.has_variations) {
+      if (!uomOptionsReady || uomOptions.length === 0) {
+        setResult({
+          ok: false,
+          message: "Add at least one active UOM in Catalog → UOMs before saving order units.",
+        });
+        setSaving(false);
+        return;
+      }
+      if (!form.orders_app_uom || !form.supervisor_uom) {
+        setResult({
+          ok: false,
+          message: "Select OrdersApp UOM and Supervisor UOM from Catalog → UOMs.",
+        });
+        setSaving(false);
+        return;
+      }
+      if (form.uom_weight_enabled) {
+        const grams = Number(form.uom_weight_grams);
+        if (!Number.isFinite(grams) || grams <= 0) {
+          setResult({
+            ok: false,
+            message: "Enter UOM Weight in grams when the toggle is enabled.",
+          });
+          setSaving(false);
+          return;
+        }
+      }
+    }
     setSaving(true);
     setResult(null);
     try {
@@ -203,18 +287,24 @@ function ProductCreatePage() {
         sku: usesAutoSku ? "" : form.sku.trim(),
         supplier_sku: null,
         item_kind: form.item_kind,
-        consumption_unit: form.consumption_unit,
-        units_per_purchase_pack: toNumber(form.units_per_pack, 1),
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0),
         selling_price: toNumber(form.selling_price, 0),
-        orders_app_uom: form.orders_app_uom,
-        supervisor_uom: form.supervisor_uom,
-        orders_app_cost_price: toNumber(form.orders_app_cost_price, 0),
         has_variations: form.has_variations,
         image_url: form.image_url,
         active: form.active,
         menu_group_id: form.item_kind === "finished" && form.menu_group_id ? form.menu_group_id : null,
+        ...(form.has_variations
+          ? {}
+          : {
+              units_per_purchase_pack: toNumber(form.units_per_pack, 1),
+              orders_app_uom: parseCatalogUomInput(form.orders_app_uom, uomOptions, ""),
+              supervisor_uom: parseCatalogUomInput(form.supervisor_uom, uomOptions, ""),
+              supervisor_uom_qty_per_unit: toNumber(form.supervisor_uom_qty_per_unit, 1),
+              orders_app_cost_price: toNumber(form.orders_app_cost_price, 0),
+              uom_weight_enabled: form.uom_weight_enabled,
+              uom_weight_grams: form.uom_weight_enabled ? toNumber(form.uom_weight_grams, 0) : null,
+            }),
         ...(editingId ? { id: editingId } : {}),
       };
 
@@ -230,10 +320,11 @@ function ProductCreatePage() {
       }
 
       const savedJson = await res.json().catch(() => ({}));
-      const savedItem = (savedJson.item ?? savedJson) as { id?: string; name?: string; sku?: string | null } | null;
-      const entityId = editingId ?? savedItem?.id ?? null;
-      const entityName = form.name || savedItem?.name || "Product";
-      const savedSku = savedItem?.sku ?? (form.sku || null);
+      const savedItem = (savedJson.item ?? savedJson) as Record<string, unknown> | null;
+      const entityId = editingId ?? (typeof savedItem?.id === "string" ? savedItem.id : null);
+      const entityName = form.name || (typeof savedItem?.name === "string" ? savedItem.name : "Product");
+      const savedSku =
+        (typeof savedItem?.sku === "string" ? savedItem.sku : null) ?? (form.sku || null);
       const page = "/Warehouse_Backoffice/catalog/product";
 
       if (editingId) {
@@ -275,30 +366,19 @@ function ProductCreatePage() {
       const successMessage = editingId ? "Product updated" : "Product saved";
       setResult({ ok: true, message: successMessage });
 
-      if (editingId) {
+      if (editingId && savedItem) {
+        const reloadedMenuGroupId = await resolveMenuGroupIdForForm(
+          typeof savedItem.menu_group_id === "string" ? savedItem.menu_group_id : "",
+        );
+        setForm({ ...defaultForm, ...mapItemToForm(savedItem, reloadedMenuGroupId, uomOptions) });
+      } else if (editingId) {
         const reloadRes = await fetch(`/api/catalog/items?id=${encodeURIComponent(editingId)}`);
         if (reloadRes.ok) {
           const reloadJson = await reloadRes.json();
           const item = reloadJson?.item;
           if (item) {
-            setForm({
-              name: item.name ?? "",
-              sku: item.sku ?? "",
-              item_kind: (item.item_kind as FormState["item_kind"]) ?? "finished",
-              consumption_unit: normalizeUomValue(item.consumption_unit ?? item.consumption_uom) || "pc",
-              units_per_pack: String(item.units_per_purchase_pack ?? 1),
-              cost: (item.cost ?? 0).toString(),
-              selling_price: (item.selling_price ?? 0).toString(),
-              orders_app_uom:
-                normalizeUomValue(item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
-              supervisor_uom:
-                normalizeUomValue(item.supervisor_uom ?? item.orders_app_uom ?? item.consumption_unit ?? item.consumption_uom) || "pc",
-              orders_app_cost_price: (item.orders_app_cost_price ?? item.selling_price ?? 0).toString(),
-              has_variations: Boolean(item.has_variations),
-              image_url: item.image_url ?? "",
-              active: item.active ?? true,
-              menu_group_id: item.menu_group_id ?? "",
-            });
+            const reloadedMenuGroupId = await resolveMenuGroupIdForForm(item.menu_group_id ?? "");
+            setForm({ ...defaultForm, ...mapItemToForm(item, reloadedMenuGroupId, uomOptions) });
           }
         }
       } else {
@@ -349,30 +429,13 @@ function ProductCreatePage() {
                 hint="Required for products to appear on MintPOS screens"
                 value={form.menu_group_id}
                 onChange={(v) => handleChange("menu_group_id", v)}
+                required
                 options={[
                   { value: "", label: "Select menu group" },
                   ...menuGroups.map((group) => ({ value: group.id, label: group.name })),
                 ]}
               />
             ) : null}
-            <Select
-              label="How its consumed"
-              hint="Unit used for outlet orders (e.g. Bag, kg, pc)"
-              value={form.consumption_unit}
-              onChange={(v) => handleChange("consumption_unit", v)}
-              options={uomOptions}
-            />
-            {isPackConsumptionUom(form.consumption_unit) && (
-              <Field
-                type="number"
-                label={packUnitsLabel(form.consumption_unit)}
-                hint="Pieces inside one pack when ordering in pack units (e.g. 30 bread per plastic)"
-                value={form.units_per_pack}
-                onChange={(v) => handleChange("units_per_pack", v)}
-                step="1"
-                min="1"
-              />
-            )}
             <CatalogImageField
               label="Image URL (optional)"
               hint="Link to product image"
@@ -384,37 +447,81 @@ function ProductCreatePage() {
             />
           </div>
 
-          <div className={styles.sectionCard}>
-            <div className={styles.sectionHeader}>
-              <h3 className={styles.sectionTitle}>Orders App</h3>
-              <p className={styles.sectionHint}>UOM and price shown in the outlet Orders mobile app.</p>
+          {!form.has_variations && (
+            <div className={styles.sectionCard}>
+              <div className={styles.sectionHeader}>
+                <h3 className={styles.sectionTitle}>Orders App</h3>
+                <p className={styles.sectionHint}>
+                  UOM and price shown in the outlet Orders mobile app.
+                </p>
+              </div>
+              <div className={styles.sectionGrid}>
+                <Select
+                  label="OrdersApp Uom"
+                  hint="Unit of measure displayed when outlets order this product"
+                  value={form.orders_app_uom}
+                  onChange={(v) => handleChange("orders_app_uom", v)}
+                  options={formUomOptions}
+                  disabled={!uomOptionsReady || formUomOptions.length === 0}
+                />
+                <Select
+                  label="Supervisor Uom"
+                  hint="Unit of measure shown on supervisor order screens and warehouse portal"
+                  value={form.supervisor_uom}
+                  onChange={(v) => handleChange("supervisor_uom", v)}
+                  options={formUomOptions}
+                  disabled={!uomOptionsReady || formUomOptions.length === 0}
+                />
+                <Field
+                  type="number"
+                  label="Outlet units in one supervisor unit"
+                  hint="Example: 25 means 25 outlet pieces = 1 supervisor tray"
+                  value={form.supervisor_uom_qty_per_unit}
+                  onChange={(v) => handleChange("supervisor_uom_qty_per_unit", v)}
+                  step="1"
+                  min="1"
+                />
+                <Field
+                  type="number"
+                  label="Orders app cost price"
+                  hint="Selling price shown in the Orders app review screen"
+                  value={form.orders_app_cost_price}
+                  onChange={(v) => handleChange("orders_app_cost_price", v)}
+                  step="0.01"
+                  min="0"
+                />
+              </div>
             </div>
-            <div className={styles.sectionGrid}>
-              <Select
-                label="OrdersApp Uom"
-                hint="Unit of measure displayed when outlets order this product"
-                value={form.orders_app_uom}
-                onChange={(v) => handleChange("orders_app_uom", v)}
-                options={uomOptions}
-              />
-              <Select
-                label="Supervisor Uom"
-                hint="Unit of measure shown on supervisor order screens and warehouse portal"
-                value={form.supervisor_uom}
-                onChange={(v) => handleChange("supervisor_uom", v)}
-                options={uomOptions}
-              />
-              <Field
-                type="number"
-                label="Orders app cost price"
-                hint="Selling price shown in the Orders app review screen"
-                value={form.orders_app_cost_price}
-                onChange={(v) => handleChange("orders_app_cost_price", v)}
-                step="0.01"
-                min="0"
-              />
+          )}
+
+          {!form.has_variations && (
+            <div className={styles.sectionCard}>
+              <div className={styles.sectionHeader}>
+                <h3 className={styles.sectionTitle}>UOM Weight</h3>
+                <p className={styles.sectionHint}>
+                  When enabled, the accepted-orders API reports total ordered weight in grams per outlet UOM unit.
+                </p>
+              </div>
+              <div className={styles.sectionGrid}>
+                <Checkbox
+                  label="Enable UOM Weight"
+                  hint="Use grams per outlet UOM for API total ordered (e.g. 2500g per packet)"
+                  checked={form.uom_weight_enabled}
+                  onChange={(checked) => handleChange("uom_weight_enabled", checked)}
+                />
+                <Field
+                  type="number"
+                  label="Weight per outlet UOM (grams)"
+                  hint="Grams in one OrdersApp UOM unit — only used when enabled"
+                  value={form.uom_weight_grams}
+                  onChange={(v) => handleChange("uom_weight_grams", v)}
+                  step="1"
+                  min="1"
+                  disabled={!form.uom_weight_enabled}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {!form.has_variations && (
             <div className={styles.sectionCard}>
@@ -533,7 +640,7 @@ function Field({
       <small className={styles.hint}>{hint}</small>
       <input
         required={required}
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         className={styles.input}
         type={type}
@@ -564,12 +671,13 @@ function Select({ label, hint, value, onChange, options, required, disabled }: S
       <span className={styles.label}>{label}</span>
       <small className={styles.hint}>{hint}</small>
       <select
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         className={styles.select}
         required={required}
         disabled={disabled}
       >
+        <option value="">{options.length ? "Select from UOM catalog…" : "No UOMs — add in Catalog → UOMs"}</option>
         {options.map((option) => (
           <option key={option.value || option.label} value={option.value}>
             {option.label}
@@ -597,7 +705,7 @@ function Checkbox({ label, hint, checked, onChange }: CheckboxProps) {
       <input
         className={styles.checkboxInput}
         type="checkbox"
-        checked={checked}
+        checked={Boolean(checked)}
         onChange={(e) => onChange(e.target.checked)}
       />
     </label>

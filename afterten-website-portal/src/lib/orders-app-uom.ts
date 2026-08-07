@@ -1,3 +1,14 @@
+import { normalizeUomCode } from "@/lib/uom-codes";
+import {
+  formatCatalogUomDisplay,
+  type UomOption,
+} from "@/lib/catalog-uom-fields";
+import {
+  resolveStrictConsumptionUom,
+  resolveStrictOrdersAppUom,
+  resolveStrictSupervisorUom,
+} from "@/lib/catalog-order-fields";
+
 const UOM_FORMS: Record<string, readonly [singular: string, plural: string]> = {
   pc: ["pc", "pcs"],
   pcs: ["pc", "pcs"],
@@ -52,8 +63,23 @@ function toSingularForm(value: string): string {
   return trimmed;
 }
 
-export function formatOrdersAppUom(uom: string, qty: number): string {
+export function formatOrdersAppUom(
+  uom: string,
+  qty: number,
+  catalogOptions?: ReadonlyArray<UomOption>,
+): string {
   const trimmed = uom.trim();
+  if (catalogOptions?.length) {
+    if (!trimmed) {
+      const pieceCode =
+        catalogOptions.find((option) => option.value.toLowerCase() === "pc")?.value ??
+        catalogOptions[0]?.value ??
+        "";
+      return pieceCode ? formatCatalogUomDisplay(pieceCode, catalogOptions) : "";
+    }
+    return formatCatalogUomDisplay(trimmed, catalogOptions);
+  }
+
   if (!trimmed) return qty === 1 ? "pc" : "pcs";
 
   const key = trimmed.toLowerCase();
@@ -66,38 +92,40 @@ export function formatOrdersAppUom(uom: string, qty: number): string {
 
 export function resolveOrdersAppUom(
   data: Record<string, unknown>,
-  fallback = "each",
+  fallback = "",
 ): string {
-  for (const key of ["ordersAppUom", "orders_app_uom"] as const) {
-    const raw = data[key];
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-  }
-
-  for (const key of ["consumptionUom", "consumption_uom"] as const) {
-    const raw = data[key];
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-  }
-
-  return fallback;
+  return resolveStrictOrdersAppUom(data, fallback);
 }
 
 export function resolveSupervisorUom(
   data: Record<string, unknown>,
-  fallback = "each",
+  fallback = "",
 ): string {
-  for (const key of ["supervisorUom", "supervisor_uom"] as const) {
-    const raw = data[key];
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-  }
-  return resolveOrdersAppUom(data, fallback);
+  return resolveStrictSupervisorUom(data, fallback);
 }
 
 export function resolveSupervisorUomFromCatalogProduct(
-  product: Pick<{ supervisor_uom?: string | null; orders_app_uom?: string; consumption_uom?: string }, "supervisor_uom" | "orders_app_uom" | "consumption_uom">,
+  product: Pick<
+    { supervisor_uom?: string | null; orders_app_uom?: string | null },
+    "supervisor_uom" | "orders_app_uom"
+  >,
 ): string {
-  const explicit = product.supervisor_uom?.trim();
-  if (explicit) return explicit;
-  const ordersAppUom = product.orders_app_uom?.trim();
-  if (ordersAppUom) return ordersAppUom;
-  return product.consumption_uom?.trim() || "each";
+  const supervisor = product.supervisor_uom?.trim();
+  if (supervisor) return normalizeUomCode(supervisor, "");
+  const ordersApp = product.orders_app_uom?.trim();
+  if (ordersApp) return normalizeUomCode(ordersApp, "");
+  return "";
+}
+
+export function resolveConsumptionUomFromCatalogProduct(
+  product: Pick<
+    { consumption_uom?: string | null; orders_app_uom?: string | null },
+    "consumption_uom" | "orders_app_uom"
+  >,
+): string {
+  const consumption = product.consumption_uom?.trim();
+  if (consumption) return normalizeUomCode(consumption, "");
+  const ordersApp = product.orders_app_uom?.trim();
+  if (ordersApp) return normalizeUomCode(ordersApp, "");
+  return "";
 }

@@ -9,6 +9,18 @@ export type WarehouseAuthActor = {
   email: string | null;
 };
 
+function isFirebaseAdminConfigError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("ENOENT") ||
+    message.includes("FIREBASE_PROJECT_ID is required") ||
+    message.includes("FIREBASE_CREDENTIALS_PATH") ||
+    message.includes("FIREBASE_SERVICE_ACCOUNT_JSON") ||
+    message.includes("Unable to detect a Project Id") ||
+    message.includes("Could not load the default credentials")
+  );
+}
+
 export async function requireWarehouseAuth(
   request: Request,
 ): Promise<{ ok: true; actor: WarehouseAuthActor } | { ok: false; response: NextResponse }> {
@@ -27,7 +39,20 @@ export async function requireWarehouseAuth(
         email: decoded.email ?? null,
       },
     };
-  } catch {
+  } catch (error) {
+    if (isFirebaseAdminConfigError(error)) {
+      console.error("[warehouse-auth] Firebase Admin is not configured", error);
+      return {
+        ok: false,
+        response: NextResponse.json(
+          {
+            error:
+              "Firebase Admin is not configured on the server. Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON, then restart the dev server.",
+          },
+          { status: 500 },
+        ),
+      };
+    }
     return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 }

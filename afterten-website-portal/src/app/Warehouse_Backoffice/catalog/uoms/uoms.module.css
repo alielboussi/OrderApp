@@ -59,3 +59,26 @@
   justify-content: center;
   flex-wrap: wrap;
 }
+
+.editingRow {
+  background: #f6f8fa;
+}
+
+.cellInput {
+  width: 100%;
+  min-width: 120px;
+  margin: 0;
+}
+
+.cellInputNarrow {
+  min-width: 72px;
+  max-width: 96px;
+}
+
+.cellCheckbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}

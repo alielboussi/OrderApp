@@ -6,9 +6,9 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
+import { mapCatalogUomFieldsFromRow, mergeCatalogUomOptionsForStored, parseCatalogUomInput } from "@/lib/catalog-uom-fields";
 import { useUomOptions } from "@/lib/use-uom-options";
 import { POS_NUMERIC_SKU_MAX, isValidPosVariantMintSku } from "@/lib/pos-catalog-ids";
-import { isPackConsumptionUom, packUnitsLabel } from "@/lib/uom-pack";
 import eb from "../../enterprise.module.css";
 import styles from "../product/product.module.css";
 import { CatalogImageField } from "../CatalogImageField";
@@ -39,6 +39,9 @@ type FormState = {
   orders_app_uom: string;
   supervisor_uom: string;
   orders_app_cost_price: string;
+  supervisor_uom_qty_per_unit: string;
+  uom_weight_enabled: boolean;
+  uom_weight_grams: string;
   image_url: string;
   active: boolean;
 };
@@ -48,22 +51,48 @@ const defaultForm: FormState = {
   name: "",
   sku: "",
   item_kind: "finished",
-  consumption_uom: "pc",
+  consumption_uom: "",
   units_per_pack: "1",
   cost: "0",
   selling_price: "0",
-  orders_app_uom: "pc",
-  supervisor_uom: "pc",
+  orders_app_uom: "",
+  supervisor_uom: "",
   orders_app_cost_price: "0",
+  supervisor_uom_qty_per_unit: "1",
+  uom_weight_enabled: false,
+  uom_weight_grams: "",
   image_url: "",
   active: true,
 };
 
-const normalizeUomValue = (value?: string | null) => {
-  const trimmed = value?.trim();
-  if (!trimmed) return "";
-  return trimmed.toLowerCase() === "each" ? "pc" : trimmed;
-};
+function mapVariantToForm(
+  variant: Record<string, unknown>,
+  options: { value: string; label: string }[],
+  incomingItemId = "",
+): FormState {
+  const uoms = mapCatalogUomFieldsFromRow(variant, options);
+  return {
+    item_id: String(variant.item_id ?? incomingItemId ?? ""),
+    name: String(variant.name ?? ""),
+    sku: String(variant.sku ?? ""),
+    item_kind: String(variant.item_kind ?? "finished"),
+    consumption_uom: uoms.consumption_unit,
+    units_per_pack: String(variant.units_per_purchase_pack ?? 1),
+    cost: String(variant.cost ?? 0),
+    selling_price: String(variant.selling_price ?? 0),
+    orders_app_uom: uoms.orders_app_uom,
+    supervisor_uom: uoms.supervisor_uom,
+    orders_app_cost_price: String(variant.orders_app_cost_price ?? variant.selling_price ?? 0),
+    supervisor_uom_qty_per_unit: String(variant.supervisor_uom_qty_per_unit ?? 1),
+    uom_weight_enabled: variant.uom_weight_enabled === true,
+    uom_weight_grams:
+      variant.uom_weight_grams == null || variant.uom_weight_grams === ""
+        ? ""
+        : String(variant.uom_weight_grams),
+    image_url: String(variant.image_url ?? ""),
+    active: variant.active !== false,
+  };
+}
 
 function VariantFormPage() {
   const searchParams = useSearchParams();
@@ -72,10 +101,15 @@ function VariantFormPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [loadedVariant, setLoadedVariant] = useState<Record<string, unknown> | null>(null);
   const [, setLoadingVariant] = useState(false);
   const [suggestedSku, setSuggestedSku] = useState("");
   const [skuManual, setSkuManual] = useState(false);
-  const uomOptions = useUomOptions();
+  const { uoms: uomOptions, ready: uomOptionsReady } = useUomOptions();
+  const formUomOptions = useMemo(
+    () => mergeCatalogUomOptionsForStored(uomOptions, form.orders_app_uom, form.supervisor_uom),
+    [uomOptions, form.orders_app_uom, form.supervisor_uom],
+  );
 
   const editingId = searchParams?.get("id")?.trim() || "";
   const incomingItemId = searchParams?.get("item_id")?.trim() || "";
@@ -135,24 +169,9 @@ function VariantFormPage() {
         const res = await fetch(`/api/catalog/variants?id=${encodeURIComponent(id)}`);
         if (!res.ok) throw new Error("Failed to load variant");
         const json = await res.json();
-        const variant = json?.variant;
+        const variant = json?.variant as Record<string, unknown> | undefined;
         if (!variant) return;
-        setForm({
-          item_id: variant.item_id ?? incomingItemId ?? "",
-          name: variant.name ?? "",
-          sku: variant.sku ?? "",
-          item_kind: variant.item_kind ?? "finished",
-          consumption_uom: normalizeUomValue(variant.consumption_uom) || "pc",
-          units_per_pack: String(variant.units_per_purchase_pack ?? 1),
-          cost: (variant.cost ?? 0).toString(),
-          selling_price: (variant.selling_price ?? 0).toString(),
-          orders_app_uom: normalizeUomValue(variant.orders_app_uom ?? variant.consumption_uom) || "pc",
-          supervisor_uom:
-            normalizeUomValue(variant.supervisor_uom ?? variant.orders_app_uom ?? variant.consumption_uom) || "pc",
-          orders_app_cost_price: (variant.orders_app_cost_price ?? variant.selling_price ?? 0).toString(),
-          image_url: variant.image_url ?? "",
-          active: variant.active ?? true,
-        });
+        setLoadedVariant(variant);
       } catch (error) {
         console.error("variant load failed", error);
         setResult({ ok: false, message: error instanceof Error ? error.message : "Failed to load variant" });
@@ -160,8 +179,18 @@ function VariantFormPage() {
         setLoadingVariant(false);
       }
     }
-    if (editingId) void loadVariant(editingId);
-  }, [editingId, incomingItemId]);
+    if (editingId) {
+      setLoadedVariant(null);
+      void loadVariant(editingId);
+    } else {
+      setLoadedVariant(null);
+    }
+  }, [editingId]);
+
+  useEffect(() => {
+    if (!editingId || !loadedVariant || !uomOptionsReady) return;
+    setForm(mapVariantToForm(loadedVariant, uomOptions, incomingItemId));
+  }, [editingId, loadedVariant, uomOptions, uomOptionsReady, incomingItemId]);
 
   const parentOptions = useMemo(() => {
     const selectedId = form.item_id || incomingItemId;
@@ -238,6 +267,30 @@ function VariantFormPage() {
       });
       return;
     }
+    if (!uomOptionsReady || uomOptions.length === 0) {
+      setResult({
+        ok: false,
+        message: "Add at least one active UOM in Catalog → UOMs before saving order units.",
+      });
+      return;
+    }
+    if (!form.orders_app_uom || !form.supervisor_uom) {
+      setResult({
+        ok: false,
+        message: "Select OrdersApp UOM and Supervisor UOM from Catalog → UOMs.",
+      });
+      return;
+    }
+    if (form.uom_weight_enabled) {
+      const grams = Number(form.uom_weight_grams);
+      if (!Number.isFinite(grams) || grams <= 0) {
+        setResult({
+          ok: false,
+          message: "Enter UOM Weight in grams when the toggle is enabled.",
+        });
+        return;
+      }
+    }
     setSaving(true);
     setResult(null);
     try {
@@ -246,14 +299,16 @@ function VariantFormPage() {
         name: form.name,
         sku: usesAutoSku ? "" : form.sku.trim(),
         item_kind: form.item_kind,
-        consumption_uom: form.consumption_uom,
         units_per_purchase_pack: toNumber(form.units_per_pack, 1),
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
-        orders_app_uom: form.orders_app_uom,
-        supervisor_uom: form.supervisor_uom,
+        orders_app_uom: parseCatalogUomInput(form.orders_app_uom, uomOptions, ""),
+        supervisor_uom: parseCatalogUomInput(form.supervisor_uom, uomOptions, ""),
+        supervisor_uom_qty_per_unit: toNumber(form.supervisor_uom_qty_per_unit, 1),
         orders_app_cost_price: toNumber(form.orders_app_cost_price, 0, -0.0001),
+        uom_weight_enabled: form.uom_weight_enabled,
+        uom_weight_grams: form.uom_weight_enabled ? toNumber(form.uom_weight_grams, 0) : null,
         image_url: form.image_url,
         active: form.active,
         supplier_sku: null,
@@ -297,27 +352,7 @@ function VariantFormPage() {
           const reloadJson = await reloadRes.json();
           const variant = reloadJson?.variant;
           if (variant) {
-            setForm({
-              item_id: variant.item_id ?? "",
-              name: variant.name ?? "",
-              sku: variant.sku ?? "",
-              item_kind: variant.item_kind ?? "finished",
-              consumption_uom: normalizeUomValue(variant.consumption_uom) || "pc",
-              units_per_pack: String(variant.units_per_purchase_pack ?? 1),
-              cost: (variant.cost ?? 0).toString(),
-              selling_price: (variant.selling_price ?? 0).toString(),
-              orders_app_uom:
-                normalizeUomValue(variant.orders_app_uom ?? variant.consumption_uom) || "pc",
-              supervisor_uom:
-                normalizeUomValue(variant.supervisor_uom ?? variant.orders_app_uom ?? variant.consumption_uom) || "pc",
-              orders_app_cost_price: (
-                variant.orders_app_cost_price ??
-                variant.selling_price ??
-                0
-              ).toString(),
-              image_url: variant.image_url ?? "",
-              active: variant.active ?? true,
-            });
+            setForm(mapVariantToForm(variant, uomOptions, incomingItemId));
           }
         }
       } else {
@@ -372,24 +407,6 @@ function VariantFormPage() {
             onChange={(v) => handleChange("item_kind", v)}
             options={itemKinds}
           />
-          <Select
-            label="How its consumed"
-            hint="Single unit for outlet orders (e.g. g, pc, plastic)"
-            value={form.consumption_uom}
-            onChange={(v) => handleChange("consumption_uom", v)}
-            options={uomOptions}
-          />
-          {isPackConsumptionUom(form.consumption_uom) ? (
-            <Field
-              type="number"
-              label={packUnitsLabel(form.consumption_uom)}
-              hint="Pieces inside one pack when ordering in pack units"
-              value={form.units_per_pack}
-              onChange={(v) => handleChange("units_per_pack", v)}
-              step="1"
-              min="1"
-            />
-          ) : null}
           <CatalogImageField
             label="Image URL (optional)"
             hint="Link to variant image"
@@ -412,14 +429,25 @@ function VariantFormPage() {
               hint="Unit of measure displayed when outlets order this variant"
               value={form.orders_app_uom}
               onChange={(v) => handleChange("orders_app_uom", v)}
-              options={uomOptions}
+              options={formUomOptions}
+              disabled={!uomOptionsReady || formUomOptions.length === 0}
             />
             <Select
               label="Supervisor Uom"
               hint="Unit of measure shown on supervisor order screens and warehouse portal"
               value={form.supervisor_uom}
               onChange={(v) => handleChange("supervisor_uom", v)}
-              options={uomOptions}
+              options={formUomOptions}
+              disabled={!uomOptionsReady || formUomOptions.length === 0}
+            />
+            <Field
+              type="number"
+              label="Outlet units in one supervisor unit"
+              hint="Example: 25 means 25 outlet pieces = 1 supervisor tray"
+              value={form.supervisor_uom_qty_per_unit}
+              onChange={(v) => handleChange("supervisor_uom_qty_per_unit", v)}
+              step="1"
+              min="1"
             />
             <Field
               type="number"
@@ -429,6 +457,33 @@ function VariantFormPage() {
               onChange={(v) => handleChange("orders_app_cost_price", v)}
               step="0.01"
               min="0"
+            />
+          </div>
+        </div>
+
+        <div className={styles.sectionCard}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>UOM Weight</h3>
+            <p className={styles.sectionHint}>
+              When enabled, the accepted-orders API reports total ordered weight in grams per outlet UOM unit.
+            </p>
+          </div>
+          <div className={styles.sectionGrid}>
+            <Checkbox
+              label="Enable UOM Weight"
+              hint="Use grams per outlet UOM for API total ordered (e.g. 2500g per packet)"
+              checked={form.uom_weight_enabled}
+              onChange={(checked) => handleChange("uom_weight_enabled", checked)}
+            />
+            <Field
+              type="number"
+              label="Weight per outlet UOM (grams)"
+              hint="Grams in one OrdersApp UOM unit — only used when enabled"
+              value={form.uom_weight_grams}
+              onChange={(v) => handleChange("uom_weight_grams", v)}
+              step="1"
+              min="1"
+              disabled={!form.uom_weight_enabled}
             />
           </div>
         </div>
@@ -584,6 +639,7 @@ function Select({ label, hint, value, onChange, options, required, disabled }: S
         required={required}
         disabled={disabled}
       >
+        <option value="">{options.length ? "Select from UOM catalog…" : "No UOMs — add in Catalog → UOMs"}</option>
         {options.map((option) => (
           <option key={option.value || option.label} value={option.value}>
             {option.label}

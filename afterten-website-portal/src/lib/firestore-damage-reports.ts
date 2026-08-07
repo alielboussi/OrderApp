@@ -1,6 +1,16 @@
 import { getFirestoreDb } from "@/lib/firebase-server";
-import { DAMAGE_UOM } from "@/lib/damage-uom";
+import { formatCatalogUomDisplay } from "@/lib/catalog-uom-fields";
+import { listFirestoreUomOptions } from "@/lib/firestore-uoms";
 import { isTransferOrderOnDate } from "@/lib/transfer-order-dates";
+
+async function resolveDefaultDamageUomLabel(): Promise<string> {
+  const options = await listFirestoreUomOptions();
+  const pieceCode =
+    options.find((option) => option.value.toLowerCase() === "pc")?.value ??
+    options[0]?.value ??
+    "";
+  return pieceCode ? formatCatalogUomDisplay(pieceCode, options) : "";
+}
 
 export type DamageReportRow = {
   id: string;
@@ -132,6 +142,7 @@ export async function listFirestoreDamageReports(options: {
 
 export async function listFirestoreDamageReportLines(reportId: string): Promise<DamageReportLineRow[]> {
   const db = getFirestoreDb();
+  const defaultUomLabel = await resolveDefaultDamageUomLabel();
   const snapshot = await db
     .collection("outlet_damage_reports")
     .doc(reportId)
@@ -145,7 +156,11 @@ export async function listFirestoreDamageReportLines(reportId: string): Promise<
       id: doc.id,
       name: (data.name as string | null | undefined) ?? null,
       qty: data.qty == null ? null : Number(data.qty),
-      uom: DAMAGE_UOM,
+      uom:
+        (typeof data.uom === "string" && data.uom.trim()) ||
+        (typeof data.uomLabel === "string" && data.uomLabel.trim()) ||
+        defaultUomLabel ||
+        null,
       product_id: (data.productId as string | null | undefined) ?? null,
       variant_key: (data.variantKey as string | null | undefined) ?? null,
     };

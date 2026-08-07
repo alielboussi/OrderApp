@@ -6,6 +6,11 @@ exports.resolveSyncItemTarget = resolveSyncItemTarget;
 exports.catalogItemFieldsChanged = catalogItemFieldsChanged;
 exports.catalogVariantFieldsChanged = catalogVariantFieldsChanged;
 exports.rowLinkedToApiUuid = rowLinkedToApiUuid;
+exports.normalizeItemKind = normalizeItemKind;
+exports.isPortalOnlyCatalogItem = isPortalOnlyCatalogItem;
+exports.isApiManagedCatalogItem = isApiManagedCatalogItem;
+exports.isApiManagedItemKind = isApiManagedItemKind;
+exports.isPortalOnlyCatalogVariant = isPortalOnlyCatalogVariant;
 function buildCatalogSyncLookups(items, variants) {
     const itemsById = new Map();
     const itemsByStockApiUuid = new Map();
@@ -70,15 +75,8 @@ function fieldChanged(existing, synced) {
 function catalogItemFieldsChanged(existing, synced) {
     const keys = [
         "name",
-        "consumption_unit",
-        "consumption_uom",
-        "purchase_pack_unit",
         "storage_unit",
         "units_per_purchase_pack",
-        "transfer_unit",
-        "transfer_quantity",
-        "orders_app_uom",
-        "supervisor_uom",
         "track_stock",
         "default_warehouse_id",
         "active",
@@ -96,5 +94,38 @@ function rowLinkedToApiUuid(rowId, stockApiUuid, apiUuidSet) {
         return true;
     const linkedUuid = String(stockApiUuid ?? "").trim();
     return Boolean(linkedUuid && apiUuidSet.has(linkedUuid));
+}
+function normalizeItemKind(value) {
+    const kind = String(value ?? "").trim().toLowerCase();
+    if (kind === "finished" || kind === "product")
+        return "finished";
+    if (kind === "ingredient")
+        return "ingredient";
+    if (kind === "raw")
+        return "raw";
+    return null;
+}
+/** Finished products are created and maintained only in the portal. */
+function isPortalOnlyCatalogItem(row) {
+    const kind = normalizeItemKind(row.item_kind);
+    if (kind === "finished")
+        return true;
+    if (kind === "ingredient" || kind === "raw")
+        return false;
+    return !String(row.stock_api_uuid ?? "").trim();
+}
+/** Ingredients and raw materials are synced from the stock catalog API. */
+function isApiManagedCatalogItem(row) {
+    return !isPortalOnlyCatalogItem(row);
+}
+function isApiManagedItemKind(kind) {
+    const normalized = normalizeItemKind(kind);
+    return normalized === "ingredient" || normalized === "raw";
+}
+function isPortalOnlyCatalogVariant(itemId, lookups) {
+    if (!itemId)
+        return true;
+    const parent = lookups.itemsById.get(itemId);
+    return parent ? isPortalOnlyCatalogItem(parent) : true;
 }
 //# sourceMappingURL=catalog-api-sync-matching.js.map

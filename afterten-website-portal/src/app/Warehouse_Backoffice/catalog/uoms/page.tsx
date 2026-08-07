@@ -14,6 +14,12 @@ type UomRecord = {
   updated_at?: string;
 };
 
+type EditDraft = {
+  label: string;
+  sort_order: string;
+  active: boolean;
+};
+
 const emptyForm = {
   code: "",
   label: "",
@@ -26,8 +32,10 @@ export default function CatalogUomsPage() {
   const [uoms, setUoms] = useState<UomRecord[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [savingCode, setSavingCode] = useState<string | null>(null);
   const [deletingCode, setDeletingCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +63,7 @@ export default function CatalogUomsPage() {
 
   const startEdit = (uom: UomRecord) => {
     setEditingCode(uom.code);
-    setForm({
-      code: uom.code ?? "",
+    setEditDraft({
       label: uom.label ?? "",
       sort_order: String(uom.sort_order ?? 0),
       active: uom.active !== false,
@@ -65,19 +72,23 @@ export default function CatalogUomsPage() {
     setError(null);
   };
 
-  const resetForm = () => {
+  const cancelEdit = () => {
     setEditingCode(null);
+    setEditDraft(null);
+  };
+
+  const resetCreateForm = () => {
     setForm(emptyForm);
   };
 
-  const submit = async (event: FormEvent) => {
+  const createUom = async (event: FormEvent) => {
     event.preventDefault();
     if (readOnly) {
       setError("Read-only access: saving is disabled.");
       return;
     }
 
-    setSaving(true);
+    setCreating(true);
     setMessage(null);
     setError(null);
     try {
@@ -89,20 +100,55 @@ export default function CatalogUomsPage() {
       };
 
       const res = await fetch("/api/uoms", {
-        method: editingCode ? "PUT" : "POST",
+        method: "POST",
         headers: catalogApiHeaders({ userId, userEmail }),
         body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Unable to save UOM");
 
-      setMessage(editingCode ? "UOM updated." : "UOM created.");
-      resetForm();
+      setMessage("UOM created.");
+      resetCreateForm();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save UOM");
     } finally {
-      setSaving(false);
+      setCreating(false);
+    }
+  };
+
+  const saveEdit = async (code: string) => {
+    if (readOnly || !editDraft) {
+      setError("Read-only access: saving is disabled.");
+      return;
+    }
+
+    setSavingCode(code);
+    setMessage(null);
+    setError(null);
+    try {
+      const payload = {
+        code,
+        label: editDraft.label.trim(),
+        sort_order: Number(editDraft.sort_order) || 0,
+        active: editDraft.active,
+      };
+
+      const res = await fetch("/api/uoms", {
+        method: "PUT",
+        headers: catalogApiHeaders({ userId, userEmail }),
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Unable to save UOM");
+
+      setMessage(`UOM "${code}" updated.`);
+      cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save UOM");
+    } finally {
+      setSavingCode(null);
     }
   };
 
@@ -129,7 +175,7 @@ export default function CatalogUomsPage() {
       if (!res.ok) throw new Error(json.error || "Unable to delete UOM");
 
       setMessage(`UOM "${code}" deleted.`);
-      if (editingCode === code) resetForm();
+      if (editingCode === code) cancelEdit();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete UOM");
@@ -158,8 +204,8 @@ export default function CatalogUomsPage() {
       {error ? <p className={`${pageStyles.message} ${pageStyles.messageError}`}>{error}</p> : null}
 
       <section className={eb.pageCard}>
-        <h3 className={eb.pageCardTitle}>{editingCode ? "Edit UOM" : "New UOM"}</h3>
-        <form onSubmit={submit} className={pageStyles.uomForm}>
+        <h3 className={eb.pageCardTitle}>New UOM</h3>
+        <form onSubmit={createUom} className={pageStyles.uomForm}>
           <label className={`${eb.pageCardBody} ${pageStyles.formField}`}>
             Code
             <input
@@ -167,10 +213,8 @@ export default function CatalogUomsPage() {
               value={form.code}
               onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value }))}
               required
-              readOnly={Boolean(editingCode)}
-              aria-readonly={Boolean(editingCode)}
             />
-            <small>{editingCode ? "Code cannot be changed after creation." : "Example: bottle, kg, case"}</small>
+            <small>Example: bottle, kg, case</small>
           </label>
           <label className={`${eb.pageCardBody} ${pageStyles.formField}`}>
             Label
@@ -200,14 +244,9 @@ export default function CatalogUomsPage() {
             Active
           </label>
           <div className={pageStyles.formActions}>
-            <button type="submit" className={eb.btnAdd} disabled={saving}>
-              {saving ? "Saving..." : editingCode ? "Update UOM" : "Create UOM"}
+            <button type="submit" className={eb.btnAdd} disabled={creating}>
+              {creating ? "Saving..." : "Create UOM"}
             </button>
-            {editingCode ? (
-              <button type="button" className={eb.btnSecondary} onClick={resetForm}>
-                Cancel edit
-              </button>
-            ) : null}
           </div>
         </form>
       </section>
@@ -225,33 +264,111 @@ export default function CatalogUomsPage() {
                   <th>Label</th>
                   <th style={{ whiteSpace: "nowrap" }}>Sort</th>
                   <th style={{ whiteSpace: "nowrap" }}>Status</th>
-                  <th style={{ whiteSpace: "nowrap", width: 160 }}>Actions</th>
+                  <th style={{ whiteSpace: "nowrap", width: 200 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {uoms.map((uom) => (
-                  <tr key={uom.code}>
-                    <td>{uom.code}</td>
-                    <td>{uom.label}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{uom.sort_order}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{uom.active ? "Active" : "Inactive"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      <div className={pageStyles.tableActions}>
-                        <button type="button" className={eb.btnSecondary} onClick={() => startEdit(uom)}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className={eb.btnSecondary}
-                          onClick={() => void remove(uom.code)}
-                          disabled={deletingCode === uom.code}
-                        >
-                          {deletingCode === uom.code ? "Deleting..." : "Delete"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {uoms.map((uom) => {
+                  const isEditing = editingCode === uom.code && editDraft !== null;
+                  const rowBusy = savingCode === uom.code || deletingCode === uom.code;
+
+                  return (
+                    <tr key={uom.code} className={isEditing ? pageStyles.editingRow : undefined}>
+                      <td>{uom.code}</td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            className={`${eb.fieldInput} ${pageStyles.cellInput}`}
+                            value={editDraft.label}
+                            onChange={(e) =>
+                              setEditDraft((prev) => (prev ? { ...prev, label: e.target.value } : prev))
+                            }
+                            required
+                            aria-label={`Label for ${uom.code}`}
+                          />
+                        ) : (
+                          uom.label
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {isEditing ? (
+                          <input
+                            className={`${eb.fieldInput} ${pageStyles.cellInput} ${pageStyles.cellInputNarrow}`}
+                            type="number"
+                            value={editDraft.sort_order}
+                            onChange={(e) =>
+                              setEditDraft((prev) => (prev ? { ...prev, sort_order: e.target.value } : prev))
+                            }
+                            aria-label={`Sort order for ${uom.code}`}
+                          />
+                        ) : (
+                          uom.sort_order
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {isEditing ? (
+                          <label className={pageStyles.cellCheckbox}>
+                            <input
+                              type="checkbox"
+                              checked={editDraft.active}
+                              onChange={(e) =>
+                                setEditDraft((prev) => (prev ? { ...prev, active: e.target.checked } : prev))
+                              }
+                            />
+                            Active
+                          </label>
+                        ) : uom.active ? (
+                          "Active"
+                        ) : (
+                          "Inactive"
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <div className={pageStyles.tableActions}>
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                className={eb.btnAdd}
+                                onClick={() => void saveEdit(uom.code)}
+                                disabled={rowBusy || !editDraft.label.trim()}
+                              >
+                                {savingCode === uom.code ? "Saving..." : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                className={eb.btnSecondary}
+                                onClick={cancelEdit}
+                                disabled={rowBusy}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className={eb.btnSecondary}
+                                onClick={() => startEdit(uom)}
+                                disabled={readOnly || (editingCode !== null && editingCode !== uom.code)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className={eb.btnSecondary}
+                                onClick={() => void remove(uom.code)}
+                                disabled={readOnly || rowBusy || editingCode !== null}
+                              >
+                                {deletingCode === uom.code ? "Deleting..." : "Delete"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

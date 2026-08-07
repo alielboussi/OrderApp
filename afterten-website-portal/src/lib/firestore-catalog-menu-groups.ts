@@ -11,6 +11,7 @@ import {
   listFirestoreMenuGroups,
   updateFirestoreMenuGroup,
 } from "@/lib/firestore-catalog-store";
+import { listMintPosMenuGroupOptions } from "@/lib/menu-group-pos";
 
 function cleanText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -22,17 +23,25 @@ function isUuid(value: string): boolean {
   return /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[1-5][0-9a-fA-F-]{3}-[89abAB][0-9a-fA-F-]{3}-[0-9a-fA-F-]{12}$/.test(value);
 }
 
+function isMenuGroupId(value: string): boolean {
+  return isUuid(value) || /^\d+$/.test(value);
+}
+
 export async function firestoreMenuGroupsGet(request: Request) {
   const url = new URL(request.url);
   const id = cleanText(url.searchParams.get("id"));
   if (id) {
-    if (!isUuid(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    if (!isMenuGroupId(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     const group = await getFirestoreMenuGroup(id);
     if (!group) return NextResponse.json({ error: "Menu group not found" }, { status: 404 });
     return NextResponse.json({ group, backend: "firebase" });
   }
   const groups = await listFirestoreMenuGroups();
-  return NextResponse.json({ groups, backend: "firebase" });
+  const mintposOnly = url.searchParams.get("mintpos_only") === "true";
+  return NextResponse.json({
+    groups: mintposOnly ? listMintPosMenuGroupOptions(groups) : groups,
+    backend: "firebase",
+  });
 }
 
 export async function firestoreMenuGroupsPost(request: Request) {

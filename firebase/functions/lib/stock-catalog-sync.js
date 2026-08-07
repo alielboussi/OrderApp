@@ -39,29 +39,22 @@ function cleanUnitName(value, fallback = "each") {
 }
 function inferItemKind(product) {
     const warehouseName = normalizeWarehouseName(product.warehouse?.name);
+    if (warehouseName.includes("raw"))
+        return "raw";
     if (warehouseName.includes("ingredient") ||
         warehouseName.includes("beverage") ||
         warehouseName.includes("coldroom") ||
         warehouseName.includes("storeroom")) {
         return "ingredient";
     }
-    if (warehouseName.includes("raw"))
-        return "raw";
     return "ingredient";
 }
 function mapProductUnits(product) {
-    const consumptionUnit = cleanUnitName(product.unit?.name);
-    const storageUnit = cleanUnitName(product.subUnit?.name, consumptionUnit);
+    const storageUnit = cleanUnitName(product.subUnit?.name, "each");
     const unitsPerPurchasePack = Number(product.subUnit?.perUnit ?? 1);
     return {
-        consumption_unit: consumptionUnit,
-        consumption_uom: consumptionUnit,
-        purchase_pack_unit: consumptionUnit,
         storage_unit: storageUnit,
         units_per_purchase_pack: Number.isFinite(unitsPerPurchasePack) && unitsPerPurchasePack > 0 ? unitsPerPurchasePack : 1,
-        transfer_unit: consumptionUnit,
-        transfer_quantity: 1,
-        orders_app_uom: consumptionUnit,
     };
 }
 async function fetchStockCatalog() {
@@ -191,6 +184,7 @@ async function runStockCatalogSync(options) {
     let updatedItems = 0;
     let updatedVariants = 0;
     let skippedInvalidUuid = 0;
+    let skippedPortalOnly = 0;
     let deactivatedItems = 0;
     let deactivatedVariants = 0;
     let deletedItems = 0;
@@ -220,6 +214,10 @@ async function runStockCatalogSync(options) {
         };
         const existingVariant = (0, catalog_api_sync_matching_1.resolveSyncVariantTarget)(uuid, lookups);
         if (existingVariant) {
+            if ((0, catalog_api_sync_matching_1.isPortalOnlyCatalogVariant)(existingVariant.itemId, lookups)) {
+                skippedPortalOnly += 1;
+                continue;
+            }
             const variantPayload = {
                 name: syncedFields.name,
                 stock_api_uuid: uuid,
@@ -243,6 +241,10 @@ async function runStockCatalogSync(options) {
         }
         const existingItem = (0, catalog_api_sync_matching_1.resolveSyncItemTarget)(uuid, lookups);
         if (existingItem) {
+            if ((0, catalog_api_sync_matching_1.isPortalOnlyCatalogItem)(existingItem.existing)) {
+                skippedPortalOnly += 1;
+                continue;
+            }
             if ((0, catalog_api_sync_matching_1.catalogItemFieldsChanged)(existingItem.existing, syncedFields)) {
                 await db.collection("catalog_items").doc(existingItem.itemId).set({
                     ...syncedFields,
@@ -256,14 +258,24 @@ async function runStockCatalogSync(options) {
             }
             continue;
         }
+        const itemKind = inferItemKind(product);
+        if (!itemKind || !(0, catalog_api_sync_matching_1.isApiManagedItemKind)(itemKind)) {
+            skippedPortalOnly += 1;
+            continue;
+        }
         const createdAt = nowIso();
         await db.collection("catalog_items").doc(uuid).set({
             ...syncedFields,
-            item_kind: inferItemKind(product),
+            item_kind: itemKind,
             sku: null,
             supplier_sku: null,
             cost: 0,
             selling_price: 0,
+            consumption_unit: "pc",
+            consumption_uom: "pc",
+            orders_app_uom: "pc",
+            supervisor_uom: "pc",
+            supervisor_uom_qty_per_unit: 1,
             orders_app_cost_price: 0,
             has_variations: false,
             has_recipe: false,
@@ -284,6 +296,8 @@ async function runStockCatalogSync(options) {
         for (const doc of itemsSnap.docs) {
             if (lookups.variantParentIds.has(doc.id))
                 continue;
+            if ((0, catalog_api_sync_matching_1.isPortalOnlyCatalogItem)(doc.data()))
+                continue;
             if ((0, catalog_api_sync_matching_1.rowLinkedToApiUuid)(doc.id, doc.get("stock_api_uuid"), apiUuidSet))
                 continue;
             if (doc.get("active") === false)
@@ -293,12 +307,14 @@ async function runStockCatalogSync(options) {
             changedItemIds.add(doc.id);
         }
         for (const doc of variantsSnap.docs) {
+            const itemId = String(doc.get("item_id") ?? "");
+            if ((0, catalog_api_sync_matching_1.isPortalOnlyCatalogVariant)(itemId, lookups))
+                continue;
             if ((0, catalog_api_sync_matching_1.rowLinkedToApiUuid)(doc.id, doc.get("stock_api_uuid"), apiUuidSet))
                 continue;
             if (doc.get("active") === false)
                 continue;
             await doc.ref.set({ active: false, stock_api_missing: true, stock_api_synced_at: nowIso(), updated_at: nowIso() }, { merge: true });
-            const itemId = String(doc.get("item_id") ?? "");
             if (itemId) {
                 const activeVariants = await db
                     .collection("catalog_variants")
@@ -343,6 +359,7 @@ async function runStockCatalogSync(options) {
             deleted_variants: deletedVariants,
             deleted_related_docs: deletedRelatedDocs,
             skipped_invalid_uuid: skippedInvalidUuid,
+            skipped_portal_only: skippedPortalOnly,
             outlet_catalog_refreshed: outletCatalogRefreshed,
         },
         created,

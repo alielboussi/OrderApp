@@ -1,6 +1,6 @@
 /**
  * Rebuild outlet_order_catalog from catalog_items/variants + allowlist.
- * Run after bulk image updates so the Orders app picks up imageUrl fields.
+ * Run after bulk UOM or image updates so the Orders app picks up changes.
  *
  *   cd C:\Projects\Afterten\firebase\functions
  *   node ../scripts/refresh-outlet-order-catalogs.cjs
@@ -8,13 +8,23 @@
 const { readFileSync } = require("fs");
 const { resolve } = require("path");
 const admin = require(resolve(__dirname, "../functions/node_modules/firebase-admin"));
+const { normalizeUomCode } = require("./uom-codes.cjs");
 
 const keyPath = resolve(__dirname, "../../secrets/afterten-firebase-adminsdk.json");
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(readFileSync(keyPath, "utf8"))) });
 const db = admin.firestore();
 
-function asText(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : "";
+function asText(value, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function toNumber(value, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
 }
 
 async function deleteOutletOrderCatalog(outletId) {
@@ -31,6 +41,36 @@ async function deleteOutletOrderCatalog(outletId) {
   return deleted;
 }
 
+function readOrderFields(source) {
+  const ordersAppUom = normalizeUomCode(asText(source.orders_app_uom), "pc");
+  const consumptionUom = normalizeUomCode(
+    asText(source.consumption_uom || source.consumption_unit),
+    ordersAppUom,
+  );
+  const supervisorUom = normalizeUomCode(asText(source.supervisor_uom), ordersAppUom);
+  const supervisorUomQtyPerUnit = toNumber(source.supervisor_uom_qty_per_unit, 1);
+  const ordersAppCostPrice = toNumber(source.orders_app_cost_price, 0);
+  const uomWeightEnabled = source.uom_weight_enabled === true;
+  const uomWeightGrams = uomWeightEnabled ? toNumber(source.uom_weight_grams, 0) || null : null;
+  return {
+    ordersAppUom,
+    orders_app_uom: ordersAppUom,
+    consumptionUom,
+    consumption_uom: consumptionUom,
+    supervisorUom,
+    supervisor_uom: supervisorUom,
+    supervisorUomQtyPerUnit,
+    supervisor_uom_qty_per_unit: supervisorUomQtyPerUnit,
+    ordersAppCostPrice,
+    orders_app_cost_price: ordersAppCostPrice,
+    sellingPrice: ordersAppCostPrice,
+    uomWeightEnabled,
+    uom_weight_enabled: uomWeightEnabled,
+    uomWeightGrams,
+    uom_weight_grams: uomWeightGrams,
+  };
+}
+
 async function materializeOutlet(outletId, allowlistRows, itemsById, variantsById) {
   const now = new Date().toISOString();
   const catalogDocs = [];
@@ -39,17 +79,13 @@ async function materializeOutlet(outletId, allowlistRows, itemsById, variantsByI
     const item = itemsById.get(row.item_id);
     if (!item || item.active === false) continue;
 
+    const itemKind = asText(item.item_kind, "finished");
+
     if (row.variant_id) {
       const variant = variantsById.get(row.variant_id);
       if (!variant || variant.active === false) continue;
-      const variantImageUrl =
-        asText(variant.image_url) ||
-        asText(variant.imageUrl) ||
-        null;
-      const productImageUrl =
-        asText(item.image_url) ||
-        asText(item.imageUrl) ||
-        null;
+      const variantImageUrl = asText(variant.image_url) || asText(variant.imageUrl) || null;
+      const productImageUrl = asText(item.image_url) || asText(item.imageUrl) || null;
       catalogDocs.push({
         id: `${outletId}_${row.item_id}_${row.variant_id}`,
         data: {
@@ -59,13 +95,10 @@ async function materializeOutlet(outletId, allowlistRows, itemsById, variantsByI
           productName: asText(item.name) || "Item",
           product_name: asText(item.name) || "Item",
           variantKey: asText(variant.sku) || row.variant_id,
+          itemKind,
           name: asText(variant.name) || asText(item.name) || "Item",
           sku: asText(variant.sku) || asText(item.sku) || null,
-          sellingPrice: Number(variant.orders_app_cost_price ?? variant.selling_price ?? item.selling_price ?? 0),
-          ordersAppCostPrice: Number(variant.orders_app_cost_price ?? variant.selling_price ?? item.selling_price ?? 0),
-          ordersAppUom: asText(variant.orders_app_uom) || asText(item.orders_app_uom) || asText(item.consumption_uom) || "each",
-          consumptionUom: asText(variant.orders_app_uom) || asText(item.orders_app_uom) || asText(item.consumption_uom) || "each",
-          unitsPerPurchasePack: Number(item.units_per_purchase_pack ?? 1),
+          ...readOrderFields({ ...item, ...variant }),
           hasVariations: true,
           imageUrl: variantImageUrl,
           image_url: variantImageUrl,
@@ -88,13 +121,10 @@ async function materializeOutlet(outletId, allowlistRows, itemsById, variantsByI
         productName: asText(item.name) || "Item",
         product_name: asText(item.name) || "Item",
         variantKey: null,
+        itemKind,
         name: asText(item.name) || "Item",
         sku: asText(item.sku) || null,
-        sellingPrice: Number(item.orders_app_cost_price ?? item.selling_price ?? 0),
-        ordersAppCostPrice: Number(item.orders_app_cost_price ?? item.selling_price ?? 0),
-        ordersAppUom: asText(item.orders_app_uom) || asText(item.consumption_uom) || "each",
-        consumptionUom: asText(item.orders_app_uom) || asText(item.consumption_uom) || "each",
-        unitsPerPurchasePack: Number(item.units_per_purchase_pack ?? 1),
+        ...readOrderFields(item),
         hasVariations: item.has_variations === true,
         imageUrl,
         image_url: imageUrl,

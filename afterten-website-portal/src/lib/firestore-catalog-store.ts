@@ -38,7 +38,14 @@ export function buildStorageHomeIds(primaryId: string | null, extraIds: string[]
 export async function listFirestoreMenuGroups() {
   const snapshot = await getFirestoreDb().collection("catalog_menu_groups").get();
   return snapshot.docs
-    .map((doc) => asRow(doc.id, doc.data()))
+    .map((doc) => {
+      const row = asRow(doc.id, doc.data());
+      if (row.pos_menu_group_id == null && row.posMenuGroupId != null) {
+        const parsed = Number(row.posMenuGroupId);
+        if (Number.isFinite(parsed)) row.pos_menu_group_id = parsed;
+      }
+      return row;
+    })
     .sort((a, b) => {
       const aPos = typeof a.pos_menu_group_id === "number" ? a.pos_menu_group_id : 0;
       const bPos = typeof b.pos_menu_group_id === "number" ? b.pos_menu_group_id : 0;
@@ -190,6 +197,32 @@ export async function updateFirestoreCatalogVariant(id: string, payload: DocRow)
   await ref.set(row, { merge: true });
   const merged = { ...existing.data(), ...row };
   return asRow(id, merged);
+}
+
+export async function bulkUpdateFirestoreCatalogVariants(
+  updates: Array<{ id: string; payload: DocRow }>,
+): Promise<number> {
+  if (!updates.length) return 0;
+
+  const db = getFirestoreDb();
+  const timestamp = nowIso();
+  let updated = 0;
+
+  for (let offset = 0; offset < updates.length; offset += 500) {
+    const chunk = updates.slice(offset, offset + 500);
+    const batch = db.batch();
+    for (const entry of chunk) {
+      batch.set(
+        db.collection("catalog_variants").doc(entry.id),
+        { ...entry.payload, updated_at: timestamp },
+        { merge: true },
+      );
+    }
+    await batch.commit();
+    updated += chunk.length;
+  }
+
+  return updated;
 }
 
 export async function deleteFirestoreCatalogVariant(id: string) {

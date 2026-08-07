@@ -8,6 +8,7 @@ import {
 import { allocateFirestorePosVariantSku } from "@/lib/firestore-pos-catalog-ids";
 import {
   buildStorageHomeIds,
+  bulkUpdateFirestoreCatalogVariants,
   createFirestoreCatalogVariant,
   deleteFirestoreCatalogVariant,
   enrichFirestoreVariants,
@@ -19,11 +20,29 @@ import {
   updateFirestoreCatalogVariant,
 } from "@/lib/firestore-catalog-store";
 import { refreshOutletOrderCatalogForItem } from "@/lib/firestore-outlet-catalog-access";
+import { parseCatalogUomInput, resolveCatalogConsumptionUom } from "@/lib/catalog-uom-fields";
+import { resolveCatalogUomWeight } from "@/lib/catalog-order-fields";
+import { listFirestoreUomOptions } from "@/lib/firestore-uoms";
+import { getFirestoreDb } from "@/lib/firebase-server";
+import { normalizeUomCode, registerCatalogUomOptions } from "@/lib/uom-codes";
 
-function scheduleOutletOrderCatalogRefresh(itemId: string) {
-  void refreshOutletOrderCatalogForItem(itemId).catch((error) => {
+const BULK_EDITABLE_FIELDS = [
+  "orders_app_uom",
+  "supervisor_uom",
+  "cost",
+  "orders_app_cost_price",
+  "selling_price",
+  "active",
+] as const;
+
+type BulkEditableField = (typeof BULK_EDITABLE_FIELDS)[number];
+
+async function scheduleOutletOrderCatalogRefresh(itemId: string) {
+  try {
+    await refreshOutletOrderCatalogForItem(itemId);
+  } catch (error) {
     console.error("Failed to refresh outlet order catalog", error);
-  });
+  }
 }
 
 const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
@@ -79,6 +98,72 @@ function normalizeVariantKey(value?: string | null) {
   return normalized && normalized.length ? normalized : "base";
 }
 
+function isBulkEditableField(value: string): value is BulkEditableField {
+  return (BULK_EDITABLE_FIELDS as readonly string[]).includes(value);
+}
+
+function buildBulkFieldUpdate(
+  field: BulkEditableField,
+  value: unknown,
+  catalogUoms: Array<{ value: string; label: string }>,
+): { ok: true; update: Record<string, unknown> } | { ok: false; error: string } {
+  switch (field) {
+    case "orders_app_uom": {
+      const normalized = parseCatalogUomInput(value, catalogUoms, "");
+      if (!normalized) return { ok: false, error: "Select a valid UOM from Catalog → UOMs" };
+      return { ok: true, update: { orders_app_uom: normalized, consumption_uom: normalized } };
+    }
+    case "supervisor_uom": {
+      const normalized = parseCatalogUomInput(value, catalogUoms, "");
+      if (!normalized) return { ok: false, error: "Select a valid UOM from Catalog → UOMs" };
+      return { ok: true, update: { supervisor_uom: normalized } };
+    }
+    case "cost":
+    case "selling_price": {
+      const num = toNumber(value, 0);
+      if (num === null || num <= 0) {
+        return { ok: false, error: "Enter a number greater than 0" };
+      }
+      return { ok: true, update: { [field]: num } };
+    }
+    case "orders_app_cost_price": {
+      if (value === null || value === undefined || (typeof value === "string" && !value.trim())) {
+        return { ok: true, update: { orders_app_cost_price: null } };
+      }
+      const num = toNumber(value, 0);
+      if (num === null || num < 0) {
+        return { ok: false, error: "Enter a non-negative number" };
+      }
+      return { ok: true, update: { orders_app_cost_price: num } };
+    }
+    case "active":
+      return { ok: true, update: { active: cleanBoolean(value, true) } };
+    default:
+      return { ok: false, error: "Unsupported field" };
+  }
+}
+
+async function resolveCatalogOrderUoms(body: Record<string, unknown>) {
+  const catalogUoms = await listFirestoreUomOptions();
+  registerCatalogUomOptions(catalogUoms);
+  if (catalogUoms.length === 0) {
+    return { error: "Add at least one active UOM in Catalog → UOMs before saving order units." as const };
+  }
+  const ordersAppUom = parseCatalogUomInput(body.orders_app_uom, catalogUoms, "");
+  const supervisorUom = parseCatalogUomInput(body.supervisor_uom ?? body.orders_app_uom, catalogUoms, "");
+  if (!ordersAppUom) {
+    return { error: "Select a valid OrdersApp UOM from Catalog → UOMs." as const };
+  }
+  if (!supervisorUom) {
+    return { error: "Select a valid Supervisor UOM from Catalog → UOMs." as const };
+  }
+  const consumptionUom = normalizeUomCode(
+    resolveCatalogConsumptionUom(body, catalogUoms, ordersAppUom),
+    ordersAppUom,
+  );
+  return { ordersAppUom, supervisorUom, consumptionUom };
+}
+
 export async function firestoreCatalogVariantsGet(request: Request) {
   const url = new URL(request.url);
   const itemId = url.searchParams.get("item_id")?.trim() || undefined;
@@ -118,7 +203,11 @@ export async function firestoreCatalogVariantsPost(request: Request) {
   const itemRow = await getFirestoreCatalogItem(itemId);
   if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
 
-  const consumptionUom = cleanText(body.consumption_uom) ?? "each";
+  const orderUoms = await resolveCatalogOrderUoms(body);
+  if ("error" in orderUoms) return NextResponse.json({ error: orderUoms.error }, { status: 400 });
+  const { ordersAppUom, supervisorUom, consumptionUom } = orderUoms;
+  const uomWeight = resolveCatalogUomWeight(body);
+  if ("error" in uomWeight) return NextResponse.json({ error: uomWeight.error }, { status: 400 });
   const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? "each";
   const transferUnit = cleanText(body.transfer_unit) ?? "each";
   const unitsPerPack = toNumber(body.units_per_purchase_pack, 1);
@@ -167,9 +256,12 @@ export async function firestoreCatalogVariantsPost(request: Request) {
     transfer_quantity: transferQuantity,
     cost,
     selling_price: sellingPrice,
-    orders_app_uom: cleanText(body.orders_app_uom) ?? consumptionUom,
-    supervisor_uom: cleanText(body.supervisor_uom) ?? cleanText(body.orders_app_uom) ?? consumptionUom,
+    orders_app_uom: ordersAppUom,
+    supervisor_uom: supervisorUom,
     orders_app_cost_price: ordersAppCostPrice,
+    supervisor_uom_qty_per_unit: toNumber(body.supervisor_uom_qty_per_unit, 1) ?? 1,
+    uom_weight_enabled: uomWeight.uom_weight_enabled,
+    uom_weight_grams: uomWeight.uom_weight_grams,
     outlet_order_visible: true,
     image_url: cleanText(body.image_url) ?? null,
     default_warehouse_id: defaultWarehouseId,
@@ -200,7 +292,7 @@ export async function firestoreCatalogVariantsPost(request: Request) {
   });
 
   const [enriched] = await enrichFirestoreVariants([data]);
-  scheduleOutletOrderCatalogRefresh(itemId);
+  await scheduleOutletOrderCatalogRefresh(itemId);
   return NextResponse.json({ variant: enriched, backend: "firebase" });
 }
 
@@ -220,6 +312,21 @@ export async function firestoreCatalogVariantsPut(request: Request) {
 
   const itemRow = await getFirestoreCatalogItem(effectiveItemId);
   if (!itemRow) return NextResponse.json({ error: "Parent product not found" }, { status: 404 });
+
+  const needsCatalogUoms =
+    body.orders_app_uom !== undefined ||
+    body.consumption_uom !== undefined ||
+    body.supervisor_uom !== undefined;
+  const catalogUoms = needsCatalogUoms ? await listFirestoreUomOptions() : [];
+  if (needsCatalogUoms) {
+    registerCatalogUomOptions(catalogUoms);
+    if (catalogUoms.length === 0) {
+      return NextResponse.json(
+        { error: "Add at least one active UOM in Catalog → UOMs before saving order units." },
+        { status: 400 },
+      );
+    }
+  }
 
   const update: Record<string, unknown> = {};
   if (body.name !== undefined) {
@@ -259,15 +366,51 @@ export async function firestoreCatalogVariantsPut(request: Request) {
     update.selling_price = sellingPrice;
   }
   if (body.orders_app_uom !== undefined) {
-    update.orders_app_uom = cleanText(body.orders_app_uom) ?? "each";
+    const ordersAppUom = parseCatalogUomInput(body.orders_app_uom, catalogUoms, "");
+    if (!ordersAppUom) {
+      return NextResponse.json({ error: "Select a valid OrdersApp UOM from Catalog → UOMs." }, { status: 400 });
+    }
+    update.orders_app_uom = ordersAppUom;
+    if (body.consumption_uom === undefined) {
+      update.consumption_uom = ordersAppUom;
+    }
+  }
+  if (body.consumption_uom !== undefined) {
+    const consumptionUom = parseCatalogUomInput(body.consumption_uom, catalogUoms, "");
+    if (!consumptionUom) {
+      return NextResponse.json({ error: "Select a valid consumption UOM from Catalog → UOMs." }, { status: 400 });
+    }
+    update.consumption_uom = consumptionUom;
   }
   if (body.supervisor_uom !== undefined) {
-    update.supervisor_uom = cleanText(body.supervisor_uom) ?? cleanText(body.orders_app_uom) ?? "each";
+    const supervisorUom = parseCatalogUomInput(body.supervisor_uom, catalogUoms, "");
+    if (!supervisorUom) {
+      return NextResponse.json({ error: "Select a valid Supervisor UOM from Catalog → UOMs." }, { status: 400 });
+    }
+    update.supervisor_uom = supervisorUom;
   }
   if (body.orders_app_cost_price !== undefined) {
     const ordersAppCostPrice = toNumber(body.orders_app_cost_price, 0);
     if (ordersAppCostPrice === null) return NextResponse.json({ error: "Value must be numeric" }, { status: 400 });
     update.orders_app_cost_price = ordersAppCostPrice;
+  }
+  if (body.supervisor_uom_qty_per_unit !== undefined) {
+    update.supervisor_uom_qty_per_unit = toNumber(body.supervisor_uom_qty_per_unit, 1) ?? 1;
+  }
+  if (body.uom_weight_enabled !== undefined || body.uom_weight_grams !== undefined) {
+    const uomWeight = resolveCatalogUomWeight({
+      uom_weight_enabled:
+        body.uom_weight_enabled !== undefined
+          ? body.uom_weight_enabled
+          : existing.uom_weight_enabled,
+      uom_weight_grams:
+        body.uom_weight_grams !== undefined ? body.uom_weight_grams : existing.uom_weight_grams,
+    });
+    if ("error" in uomWeight) {
+      return NextResponse.json({ error: uomWeight.error }, { status: 400 });
+    }
+    update.uom_weight_enabled = uomWeight.uom_weight_enabled;
+    update.uom_weight_grams = uomWeight.uom_weight_grams;
   }
   if (body.active !== undefined) update.active = cleanBoolean(body.active, true);
   if (body.image_url !== undefined) update.image_url = cleanText(body.image_url) ?? null;
@@ -305,8 +448,72 @@ export async function firestoreCatalogVariantsPut(request: Request) {
   });
 
   const [enriched] = await enrichFirestoreVariants([data]);
-  scheduleOutletOrderCatalogRefresh(effectiveItemId);
+  await scheduleOutletOrderCatalogRefresh(effectiveItemId);
   return NextResponse.json({ variant: enriched, backend: "firebase" });
+}
+
+export async function firestoreCatalogVariantsBulkPatch(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const field = cleanText(body.field);
+  if (!field || !isBulkEditableField(field)) {
+    return NextResponse.json({ error: "Unsupported bulk update field" }, { status: 400 });
+  }
+
+  const variantIds = Array.isArray(body.variant_ids)
+    ? body.variant_ids
+        .map((value: unknown) => cleanText(value))
+        .filter((value: string | undefined): value is string => Boolean(value))
+    : [];
+  if (!variantIds.length) {
+    return NextResponse.json({ error: "Select at least one variant" }, { status: 400 });
+  }
+
+  const catalogUoms = await listFirestoreUomOptions();
+  registerCatalogUomOptions(catalogUoms);
+  const parsed = buildBulkFieldUpdate(field, body.value, catalogUoms);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  const db = getFirestoreDb();
+  const refs = variantIds.map((id: string) => db.collection("catalog_variants").doc(id));
+  const snapshots = await db.getAll(...refs);
+  const existing = snapshots.filter((snap) => snap.exists);
+  if (!existing.length) {
+    return NextResponse.json({ error: "No matching variants found" }, { status: 404 });
+  }
+
+  const itemIds = new Set<string>();
+  const updates = existing.map((snap) => {
+    const itemId = String(snap.data()?.item_id ?? "");
+    if (itemId) itemIds.add(itemId);
+    return { id: snap.id, payload: parsed.update };
+  });
+
+  const updatedCount = await bulkUpdateFirestoreCatalogVariants(updates);
+
+  const actor = parseCatalogChangeActor(request);
+  const first = existing[0]!;
+  await recordCatalogChange({
+    operation: "update",
+    entityType: "variant",
+    entityId: first.id,
+    entityName: `Bulk update (${updatedCount} variant${updatedCount === 1 ? "" : "s"})`,
+    sku: (first.data()?.sku as string | null) ?? null,
+    itemId: String(first.data()?.item_id ?? ""),
+    before: { field },
+    after: { field, value: parsed.update[field], variant_ids: updates.map((entry) => entry.id) },
+    trackedFields: [field],
+    actor,
+  });
+
+  await Promise.all([...itemIds].map((itemId) => scheduleOutletOrderCatalogRefresh(itemId)));
+
+  return NextResponse.json({
+    updated_count: updatedCount,
+    variant_ids: updates.map((entry) => entry.id),
+    backend: "firebase",
+  });
 }
 
 export async function firestoreCatalogVariantsDelete(request: Request) {
@@ -337,6 +544,6 @@ export async function firestoreCatalogVariantsDelete(request: Request) {
     actor,
   });
 
-  scheduleOutletOrderCatalogRefresh(String(existing.item_id ?? ""));
+  await scheduleOutletOrderCatalogRefresh(String(existing.item_id ?? ""));
   return NextResponse.json({ id, backend: "firebase" });
 }

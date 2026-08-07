@@ -1,5 +1,3 @@
-import { DAMAGE_UOM } from "./damage-uom";
-
 export type OutletDamagePdfItem = {
   name: string;
   productId?: string | null;
@@ -283,7 +281,7 @@ function groupPdfItems(items: OutletDamagePdfItem[]): PdfProductGroup[] {
       productName: group.productName,
       showAsVariant,
       qty: item.qty,
-      uom: DAMAGE_UOM,
+      uom: item.uom,
     });
     groups.set(key, group);
   }
@@ -306,7 +304,7 @@ function buildTableRows(groups: PdfProductGroup[], totalQty: number): PdfTableRo
           kind: "line",
           label: line.showAsVariant ? line.displayLabel : line.label,
           qty: line.qty,
-          uom: DAMAGE_UOM,
+          uom: line.uom,
         });
       }
       continue;
@@ -316,7 +314,7 @@ function buildTableRows(groups: PdfProductGroup[], totalQty: number): PdfTableRo
         kind: "line",
         label: line.label,
         qty: line.qty,
-        uom: DAMAGE_UOM,
+        uom: line.uom,
       });
     }
   }

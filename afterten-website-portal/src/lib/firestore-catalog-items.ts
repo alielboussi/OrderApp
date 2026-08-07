@@ -16,11 +16,18 @@ import {
   updateFirestoreCatalogItem,
 } from "@/lib/firestore-catalog-store";
 import { refreshOutletOrderCatalogForItem } from "@/lib/firestore-outlet-catalog-access";
+import { cleanMintPosMenuGroupId } from "@/lib/menu-group-pos";
+import { parseCatalogUomInput, resolveCatalogConsumptionUom } from "@/lib/catalog-uom-fields";
+import { resolveCatalogUomWeight } from "@/lib/catalog-order-fields";
+import { listFirestoreUomOptions } from "@/lib/firestore-uoms";
+import { normalizeUomCode, registerCatalogUomOptions } from "@/lib/uom-codes";
 
-function scheduleOutletOrderCatalogRefresh(itemId: string) {
-  void refreshOutletOrderCatalogForItem(itemId).catch((error) => {
+async function scheduleOutletOrderCatalogRefresh(itemId: string) {
+  try {
+    await refreshOutletOrderCatalogForItem(itemId);
+  } catch (error) {
     console.error("Failed to refresh outlet order catalog", error);
-  });
+  }
 }
 
 const ITEM_KINDS = ["finished", "ingredient", "raw"] as const;
@@ -38,6 +45,10 @@ function cleanText(value: unknown): string | undefined {
 
 function cleanUuid(value: unknown): string | null {
   return isUuid(value) ? value.trim() : null;
+}
+
+function cleanMenuGroupId(value: unknown): string | null {
+  return cleanMintPosMenuGroupId(value);
 }
 
 function cleanBoolean(value: unknown, fallback: boolean): boolean {
@@ -77,14 +88,36 @@ function hasStorageHomePayload(body: Record<string, unknown>): boolean {
   );
 }
 
-function buildItemPayload(body: Record<string, unknown>) {
+async function buildItemPayload(body: Record<string, unknown>) {
   const name = cleanText(body.name);
   if (!name) return { error: "Name is required" as const };
 
   const itemKind = pickItemKind(body.item_kind);
   if (!itemKind) return { error: "item_kind must be 'finished', 'ingredient', or 'raw'" as const };
 
-  const consumptionUnit = cleanText(body.consumption_unit) ?? cleanText(body.consumption_uom) ?? "each";
+  const hasVariations = cleanBoolean(body.has_variations, false);
+  const catalogUoms = await listFirestoreUomOptions();
+  registerCatalogUomOptions(catalogUoms);
+
+  const ordersAppUom = hasVariations
+    ? ""
+    : parseCatalogUomInput(body.orders_app_uom, catalogUoms, "");
+  const supervisorUom = hasVariations
+    ? ""
+    : parseCatalogUomInput(body.supervisor_uom ?? body.orders_app_uom, catalogUoms, "");
+  if (!hasVariations && catalogUoms.length === 0) {
+    return { error: "Add at least one active UOM in Catalog → UOMs before saving order units." as const };
+  }
+  if (!hasVariations && !ordersAppUom) {
+    return { error: "Select a valid OrdersApp UOM from Catalog → UOMs." as const };
+  }
+  if (!hasVariations && !supervisorUom) {
+    return { error: "Select a valid Supervisor UOM from Catalog → UOMs." as const };
+  }
+
+  const consumptionUnit = hasVariations
+    ? ""
+    : normalizeUomCode(resolveCatalogConsumptionUom(body, catalogUoms, ordersAppUom), ordersAppUom);
   const cost = toNumber(body.cost ?? 0, 0);
   const sellingPrice = toNumber(body.selling_price ?? 0, 0);
   const ordersAppCostPrice = toNumber(body.orders_app_cost_price ?? sellingPrice ?? 0, 0);
@@ -104,7 +137,15 @@ function buildItemPayload(body: Record<string, unknown>) {
     ? buildStorageHomeIds(defaultWarehouseId, requestedStorageHomeIds)
     : [];
 
-  const menuGroupId = itemKind === "finished" ? cleanUuid(body.menu_group_id) : null;
+  const menuGroupId = itemKind === "finished" ? cleanMenuGroupId(body.menu_group_id) : null;
+  if (itemKind === "finished" && body.menu_group_id && !menuGroupId) {
+    return { error: "Select a MintPOS menu group" as const };
+  }
+
+  const uomWeight = hasVariations
+    ? { uom_weight_enabled: false, uom_weight_grams: null as number | null }
+    : resolveCatalogUomWeight(body);
+  if ("error" in uomWeight) return { error: uomWeight.error };
 
   return {
     payload: {
@@ -118,9 +159,10 @@ function buildItemPayload(body: Record<string, unknown>) {
       storage_weight: body.storage_weight != null && `${body.storage_weight}`.trim() !== "" ? toNumber(body.storage_weight, 0) : null,
       cost,
       selling_price: sellingPrice,
-      orders_app_uom: cleanText(body.orders_app_uom) ?? consumptionUnit,
-      supervisor_uom: cleanText(body.supervisor_uom) ?? cleanText(body.orders_app_uom) ?? consumptionUnit,
+      orders_app_uom: ordersAppUom,
+      supervisor_uom: supervisorUom,
       orders_app_cost_price: ordersAppCostPrice,
+      supervisor_uom_qty_per_unit: toNumber(body.supervisor_uom_qty_per_unit, 1) ?? 1,
       has_variations: cleanBoolean(body.has_variations, false),
       has_recipe: cleanBoolean(body.has_recipe, false),
       outlet_order_visible: cleanBoolean(body.outlet_order_visible, true),
@@ -128,10 +170,12 @@ function buildItemPayload(body: Record<string, unknown>) {
       default_warehouse_id: defaultWarehouseId,
       menu_group_id: menuGroupId,
       active: cleanBoolean(body.active, true),
-      purchase_pack_unit: cleanText(body.purchase_pack_unit) ?? consumptionUnit,
+      purchase_pack_unit: normalizeUomCode(cleanText(body.purchase_pack_unit), consumptionUnit),
       units_per_purchase_pack: toNumber(body.units_per_purchase_pack, 1) ?? 1,
-      transfer_unit: cleanText(body.transfer_unit) ?? consumptionUnit,
+      transfer_unit: normalizeUomCode(cleanText(body.transfer_unit), consumptionUnit),
       transfer_quantity: toNumber(body.transfer_quantity, 1) ?? 1,
+      uom_weight_enabled: uomWeight.uom_weight_enabled,
+      uom_weight_grams: uomWeight.uom_weight_grams,
     },
     itemKind,
     menuGroupId,
@@ -159,7 +203,7 @@ export async function firestoreCatalogItemsGet(request: Request) {
 
 export async function firestoreCatalogItemsPost(request: Request) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const built = buildItemPayload(body);
+  const built = await buildItemPayload(body);
   if ("error" in built) return NextResponse.json({ error: built.error }, { status: 400 });
 
   let resolvedSku = built.payload.sku;
@@ -194,7 +238,7 @@ export async function firestoreCatalogItemsPost(request: Request) {
   });
 
   const [enriched] = await enrichFirestoreItems([{ ...data, sku: resolvedSku }]);
-  scheduleOutletOrderCatalogRefresh(String(data.id));
+  await scheduleOutletOrderCatalogRefresh(String(data.id));
   return NextResponse.json({ item: enriched, backend: "firebase" });
 }
 
@@ -234,20 +278,34 @@ export async function firestoreCatalogItemsPut(request: Request) {
     });
 
     const [enriched] = await enrichFirestoreItems([data]);
-    scheduleOutletOrderCatalogRefresh(id);
+    await scheduleOutletOrderCatalogRefresh(id);
     return NextResponse.json({ item: enriched, backend: "firebase" });
   }
 
-  const built = buildItemPayload(body);
+  const built = await buildItemPayload(body);
   if ("error" in built) return NextResponse.json({ error: built.error }, { status: 400 });
 
   const existingRow = await getFirestoreCatalogItem(id);
   if (!existingRow) return NextResponse.json({ error: "Item not found" }, { status: 404 });
 
-  const data = await updateFirestoreCatalogItem(id, {
+  const updatePayload: Record<string, unknown> = {
     ...built.payload,
     sku: cleanText(body.sku) ?? built.payload.sku,
-  });
+  };
+  if (built.payload.has_variations) {
+    delete updatePayload.orders_app_uom;
+    delete updatePayload.supervisor_uom;
+    delete updatePayload.orders_app_cost_price;
+    delete updatePayload.consumption_unit;
+    delete updatePayload.consumption_uom;
+    delete updatePayload.supervisor_uom_qty_per_unit;
+    delete updatePayload.units_per_purchase_pack;
+    delete updatePayload.purchase_pack_unit;
+    delete updatePayload.uom_weight_enabled;
+    delete updatePayload.uom_weight_grams;
+  }
+
+  const data = await updateFirestoreCatalogItem(id, updatePayload);
   if (!data) return NextResponse.json({ error: "Item not found" }, { status: 404 });
 
   if (built.storagePayload) {
@@ -277,7 +335,7 @@ export async function firestoreCatalogItemsPut(request: Request) {
   });
 
   const [enriched] = await enrichFirestoreItems([data]);
-  scheduleOutletOrderCatalogRefresh(id);
+  await scheduleOutletOrderCatalogRefresh(id);
   return NextResponse.json({ item: enriched, backend: "firebase" });
 }
 
@@ -309,6 +367,6 @@ export async function firestoreCatalogItemsDelete(request: Request) {
     actor,
   });
 
-  scheduleOutletOrderCatalogRefresh(id);
+  await scheduleOutletOrderCatalogRefresh(id);
   return NextResponse.json({ id, backend: "firebase" });
 }

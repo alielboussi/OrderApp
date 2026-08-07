@@ -3,7 +3,7 @@ import {
   listFirestoreCatalogVariants,
 } from "@/lib/firestore-catalog-store";
 import { fetchStockCatalog } from "@/lib/stock-api-client";
-import { rowLinkedToApiUuid } from "@/lib/catalog-api-sync-matching";
+import { rowLinkedToApiUuid, isPortalOnlyCatalogItem } from "@/lib/catalog-api-sync-matching";
 
 export type CatalogApiAlignment = {
   api_product_count: number;
@@ -26,15 +26,21 @@ export async function getCatalogApiAlignment(): Promise<CatalogApiAlignment> {
   const apiProducts = (catalog.products ?? []).filter((product) => String(product.uuid ?? "").trim());
   const apiUuidSet = new Set(apiProducts.map((product) => String(product.uuid).trim()));
 
-  const portalProductsLinked = items.filter((item) =>
+  const apiManagedItems = items.filter((item) => !isPortalOnlyCatalogItem(item));
+  const apiManagedVariants = variants.filter((variant) => {
+    const parent = items.find((item) => String(item.id ?? "") === String(variant.item_id ?? ""));
+    return parent ? !isPortalOnlyCatalogItem(parent) : false;
+  });
+
+  const portalProductsLinked = apiManagedItems.filter((item) =>
     rowLinkedToApiUuid(String(item.id ?? ""), item.stock_api_uuid, apiUuidSet),
   );
-  const portalVariantsLinked = variants.filter((variant) =>
+  const portalVariantsLinked = apiManagedVariants.filter((variant) =>
     rowLinkedToApiUuid(String(variant.id ?? ""), variant.stock_api_uuid, apiUuidSet),
   );
 
-  const portalProductsExtra = items.length - portalProductsLinked.length;
-  const portalVariantsExtra = variants.length - portalVariantsLinked.length;
+  const portalProductsExtra = apiManagedItems.length - portalProductsLinked.length;
+  const portalVariantsExtra = apiManagedVariants.length - portalVariantsLinked.length;
   const linkedTotal = portalProductsLinked.length + portalVariantsLinked.length;
   const apiCount = catalog.productCount ?? apiProducts.length;
 
@@ -42,8 +48,8 @@ export async function getCatalogApiAlignment(): Promise<CatalogApiAlignment> {
     api_product_count: apiCount,
     portal_products_linked: portalProductsLinked.length,
     portal_variants_linked: portalVariantsLinked.length,
-    portal_products_total: items.length,
-    portal_variants_total: variants.length,
+    portal_products_total: apiManagedItems.length,
+    portal_variants_total: apiManagedVariants.length,
     portal_products_extra: portalProductsExtra,
     portal_variants_extra: portalVariantsExtra,
     aligned:

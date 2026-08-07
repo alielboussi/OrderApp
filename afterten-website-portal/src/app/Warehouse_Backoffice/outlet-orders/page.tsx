@@ -11,9 +11,10 @@ import {
 } from "@/lib/transfer-order-status";
 import { buildOutletOrderPdfFilename, buildOutletOrderPdfHtml, formatOutletOrderMoney } from "@/lib/outlet-order-pdf";
 import { buildOutletDamagePdfFilename, buildOutletDamagePdfHtml } from "@/lib/outlet-damage-pdf";
-import { DAMAGE_UOM } from "@/lib/damage-uom";
+import { useUomCatalog } from "@/lib/use-uom-options";
 import {
   resolveBaseProductNameFromCatalog,
+  resolveSupervisorUomForOrderItem,
   sumPortalOrderItems,
   type PortalCatalogProduct,
   type PortalOrderItem,
@@ -267,6 +268,7 @@ function productBaseNameFromLabel(name: string): string {
 function OutletOrdersPage() {
   const searchParams = useSearchParams();
   const { status } = useWarehouseAuth();
+  const { uoms, formatUom } = useUomCatalog();
 
   const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [selectedOutletId, setSelectedOutletId] = useState<string>("all");
@@ -487,7 +489,7 @@ function OutletOrdersPage() {
           variantKey: row.variant_key ?? null,
           productName: resolveBaseProductNameFromCatalog(row.product_id, catalog, portalItem) || undefined,
           qty,
-          uom: row.receiving_uom ?? "each",
+          uom: resolveSupervisorUomForOrderItem(portalItem, catalog),
           cost,
           amount,
         };
@@ -560,6 +562,7 @@ function OutletOrdersPage() {
         totalQty,
         totalAmount,
         downloadFilename,
+        uomCatalog: uoms,
       });
 
       const frame = document.createElement("iframe");
@@ -633,7 +636,7 @@ function OutletOrdersPage() {
         variantKey: row.variant_key ?? null,
         productName: productBaseNameFromLabel(row.name ?? "Item"),
         qty: row.qty ?? 0,
-        uom: DAMAGE_UOM,
+        uom: row.uom?.trim() || formatUom("pc"),
       }));
       const totalQty = items.reduce((sum, row) => sum + row.qty, 0);
       const logoDataUrl = await loadLogoDataUrl();

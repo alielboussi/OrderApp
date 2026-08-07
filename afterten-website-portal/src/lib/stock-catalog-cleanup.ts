@@ -4,6 +4,7 @@ import {
   fetchStockQuantities,
   type StockApiCatalogResponse,
 } from "@/lib/stock-api-client";
+import { isPortalOnlyCatalogItem } from "@/lib/catalog-api-sync-matching";
 
 export type StockCatalogCleanupPlan = {
   generated_at: string;
@@ -124,7 +125,15 @@ export async function planStockCatalogCleanup(
   const keptVariantIds = new Set<string>();
   const activeMissingFromStock: StockCatalogCleanupPlan["active_missing_from_stock_api"] = [];
 
+  const itemsById = new Map(itemsSnap.docs.map((doc) => [doc.id, doc]));
+
   for (const doc of variantsSnap.docs) {
+    const itemId = String(doc.get("item_id") ?? "");
+    const parent = itemId ? itemsById.get(itemId) : undefined;
+    if (parent && isPortalOnlyCatalogItem({ ...parent.data(), id: parent.id })) {
+      keptVariantIds.add(doc.id);
+      continue;
+    }
     if (linkedToApi(doc.id, doc.get("stock_api_uuid"))) {
       keptVariantIds.add(doc.id);
       continue;
@@ -140,6 +149,10 @@ export async function planStockCatalogCleanup(
   for (const doc of itemsSnap.docs) {
     const itemId = doc.id;
     const name = String(doc.get("name") ?? "Item");
+    if (isPortalOnlyCatalogItem({ ...doc.data(), id: itemId })) {
+      keptItemIds.add(itemId);
+      continue;
+    }
     const variants = variantsByItem.get(itemId) ?? [];
     const keptVariants = variants.filter((variant) => keptVariantIds.has(variant.id));
 

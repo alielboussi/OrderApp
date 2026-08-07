@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getWarehouseAccessToken } from "@/lib/warehouse-auth-client";
-import {
-  bumpOrderQty,
-  expandPortalOrderItemsWithCompanions,
-  syncCompanionPortalOrderItems,
-} from "@/lib/order-qty-rules";
+import { bumpOrderQty } from "@/lib/order-qty-rules";
 import {
   applyCatalogProductToOrderItem,
   clonePortalOrderItems,
   getCatalogVariantsForProduct,
+  getSupervisorDisplayQtyForOrderItem,
   groupPortalOrderItemsForReview,
   portalOrderItemsMatch,
   resolveSupervisorUomForOrderItem,
@@ -21,6 +18,7 @@ import {
   type PortalOrderItem,
 } from "@/lib/portal-transfer-order-edit";
 import { formatOrdersAppUom } from "@/lib/orders-app-uom";
+import { useUomCatalog } from "@/lib/use-uom-options";
 import { formatTransferOrderStatus, isPortalTransferOrderEditable } from "@/lib/transfer-order-status";
 import styles from "./outlet-orders.module.css";
 
@@ -54,6 +52,7 @@ export function OrderExpandPanel({
   onError,
 }: OrderExpandPanelProps) {
   const editable = isPortalTransferOrderEditable(status);
+  const { uoms } = useUomCatalog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [catalogWarning, setCatalogWarning] = useState<string | null>(null);
@@ -104,9 +103,8 @@ export function OrderExpandPanel({
 
         if (!active) return;
         const items = normalizeItems(itemsJson.items ?? []);
-        const expandedItems = expandPortalOrderItemsWithCompanions(items, catalogRows, orderId);
         setServerItems(items);
-        setDraftItems(clonePortalOrderItems(expandedItems));
+        setDraftItems(clonePortalOrderItems(items));
         setCatalog(catalogRows);
       } catch (error) {
         if (!active) return;
@@ -143,16 +141,10 @@ export function OrderExpandPanel({
     setDraftItems((current) => {
       const row = current.find((entry) => entry.id === item.id);
       if (!row) return current;
-      const nextQty = bumpOrderQty(row.qty ?? 0, row.product_id, direction);
-      const updated = current.map((entry) =>
-        entry.id === item.id ? updatePortalOrderItemQty(entry, nextQty) : entry,
-      );
-      return syncCompanionPortalOrderItems(
-        updated,
-        catalog,
-        orderId,
-        row.product_id ?? "",
-        nextQty,
+      const displayQty = getSupervisorDisplayQtyForOrderItem(row, catalog);
+      const nextDisplayQty = bumpOrderQty(displayQty, row.product_id, direction);
+      return current.map((entry) =>
+        entry.id === item.id ? updatePortalOrderItemQty(entry, nextDisplayQty, catalog) : entry,
       );
     });
   }
@@ -164,8 +156,6 @@ export function OrderExpandPanel({
       onError("");
       const token = await getWarehouseAccessToken();
       if (!token) throw new Error("Not signed in");
-      const itemsToSave = expandPortalOrderItemsWithCompanions(draftItems, catalog, orderId);
-
       const res = await fetch(`/api/outlet-orders/${encodeURIComponent(orderId)}/items`, {
         method: "PATCH",
         headers: {
@@ -173,7 +163,7 @@ export function OrderExpandPanel({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          items: itemsToSave.map((item) => toPortalOrderItemPayload(item)),
+          items: draftItems.map((item) => toPortalOrderItemPayload(item)),
         }),
       });
       const json = (await res.json()) as { items?: PortalOrderItem[]; error?: string };
@@ -252,7 +242,9 @@ export function OrderExpandPanel({
                         >
                           −
                         </button>
-                        <span className={styles.qtyValue}>{item.qty ?? 0}</span>
+                        <span className={styles.qtyValue}>
+                          {getSupervisorDisplayQtyForOrderItem(item, catalog)}
+                        </span>
                         <button
                           type="button"
                           className={styles.qtyButton}
@@ -265,7 +257,7 @@ export function OrderExpandPanel({
                       item.qty ?? 0
                     )}
                   </span>
-                  <span>{formatOrdersAppUom(resolveSupervisorUomForOrderItem(item, catalog), item.qty ?? 1)}</span>
+                  <span>{formatOrdersAppUom(resolveSupervisorUomForOrderItem(item, catalog), item.qty ?? 1, uoms)}</span>
                   <span className={styles.alignRight}>{formatMoney(Number(item.cost ?? 0))}</span>
                   <span className={styles.alignRight}>
                     {formatMoney(Number(item.amount ?? (item.cost ?? 0) * (item.qty ?? 0)))}

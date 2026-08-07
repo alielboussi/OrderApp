@@ -5,6 +5,7 @@ import {
   listFirestoreCatalogVariants,
 } from "@/lib/firestore-catalog-store";
 import { isOrdersAppOutlet } from "@/lib/firestore-outlets";
+import { buildOutletOrderCatalogOrderFields, readCatalogOrderFieldsFromRow } from "@/lib/catalog-order-fields";
 import type { AllowlistEntry, OutletAuthAssignment } from "@/lib/outlet-catalog-access";
 import { normalizeCatalogAccessItems } from "@/lib/outlet-catalog-access";
 import { resolveCatalogImageUrl } from "@/lib/catalog-image-url";
@@ -63,32 +64,13 @@ async function materializeOutletOrderCatalog(
     const item = itemsById.get(row.item_id);
     if (!item || item.active === false) continue;
 
-    const consumptionUom = asText(item.consumption_uom ?? item.consumption_unit, "each");
-    const purchasePackUnit = asText(item.purchase_pack_unit, consumptionUom);
-    const unitsPerPurchasePack = toNumber(item.units_per_purchase_pack, 1);
     const itemKind = asText(item.item_kind, "finished");
-    const ordersAppUom = asText(item.orders_app_uom) || consumptionUom;
-    const supervisorUom = asText(item.supervisor_uom) || ordersAppUom;
-    const ordersAppCostPrice = toNumber(item.orders_app_cost_price ?? item.selling_price ?? item.cost, 0);
 
     if (row.variant_id) {
       const variant = variantsById.get(row.variant_id);
       if (!variant || variant.active === false) continue;
-      const variantOrdersAppUom =
-        asText(variant.orders_app_uom) ||
-        ordersAppUom;
-      const variantSupervisorUom =
-        asText(variant.supervisor_uom) ||
-        supervisorUom;
-      const variantOrdersAppCostPrice = toNumber(
-        variant.orders_app_cost_price ??
-          variant.selling_price ??
-          item.orders_app_cost_price ??
-          item.selling_price ??
-          variant.cost ??
-          item.cost,
-        0,
-      );
+      const orderFields = readCatalogOrderFieldsFromRow({ ...item, ...variant });
+      const variantOrdersAppCostPrice = orderFields.orders_app_cost_price;
       const docId = `${outletId}_${row.item_id}_${row.variant_id}`;
       const variantImageUrl = readCatalogImageUrl(variant.image_url);
       const productImageUrl = readCatalogImageUrl(item.image_url);
@@ -105,17 +87,11 @@ async function materializeOutletOrderCatalog(
           name: asText(variant.name, asText(item.name, "Item")),
           sku: asText(variant.sku) || asText(item.sku) || null,
           cost: toNumber(variant.cost ?? item.cost, 0),
-          sellingPrice: variantOrdersAppCostPrice,
-          ordersAppUom: variantOrdersAppUom,
-          ordersAppCostPrice: variantOrdersAppCostPrice,
-          supervisorUom: variantSupervisorUom,
+          ...buildOutletOrderCatalogOrderFields({ ...item, ...variant }),
           imageUrl: variantImageUrl,
           image_url: variantImageUrl,
           productImageUrl,
           product_image_url: productImageUrl,
-          purchasePackUnit,
-          consumptionUom: variantOrdersAppUom,
-          unitsPerPurchasePack,
           hasVariations: true,
           active: true,
           updatedAt: now,
@@ -139,17 +115,11 @@ async function materializeOutletOrderCatalog(
         name: asText(item.name, "Item"),
         sku: asText(item.sku) || null,
         cost: toNumber(item.cost, 0),
-        sellingPrice: ordersAppCostPrice,
-        ordersAppUom,
-        ordersAppCostPrice,
-        supervisorUom,
+        ...buildOutletOrderCatalogOrderFields(item),
         imageUrl: productImageUrl,
         image_url: productImageUrl,
         productImageUrl,
         product_image_url: productImageUrl,
-        purchasePackUnit,
-        consumptionUom: ordersAppUom,
-        unitsPerPurchasePack,
         hasVariations: item.has_variations === true,
         active: true,
         updatedAt: now,

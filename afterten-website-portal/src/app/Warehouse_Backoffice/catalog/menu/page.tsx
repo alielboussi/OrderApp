@@ -12,6 +12,8 @@ import eb from "../../enterprise.module.css";
 import styles from "./menu.module.css";
 import { CatalogImageThumb } from "../CatalogImageThumb";
 import { CatalogCardImageMenu } from "../CatalogCardImageMenu";
+import { CatalogUomCardMeta } from "../CatalogUomCardMeta";
+import { useUomCatalog } from "@/lib/use-uom-options";
 
 type Item = {
   id: string;
@@ -25,6 +27,8 @@ type Item = {
   base_recipe_count?: number | null;
   image_url?: string | null;
   selling_price?: number | null;
+  orders_app_uom?: string | null;
+  supervisor_uom?: string | null;
 };
 
 type MenuGroup = {
@@ -44,6 +48,8 @@ type Variant = {
   has_recipe?: boolean | null;
   image_url?: string | null;
   selling_price?: number | null;
+  orders_app_uom?: string | null;
+  supervisor_uom?: string | null;
 };
 
 type ItemWithVariants = { item: Item; variants: Variant[] };
@@ -147,6 +153,7 @@ function ProductCard({
   readOnly,
   userId,
   userEmail,
+  uomOptions,
 }: {
   item: Item;
   itemVariants: Variant[];
@@ -157,6 +164,7 @@ function ProductCard({
   readOnly: boolean;
   userId?: string | null;
   userEmail?: string | null;
+  uomOptions: { value: string; label: string }[];
 }) {
   const hasVariants = Boolean(item.has_variations) || itemVariants.length > 0;
   const isFinished = (item.item_kind ?? "finished").trim().toLowerCase() === "finished";
@@ -229,6 +237,7 @@ function ProductCard({
               variants={itemVariants}
               hasVariants={hasVariants}
             />
+            {!hasVariants ? <CatalogUomCardMeta row={item} uomOptions={uomOptions} /> : null}
           </div>
         </div>
       </div>
@@ -255,6 +264,7 @@ function VariantCard({
   onVariantImageUpdated,
   userId,
   userEmail,
+  uomOptions,
 }: {
   variant: Variant;
   parentItem: Item;
@@ -263,6 +273,7 @@ function VariantCard({
   onVariantImageUpdated: (variantId: string, imageUrl: string) => void;
   userId?: string | null;
   userEmail?: string | null;
+  uomOptions: { value: string; label: string }[];
 }) {
   return (
     <article className={`${styles.card} ${styles.variantCard}`}>
@@ -300,6 +311,7 @@ function VariantCard({
             </div>
             <h2 className={styles.itemName}>{variant.name}</h2>
             <SellingPriceLine sellingPrice={variant.selling_price} />
+            <CatalogUomCardMeta row={variant} uomOptions={uomOptions} />
           </div>
         </div>
       </div>
@@ -326,6 +338,7 @@ function VariantsPopup({
   onVariantImageUpdated,
   userId,
   userEmail,
+  uomOptions,
 }: {
   item: Item;
   itemVariants: Variant[];
@@ -335,6 +348,7 @@ function VariantsPopup({
   onVariantImageUpdated: (variantId: string, imageUrl: string) => void;
   userId?: string | null;
   userEmail?: string | null;
+  uomOptions: { value: string; label: string }[];
 }) {
   return (
     <div className={styles.dialogOverlay} role="presentation" onClick={onClose}>
@@ -366,6 +380,7 @@ function VariantsPopup({
                 onVariantImageUpdated={onVariantImageUpdated}
                 userId={userId}
                 userEmail={userEmail}
+                uomOptions={uomOptions}
               />
             ))
           )}
@@ -385,6 +400,7 @@ function VariantsPopup({
 
 export default function CatalogMenuPage() {
   const { status, readOnly, userId, userEmail } = useWarehouseAuth();
+  const { uoms: uomOptions } = useUomCatalog();
   const [items, setItems] = useState<Item[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [middlewareOutlets, setMiddlewareOutlets] = useState<OutletRow[]>([]);
@@ -415,7 +431,7 @@ export default function CatalogMenuPage() {
       const [itemsRes, variantsRes, groupsRes, alignmentRes] = await Promise.all([
         fetch("/api/catalog/items"),
         fetch("/api/catalog/variants"),
-        fetch("/api/catalog/menu-groups"),
+        fetch("/api/catalog/menu-groups?mintpos_only=true"),
         fetch("/api/catalog/api-alignment"),
       ]);
       const itemsJson = await itemsRes.json().catch(() => ({}));
@@ -883,6 +899,7 @@ export default function CatalogMenuPage() {
                         readOnly={readOnly}
                         userId={userId}
                         userEmail={userEmail}
+                        uomOptions={uomOptions}
                       />
                     ))}
                   </div>
@@ -907,6 +924,7 @@ export default function CatalogMenuPage() {
                   readOnly={readOnly}
                   userId={userId}
                   userEmail={userEmail}
+                  uomOptions={uomOptions}
                 />
               ))}
             </div>
@@ -924,6 +942,7 @@ export default function CatalogMenuPage() {
           onVariantImageUpdated={handleVariantImageUpdated}
           userId={userId}
           userEmail={userEmail}
+          uomOptions={uomOptions}
         />
       ) : null}
 

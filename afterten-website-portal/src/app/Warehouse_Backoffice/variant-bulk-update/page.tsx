@@ -4,14 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWarehouseAuth } from "../useWarehouseAuth";
 import { useUomOptions } from "@/lib/use-uom-options";
+import { formatCatalogUomDisplay } from "@/lib/catalog-uom-fields";
+import { catalogApiHeaders } from "@/lib/catalog-api-headers";
 import eb from "../enterprise.module.css";
 import styles from "./variant-bulk-update.module.css";
 import { CatalogImageThumb } from "../catalog/CatalogImageThumb";
 import { CatalogCardImageMenu } from "../catalog/CatalogCardImageMenu";
+import { CatalogUomCardMeta } from "../catalog/CatalogUomCardMeta";
 
 type Warehouse = { id: string; name: string };
 
-type Item = { id: string; name: string; sku?: string | null };
+type Item = { id: string; name: string; sku?: string | null; has_variations?: boolean | null };
 
 type VariantSummary = {
   id: string;
@@ -30,6 +33,9 @@ type VariantSummary = {
   qty_decimal_places?: number | null;
   cost: number;
   selling_price?: number | null;
+  orders_app_uom?: string | null;
+  supervisor_uom?: string | null;
+  orders_app_cost_price?: number | null;
   outlet_order_visible: boolean;
   image_url?: string | null;
   default_warehouse_id?: string | null;
@@ -88,10 +94,17 @@ function parseFieldValue(field: FieldOption, raw: string) {
   }
 }
 
-function formatFieldValue(fieldKey: string, variant: VariantSummary) {
+function formatFieldValue(
+  fieldKey: string,
+  variant: VariantSummary,
+  unitOptions: { value: string; label: string }[],
+) {
   const value = (variant as Record<string, unknown>)[fieldKey];
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (fieldKey === "orders_app_uom" || fieldKey === "supervisor_uom") {
+    return formatCatalogUomDisplay(String(value), unitOptions);
+  }
   return String(value);
 }
 
@@ -103,11 +116,19 @@ export default function VariantBulkUpdatePage() {
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [variants, setVariants] = useState<VariantSummary[]>([]);
   const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
-  const [selectedField, setSelectedField] = useState<string>("consumption_uom");
+  const [selectedField, setSelectedField] = useState<string>("orders_app_uom");
   const [fieldValue, setFieldValue] = useState<string>("");
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
-  const unitOptions = useUomOptions();
+  const { uoms: unitOptions, ready: unitOptionsReady } = useUomOptions();
+
+  const parentOptions = useMemo(
+    () =>
+      items
+        .filter((item) => item.has_variations === true)
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [items]
+  );
 
   useEffect(() => {
     async function loadCatalog() {
@@ -159,8 +180,10 @@ export default function VariantBulkUpdatePage() {
 
   const fieldOptions: FieldOption[] = useMemo(
     () => [
-      { value: "consumption_uom", label: "How its consumed", type: "select", options: unitOptions },
+      { value: "orders_app_uom", label: "OrdersApp Uom", type: "select", options: unitOptions },
+      { value: "supervisor_uom", label: "Supervisor Uom", type: "select", options: unitOptions },
       { value: "cost", label: "Cost per base unit", type: "number" },
+      { value: "orders_app_cost_price", label: "Orders app cost price", type: "number-null" },
       { value: "selling_price", label: "Selling price", type: "number" },
       { value: "active", label: "Active", type: "boolean" },
     ],
@@ -272,35 +295,32 @@ export default function VariantBulkUpdatePage() {
     setResult(null);
     try {
       const updateValue = parsed.value as unknown;
-      const selectedVariants = variants.filter((variant) => selectedVariantIds.includes(variant.id));
-      await Promise.all(
-        selectedVariants.map(async (variant) => {
-          const res = await fetch("/api/catalog/variants", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: variant.id,
-              item_id: variant.item_id,
-              name: variant.name,
-              [fieldMeta.value]: updateValue,
-            }),
-          });
-          if (!res.ok) {
-            const payload = await res.json().catch(() => ({}));
-            const details = payload?.details ? ` (${JSON.stringify(payload.details)})` : "";
-            const message = (payload?.error || `Update failed for ${variant.name || variant.id}`) + details;
-            throw new Error(message);
-          }
-        })
-      );
-
-      const res = await fetch(`/api/catalog/variants?item_id=${encodeURIComponent(selectedItemId)}`);
-      if (res.ok) {
-        const json = await res.json();
-        const rows = Array.isArray(json?.variants) ? (json.variants as VariantSummary[]) : [];
-        setVariants(rows);
+      const res = await fetch("/api/catalog/variants/bulk", {
+        method: "PATCH",
+        headers: catalogApiHeaders({ userId, userEmail }),
+        body: JSON.stringify({
+          variant_ids: selectedVariantIds,
+          field: fieldMeta.value,
+          value: updateValue,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const details = payload?.details ? ` (${JSON.stringify(payload.details)})` : "";
+        throw new Error((payload?.error || "Bulk update failed") + details);
       }
-      setResult({ text: "Bulk update applied.", ok: true });
+
+      setVariants((prev) =>
+        prev.map((variant) =>
+          selectedVariantIds.includes(variant.id)
+            ? { ...variant, [fieldMeta.value]: updateValue as never }
+            : variant,
+        ),
+      );
+      setResult({
+        text: `Bulk update applied to ${payload.updated_count ?? selectedVariantIds.length} variant(s).`,
+        ok: true,
+      });
     } catch (error) {
       console.error("bulk update failed", error);
       setResult({ text: error instanceof Error ? error.message : "Bulk update failed", ok: false });
@@ -360,7 +380,7 @@ export default function VariantBulkUpdatePage() {
                 aria-label="Select parent product"
               >
                 <option value="">Select product</option>
-                {items.map((item) => (
+                {parentOptions.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -430,7 +450,20 @@ export default function VariantBulkUpdatePage() {
                     </div>
                     <div className={styles.variantCardBody}>
                       <p className={styles.variantName}>{variant.name}</p>
-                      <p className={styles.variantMeta}>Current: {formatFieldValue(selectedField, variant)}</p>
+                      <CatalogUomCardMeta
+                        row={variant}
+                        uomOptions={unitOptions}
+                        highlightField={
+                          selectedField === "orders_app_uom" || selectedField === "supervisor_uom"
+                            ? selectedField
+                            : null
+                        }
+                        editingNote={
+                          selectedField !== "orders_app_uom" && selectedField !== "supervisor_uom"
+                            ? formatFieldValue(selectedField, variant, unitOptions)
+                            : null
+                        }
+                      />
                     </div>
                     <input
                       className={styles.checkbox}

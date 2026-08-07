@@ -80,23 +80,28 @@ export default function CatalogMenuGroupsPage() {
 
   const removeDuplicates = async () => {
     if (readOnly) {
-      setMessage("Read-only access: removing duplicates is disabled.");
+      setMessage("Read-only access: cleanup is disabled.");
       return;
     }
-    if (!duplicateCount) return;
 
-    const preview = duplicateSets
-      .map((set) => {
-        const names = set.map((group) => group.name).join(" / ");
-        const posId = set[0]?.pos_menu_group_id;
-        return `MintPOS ID ${posId}: ${names}`;
-      })
-      .join("\n");
+    const preview =
+      duplicateCount > 0
+        ? duplicateSets
+            .map((set) => {
+              const names = set.map((group) => group.name).join(" / ");
+              const posId = set[0]?.pos_menu_group_id;
+              return `MintPOS ID ${posId}: ${names}`;
+            })
+            .join("\n")
+        : "Inactive groups and portal-only groups will be cleaned up.";
 
     const confirmed = window.confirm(
-      `Remove ${duplicateCount} duplicate menu group${duplicateCount === 1 ? "" : "s"}?\n\n` +
+      `Clean up menu groups?\n\n` +
+        `• Remove duplicate groups (keeps explicitly Active portal rows over MintPOS stubs)\n` +
+        `• Migrate portal-only groups onto MintPOS numeric IDs (e.g. Pies → doc "1")\n` +
+        `• Only delete inactive groups that have no products still assigned\n\n` +
         `${preview}\n\n` +
-        "Products in removed groups will be moved to the kept group for each MintPOS ID."
+        "Products in removed duplicate groups will be moved to the kept group for each MintPOS ID."
     );
     if (!confirmed) return;
 
@@ -109,10 +114,12 @@ export default function CatalogMenuGroupsPage() {
 
       const removedCount = Array.isArray(json.removed) ? json.removed.length : 0;
       const relinked = typeof json.items_relinked === "number" ? json.items_relinked : 0;
+      const migrated = typeof json.migrated?.length === "number" ? json.migrated.length : Array.isArray(json.migrated) ? json.migrated.length : 0;
+      const inactiveDeleted = typeof json.inactive_deleted === "number" ? json.inactive_deleted : 0;
       setMessage(
-        removedCount
-          ? `Removed ${removedCount} duplicate group${removedCount === 1 ? "" : "s"} and relinked ${relinked} product${relinked === 1 ? "" : "s"}.`
-          : "No duplicate menu groups found."
+        removedCount || migrated || inactiveDeleted
+          ? `Cleaned up menu groups: removed ${removedCount} duplicate${removedCount === 1 ? "" : "s"}, migrated ${migrated}, deleted ${inactiveDeleted} inactive, relinked ${relinked} product${relinked === 1 ? "" : "s"}.`
+          : "No duplicate or inactive menu groups found."
       );
       resetForm();
       await load();
@@ -231,10 +238,19 @@ export default function CatalogMenuGroupsPage() {
 
       <section className={eb.pageCard}>
         <h3 className={eb.pageCardTitle}>Existing groups</h3>
-        {!readOnly && duplicateCount > 0 ? (
+        {!readOnly ? (
           <div className={pageStyles.tableActions}>
-            <button type="button" className={eb.btnSecondary} onClick={() => void removeDuplicates()} disabled={deduping || loading}>
-              {deduping ? "Removing duplicates…" : `Remove ${duplicateCount} duplicate group${duplicateCount === 1 ? "" : "s"}`}
+            <button
+              type="button"
+              className={eb.btnSecondary}
+              onClick={() => void removeDuplicates()}
+              disabled={deduping || loading}
+            >
+              {deduping
+                ? "Cleaning up…"
+                : duplicateCount > 0
+                  ? `Clean up duplicates and inactive (${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"})`
+                  : "Clean up inactive groups"}
             </button>
           </div>
         ) : null}
@@ -256,7 +272,7 @@ export default function CatalogMenuGroupsPage() {
                   <tr key={group.id}>
                     <td>{group.name}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{group.pos_menu_group_id ?? "—"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{group.active ? "Active" : "Inactive"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{group.active !== false ? "Active" : "Inactive"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <button type="button" className={eb.btnSecondary} onClick={() => startEdit(group)}>
                         Edit

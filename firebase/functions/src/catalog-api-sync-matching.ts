@@ -77,15 +77,8 @@ function fieldChanged(existing: unknown, synced: unknown): boolean {
 export function catalogItemFieldsChanged(existing: CatalogRow, synced: CatalogRow): boolean {
   const keys = [
     "name",
-    "consumption_unit",
-    "consumption_uom",
-    "purchase_pack_unit",
     "storage_unit",
     "units_per_purchase_pack",
-    "transfer_unit",
-    "transfer_quantity",
-    "orders_app_uom",
-    "supervisor_uom",
     "track_stock",
     "default_warehouse_id",
     "active",
@@ -108,4 +101,39 @@ export function rowLinkedToApiUuid(
   if (apiUuidSet.has(rowId)) return true;
   const linkedUuid = String(stockApiUuid ?? "").trim();
   return Boolean(linkedUuid && apiUuidSet.has(linkedUuid));
+}
+
+export function normalizeItemKind(value: unknown): "finished" | "ingredient" | "raw" | null {
+  const kind = String(value ?? "").trim().toLowerCase();
+  if (kind === "finished" || kind === "product") return "finished";
+  if (kind === "ingredient") return "ingredient";
+  if (kind === "raw") return "raw";
+  return null;
+}
+
+/** Finished products are created and maintained only in the portal. */
+export function isPortalOnlyCatalogItem(row: CatalogRow): boolean {
+  const kind = normalizeItemKind(row.item_kind);
+  if (kind === "finished") return true;
+  if (kind === "ingredient" || kind === "raw") return false;
+  return !String(row.stock_api_uuid ?? "").trim();
+}
+
+/** Ingredients and raw materials are synced from the stock catalog API. */
+export function isApiManagedCatalogItem(row: CatalogRow): boolean {
+  return !isPortalOnlyCatalogItem(row);
+}
+
+export function isApiManagedItemKind(kind: unknown): boolean {
+  const normalized = normalizeItemKind(kind);
+  return normalized === "ingredient" || normalized === "raw";
+}
+
+export function isPortalOnlyCatalogVariant(
+  itemId: string,
+  lookups: CatalogSyncLookups,
+): boolean {
+  if (!itemId) return true;
+  const parent = lookups.itemsById.get(itemId);
+  return parent ? isPortalOnlyCatalogItem(parent) : true;
 }

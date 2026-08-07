@@ -1,4 +1,5 @@
 import { formatOrdersAppUom } from "./orders-app-uom";
+import type { UomOption } from "@/lib/catalog-uom-fields";
 
 export type OutletOrderPdfItem = {
   name: string;
@@ -199,7 +200,12 @@ function groupHasVariants(group: PdfProductGroup): boolean {
   return group.lines.some((line) => line.showAsVariant);
 }
 
-function buildTableRows(groups: PdfProductGroup[], totalQty: number, totalAmount: number): PdfTableRow[] {
+function buildTableRows(
+  groups: PdfProductGroup[],
+  totalQty: number,
+  totalAmount: number,
+  uomCatalog?: ReadonlyArray<UomOption>,
+): PdfTableRow[] {
   const rows: PdfTableRow[] = [];
 
   for (const group of groups) {
@@ -212,7 +218,7 @@ function buildTableRows(groups: PdfProductGroup[], totalQty: number, totalAmount
           kind: "line",
           label: line.showAsVariant ? line.displayLabel : line.label,
           qty: line.qty,
-          uom: formatOrdersAppUom(line.uom, line.qty),
+          uom: formatOrdersAppUom(line.uom, line.qty, uomCatalog),
           cost: line.cost,
           amount: line.amount,
         });
@@ -225,7 +231,7 @@ function buildTableRows(groups: PdfProductGroup[], totalQty: number, totalAmount
         kind: "line",
         label: line.label,
         qty: line.qty,
-        uom: formatOrdersAppUom(line.uom, line.qty),
+        uom: formatOrdersAppUom(line.uom, line.qty, uomCatalog),
         cost: line.cost,
         amount: line.amount,
       });
@@ -385,6 +391,7 @@ export function buildOutletOrderPdfHtml(options: {
   totalQty: number;
   totalAmount: number;
   downloadFilename?: string;
+  uomCatalog?: ReadonlyArray<UomOption>;
 }): string {
   const {
     logoDataUrl,
@@ -399,10 +406,11 @@ export function buildOutletOrderPdfHtml(options: {
     totalQty,
     totalAmount,
     downloadFilename,
+    uomCatalog,
   } = options;
 
   const groups = groupPdfItems(items);
-  const tableRows = buildTableRows(groups, totalQty, totalAmount);
+  const tableRows = buildTableRows(groups, totalQty, totalAmount, uomCatalog);
   const dataRows = tableRows.filter((row) => row.kind !== "total");
   const totalRow = tableRows.find((row) => row.kind === "total");
   const barcodeTape = buildBarcodeTape(orderNumber);

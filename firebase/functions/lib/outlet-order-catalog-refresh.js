@@ -17,6 +17,32 @@ function toNumber(value, fallback = 0) {
 function readImageUrl(value) {
     return typeof value === "string" && value.trim() ? value.trim() : null;
 }
+function readOrderFields(source) {
+    const ordersAppUom = asText(source.orders_app_uom, "pc");
+    const consumptionUom = asText(source.consumption_uom ?? source.consumption_unit, ordersAppUom);
+    const supervisorUom = asText(source.supervisor_uom, ordersAppUom);
+    const supervisorUomQtyPerUnit = toNumber(source.supervisor_uom_qty_per_unit, 1);
+    const ordersAppCostPrice = toNumber(source.orders_app_cost_price, 0);
+    const uomWeightEnabled = source.uom_weight_enabled === true;
+    const uomWeightGrams = uomWeightEnabled ? toNumber(source.uom_weight_grams, 0) || null : null;
+    return {
+        ordersAppUom,
+        orders_app_uom: ordersAppUom,
+        consumptionUom,
+        consumption_uom: consumptionUom,
+        supervisorUom,
+        supervisor_uom: supervisorUom,
+        supervisorUomQtyPerUnit,
+        supervisor_uom_qty_per_unit: supervisorUomQtyPerUnit,
+        ordersAppCostPrice,
+        orders_app_cost_price: ordersAppCostPrice,
+        sellingPrice: ordersAppCostPrice,
+        uomWeightEnabled,
+        uom_weight_enabled: uomWeightEnabled,
+        uomWeightGrams: uomWeightGrams,
+        uom_weight_grams: uomWeightGrams,
+    };
+}
 async function deleteOutletOrderCatalog(db, outletId) {
     const snapshot = await db.collection("outlet_order_catalog").where("outletId", "==", outletId).get();
     if (snapshot.empty)
@@ -41,22 +67,12 @@ async function materializeOutletOrderCatalog(db, outletId, allowlistRows) {
         const item = itemsById.get(row.item_id);
         if (!item || item.active === false)
             continue;
-        const consumptionUom = asText(item.consumption_uom ?? item.consumption_unit, "each");
-        const ordersAppUom = asText(item.orders_app_uom) || consumptionUom;
-        const supervisorUom = asText(item.supervisor_uom) || ordersAppUom;
-        const ordersAppCostPrice = toNumber(item.orders_app_cost_price ?? item.selling_price ?? item.cost, 0);
         if (row.variant_id) {
             const variant = variantsById.get(row.variant_id);
             if (!variant || variant.active === false)
                 continue;
             const variantImageUrl = readImageUrl(variant.image_url);
             const productImageUrl = readImageUrl(item.image_url);
-            const variantOrdersAppCostPrice = toNumber(variant.orders_app_cost_price ??
-                variant.selling_price ??
-                item.orders_app_cost_price ??
-                item.selling_price ??
-                variant.cost ??
-                item.cost, 0);
             catalogDocs.push({
                 id: `${outletId}_${row.item_id}_${row.variant_id}`,
                 data: {
@@ -68,12 +84,7 @@ async function materializeOutletOrderCatalog(db, outletId, allowlistRows) {
                     variantKey: asText(variant.sku, row.variant_id),
                     name: asText(variant.name, asText(item.name, "Item")),
                     sku: asText(variant.sku) || asText(item.sku) || null,
-                    sellingPrice: variantOrdersAppCostPrice,
-                    ordersAppCostPrice: variantOrdersAppCostPrice,
-                    ordersAppUom: asText(variant.orders_app_uom) || ordersAppUom,
-                    supervisorUom: asText(variant.supervisor_uom) || supervisorUom,
-                    consumptionUom: asText(variant.orders_app_uom) || ordersAppUom,
-                    unitsPerPurchasePack: toNumber(item.units_per_purchase_pack, 1),
+                    ...readOrderFields({ ...item, ...variant }),
                     hasVariations: true,
                     imageUrl: variantImageUrl,
                     image_url: variantImageUrl,
@@ -97,12 +108,7 @@ async function materializeOutletOrderCatalog(db, outletId, allowlistRows) {
                 variantKey: null,
                 name: asText(item.name, "Item"),
                 sku: asText(item.sku) || null,
-                sellingPrice: ordersAppCostPrice,
-                ordersAppCostPrice,
-                ordersAppUom,
-                supervisorUom,
-                consumptionUom: ordersAppUom,
-                unitsPerPurchasePack: toNumber(item.units_per_purchase_pack, 1),
+                ...readOrderFields(item),
                 hasVariations: item.has_variations === true,
                 imageUrl: productImageUrl,
                 image_url: productImageUrl,

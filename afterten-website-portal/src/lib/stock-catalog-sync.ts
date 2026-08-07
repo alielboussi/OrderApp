@@ -20,6 +20,9 @@ import {
   buildCatalogSyncLookups,
   catalogItemFieldsChanged,
   catalogVariantFieldsChanged,
+  isApiManagedItemKind,
+  isPortalOnlyCatalogItem,
+  isPortalOnlyCatalogVariant,
   resolveSyncItemTarget,
   resolveSyncVariantTarget,
   rowLinkedToApiUuid,
@@ -52,6 +55,7 @@ export type StockCatalogSyncReport = {
     deleted_variants: number;
     deleted_related_docs: number;
     skipped_invalid_uuid: number;
+    skipped_portal_only: number;
     outlet_catalog_refreshed: number;
   };
   created: Array<{ uuid: string; name: string }>;
@@ -75,8 +79,9 @@ function cleanUnitName(value: unknown, fallback = "each"): string {
   return text.length ? text : fallback;
 }
 
-function inferItemKind(product: StockApiCatalogProduct): "finished" | "ingredient" | "raw" {
+function inferItemKind(product: StockApiCatalogProduct): "ingredient" | "raw" | null {
   const warehouseName = normalizeWarehouseName(product.warehouse?.name);
+  if (warehouseName.includes("raw")) return "raw";
   if (
     warehouseName.includes("ingredient") ||
     warehouseName.includes("beverage") ||
@@ -85,25 +90,17 @@ function inferItemKind(product: StockApiCatalogProduct): "finished" | "ingredien
   ) {
     return "ingredient";
   }
-  if (warehouseName.includes("raw")) return "raw";
   return "ingredient";
 }
 
 function mapProductUnits(product: StockApiCatalogProduct) {
-  const consumptionUnit = cleanUnitName(product.unit?.name);
-  const storageUnit = cleanUnitName(product.subUnit?.name, consumptionUnit);
+  const storageUnit = cleanUnitName(product.subUnit?.name, "each");
   const unitsPerPurchasePack = Number(product.subUnit?.perUnit ?? 1);
   return {
-    consumption_unit: consumptionUnit,
-    consumption_uom: consumptionUnit,
-    purchase_pack_unit: consumptionUnit,
     storage_unit: storageUnit,
     units_per_purchase_pack: Number.isFinite(unitsPerPurchasePack) && unitsPerPurchasePack > 0
       ? unitsPerPurchasePack
       : 1,
-    transfer_unit: consumptionUnit,
-    transfer_quantity: 1,
-    orders_app_uom: consumptionUnit,
   };
 }
 
@@ -246,6 +243,7 @@ export async function syncStockCatalogToPortal(options?: {
   let updatedItems = 0;
   let updatedVariants = 0;
   let skippedInvalidUuid = 0;
+  let skippedPortalOnly = 0;
 
   for (const product of products) {
     const uuid = String(product.uuid ?? "").trim();
@@ -260,6 +258,10 @@ export async function syncStockCatalogToPortal(options?: {
     const existingVariant = resolveSyncVariantTarget(uuid, lookups);
 
     if (existingVariant) {
+      if (isPortalOnlyCatalogVariant(existingVariant.itemId, lookups)) {
+        skippedPortalOnly += 1;
+        continue;
+      }
       const variantPayload = {
         name: syncedFields.name,
         stock_api_uuid: uuid,
@@ -280,6 +282,10 @@ export async function syncStockCatalogToPortal(options?: {
 
     const existingItem = resolveSyncItemTarget(uuid, lookups);
     if (existingItem) {
+      if (isPortalOnlyCatalogItem(existingItem.existing)) {
+        skippedPortalOnly += 1;
+        continue;
+      }
       if (catalogItemFieldsChanged(existingItem.existing, syncedFields)) {
         await updateFirestoreCatalogItem(existingItem.itemId, syncedFields);
         updatedItems += 1;
@@ -294,13 +300,24 @@ export async function syncStockCatalogToPortal(options?: {
       continue;
     }
 
+    const itemKind = inferItemKind(product);
+    if (!itemKind || !isApiManagedItemKind(itemKind)) {
+      skippedPortalOnly += 1;
+      continue;
+    }
+
     await upsertFirestoreCatalogItemById(uuid, {
       ...syncedFields,
-      item_kind: inferItemKind(product),
+      item_kind: itemKind,
       sku: null,
       supplier_sku: null,
       cost: 0,
       selling_price: 0,
+      consumption_unit: "pc",
+      consumption_uom: "pc",
+      orders_app_uom: "pc",
+      supervisor_uom: "pc",
+      supervisor_uom_qty_per_unit: 1,
       orders_app_cost_price: 0,
       has_variations: false,
       has_recipe: false,
@@ -326,6 +343,7 @@ export async function syncStockCatalogToPortal(options?: {
     for (const item of items) {
       const itemId = String(item.id ?? "");
       if (!itemId || lookups.variantParentIds.has(itemId)) continue;
+      if (isPortalOnlyCatalogItem(item)) continue;
       if (rowLinkedToApiUuid(itemId, item.stock_api_uuid, apiUuidSet)) continue;
       if (item.active === false) continue;
       await updateFirestoreCatalogItem(itemId, {
@@ -340,13 +358,14 @@ export async function syncStockCatalogToPortal(options?: {
     for (const variant of variants) {
       const variantId = String(variant.id ?? "");
       if (!variantId || rowLinkedToApiUuid(variantId, variant.stock_api_uuid, apiUuidSet)) continue;
+      const itemId = String(variant.item_id ?? "");
+      if (isPortalOnlyCatalogVariant(itemId, lookups)) continue;
       if (variant.active === false) continue;
       await updateFirestoreCatalogVariant(variantId, {
         active: false,
         stock_api_missing: true,
         stock_api_synced_at: nowIso(),
       });
-      const itemId = String(variant.item_id ?? "");
       if (itemId) {
         await refreshFirestoreHasVariations(itemId);
         changedItemIds.add(itemId);
@@ -399,6 +418,7 @@ export async function syncStockCatalogToPortal(options?: {
       deleted_variants: deletedVariants,
       deleted_related_docs: deletedRelatedDocs,
       skipped_invalid_uuid: skippedInvalidUuid,
+      skipped_portal_only: skippedPortalOnly,
       outlet_catalog_refreshed: outletCatalogRefreshed,
     },
     created,
