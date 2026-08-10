@@ -6,12 +6,14 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
-import { mapCatalogUomFieldsFromRow, mergeCatalogUomOptionsForStored, parseCatalogUomInput } from "@/lib/catalog-uom-fields";
+import { applyDefaultCatalogUoms, mapCatalogUomFieldsFromRow, mergeCatalogUomOptionsForStored, parseCatalogUomInput } from "@/lib/catalog-uom-fields";
 import { useUomOptions } from "@/lib/use-uom-options";
 import { POS_NUMERIC_SKU_MAX, isValidPosVariantMintSku } from "@/lib/pos-catalog-ids";
 import eb from "../../enterprise.module.css";
 import styles from "../product/product.module.css";
 import { CatalogImageField } from "../CatalogImageField";
+import { SupervisorUomConversionCard } from "../SupervisorUomConversionCard";
+import { readSupervisorUomConversionFromRow } from "@/lib/supervisor-uom-conversion";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -38,8 +40,9 @@ type FormState = {
   selling_price: string;
   orders_app_uom: string;
   supervisor_uom: string;
+  orders_uom_conversion_qty: string;
+  supervisor_uom_conversion_qty: string;
   orders_app_cost_price: string;
-  supervisor_uom_qty_per_unit: string;
   uom_weight_enabled: boolean;
   uom_weight_grams: string;
   image_url: string;
@@ -57,8 +60,9 @@ const defaultForm: FormState = {
   selling_price: "0",
   orders_app_uom: "",
   supervisor_uom: "",
+  orders_uom_conversion_qty: "1",
+  supervisor_uom_conversion_qty: "1",
   orders_app_cost_price: "0",
-  supervisor_uom_qty_per_unit: "1",
   uom_weight_enabled: false,
   uom_weight_grams: "",
   image_url: "",
@@ -71,6 +75,7 @@ function mapVariantToForm(
   incomingItemId = "",
 ): FormState {
   const uoms = mapCatalogUomFieldsFromRow(variant, options);
+  const conversion = readSupervisorUomConversionFromRow(variant);
   return {
     item_id: String(variant.item_id ?? incomingItemId ?? ""),
     name: String(variant.name ?? ""),
@@ -82,8 +87,9 @@ function mapVariantToForm(
     selling_price: String(variant.selling_price ?? 0),
     orders_app_uom: uoms.orders_app_uom,
     supervisor_uom: uoms.supervisor_uom,
+    orders_uom_conversion_qty: String(conversion.orders_uom_conversion_qty),
+    supervisor_uom_conversion_qty: String(conversion.supervisor_uom_conversion_qty),
     orders_app_cost_price: String(variant.orders_app_cost_price ?? variant.selling_price ?? 0),
-    supervisor_uom_qty_per_unit: String(variant.supervisor_uom_qty_per_unit ?? 1),
     uom_weight_enabled: variant.uom_weight_enabled === true,
     uom_weight_grams:
       variant.uom_weight_grams == null || variant.uom_weight_grams === ""
@@ -189,8 +195,24 @@ function VariantFormPage() {
 
   useEffect(() => {
     if (!editingId || !loadedVariant || !uomOptionsReady) return;
-    setForm(mapVariantToForm(loadedVariant, uomOptions, incomingItemId));
+    const mapped = mapVariantToForm(loadedVariant, uomOptions, incomingItemId);
+    const defaults = applyDefaultCatalogUoms(mapped.orders_app_uom, mapped.supervisor_uom, uomOptions);
+    setForm({ ...mapped, ...defaults });
   }, [editingId, loadedVariant, uomOptions, uomOptionsReady, incomingItemId]);
+
+  useEffect(() => {
+    if (editingId || !uomOptionsReady || uomOptions.length === 0) return;
+    setForm((prev) => {
+      const defaults = applyDefaultCatalogUoms(prev.orders_app_uom, prev.supervisor_uom, uomOptions);
+      if (
+        prev.orders_app_uom === defaults.orders_app_uom &&
+        prev.supervisor_uom === defaults.supervisor_uom
+      ) {
+        return prev;
+      }
+      return { ...prev, ...defaults };
+    });
+  }, [editingId, uomOptions, uomOptionsReady]);
 
   const parentOptions = useMemo(() => {
     const selectedId = form.item_id || incomingItemId;
@@ -274,7 +296,8 @@ function VariantFormPage() {
       });
       return;
     }
-    if (!form.orders_app_uom || !form.supervisor_uom) {
+    const resolvedUoms = applyDefaultCatalogUoms(form.orders_app_uom, form.supervisor_uom, uomOptions);
+    if (!resolvedUoms.orders_app_uom || !resolvedUoms.supervisor_uom) {
       setResult({
         ok: false,
         message: "Select OrdersApp UOM and Supervisor UOM from Catalog → UOMs.",
@@ -291,6 +314,16 @@ function VariantFormPage() {
         return;
       }
     }
+    const ordersConversionQty = Number(form.orders_uom_conversion_qty);
+    const supervisorConversionQty = Number(form.supervisor_uom_conversion_qty);
+    if (!Number.isFinite(ordersConversionQty) || ordersConversionQty < 1) {
+      setResult({ ok: false, message: "Orders UOM quantity in the supervisor conversion must be at least 1." });
+      return;
+    }
+    if (!Number.isFinite(supervisorConversionQty) || supervisorConversionQty < 1) {
+      setResult({ ok: false, message: "Supervisor UOM quantity in the conversion must be at least 1." });
+      return;
+    }
     setSaving(true);
     setResult(null);
     try {
@@ -303,9 +336,10 @@ function VariantFormPage() {
         qty_decimal_places: 2,
         cost: toNumber(form.cost, 0, -0.0001),
         selling_price: toNumber(form.selling_price, 0, -0.0001),
-        orders_app_uom: parseCatalogUomInput(form.orders_app_uom, uomOptions, ""),
-        supervisor_uom: parseCatalogUomInput(form.supervisor_uom, uomOptions, ""),
-        supervisor_uom_qty_per_unit: toNumber(form.supervisor_uom_qty_per_unit, 1),
+        orders_app_uom: parseCatalogUomInput(resolvedUoms.orders_app_uom, uomOptions, ""),
+        supervisor_uom: parseCatalogUomInput(resolvedUoms.supervisor_uom, uomOptions, ""),
+        orders_uom_conversion_qty: Number(form.orders_uom_conversion_qty),
+        supervisor_uom_conversion_qty: Number(form.supervisor_uom_conversion_qty),
         orders_app_cost_price: toNumber(form.orders_app_cost_price, 0, -0.0001),
         uom_weight_enabled: form.uom_weight_enabled,
         uom_weight_grams: form.uom_weight_enabled ? toNumber(form.uom_weight_grams, 0) : null,
@@ -432,23 +466,6 @@ function VariantFormPage() {
               options={formUomOptions}
               disabled={!uomOptionsReady || formUomOptions.length === 0}
             />
-            <Select
-              label="Supervisor Uom"
-              hint="Unit of measure shown on supervisor order screens and warehouse portal"
-              value={form.supervisor_uom}
-              onChange={(v) => handleChange("supervisor_uom", v)}
-              options={formUomOptions}
-              disabled={!uomOptionsReady || formUomOptions.length === 0}
-            />
-            <Field
-              type="number"
-              label="Outlet units in one supervisor unit"
-              hint="Example: 25 means 25 outlet pieces = 1 supervisor tray"
-              value={form.supervisor_uom_qty_per_unit}
-              onChange={(v) => handleChange("supervisor_uom_qty_per_unit", v)}
-              step="1"
-              min="1"
-            />
             <Field
               type="number"
               label="Orders app cost price"
@@ -459,6 +476,23 @@ function VariantFormPage() {
               min="0"
             />
           </div>
+        </div>
+
+        <div className={styles.sectionCard}>
+          <SupervisorUomConversionCard
+            ordersAppUom={form.orders_app_uom}
+            supervisorUom={form.supervisor_uom}
+            ordersUomConversionQty={form.orders_uom_conversion_qty}
+            supervisorUomConversionQty={form.supervisor_uom_conversion_qty}
+            uomOptions={formUomOptions}
+            uomOptionsReady={uomOptionsReady}
+            disabled={readOnly || saving}
+            onSupervisorUomChange={(value) => handleChange("supervisor_uom", value)}
+            onOrdersUomConversionQtyChange={(value) => handleChange("orders_uom_conversion_qty", value)}
+            onSupervisorUomConversionQtyChange={(value) =>
+              handleChange("supervisor_uom_conversion_qty", value)
+            }
+          />
         </div>
 
         <div className={styles.sectionCard}>
@@ -639,7 +673,11 @@ function Select({ label, hint, value, onChange, options, required, disabled }: S
         required={required}
         disabled={disabled}
       >
-        <option value="">{options.length ? "Select from UOM catalog…" : "No UOMs — add in Catalog → UOMs"}</option>
+        {options.length === 0 ? (
+          <option value="">No UOMs — add in Catalog → UOMs</option>
+        ) : !value ? (
+          <option value="">Select a UOM…</option>
+        ) : null}
         {options.map((option) => (
           <option key={option.value || option.label} value={option.value}>
             {option.label}

@@ -1,4 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { getCompanionProductIdsForAllowlistedSources } from "./order-companion-products";
+import { readOrdersAppDisplayOrderFromRow } from "./orders-app-display-order";
 
 function asText(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -17,14 +19,32 @@ function readImageUrl(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function resolveOrdersAppDisplayName(source: Record<string, unknown>, fallback: string): string {
+  const special = asText(source.orders_app_name) || asText(source.ordersAppName);
+  if (special) return special;
+  return fallback;
+}
+
+function readSupervisorUomQtyPerUnit(source: Record<string, unknown>): number {
+  const ordersQty = toNumber(source.orders_uom_conversion_qty ?? source.ordersUomConversionQty, 0);
+  const supervisorQty = toNumber(source.supervisor_uom_conversion_qty ?? source.supervisorUomConversionQty, 0);
+  if (ordersQty > 0 && supervisorQty > 0) {
+    return Math.max(1, Math.round(ordersQty / supervisorQty));
+  }
+  const perUnit = toNumber(source.supervisor_uom_qty_per_unit ?? source.supervisorUomQtyPerUnit, 1);
+  return perUnit > 0 ? perUnit : 1;
+}
+
 function readOrderFields(source: Record<string, unknown>) {
   const ordersAppUom = asText(source.orders_app_uom, "pc");
   const consumptionUom = asText(source.consumption_uom ?? source.consumption_unit, ordersAppUom);
   const supervisorUom = asText(source.supervisor_uom, ordersAppUom);
-  const supervisorUomQtyPerUnit = toNumber(source.supervisor_uom_qty_per_unit, 1);
+  const supervisorUomQtyPerUnit = readSupervisorUomQtyPerUnit(source);
+  const unitsPerPurchasePack = toNumber(source.units_per_purchase_pack, 1) || 1;
   const ordersAppCostPrice = toNumber(source.orders_app_cost_price, 0);
   const uomWeightEnabled = source.uom_weight_enabled === true;
   const uomWeightGrams = uomWeightEnabled ? toNumber(source.uom_weight_grams, 0) || null : null;
+  const ordersAppDisplayOrder = readOrdersAppDisplayOrderFromRow(source);
   return {
     ordersAppUom,
     orders_app_uom: ordersAppUom,
@@ -34,6 +54,8 @@ function readOrderFields(source: Record<string, unknown>) {
     supervisor_uom: supervisorUom,
     supervisorUomQtyPerUnit,
     supervisor_uom_qty_per_unit: supervisorUomQtyPerUnit,
+    unitsPerPurchasePack,
+    units_per_purchase_pack: unitsPerPurchasePack,
     ordersAppCostPrice,
     orders_app_cost_price: ordersAppCostPrice,
     sellingPrice: ordersAppCostPrice,
@@ -41,6 +63,8 @@ function readOrderFields(source: Record<string, unknown>) {
     uom_weight_enabled: uomWeightEnabled,
     uomWeightGrams: uomWeightGrams,
     uom_weight_grams: uomWeightGrams,
+    ordersAppDisplayOrder,
+    orders_app_display_order: ordersAppDisplayOrder,
   };
 }
 
@@ -80,16 +104,22 @@ async function materializeOutletOrderCatalog(
       if (!variant || variant.active === false) continue;
       const variantImageUrl = readImageUrl(variant.image_url);
       const productImageUrl = readImageUrl(item.image_url);
+      const catalogName = asText(item.name, "Item");
+      const variantName = asText(variant.name, catalogName);
+      const itemOrdersAppName = asText(item.orders_app_name) || asText(item.ordersAppName) || null;
+      const ordersAppName = resolveOrdersAppDisplayName({ ...item, ...variant }, variantName);
       catalogDocs.push({
         id: `${outletId}_${row.item_id}_${row.variant_id}`,
         data: {
           outletId,
           productId: row.item_id,
           variantId: row.variant_id,
-          productName: asText(item.name, "Item"),
-          product_name: asText(item.name, "Item"),
+          productName: catalogName,
+          product_name: catalogName,
+          ordersAppName: itemOrdersAppName,
+          orders_app_name: itemOrdersAppName,
           variantKey: asText(variant.sku, row.variant_id),
-          name: asText(variant.name, asText(item.name, "Item")),
+          name: ordersAppName,
           sku: asText(variant.sku) || asText(item.sku) || null,
           ...readOrderFields({ ...item, ...variant }),
           hasVariations: true,
@@ -105,16 +135,21 @@ async function materializeOutletOrderCatalog(
     }
 
     const productImageUrl = readImageUrl(item.image_url);
+    const catalogName = asText(item.name, "Item");
+    const itemOrdersAppName = asText(item.orders_app_name) || asText(item.ordersAppName) || null;
+    const ordersAppName = resolveOrdersAppDisplayName(item, catalogName);
     catalogDocs.push({
       id: `${outletId}_${row.item_id}`,
       data: {
         outletId,
         productId: row.item_id,
         variantId: null,
-        productName: asText(item.name, "Item"),
-        product_name: asText(item.name, "Item"),
+        productName: catalogName,
+        product_name: catalogName,
+        ordersAppName: itemOrdersAppName,
+        orders_app_name: itemOrdersAppName,
         variantKey: null,
-        name: asText(item.name, "Item"),
+        name: ordersAppName,
         sku: asText(item.sku) || null,
         ...readOrderFields(item),
         hasVariations: item.has_variations === true,
@@ -128,6 +163,50 @@ async function materializeOutletOrderCatalog(
     });
   }
 
+  const allowlistedProductIds = [
+    ...new Set(
+      allowlistRows
+        .filter((row) => !row.variant_id)
+        .map((row) => row.item_id)
+        .filter((itemId) => itemId.length > 0),
+    ),
+  ];
+  const existingProductIds = new Set(
+    catalogDocs.map((entry) => String(entry.data.productId ?? "").trim()).filter(Boolean),
+  );
+
+  for (const companionId of getCompanionProductIdsForAllowlistedSources(allowlistedProductIds)) {
+    if (existingProductIds.has(companionId)) continue;
+    const item = itemsById.get(companionId);
+    if (!item || item.active === false) continue;
+    const productImageUrl = readImageUrl(item.image_url);
+    const name = asText(item.name, "Companion item");
+    catalogDocs.push({
+      id: `${outletId}_${companionId}`,
+      data: {
+        outletId,
+        productId: companionId,
+        variantId: null,
+        productName: name,
+        product_name: name,
+        variantKey: null,
+        name,
+        sku: asText(item.sku) || null,
+        ...readOrderFields(item),
+        hasVariations: item.has_variations === true,
+        imageUrl: productImageUrl,
+        image_url: productImageUrl,
+        productImageUrl,
+        product_image_url: productImageUrl,
+        ordersBrowseVisible: false,
+        orders_browse_visible: false,
+        active: true,
+        updatedAt: now,
+      },
+    });
+    existingProductIds.add(companionId);
+  }
+
   await deleteOutletOrderCatalog(db, outletId);
   if (!catalogDocs.length) return;
 
@@ -135,7 +214,7 @@ async function materializeOutletOrderCatalog(
   for (let index = 0; index < catalogDocs.length; index += batchSize) {
     const batch = db.batch();
     for (const entry of catalogDocs.slice(index, index + batchSize)) {
-      batch.set(db.collection("outlet_order_catalog").doc(entry.id), entry.data, { merge: true });
+      batch.set(db.collection("outlet_order_catalog").doc(entry.id), entry.data);
     }
     await batch.commit();
   }

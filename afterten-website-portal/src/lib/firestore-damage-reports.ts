@@ -124,7 +124,7 @@ function mapDamageReport(id: string, data: Record<string, unknown>): DamageRepor
 }
 
 export async function listFirestoreDamageReports(options: {
-  date: string;
+  date?: string | null;
   outletId?: string | null;
 }): Promise<{ reports: DamageReportRow[] }> {
   const db = getFirestoreDb();
@@ -135,7 +135,7 @@ export async function listFirestoreDamageReports(options: {
   const snapshot = await query.get();
   const reports = snapshot.docs
     .map((doc) => mapDamageReport(doc.id, doc.data() as Record<string, unknown>))
-    .filter((row) => isTransferOrderOnDate(row.reported_at, options.date));
+    .filter((row) => !options.date || isTransferOrderOnDate(row.reported_at, options.date));
 
   return { reports };
 }

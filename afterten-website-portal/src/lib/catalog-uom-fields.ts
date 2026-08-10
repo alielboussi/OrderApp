@@ -120,27 +120,63 @@ export function mapCatalogUomFieldsFromRow(
   row: Record<string, unknown>,
   options: ReadonlyArray<UomOption> = [],
 ) {
-  const ordersApp = parseStoredCatalogUom(
-    readText(row, ["orders_app_uom", "ordersAppUom"]),
-    options,
-    "",
-  );
-  const consumption = parseStoredCatalogUom(
-    readText(row, ["consumption_unit", "consumption_uom", "consumptionUom"]) ?? ordersApp,
-    options,
-    ordersApp,
-  );
-  const supervisor = parseStoredCatalogUom(
-    readText(row, ["supervisor_uom", "supervisorUom"]) ?? ordersApp,
-    options,
-    ordersApp,
-  );
+  const consumptionRaw =
+    readText(row, ["consumption_unit", "consumption_uom", "consumptionUom"]) ?? "";
+  const ordersAppRaw =
+    readText(row, ["orders_app_uom", "ordersAppUom"]) ?? consumptionRaw;
+  const supervisorRaw =
+    readText(row, ["supervisor_uom", "supervisorUom"]) ?? ordersAppRaw;
+
+  const ordersApp = parseStoredCatalogUom(ordersAppRaw, options, ordersAppRaw);
+  const consumption = parseStoredCatalogUom(consumptionRaw, options, ordersAppRaw) || ordersApp;
+  const supervisor = parseStoredCatalogUom(supervisorRaw, options, ordersAppRaw);
 
   return {
     consumption_unit: consumption,
     orders_app_uom: ordersApp,
     supervisor_uom: supervisor,
   };
+}
+
+function readBodyUom(
+  body: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  return readText(body, keys);
+}
+
+/** Resolve OrdersApp / Supervisor UOM from request body, including legacy consumption fields. */
+export function resolveBodyCatalogUoms(
+  body: Record<string, unknown>,
+  options: ReadonlyArray<UomOption> = [],
+): { orders_app_uom: string; supervisor_uom: string; consumption_uom: string } {
+  const consumptionRaw =
+    readBodyUom(body, ["consumption_unit", "consumption_uom", "consumptionUom"]) ?? "";
+  const ordersAppRaw =
+    readBodyUom(body, ["orders_app_uom", "ordersAppUom"]) ?? consumptionRaw;
+  const supervisorRaw =
+    readBodyUom(body, ["supervisor_uom", "supervisorUom"]) ?? ordersAppRaw;
+
+  const ordersApp = parseCatalogUomInput(ordersAppRaw, options, ordersAppRaw);
+  const supervisor = parseCatalogUomInput(supervisorRaw, options, ordersAppRaw);
+  const consumption = parseCatalogUomInput(consumptionRaw, options, ordersApp) || ordersApp;
+
+  return {
+    orders_app_uom: ordersApp,
+    supervisor_uom: supervisor,
+    consumption_uom: consumption,
+  };
+}
+
+export function applyDefaultCatalogUoms(
+  ordersAppUom: string,
+  supervisorUom: string,
+  options: ReadonlyArray<UomOption> = [],
+): { orders_app_uom: string; supervisor_uom: string } {
+  const fallback = catalogUomFallback(options);
+  const orders_app_uom = ordersAppUom.trim() || fallback;
+  const supervisor_uom = supervisorUom.trim() || orders_app_uom || fallback;
+  return { orders_app_uom, supervisor_uom };
 }
 
 /** Include stored codes in select options so edit forms show the saved UOM even if inactive. */

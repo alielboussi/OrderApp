@@ -1,3 +1,5 @@
+import { toSupervisorDisplayQty } from "@/lib/supervisor-uom-qty";
+
 export type OrderTotalOrderedInput = {
   outlet_qty: number;
   supervisor_uom_qty_per_unit: number;
@@ -54,7 +56,7 @@ export function computeOrderTotalOrdered(input: OrderTotalOrderedInput): OrderTo
     "pc";
 
   return {
-    total_ordered: outletQty * perUnit,
+    total_ordered: toSupervisorDisplayQty(outletQty, perUnit),
     total_ordered_unit: unit,
     uom_weight_enabled: false,
     uom_weight_grams: null,

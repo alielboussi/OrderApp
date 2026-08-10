@@ -5,10 +5,12 @@ import {
   listFirestoreCatalogVariants,
 } from "@/lib/firestore-catalog-store";
 import { isOrdersAppOutlet } from "@/lib/firestore-outlets";
-import { buildOutletOrderCatalogOrderFields, readCatalogOrderFieldsFromRow } from "@/lib/catalog-order-fields";
+import { buildOutletOrderCatalogOrderFields, readCatalogOrderFieldsFromRow, resolveOrdersAppDisplayName } from "@/lib/catalog-order-fields";
 import type { AllowlistEntry, OutletAuthAssignment } from "@/lib/outlet-catalog-access";
 import { normalizeCatalogAccessItems } from "@/lib/outlet-catalog-access";
 import { resolveCatalogImageUrl } from "@/lib/catalog-image-url";
+import { buildCompanionOutletOrderCatalogDoc } from "@/lib/companion-catalog";
+import { getCompanionProductIdsForAllowlistedSources } from "@/lib/order-qty-rules";
 
 function readCatalogImageUrl(...values: unknown[]): string | null {
   for (const value of values) {
@@ -71,6 +73,10 @@ async function materializeOutletOrderCatalog(
       if (!variant || variant.active === false) continue;
       const orderFields = readCatalogOrderFieldsFromRow({ ...item, ...variant });
       const variantOrdersAppCostPrice = orderFields.orders_app_cost_price;
+      const catalogName = asText(item.name, "Item");
+      const variantName = asText(variant.name, catalogName);
+      const itemOrdersAppName = asText(item.orders_app_name) || asText(item.ordersAppName) || null;
+      const ordersAppName = resolveOrdersAppDisplayName({ ...item, ...variant }, variantName);
       const docId = `${outletId}_${row.item_id}_${row.variant_id}`;
       const variantImageUrl = readCatalogImageUrl(variant.image_url);
       const productImageUrl = readCatalogImageUrl(item.image_url);
@@ -80,11 +86,13 @@ async function materializeOutletOrderCatalog(
           outletId,
           productId: row.item_id,
           variantId: row.variant_id,
-          productName: asText(item.name, "Item"),
-          product_name: asText(item.name, "Item"),
+          productName: catalogName,
+          product_name: catalogName,
+          ordersAppName: itemOrdersAppName,
+          orders_app_name: itemOrdersAppName,
           variantKey: asText(variant.sku, row.variant_id),
           itemKind,
-          name: asText(variant.name, asText(item.name, "Item")),
+          name: ordersAppName,
           sku: asText(variant.sku) || asText(item.sku) || null,
           cost: toNumber(variant.cost ?? item.cost, 0),
           ...buildOutletOrderCatalogOrderFields({ ...item, ...variant }),
@@ -102,17 +110,22 @@ async function materializeOutletOrderCatalog(
 
     const docId = `${outletId}_${row.item_id}`;
     const productImageUrl = readCatalogImageUrl(item.image_url);
+    const catalogName = asText(item.name, "Item");
+    const itemOrdersAppName = asText(item.orders_app_name) || asText(item.ordersAppName) || null;
+    const ordersAppName = resolveOrdersAppDisplayName(item, catalogName);
     catalogDocs.push({
       id: docId,
       data: {
         outletId,
         productId: row.item_id,
         variantId: null,
-        productName: asText(item.name, "Item"),
-        product_name: asText(item.name, "Item"),
+        productName: catalogName,
+        product_name: catalogName,
+        ordersAppName: itemOrdersAppName,
+        orders_app_name: itemOrdersAppName,
         variantKey: null,
         itemKind,
-        name: asText(item.name, "Item"),
+        name: ordersAppName,
         sku: asText(item.sku) || null,
         cost: toNumber(item.cost, 0),
         ...buildOutletOrderCatalogOrderFields(item),
@@ -127,6 +140,27 @@ async function materializeOutletOrderCatalog(
     });
   }
 
+  const allowlistedProductIds = [
+    ...new Set(
+      allowlistRows
+        .filter((row) => !row.variant_id)
+        .map((row) => row.item_id)
+        .filter((itemId) => itemId.length > 0),
+    ),
+  ];
+  const existingProductIds = new Set(
+    catalogDocs.map((entry) => String(entry.data.productId ?? "").trim()).filter(Boolean),
+  );
+
+  for (const companionId of getCompanionProductIdsForAllowlistedSources(allowlistedProductIds)) {
+    if (existingProductIds.has(companionId)) continue;
+    const item = itemsById.get(companionId);
+    if (!item || item.active === false) continue;
+    const companionDoc = buildCompanionOutletOrderCatalogDoc(outletId, { ...item, id: companionId }, now);
+    catalogDocs.push(companionDoc);
+    existingProductIds.add(companionId);
+  }
+
   await deleteOutletOrderCatalog(outletId);
 
   if (catalogDocs.length === 0) return;
@@ -135,7 +169,7 @@ async function materializeOutletOrderCatalog(
   for (let index = 0; index < catalogDocs.length; index += batchSize) {
     const batch = db.batch();
     for (const entry of catalogDocs.slice(index, index + batchSize)) {
-      batch.set(db.collection("outlet_order_catalog").doc(entry.id), entry.data, { merge: true });
+      batch.set(db.collection("outlet_order_catalog").doc(entry.id), entry.data);
     }
     await batch.commit();
   }

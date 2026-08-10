@@ -1,9 +1,15 @@
 export function resolveSupervisorUomQtyPerUnit(
-  row: { supervisor_uom_qty_per_unit?: unknown } | null | undefined,
+  row?: { supervisor_uom_qty_per_unit?: unknown; supervisorUomQtyPerUnit?: unknown } | null,
 ): number {
-  const explicit = Number(row?.supervisor_uom_qty_per_unit);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  return 1;
+  if (!row) return 1;
+  const perUnit =
+    typeof row.supervisor_uom_qty_per_unit === "number"
+      ? row.supervisor_uom_qty_per_unit
+      : typeof row.supervisorUomQtyPerUnit === "number"
+        ? row.supervisorUomQtyPerUnit
+        : Number(row.supervisor_uom_qty_per_unit ?? row.supervisorUomQtyPerUnit);
+  if (!Number.isFinite(perUnit) || perUnit <= 0) return 1;
+  return Math.floor(perUnit);
 }
 
 /** Stored order qty is always in outlet/base units. */

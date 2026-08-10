@@ -113,7 +113,7 @@ export function applyCatalogProductToOrderItem(
   if (item.product_id && product.product_id !== item.product_id) {
     throw new Error("Variant must stay within the same base product.");
   }
-  const packageContains = product.supervisor_uom_qty_per_unit || 1;
+  const packageContains = resolveSupervisorUomQtyPerUnit(product);
   const qty = Math.max(1, item.qty ?? 1);
   const cost = Number(product.selling_price ?? 0);
   return {
@@ -161,13 +161,16 @@ export function resolveCatalogRowForOrderItem(
     if (byVariantKey) return byVariantKey;
   }
 
+  const withoutVariant = rows.find((row) => !row.variant_id);
+  if (withoutVariant) return withoutVariant;
+
   const itemName = String(item.name ?? "").trim();
   if (itemName) {
     const byName = rows.find((row) => row.name.trim() === itemName);
     if (byName) return byName;
   }
 
-  return rows.find((row) => !row.variant_id) ?? rows[0];
+  return rows[0];
 }
 
 export function resolveBaseProductNameFromCatalog(

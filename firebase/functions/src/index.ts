@@ -50,3 +50,4 @@ export {
 } from "./damage-reports";
 export { getStockControlSnapshot } from "./stock-control";
 export { syncStockCatalog, syncStockCatalogScheduled } from "./stock-catalog-sync";
+export { listOutletOrderCatalog } from "./outlet-order-catalog-list";

@@ -68,14 +68,19 @@ export async function createFirestoreUomOption(input: {
     throw new Error("A UOM with this code already exists.");
   }
 
-  await ref.set({
+  const payload = {
     code,
     label,
     active: record.active,
     sort_order: record.sort_order,
     updated_at: now,
-    deleted_at: FieldValue.delete(),
-  });
+  };
+
+  if (existing.exists) {
+    await ref.set({ ...payload, deleted_at: FieldValue.delete() }, { merge: true });
+  } else {
+    await ref.set(payload);
+  }
 
   return record;
 }

@@ -1,12 +1,19 @@
 "use client";
 
 import { formatCatalogUomDisplay } from "@/lib/catalog-uom-fields";
+import {
+  formatSupervisorUomConversionSummary,
+  readSupervisorUomConversionFromRow,
+} from "@/lib/supervisor-uom-conversion";
 import type { UomOption } from "@/lib/use-uom-options";
 import styles from "./CatalogUomCardMeta.module.css";
 
 type UomRow = {
   orders_app_uom?: string | null;
   supervisor_uom?: string | null;
+  orders_uom_conversion_qty?: number | null;
+  supervisor_uom_conversion_qty?: number | null;
+  supervisor_uom_qty_per_unit?: number | null;
 };
 
 type CatalogUomCardMetaProps = {
@@ -23,7 +30,10 @@ export function CatalogUomCardMeta({
   editingNote = null,
 }: CatalogUomCardMetaProps) {
   const outlet = formatCatalogUomDisplay(row.orders_app_uom, uomOptions);
-  const supervisor = formatCatalogUomDisplay(row.supervisor_uom, uomOptions);
+  const supervisorRaw = formatCatalogUomDisplay(row.supervisor_uom, uomOptions);
+  const supervisor = supervisorRaw || outlet;
+  const conversion = readSupervisorUomConversionFromRow(row as Record<string, unknown>);
+  const conversionSummary = formatSupervisorUomConversionSummary(conversion, outlet, supervisor);
 
   return (
     <div className={styles.uomMeta}>
@@ -37,6 +47,12 @@ export function CatalogUomCardMeta({
         <span className={styles.uomLabel}>Supervisor</span>
         <span className={styles.uomValue} title={supervisor || undefined}>
           {supervisor || "—"}
+        </span>
+      </div>
+      <div className={styles.uomRow}>
+        <span className={styles.uomLabel}>Conversion</span>
+        <span className={styles.uomValue} title={conversionSummary}>
+          {conversionSummary}
         </span>
       </div>
       {editingNote ? (

@@ -10,9 +10,11 @@ import {
   getTransferOrderStatusTone,
 } from "@/lib/transfer-order-status";
 import { buildOutletOrderPdfFilename, buildOutletOrderPdfHtml, formatOutletOrderMoney } from "@/lib/outlet-order-pdf";
+import { expandPortalOrderItemsWithCompanions } from "@/lib/order-qty-rules";
 import { buildOutletDamagePdfFilename, buildOutletDamagePdfHtml } from "@/lib/outlet-damage-pdf";
 import { useUomCatalog } from "@/lib/use-uom-options";
 import {
+  getSupervisorDisplayQtyForOrderItem,
   resolveBaseProductNameFromCatalog,
   resolveSupervisorUomForOrderItem,
   sumPortalOrderItems,
@@ -466,23 +468,29 @@ function OutletOrdersPage() {
         }
       }
 
-      const items = (itemsJson.items ?? []).map((row) => {
-        const qty = row.qty ?? 0;
-        const cost = row.cost ?? 0;
-        const amount = row.amount ?? cost * qty;
-        const portalItem: PortalOrderItem = {
-          id: row.order_id,
-          order_id: row.order_id,
+      const expandedItems = expandPortalOrderItemsWithCompanions(
+        (itemsJson.items ?? []).map((row, index) => ({
+          id: String(row.id ?? `line-${index}`),
+          order_id: orderId,
           product_id: row.product_id ?? null,
           variant_key: row.variant_key ?? null,
           name: row.name ?? "Item",
           receiving_uom: row.receiving_uom,
-          consumption_uom: null,
-          qty,
-          cost,
-          amount,
-          package_contains: null,
-        };
+          consumption_uom: row.consumption_uom ?? null,
+          qty: row.qty ?? 0,
+          cost: row.cost ?? 0,
+          amount: row.amount ?? (row.cost ?? 0) * (row.qty ?? 0),
+          package_contains: row.package_contains ?? null,
+        })),
+        catalog,
+        orderId,
+      );
+
+      const items = expandedItems.map((row) => {
+        const cost = row.cost ?? 0;
+        const portalItem: PortalOrderItem = row;
+        const qty = getSupervisorDisplayQtyForOrderItem(portalItem, catalog);
+        const amount = row.amount ?? cost * (row.qty ?? 0);
         return {
           name: row.name ?? "Item",
           productId: row.product_id ?? null,

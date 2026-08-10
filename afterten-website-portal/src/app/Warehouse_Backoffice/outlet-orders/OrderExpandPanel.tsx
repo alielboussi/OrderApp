@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getWarehouseAccessToken } from "@/lib/warehouse-auth-client";
-import { bumpOrderQty } from "@/lib/order-qty-rules";
+import { bumpOrderQty, expandPortalOrderItemsWithCompanions, isCompanionProduct, syncCompanionPortalOrderItems } from "@/lib/order-qty-rules";
 import {
   applyCatalogProductToOrderItem,
   clonePortalOrderItems,
@@ -102,7 +102,11 @@ export function OrderExpandPanel({
         }
 
         if (!active) return;
-        const items = normalizeItems(itemsJson.items ?? []);
+        const items = expandPortalOrderItemsWithCompanions(
+          normalizeItems(itemsJson.items ?? []),
+          catalogRows,
+          orderId,
+        );
         setServerItems(items);
         setDraftItems(clonePortalOrderItems(items));
         setCatalog(catalogRows);
@@ -138,13 +142,23 @@ export function OrderExpandPanel({
     : [];
 
   function handleQtyBump(item: PortalOrderItem, direction: 1 | -1) {
+    if (isCompanionProduct(item.product_id)) return;
     setDraftItems((current) => {
       const row = current.find((entry) => entry.id === item.id);
       if (!row) return current;
       const displayQty = getSupervisorDisplayQtyForOrderItem(row, catalog);
       const nextDisplayQty = bumpOrderQty(displayQty, row.product_id, direction);
-      return current.map((entry) =>
+      const updated = current.map((entry) =>
         entry.id === item.id ? updatePortalOrderItemQty(entry, nextDisplayQty, catalog) : entry,
+      );
+      const sourceItem = updated.find((entry) => entry.id === item.id);
+      if (!sourceItem?.product_id) return updated;
+      return syncCompanionPortalOrderItems(
+        updated,
+        catalog,
+        orderId,
+        sourceItem.product_id,
+        sourceItem.qty ?? 0,
       );
     });
   }
@@ -156,6 +170,7 @@ export function OrderExpandPanel({
       onError("");
       const token = await getWarehouseAccessToken();
       if (!token) throw new Error("Not signed in");
+      const itemsToSave = expandPortalOrderItemsWithCompanions(draftItems, catalog, orderId);
       const res = await fetch(`/api/outlet-orders/${encodeURIComponent(orderId)}/items`, {
         method: "PATCH",
         headers: {
@@ -163,7 +178,7 @@ export function OrderExpandPanel({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          items: draftItems.map((item) => toPortalOrderItemPayload(item)),
+          items: itemsToSave.map((item) => toPortalOrderItemPayload(item)),
         }),
       });
       const json = (await res.json()) as { items?: PortalOrderItem[]; error?: string };
@@ -191,7 +206,7 @@ export function OrderExpandPanel({
     <div className={styles.expandPanel}>
       {editable ? (
         <p className={styles.expandHint}>
-          Tap a variant line to replace it. Use +/− to change quantities, then save.
+          Tap a variant line to replace it. Shawarma Bread and Shawarma Paper qty follow Chicken Shawarma Trays. Use +/− then save.
         </p>
       ) : (
         <p className={styles.expandHint}>
@@ -217,6 +232,10 @@ export function OrderExpandPanel({
               const label = line.showAsVariant ? `(-) ${line.displayLabel}` : line.displayLabel;
               const variantChoices = getCatalogVariantsForProduct(catalog, item.product_id ?? "");
               const canPickVariant = editable && line.showAsVariant && variantChoices.length > 0;
+              const isCompanion = isCompanionProduct(item.product_id);
+              const displayQty = isCompanion
+                ? (item.qty ?? 0)
+                : getSupervisorDisplayQtyForOrderItem(item, catalog);
               return (
                 <div key={line.key} className={styles.detailRow}>
                   <span>
@@ -233,7 +252,7 @@ export function OrderExpandPanel({
                     )}
                   </span>
                   <span>
-                    {editable ? (
+                    {editable && !isCompanion ? (
                       <div className={styles.qtyControls}>
                         <button
                           type="button"
@@ -242,9 +261,7 @@ export function OrderExpandPanel({
                         >
                           −
                         </button>
-                        <span className={styles.qtyValue}>
-                          {getSupervisorDisplayQtyForOrderItem(item, catalog)}
-                        </span>
+                        <span className={styles.qtyValue}>{displayQty}</span>
                         <button
                           type="button"
                           className={styles.qtyButton}
@@ -254,7 +271,7 @@ export function OrderExpandPanel({
                         </button>
                       </div>
                     ) : (
-                      item.qty ?? 0
+                      displayQty
                     )}
                   </span>
                   <span>{formatOrdersAppUom(resolveSupervisorUomForOrderItem(item, catalog), item.qty ?? 1, uoms)}</span>

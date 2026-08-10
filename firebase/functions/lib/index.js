@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncStockCatalogScheduled = exports.syncStockCatalog = exports.getStockControlSnapshot = exports.completeDamageReport = exports.dispatchDamageReport = exports.getDamageReportSignatureUrl = exports.getDamageReportPhotoUrl = exports.reviewDamageReport = exports.submitDamageReport = exports.updateTransferOrderItems = exports.peekNextOrderNumber = exports.getTransferOrderSignatureUrl = exports.dispatchTransferOrder = exports.acceptTransferOrder = exports.completeTransferOrder = exports.placeTransferOrder = exports.health = void 0;
+exports.listOutletOrderCatalog = exports.syncStockCatalogScheduled = exports.syncStockCatalog = exports.getStockControlSnapshot = exports.completeDamageReport = exports.dispatchDamageReport = exports.getDamageReportSignatureUrl = exports.getDamageReportPhotoUrl = exports.reviewDamageReport = exports.submitDamageReport = exports.updateTransferOrderItems = exports.peekNextOrderNumber = exports.getTransferOrderSignatureUrl = exports.dispatchTransferOrder = exports.acceptTransferOrder = exports.completeTransferOrder = exports.placeTransferOrder = exports.health = void 0;
 const app_1 = require("firebase-admin/app");
 const https_1 = require("firebase-functions/v2/https");
 const schema_1 = require("./schema");
@@ -42,4 +42,6 @@ Object.defineProperty(exports, "getStockControlSnapshot", { enumerable: true, ge
 var stock_catalog_sync_1 = require("./stock-catalog-sync");
 Object.defineProperty(exports, "syncStockCatalog", { enumerable: true, get: function () { return stock_catalog_sync_1.syncStockCatalog; } });
 Object.defineProperty(exports, "syncStockCatalogScheduled", { enumerable: true, get: function () { return stock_catalog_sync_1.syncStockCatalogScheduled; } });
+var outlet_order_catalog_list_1 = require("./outlet-order-catalog-list");
+Object.defineProperty(exports, "listOutletOrderCatalog", { enumerable: true, get: function () { return outlet_order_catalog_list_1.listOutletOrderCatalog; } });
 //# sourceMappingURL=index.js.map

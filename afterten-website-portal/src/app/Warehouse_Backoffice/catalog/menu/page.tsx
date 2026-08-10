@@ -13,6 +13,7 @@ import styles from "./menu.module.css";
 import { CatalogImageThumb } from "../CatalogImageThumb";
 import { CatalogCardImageMenu } from "../CatalogCardImageMenu";
 import { CatalogUomCardMeta } from "../CatalogUomCardMeta";
+import { compareOrdersAppCatalogProducts } from "@/lib/orders-app-display-order";
 import { useUomCatalog } from "@/lib/use-uom-options";
 
 type Item = {
@@ -29,6 +30,7 @@ type Item = {
   selling_price?: number | null;
   orders_app_uom?: string | null;
   supervisor_uom?: string | null;
+  orders_app_display_order?: number | null;
 };
 
 type MenuGroup = {
@@ -143,6 +145,30 @@ function ProductPriceDisplay({
   return <SellingPriceLine sellingPrice={sellingPrice} />;
 }
 
+function ProductUuidLine({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyUuid() {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Selection still works if clipboard is blocked.
+    }
+  }
+
+  return (
+    <p className={styles.productUuid}>
+      <span className={styles.productUuidLabel}>UUID</span>
+      <code className={styles.productUuidValue}>{id}</code>
+      <button type="button" className={styles.copyUuidButton} onClick={() => void copyUuid()} title="Copy UUID">
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </p>
+  );
+}
+
 function ProductCard({
   item,
   itemVariants,
@@ -184,6 +210,7 @@ function ProductCard({
       </div>
       <div className={styles.cardHeader}>
         <p className={`${styles.skuTop} ${!item.sku ? styles.skuTopMuted : ""}`}>SKU: {item.sku ?? "—"}</p>
+        <ProductUuidLine id={item.id} />
         <div className={styles.cardTopRow}>
           <span
             className={`${styles.statusIcon} ${item.active === false ? styles.statusInactive : styles.statusActive}`}
@@ -542,11 +569,22 @@ export default function CatalogMenuPage() {
   const groupedData = useMemo(() => {
     const term = search.trim().toLowerCase();
     const buildGrouped = (sourceItems: Item[]) => {
-      const sortedItems = [...sourceItems].sort((a, b) => {
-        const left = (a.name ?? "").toLowerCase();
-        const right = (b.name ?? "").toLowerCase();
-        return left.localeCompare(right, undefined, { sensitivity: "base" });
-      });
+      const sortedItems = [...sourceItems].sort((a, b) =>
+        compareOrdersAppCatalogProducts(
+          {
+            productId: a.id,
+            name: a.name ?? "",
+            ordersAppDisplayOrder:
+              typeof a.orders_app_display_order === "number" ? a.orders_app_display_order : null,
+          },
+          {
+            productId: b.id,
+            name: b.name ?? "",
+            ordersAppDisplayOrder:
+              typeof b.orders_app_display_order === "number" ? b.orders_app_display_order : null,
+          },
+        ),
+      );
       return sortedItems
         .map((item) => {
           const itemVariants = variants.filter((variant) => variant.item_id === item.id);

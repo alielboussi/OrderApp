@@ -6,13 +6,15 @@ import { useWarehouseAuth } from "../../useWarehouseAuth";
 import { logWarehouseAction } from "../../logging";
 import { WAREHOUSE_AUDIT_ACTIONS } from "@/lib/warehouse-audit";
 import { catalogApiHeaders } from "@/lib/catalog-api-headers";
-import { mapCatalogUomFieldsFromRow, mergeCatalogUomOptionsForStored, parseCatalogUomInput } from "@/lib/catalog-uom-fields";
+import { mapCatalogUomFieldsFromRow, mergeCatalogUomOptionsForStored, parseCatalogUomInput, applyDefaultCatalogUoms } from "@/lib/catalog-uom-fields";
 import { useUomOptions } from "@/lib/use-uom-options";
 import { POS_NUMERIC_SKU_MAX, parsePosNumericSku } from "@/lib/pos-catalog-ids";
 import eb from "../../enterprise.module.css";
 import styles from "./product.module.css";
 import { CatalogImageField } from "../CatalogImageField";
+import { SupervisorUomConversionCard } from "../SupervisorUomConversionCard";
 import { resolvePosMenuGroupId } from "@/lib/menu-group-pos";
+import { readSupervisorUomConversionFromRow } from "@/lib/supervisor-uom-conversion";
 
 const itemKinds = [
   { value: "finished", label: "Finished (ready to sell)" },
@@ -29,8 +31,10 @@ type FormState = {
   selling_price: string;
   orders_app_uom: string;
   supervisor_uom: string;
+  orders_uom_conversion_qty: string;
+  supervisor_uom_conversion_qty: string;
+  orders_app_name: string;
   orders_app_cost_price: string;
-  supervisor_uom_qty_per_unit: string;
   uom_weight_enabled: boolean;
   uom_weight_grams: string;
   has_variations: boolean;
@@ -48,8 +52,10 @@ const defaultForm: FormState = {
   selling_price: "0",
   orders_app_uom: "",
   supervisor_uom: "",
+  orders_uom_conversion_qty: "1",
+  supervisor_uom_conversion_qty: "1",
+  orders_app_name: "",
   orders_app_cost_price: "0",
-  supervisor_uom_qty_per_unit: "1",
   uom_weight_enabled: false,
   uom_weight_grams: "",
   has_variations: false,
@@ -65,6 +71,7 @@ function mapItemToForm(
   uomOptions: { value: string; label: string }[],
 ): FormState {
   const uoms = mapCatalogUomFieldsFromRow(item, uomOptions);
+  const conversion = readSupervisorUomConversionFromRow(item);
 
   return {
     name: String(item.name ?? ""),
@@ -75,8 +82,10 @@ function mapItemToForm(
     selling_price: String(item.selling_price ?? 0),
     orders_app_uom: uoms.orders_app_uom,
     supervisor_uom: uoms.supervisor_uom,
+    orders_uom_conversion_qty: String(conversion.orders_uom_conversion_qty),
+    supervisor_uom_conversion_qty: String(conversion.supervisor_uom_conversion_qty),
+    orders_app_name: String(item.orders_app_name ?? item.ordersAppName ?? ""),
     orders_app_cost_price: String(item.orders_app_cost_price ?? item.selling_price ?? 0),
-    supervisor_uom_qty_per_unit: String(item.supervisor_uom_qty_per_unit ?? 1),
     uom_weight_enabled: item.uom_weight_enabled === true || item.uomWeightEnabled === true,
     uom_weight_grams: (() => {
       const raw = item.uom_weight_grams ?? item.uomWeightGrams;
@@ -172,26 +181,47 @@ function ProductCreatePage() {
   useEffect(() => {
     async function loadItem(id: string) {
       if (!id) return;
+      if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+        setResult({ ok: false, message: `Invalid product id: ${id}` });
+        return;
+      }
+
       setLoadingItem(true);
+      setResult(null);
       try {
-        const res = await fetch(`/api/catalog/items?id=${encodeURIComponent(id)}`);
-        if (!res.ok) throw new Error("Failed to load product");
-        const json = await res.json();
-        if (json?.item) {
-          const item = json.item as Record<string, unknown>;
-          const menuGroupId = await resolveMenuGroupIdForForm(
-            typeof item.menu_group_id === "string" ? item.menu_group_id : "",
-          );
-          setLoadedItem(item);
-          setLoadedMenuGroupId(menuGroupId);
+        const res = await fetch(`/api/catalog/items?id=${encodeURIComponent(id)}`, {
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail =
+            typeof json.error === "string" && json.error.trim()
+              ? json.error.trim()
+              : `Unable to load product (${res.status})`;
+          throw new Error(res.status === 404 ? `Product not found: ${id}` : detail);
         }
+        if (!json?.item) {
+          throw new Error("Product response was empty");
+        }
+
+        const item = json.item as Record<string, unknown>;
+        const menuGroupId = await resolveMenuGroupIdForForm(
+          typeof item.menu_group_id === "string" ? item.menu_group_id : "",
+        );
+        setLoadedItem(item);
+        setLoadedMenuGroupId(menuGroupId);
       } catch (error) {
         console.error("product load failed", error);
-        setResult({ ok: false, message: error instanceof Error ? error.message : "Failed to load product" });
+        setResult({
+          ok: false,
+          message: error instanceof Error ? error.message : "Failed to load product",
+        });
       } finally {
         setLoadingItem(false);
       }
     }
+
+    if (status !== "ok") return;
 
     if (editingId) {
       setLoadedItem(null);
@@ -201,12 +231,29 @@ function ProductCreatePage() {
       setLoadedItem(null);
       setLoadedMenuGroupId("");
     }
-  }, [editingId]);
+  }, [editingId, status]);
 
   useEffect(() => {
     if (!editingId || !loadedItem || !uomOptionsReady) return;
-    setForm({ ...defaultForm, ...mapItemToForm(loadedItem, loadedMenuGroupId, uomOptions) });
+    const mapped = mapItemToForm(loadedItem, loadedMenuGroupId, uomOptions);
+    const defaults = applyDefaultCatalogUoms(mapped.orders_app_uom, mapped.supervisor_uom, uomOptions);
+    setForm({ ...defaultForm, ...mapped, ...defaults });
   }, [editingId, loadedItem, loadedMenuGroupId, uomOptions, uomOptionsReady]);
+
+  useEffect(() => {
+    if (editingId || !uomOptionsReady || uomOptions.length === 0) return;
+    setForm((prev) => {
+      if (prev.has_variations) return prev;
+      const defaults = applyDefaultCatalogUoms(prev.orders_app_uom, prev.supervisor_uom, uomOptions);
+      if (
+        prev.orders_app_uom === defaults.orders_app_uom &&
+        prev.supervisor_uom === defaults.supervisor_uom
+      ) {
+        return prev;
+      }
+      return { ...prev, ...defaults };
+    });
+  }, [editingId, uomOptions, uomOptionsReady]);
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
     if (key === "sku" && typeof value === "string") {
@@ -250,6 +297,9 @@ function ProductCreatePage() {
       });
       return;
     }
+    const resolvedUoms = !form.has_variations
+      ? applyDefaultCatalogUoms(form.orders_app_uom, form.supervisor_uom, uomOptions)
+      : null;
     if (!form.has_variations) {
       if (!uomOptionsReady || uomOptions.length === 0) {
         setResult({
@@ -259,7 +309,7 @@ function ProductCreatePage() {
         setSaving(false);
         return;
       }
-      if (!form.orders_app_uom || !form.supervisor_uom) {
+      if (!resolvedUoms?.orders_app_uom || !resolvedUoms?.supervisor_uom) {
         setResult({
           ok: false,
           message: "Select OrdersApp UOM and Supervisor UOM from Catalog → UOMs.",
@@ -277,6 +327,18 @@ function ProductCreatePage() {
           setSaving(false);
           return;
         }
+      }
+      const ordersConversionQty = Number(form.orders_uom_conversion_qty);
+      const supervisorConversionQty = Number(form.supervisor_uom_conversion_qty);
+      if (!Number.isFinite(ordersConversionQty) || ordersConversionQty < 1) {
+        setResult({ ok: false, message: "Orders UOM quantity in the supervisor conversion must be at least 1." });
+        setSaving(false);
+        return;
+      }
+      if (!Number.isFinite(supervisorConversionQty) || supervisorConversionQty < 1) {
+        setResult({ ok: false, message: "Supervisor UOM quantity in the conversion must be at least 1." });
+        setSaving(false);
+        return;
       }
     }
     setSaving(true);
@@ -298,9 +360,11 @@ function ProductCreatePage() {
           ? {}
           : {
               units_per_purchase_pack: toNumber(form.units_per_pack, 1),
-              orders_app_uom: parseCatalogUomInput(form.orders_app_uom, uomOptions, ""),
-              supervisor_uom: parseCatalogUomInput(form.supervisor_uom, uomOptions, ""),
-              supervisor_uom_qty_per_unit: toNumber(form.supervisor_uom_qty_per_unit, 1),
+              orders_app_uom: parseCatalogUomInput(resolvedUoms!.orders_app_uom, uomOptions, ""),
+              supervisor_uom: parseCatalogUomInput(resolvedUoms!.supervisor_uom, uomOptions, ""),
+              orders_uom_conversion_qty: Number(form.orders_uom_conversion_qty),
+              supervisor_uom_conversion_qty: Number(form.supervisor_uom_conversion_qty),
+              orders_app_name: form.orders_app_name.trim() || null,
               orders_app_cost_price: toNumber(form.orders_app_cost_price, 0),
               uom_weight_enabled: form.uom_weight_enabled,
               uom_weight_grams: form.uom_weight_enabled ? toNumber(form.uom_weight_grams, 0) : null,
@@ -456,6 +520,12 @@ function ProductCreatePage() {
                 </p>
               </div>
               <div className={styles.sectionGrid}>
+                <Field
+                  label="Special for app only"
+                  hint="Optional display name in the Orders app; warehouse portal keeps the catalog name"
+                  value={form.orders_app_name}
+                  onChange={(v) => handleChange("orders_app_name", v)}
+                />
                 <Select
                   label="OrdersApp Uom"
                   hint="Unit of measure displayed when outlets order this product"
@@ -463,23 +533,6 @@ function ProductCreatePage() {
                   onChange={(v) => handleChange("orders_app_uom", v)}
                   options={formUomOptions}
                   disabled={!uomOptionsReady || formUomOptions.length === 0}
-                />
-                <Select
-                  label="Supervisor Uom"
-                  hint="Unit of measure shown on supervisor order screens and warehouse portal"
-                  value={form.supervisor_uom}
-                  onChange={(v) => handleChange("supervisor_uom", v)}
-                  options={formUomOptions}
-                  disabled={!uomOptionsReady || formUomOptions.length === 0}
-                />
-                <Field
-                  type="number"
-                  label="Outlet units in one supervisor unit"
-                  hint="Example: 25 means 25 outlet pieces = 1 supervisor tray"
-                  value={form.supervisor_uom_qty_per_unit}
-                  onChange={(v) => handleChange("supervisor_uom_qty_per_unit", v)}
-                  step="1"
-                  min="1"
                 />
                 <Field
                   type="number"
@@ -491,6 +544,25 @@ function ProductCreatePage() {
                   min="0"
                 />
               </div>
+            </div>
+          )}
+
+          {!form.has_variations && (
+            <div className={styles.sectionCard}>
+              <SupervisorUomConversionCard
+                ordersAppUom={form.orders_app_uom}
+                supervisorUom={form.supervisor_uom}
+                ordersUomConversionQty={form.orders_uom_conversion_qty}
+                supervisorUomConversionQty={form.supervisor_uom_conversion_qty}
+                uomOptions={formUomOptions}
+                uomOptionsReady={uomOptionsReady}
+                disabled={readOnly || saving}
+                onSupervisorUomChange={(value) => handleChange("supervisor_uom", value)}
+                onOrdersUomConversionQtyChange={(value) => handleChange("orders_uom_conversion_qty", value)}
+                onSupervisorUomConversionQtyChange={(value) =>
+                  handleChange("supervisor_uom_conversion_qty", value)
+                }
+              />
             </div>
           )}
 
@@ -677,7 +749,11 @@ function Select({ label, hint, value, onChange, options, required, disabled }: S
         required={required}
         disabled={disabled}
       >
-        <option value="">{options.length ? "Select from UOM catalog…" : "No UOMs — add in Catalog → UOMs"}</option>
+        {options.length === 0 ? (
+          <option value="">No UOMs — add in Catalog → UOMs</option>
+        ) : !value ? (
+          <option value="">Select a UOM…</option>
+        ) : null}
         {options.map((option) => (
           <option key={option.value || option.label} value={option.value}>
             {option.label}

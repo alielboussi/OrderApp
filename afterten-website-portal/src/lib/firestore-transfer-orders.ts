@@ -1,7 +1,9 @@
 import "server-only";
 
+import { enrichOutletCatalogWithCompanionProducts } from "@/lib/companion-catalog";
 import { getFirestoreDb } from "@/lib/firebase-server";
 import { readCatalogOrderFieldsFromRow } from "@/lib/catalog-order-fields";
+import { assertOutletCadenceAllowsItems } from "@/lib/order-outlet-cadence-enforcement";
 import { isTransferOrderOnDate, resolveTransferOrderCreatedAt } from "@/lib/transfer-order-dates";
 
 export type TransferOrderRow = {
@@ -157,6 +159,7 @@ export type FirestoreOutletCatalogProduct = {
   uom_weight_enabled: boolean;
   uom_weight_grams: number | null;
   image_url: string | null;
+  orders_browse_visible?: boolean;
 };
 
 export type UpdateTransferOrderItemInput = {
@@ -304,7 +307,7 @@ export async function listFirestoreOutletOrderCatalog(
     .where("active", "==", true)
     .get();
 
-  return snapshot.docs
+  const catalog = snapshot.docs
     .map((doc) => {
       const data = doc.data();
       const name = typeof data.name === "string" ? data.name.trim() : "";
@@ -316,6 +319,8 @@ export async function listFirestoreOutletOrderCatalog(
         (typeof data.imageUrl === "string" && data.imageUrl.trim() ? data.imageUrl.trim() : null) ??
         (typeof data.image_url === "string" && data.image_url.trim() ? data.image_url.trim() : null);
       const orderFields = readCatalogOrderFieldsFromRow(data);
+      const ordersBrowseVisible =
+        data.ordersBrowseVisible === false || data.orders_browse_visible === false ? false : true;
       return {
         id: doc.id,
         product_id: String(data.productId ?? data.product_id ?? doc.id),
@@ -332,9 +337,17 @@ export async function listFirestoreOutletOrderCatalog(
         uom_weight_enabled: orderFields.uom_weight_enabled,
         uom_weight_grams: orderFields.uom_weight_grams,
         image_url: imageUrl,
+        orders_browse_visible: ordersBrowseVisible,
       } satisfies FirestoreOutletCatalogProduct;
     })
     .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+
+  const enriched = await enrichOutletCatalogWithCompanionProducts(
+    outletId,
+    catalog,
+    catalog.map((row) => row.product_id),
+  );
+  return enriched.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
 }
 
 export async function updateFirestoreTransferOrderItems(
@@ -349,13 +362,26 @@ export async function updateFirestoreTransferOrderItems(
     throw new Error("Order not found");
   }
 
-  const order = orderSnap.data() as { status?: string };
+  const order = orderSnap.data() as { status?: string; outletId?: string };
   const status = String(order.status ?? "").trim().toLowerCase();
   if (status !== "order_placed" && status !== "placed" && status !== "accepted") {
     throw new Error("Only placed or accepted orders can be edited");
   }
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("At least one order line is required");
+  }
+
+  const outletId = String(order.outletId ?? "").trim();
+  if (outletId) {
+    await assertOutletCadenceAllowsItems(
+      outletId,
+      items.map((item) => ({
+        product_id: item.product_id ?? null,
+        qty: Number(item.qty ?? 0),
+        name: item.name,
+      })),
+      { excludeOrderId: orderId },
+    );
   }
 
   const existingSnap = await orderRef.collection("items").get();

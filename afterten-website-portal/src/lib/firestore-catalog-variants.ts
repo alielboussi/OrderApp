@@ -20,8 +20,12 @@ import {
   updateFirestoreCatalogVariant,
 } from "@/lib/firestore-catalog-store";
 import { refreshOutletOrderCatalogForItem } from "@/lib/firestore-outlet-catalog-access";
-import { parseCatalogUomInput, resolveCatalogConsumptionUom } from "@/lib/catalog-uom-fields";
+import { parseCatalogUomInput, resolveBodyCatalogUoms } from "@/lib/catalog-uom-fields";
 import { resolveCatalogUomWeight } from "@/lib/catalog-order-fields";
+import {
+  buildSupervisorUomConversionFirestoreFields,
+  parseSupervisorUomConversionInput,
+} from "@/lib/supervisor-uom-conversion";
 import { listFirestoreUomOptions } from "@/lib/firestore-uoms";
 import { getFirestoreDb } from "@/lib/firebase-server";
 import { normalizeUomCode, registerCatalogUomOptions } from "@/lib/uom-codes";
@@ -149,18 +153,16 @@ async function resolveCatalogOrderUoms(body: Record<string, unknown>) {
   if (catalogUoms.length === 0) {
     return { error: "Add at least one active UOM in Catalog → UOMs before saving order units." as const };
   }
-  const ordersAppUom = parseCatalogUomInput(body.orders_app_uom, catalogUoms, "");
-  const supervisorUom = parseCatalogUomInput(body.supervisor_uom ?? body.orders_app_uom, catalogUoms, "");
+  const resolved = resolveBodyCatalogUoms(body, catalogUoms);
+  const ordersAppUom = resolved.orders_app_uom;
+  const supervisorUom = resolved.supervisor_uom;
   if (!ordersAppUom) {
     return { error: "Select a valid OrdersApp UOM from Catalog → UOMs." as const };
   }
   if (!supervisorUom) {
     return { error: "Select a valid Supervisor UOM from Catalog → UOMs." as const };
   }
-  const consumptionUom = normalizeUomCode(
-    resolveCatalogConsumptionUom(body, catalogUoms, ordersAppUom),
-    ordersAppUom,
-  );
+  const consumptionUom = normalizeUomCode(resolved.consumption_uom, ordersAppUom);
   return { ordersAppUom, supervisorUom, consumptionUom };
 }
 
@@ -208,6 +210,11 @@ export async function firestoreCatalogVariantsPost(request: Request) {
   const { ordersAppUom, supervisorUom, consumptionUom } = orderUoms;
   const uomWeight = resolveCatalogUomWeight(body);
   if ("error" in uomWeight) return NextResponse.json({ error: uomWeight.error }, { status: 400 });
+  const conversion = parseSupervisorUomConversionInput(
+    body.orders_uom_conversion_qty ?? body.supervisor_uom_qty_per_unit ?? 1,
+    body.supervisor_uom_conversion_qty ?? 1,
+  );
+  if ("error" in conversion) return NextResponse.json({ error: conversion.error }, { status: 400 });
   const purchasePackUnit = cleanText(body.purchase_pack_unit) ?? "each";
   const transferUnit = cleanText(body.transfer_unit) ?? "each";
   const unitsPerPack = toNumber(body.units_per_purchase_pack, 1);
@@ -259,7 +266,7 @@ export async function firestoreCatalogVariantsPost(request: Request) {
     orders_app_uom: ordersAppUom,
     supervisor_uom: supervisorUom,
     orders_app_cost_price: ordersAppCostPrice,
-    supervisor_uom_qty_per_unit: toNumber(body.supervisor_uom_qty_per_unit, 1) ?? 1,
+    ...buildSupervisorUomConversionFirestoreFields(conversion),
     uom_weight_enabled: uomWeight.uom_weight_enabled,
     uom_weight_grams: uomWeight.uom_weight_grams,
     outlet_order_visible: true,
@@ -394,9 +401,6 @@ export async function firestoreCatalogVariantsPut(request: Request) {
     if (ordersAppCostPrice === null) return NextResponse.json({ error: "Value must be numeric" }, { status: 400 });
     update.orders_app_cost_price = ordersAppCostPrice;
   }
-  if (body.supervisor_uom_qty_per_unit !== undefined) {
-    update.supervisor_uom_qty_per_unit = toNumber(body.supervisor_uom_qty_per_unit, 1) ?? 1;
-  }
   if (body.uom_weight_enabled !== undefined || body.uom_weight_grams !== undefined) {
     const uomWeight = resolveCatalogUomWeight({
       uom_weight_enabled:
@@ -414,6 +418,23 @@ export async function firestoreCatalogVariantsPut(request: Request) {
   }
   if (body.active !== undefined) update.active = cleanBoolean(body.active, true);
   if (body.image_url !== undefined) update.image_url = cleanText(body.image_url) ?? null;
+  if (
+    body.orders_uom_conversion_qty !== undefined ||
+    body.supervisor_uom_conversion_qty !== undefined ||
+    body.supervisor_uom_qty_per_unit !== undefined
+  ) {
+    const conversion = parseSupervisorUomConversionInput(
+      body.orders_uom_conversion_qty ??
+        existing.orders_uom_conversion_qty ??
+        existing.supervisor_uom_qty_per_unit ??
+        1,
+      body.supervisor_uom_conversion_qty ?? existing.supervisor_uom_conversion_qty ?? 1,
+    );
+    if ("error" in conversion) {
+      return NextResponse.json({ error: conversion.error }, { status: 400 });
+    }
+    Object.assign(update, buildSupervisorUomConversionFirestoreFields(conversion));
+  }
 
   const data = await updateFirestoreCatalogVariant(id, update);
   if (!data) return NextResponse.json({ error: "Variant not found" }, { status: 404 });

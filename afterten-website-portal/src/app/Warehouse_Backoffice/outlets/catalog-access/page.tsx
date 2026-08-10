@@ -154,8 +154,53 @@ export default function OutletCatalogAccessPage() {
     });
   }, [filtered, viewFilter]);
 
+  const saveCatalog = useCallback(
+    async (catalogSnapshot: CatalogItem[]) => {
+      if (!outletId || readOnly) return;
+      if (!linkedUser?.uid) {
+        setMessage("This outlet has no Orders app login. Create the outlet first on Create Outlet.");
+        return;
+      }
+
+      setSaving(true);
+      setMessage(null);
+      try {
+        const entries = buildCatalogAccessEntries(catalogSnapshot);
+        const res = await fetch("/api/outlet-catalog-access", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            outlet_id: outletId,
+            assignment_role: "orders",
+            entries,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Save failed");
+        setCatalog(Array.isArray(json.catalog) ? json.catalog : catalogSnapshot);
+        setLinkedUser(json.linked_orders_app_user ?? linkedUser);
+        setMessage("Saved. Orders app catalog updated for this outlet.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Save failed");
+        void loadCatalog(outletId);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [linkedUser, loadCatalog, outletId, readOnly],
+  );
+
+  const applyCatalogChange = (updater: (prev: CatalogItem[]) => CatalogItem[]) => {
+    if (readOnly || saving) return;
+    setCatalog((prev) => {
+      const next = updater(prev);
+      void saveCatalog(next);
+      return next;
+    });
+  };
+
   const toggleItem = (itemId: string, value: boolean) => {
-    setCatalog((prev) =>
+    applyCatalogChange((prev) =>
       prev.map((item) => {
         if (item.id !== itemId) return item;
         if (item.has_variations && item.variants.length > 0) {
@@ -171,7 +216,7 @@ export default function OutletCatalogAccessPage() {
   };
 
   const toggleVariant = (itemId: string, variantId: string, value: boolean) => {
-    setCatalog((prev) =>
+    applyCatalogChange((prev) =>
       prev.map((item) => {
         if (item.id !== itemId) return item;
         const variants = item.variants.map((variant) =>
@@ -202,38 +247,6 @@ export default function OutletCatalogAccessPage() {
       })),
     );
   }, []);
-
-  const save = async () => {
-    if (!outletId || readOnly) return;
-    if (!linkedUser?.uid) {
-      setMessage("This outlet has no Orders app login. Create the outlet first on Create Outlet.");
-      return;
-    }
-
-    setSaving(true);
-    setMessage(null);
-    try {
-      const entries = buildCatalogAccessEntries(catalog);
-      const res = await fetch("/api/outlet-catalog-access", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          outlet_id: outletId,
-          assignment_role: "orders",
-          entries,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Save failed");
-      setCatalog(Array.isArray(json.catalog) ? json.catalog : []);
-      setLinkedUser(json.linked_orders_app_user ?? linkedUser);
-      setMessage("Saved. Orders app catalog updated for this outlet.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (status !== "ok") return null;
 
@@ -330,6 +343,11 @@ export default function OutletCatalogAccessPage() {
               <h3 className={eb.pageCardTitle} style={{ margin: 0 }}>
                 Catalog items
               </h3>
+              {saving ? (
+                <p className={eb.pageCardBody} style={{ margin: "6px 0 0", color: "#57606a" }}>
+                  Saving…
+                </p>
+              ) : null}
               {viewFilter === "assigned" ? (
                 <p className={eb.pageCardBody} style={{ margin: "6px 0 0", color: "#57606a" }}>
                   Showing {visibleItems.length} assigned product{visibleItems.length === 1 ? "" : "s"}
@@ -340,9 +358,6 @@ export default function OutletCatalogAccessPage() {
                 </p>
               ) : null}
             </div>
-            <button type="button" className={eb.btnAdd} disabled={saving || readOnly || !linkedUser?.uid} onClick={() => void save()}>
-              {saving ? "Saving…" : "Save access rules"}
-            </button>
           </div>
           {loading ? <p className={eb.pageCardBody}>Loading…</p> : null}
           {!loading && visibleItems.length === 0 ? (
@@ -377,6 +392,7 @@ export default function OutletCatalogAccessPage() {
                       <input
                         type="checkbox"
                         checked={item.allow_orders}
+                        disabled={saving || readOnly || !linkedUser?.uid}
                         onChange={(e) => toggleItem(item.id, e.target.checked)}
                       />{" "}
                       Show in Orders app
@@ -387,6 +403,7 @@ export default function OutletCatalogAccessPage() {
                         <input
                           type="checkbox"
                           checked={item.allow_orders}
+                          disabled={saving || readOnly || !linkedUser?.uid}
                           onChange={(e) => toggleItem(item.id, e.target.checked)}
                         />{" "}
                         Show in Orders app
@@ -420,6 +437,7 @@ export default function OutletCatalogAccessPage() {
                               <input
                                 type="checkbox"
                                 checked={variant.allow_orders}
+                                disabled={saving || readOnly || !linkedUser?.uid}
                                 onChange={(e) => toggleVariant(item.id, variant.id, e.target.checked)}
                               />{" "}
                               Show variant in Orders app

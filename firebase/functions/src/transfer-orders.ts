@@ -4,6 +4,7 @@ import { formatAcceptedOrderWhatsAppMessage } from "./order-whatsapp";
 import { formatOrdersAppUomLabel, resolveOrdersAppUom } from "./orders-app-uom";
 import { getAppStorageBucket } from "./storage-bucket";
 import { sendWasenderGroupMessage, wasenderApiKey, wasenderGroupId } from "./wasender";
+import { assertOutletCadenceAllowsItems } from "./order-outlet-cadence-enforcement";
 import { COLLECTIONS } from "./schema";
 
 function orderNumberPrefix(outletName: string): string {
@@ -336,6 +337,16 @@ export const placeTransferOrder = onCall({ region: "africa-south1" }, async (req
   }
 
   const db = getFirestore();
+  await assertOutletCadenceAllowsItems(
+    db,
+    outletId,
+    items.map((item) => ({
+      productId: item.productId ?? null,
+      qty: Number(item.qty ?? 0),
+      name: item.name,
+    })),
+  );
+
   const orderRef = db.collection(COLLECTIONS.transferOrders).doc();
   const orderNumber = await nextOrderNumber(outletId, profile.outletName);
   const now = new Date().toISOString();
@@ -493,6 +504,20 @@ export const acceptTransferOrder = onCall(
   let modifiedBySupervisor = Boolean(order.modifiedBySupervisor);
 
   if (Array.isArray(items) && items.length > 0) {
+    const outletId = String(order.outletId ?? "").trim();
+    if (outletId) {
+      await assertOutletCadenceAllowsItems(
+        db,
+        outletId,
+        items.map((item) => ({
+          productId: item.productId ?? null,
+          qty: Number(item.qty ?? 0),
+          name: item.name,
+        })),
+        { excludeOrderId: orderId },
+      );
+    }
+
     const existingSnap = await orderRef.collection("items").get();
     const existingById = new Map(
       existingSnap.docs.map((docSnap) => [docSnap.id, docSnap.data() as Record<string, unknown>]),
@@ -664,9 +689,23 @@ export const updateTransferOrderItems = onCall({ region: "africa-south1" }, asyn
     throw new HttpsError("not-found", "Order not found.");
   }
 
-  const order = orderSnap.data() as { status?: string };
+  const order = orderSnap.data() as { status?: string; outletId?: string };
   if (order.status !== "order_placed" && order.status !== "placed") {
     throw new HttpsError("failed-precondition", "Only placed orders can be edited.");
+  }
+
+  const outletId = String(order.outletId ?? "").trim();
+  if (outletId) {
+    await assertOutletCadenceAllowsItems(
+      db,
+      outletId,
+      items.map((item) => ({
+        productId: item.productId ?? null,
+        qty: Number(item.qty ?? 0),
+        name: item.name,
+      })),
+      { excludeOrderId: orderId },
+    );
   }
 
   const existingSnap = await orderRef.collection("items").get();

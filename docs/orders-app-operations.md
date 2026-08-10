@@ -67,6 +67,12 @@ This document defines the two stock-related behaviours on the **Afterten Orders 
 | Feature              | Module                 | Notes                                      |
 |----------------------|------------------------|--------------------------------------------|
 | Order steps (10, 25, 50) | `order-qty-rules.ts` | Per-product UUID; applies on order + supervisor edit |
+| Order max qty | `order-qty-rules.ts` | Per-product cap (e.g. `65e592fd…`, `55884ca9…` max **50**, step **10**) |
 | Cup → lid companions | `order-qty-rules.ts`   | Slush cups auto-add matching lids          |
-| Tray → bread companions | `order-qty-rules.ts` | 4 Shawarma Bread per 20 Chicken Shawarma Trays |
-| Supervisor qty edit  | Portal + `order/[id]`  | Same steps and companions when editing     |
+| Tray → bread companions | `order-qty-rules.ts` | 4 Shawarma Bread (plastics) per 20 kg Chicken Shawarma Trays; 1 Shawarma Paper per bread piece (30 per plastic) |
+| Patty → burger kit companions | `order-qty-rules.ts` | Outlet qty steps in **10 pieces** (10 pc = 1 supervisor packet). Per packet: 10 Burger Bread, 10 30 s Packers, 10 Garlic Sauce Container (50ml), 1 Onion Rings Sauce, 1 Onion Rings Coating |
+| Fajita → kit companions | `order-qty-rules.ts` | Per 1 Fajita Chicken Packet: 1 Mozzarella, 1 Long Bread, Green Pepper `ceil(qty × 5 ÷ 10)` pieces |
+| 1:1 companions | `order-qty-rules.ts` | `405807f9…`, `d550d20b…`, `ca6c3236…`, `cd145afb…` each add matching outlet qty of `2e9ba460…` |
+| Plastic → companion | `order-qty-rules.ts` | `4b340326…`: 8 × `3b3c6f8a…` per plastic ordered |
+| Companion visibility | Catalog access + `order-qty-rules.ts` | Companions auto-add even when **Show in Orders app** is off; they stay hidden from browse but appear on order, PDF, and supervisor edit |
+| Supervisor qty edit  | Portal + `order/[id]`  | Same steps and companions when editing; companion lines are read-only |

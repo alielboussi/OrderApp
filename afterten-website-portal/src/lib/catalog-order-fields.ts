@@ -1,6 +1,7 @@
 import { normalizeUomCode } from "@/lib/uom-codes";
 import { parseStoredCatalogUom } from "@/lib/catalog-uom-fields";
 import type { UomOption } from "@/lib/catalog-uom-fields";
+import { buildSupervisorUomConversionFirestoreFields, readSupervisorUomConversionFromRow } from "@/lib/supervisor-uom-conversion";
 
 /** Canonical ordering fields — the only UOM sources the Orders app may use. */
 export type CatalogOrderFields = {
@@ -70,16 +71,13 @@ export function readCatalogOrderFieldsFromRow(
   const cost = readNumber(row, ["orders_app_cost_price", "ordersAppCostPrice"], 0);
   const uomWeightEnabled = readBoolean(row, ["uom_weight_enabled", "uomWeightEnabled"]);
   const uomWeightGrams = readOptionalGrams(row, ["uom_weight_grams", "uomWeightGrams"]);
+  const conversion = readSupervisorUomConversionFromRow(row);
 
   return {
     consumption_uom: consumption,
     orders_app_uom: ordersApp,
     supervisor_uom: supervisor,
-    supervisor_uom_qty_per_unit: readNumber(
-      row,
-      ["supervisor_uom_qty_per_unit", "supervisorUomQtyPerUnit"],
-      1,
-    ),
+    supervisor_uom_qty_per_unit: conversion.supervisor_uom_qty_per_unit,
     orders_app_cost_price: cost,
     uom_weight_enabled: uomWeightEnabled,
     uom_weight_grams: uomWeightEnabled ? uomWeightGrams : null,
@@ -101,6 +99,18 @@ export function resolveStrictConsumptionUom(data: Record<string, unknown>, fallb
   const raw = readText(data, ["consumptionUom", "consumption_uom", "consumption_unit"]);
   if (raw) return normalizeUomCode(raw, fallback);
   return resolveStrictOrdersAppUom(data, fallback);
+}
+
+/** Catalog name shown in warehouse portal and supervisor contexts. */
+export function resolveCatalogDisplayName(row: Record<string, unknown>, fallback = "Item"): string {
+  return readText(row, ["name"]) || fallback;
+}
+
+/** Optional Orders app-only label; falls back to catalog name when unset. */
+export function resolveOrdersAppDisplayName(row: Record<string, unknown>, fallback = "Item"): string {
+  const special = readText(row, ["orders_app_name", "ordersAppName"]);
+  if (special) return special;
+  return resolveCatalogDisplayName(row, fallback);
 }
 
 export type CatalogUomWeightFields = {
@@ -140,9 +150,17 @@ export function buildOutletOrderCatalogOrderFields(
   | "uom_weight_enabled"
   | "uomWeightGrams"
   | "uom_weight_grams"
+  | "unitsPerPurchasePack"
+  | "units_per_purchase_pack"
   | "sellingPrice"
 > {
   const fields = readCatalogOrderFieldsFromRow(source);
+  const conversion = readSupervisorUomConversionFromRow(source);
+  const unitsPerPurchasePack = readNumber(
+    source,
+    ["units_per_purchase_pack", "unitsPerPurchasePack"],
+    1,
+  );
   return {
     ordersAppUom: fields.orders_app_uom,
     orders_app_uom: fields.orders_app_uom,
@@ -152,12 +170,15 @@ export function buildOutletOrderCatalogOrderFields(
     consumption_uom: fields.consumption_uom,
     supervisorUomQtyPerUnit: fields.supervisor_uom_qty_per_unit,
     supervisor_uom_qty_per_unit: fields.supervisor_uom_qty_per_unit,
+    ...buildSupervisorUomConversionFirestoreFields(conversion),
     ordersAppCostPrice: fields.orders_app_cost_price,
     orders_app_cost_price: fields.orders_app_cost_price,
     uomWeightEnabled: fields.uom_weight_enabled,
     uom_weight_enabled: fields.uom_weight_enabled,
     uomWeightGrams: fields.uom_weight_grams,
     uom_weight_grams: fields.uom_weight_grams,
+    unitsPerPurchasePack: unitsPerPurchasePack,
+    units_per_purchase_pack: unitsPerPurchasePack,
     sellingPrice: fields.orders_app_cost_price,
   };
 }
