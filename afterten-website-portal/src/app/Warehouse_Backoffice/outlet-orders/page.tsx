@@ -64,14 +64,17 @@ type OrderRow = {
 };
 
 type OrderItemRow = {
-  order_id: string;
+  id?: string;
+  order_id?: string;
   product_id?: string | null;
   variant_key?: string | null;
   name: string | null;
   receiving_uom: string | null;
+  consumption_uom?: string | null;
   qty: number | null;
   cost: number | null;
   amount: number | null;
+  package_contains?: number | null;
 };
 
 type OrderTotals = {
