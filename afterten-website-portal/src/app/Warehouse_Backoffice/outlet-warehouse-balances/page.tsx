@@ -154,7 +154,7 @@ export default function OutletWarehouseBalancesPage() {
 
   useEffect(() => {
     if (status !== "ok") return;
-    const timer = setInterval(() => setRefreshTick((value) => value + 1), 30000);
+    const timer = setInterval(() => setRefreshTick((value) => value + 1), 300_000);
     return () => clearInterval(timer);
   }, [status]);
 
@@ -579,7 +579,7 @@ export default function OutletWarehouseBalancesPage() {
                 {selectedWarehouseId === "all" && linkedWarehouseIds.length > 0
                   ? ` · Summed across ${linkedWarehouseIds.length} warehouses`
                   : ""}
-                {" · Auto-refreshes every 30s"}
+                {" · Auto-refreshes every 5 min"}
               </p>
             </div>
             {loading && <span className={styles.loadingTag}>Refreshing…</span>}

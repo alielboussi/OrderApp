@@ -28,11 +28,17 @@ import {
   rowLinkedToApiUuid,
 } from "@/lib/catalog-api-sync-matching";
 
-export const STOCK_CATALOG_SYNC_ENABLED =
-  process.env.STOCK_CATALOG_SYNC_ENABLED === "true";
+/**
+ * BILLING SAFETY: hardcoded OFF.
+ * Full catalog sync scans catalog_items + catalog_variants and previously caused
+ * ~$20–25/day when run on a schedule. Do NOT flip this via env. To run a rare
+ * manual sync, change this constant in code, deploy, run once, then set false again.
+ * Never reintroduce Cloud Scheduler / onSchedule for this.
+ */
+export const STOCK_CATALOG_SYNC_ENABLED = false;
 
-export const STOCK_CATALOG_SYNC_DELETE_MISSING =
-  process.env.STOCK_CATALOG_SYNC_DELETE_MISSING !== "false";
+/** Default false so a mistaken sync cannot mass-delete portal catalog rows. */
+export const STOCK_CATALOG_SYNC_DELETE_MISSING = false;
 
 type WarehouseMaps = {
   byApiUuid: Map<string, string>;
@@ -222,8 +228,7 @@ export async function syncStockCatalogToPortal(options?: {
   const deleteMissing =
     options?.deleteMissing ?? STOCK_CATALOG_SYNC_DELETE_MISSING;
   const deactivateMissing =
-    !deleteMissing &&
-    (options?.deactivateMissing ?? process.env.STOCK_CATALOG_SYNC_DEACTIVATE_MISSING === "true");
+    !deleteMissing && (options?.deactivateMissing ?? false);
 
   const catalog = await fetchStockCatalog();
   const products = (catalog.products ?? []).filter((product) => String(product.uuid ?? "").trim());
@@ -287,6 +292,7 @@ export async function syncStockCatalogToPortal(options?: {
         continue;
       }
       if (catalogItemFieldsChanged(existingItem.existing, syncedFields)) {
+        // Portal order UOMs/names are never part of syncedFields — merge leaves them intact.
         await updateFirestoreCatalogItem(existingItem.itemId, syncedFields);
         updatedItems += 1;
         changedItemIds.add(existingItem.itemId);

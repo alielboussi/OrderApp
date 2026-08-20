@@ -1,13 +1,10 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import {
-  stockCatalogSyncDeactivateMissing,
-  stockCatalogSyncDeleteMissing,
-  stockCatalogSyncEnabled,
-  stockCatalogSyncCron,
-  stockCatalogSyncIntervalSeconds,
+  STOCK_CATALOG_SYNC_DEACTIVATE_MISSING,
+  STOCK_CATALOG_SYNC_DELETE_MISSING,
+  STOCK_CATALOG_SYNC_ENABLED,
   stockSyncApiToken,
 } from "./stock-api-secrets";
 import { deleteCatalogRowsMissingFromApi } from "./stock-catalog-cleanup";
@@ -26,8 +23,6 @@ import { refreshOutletOrderCatalogForItem } from "./outlet-order-catalog-refresh
 
 const DEFAULT_STOCK_CATALOG_API_URL =
   "https://afterten-stock-api-896827614552.us-central1.run.app/sync/catalog";
-const DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS = 30;
-const STOCK_CATALOG_SYNC_WINDOW_MS = 59_000;
 
 type StockApiUnit = {
   name?: string | null;
@@ -80,19 +75,6 @@ type SyncReport = {
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function resolveStockCatalogSyncIntervalMs(): number {
-  const raw = stockCatalogSyncIntervalSeconds.value();
-  const seconds = raw ? Number(raw) : DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS;
-  if (!Number.isFinite(seconds) || seconds < 1) {
-    return DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS * 1000;
-  }
-  return Math.min(seconds, 60) * 1000;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeWarehouseName(value: unknown): string {
@@ -276,10 +258,10 @@ async function runStockCatalogSync(options?: {
   deleteMissing?: boolean;
 }): Promise<SyncReport> {
   const deleteMissing =
-    options?.deleteMissing ?? stockCatalogSyncDeleteMissing.value() !== "false";
+    options?.deleteMissing ?? STOCK_CATALOG_SYNC_DELETE_MISSING;
   const deactivateMissing =
     !deleteMissing &&
-    (options?.deactivateMissing ?? stockCatalogSyncDeactivateMissing.value() === "true");
+    (options?.deactivateMissing ?? STOCK_CATALOG_SYNC_DEACTIVATE_MISSING);
   const db = getFirestore();
   const catalog = await fetchStockCatalog();
   const products = (catalog.products ?? []).filter((product) => String(product.uuid ?? "").trim());
@@ -369,6 +351,9 @@ async function runStockCatalogSync(options?: {
         continue;
       }
       if (catalogItemFieldsChanged(existingItem.existing, syncedFields)) {
+        // Only write stock-API fields. Portal-managed order fields (orders_app_uom,
+        // supervisor_uom, orders_app_name, etc.) must never be copied from the sync
+        // snapshot — that reverts values the user just saved in the catalog UI.
         await db.collection("catalog_items").doc(existingItem.itemId).set(
           {
             ...syncedFields,
@@ -506,53 +491,26 @@ async function runStockCatalogSync(options?: {
   return report;
 }
 
+/**
+ * Callable kept in source for reference only — NOT exported from index.ts.
+ * Do not re-export or add onSchedule.
+ */
 export const syncStockCatalog = onCall(
   { region: "africa-south1", secrets: [stockSyncApiToken] },
   async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Sign in required.");
-  }
-
-  if (stockCatalogSyncEnabled.value() !== "true") {
-    throw new HttpsError("failed-precondition", "Stock catalog sync is disabled.");
-  }
-
-  const deactivateMissing = request.data?.deactivateMissing === true;
-  const report = await runStockCatalogSync({ deactivateMissing });
-  return report;
-  },
-);
-
-export const syncStockCatalogScheduled = onSchedule(
-  {
-    // Cloud Scheduler does not support africa-south1.
-    region: "europe-west1",
-    // Sub-minute cadence is achieved by looping inside each 1-minute scheduler tick.
-    schedule: stockCatalogSyncCron.value(),
-    timeZone: "Africa/Lusaka",
-    timeoutSeconds: 120,
-    secrets: [stockSyncApiToken],
-  },
-  async () => {
-    if (stockCatalogSyncEnabled.value() !== "true") {
-      logger.info("Stock catalog sync skipped (STOCK_CATALOG_SYNC_ENABLED is not true).");
-      return;
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
     }
 
-    const intervalMs = resolveStockCatalogSyncIntervalMs();
-    const deadlineMs = Date.now() + STOCK_CATALOG_SYNC_WINDOW_MS;
-
-    while (Date.now() < deadlineMs) {
-      try {
-        const report = await runStockCatalogSync();
-        logger.info("Stock catalog sync completed", report.summary);
-      } catch (error) {
-        logger.error("Stock catalog sync failed", error);
-      }
-
-      const remainingMs = deadlineMs - Date.now();
-      if (remainingMs < intervalMs) break;
-      await sleep(intervalMs);
+    if (!STOCK_CATALOG_SYNC_ENABLED) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Stock catalog sync is disabled (billing safety).",
+      );
     }
+
+    const deactivateMissing = request.data?.deactivateMissing === true;
+    const report = await runStockCatalogSync({ deactivateMissing });
+    return report;
   },
 );

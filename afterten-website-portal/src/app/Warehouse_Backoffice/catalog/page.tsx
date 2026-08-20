@@ -50,6 +50,16 @@ export default function CatalogMenu() {
             <p className={styles.cardBody}>Apply a single value to multiple variants in one step.</p>
             <span className={styles.cardCta}>Open</span>
           </button>
+          <button
+            onClick={() => go("/Warehouse_Backoffice/stock-api-sync")}
+            className={`${styles.actionCard} ${styles.bulkCard}`}
+          >
+            <p className={`${styles.cardTitle} ${styles.cardTitleBulk}`}>Stock API Sync</p>
+            <p className={styles.cardBody}>
+              Pull product changes from stock control on demand (manual only — keeps cloud costs low).
+            </p>
+            <span className={styles.cardCta}>Open</span>
+          </button>
 
         </section>
       </main>

@@ -5,6 +5,16 @@ import { loadLocalEnvFiles } from "./load-local-env.mjs";
 
 loadLocalEnvFiles([".env.local", ".env", "../firebase/functions/.env"]);
 
+if (!process.argv.includes("--allow-expensive-sync")) {
+  console.error(
+    "Refused: full stock catalog sync is expensive (full Firestore catalog scans).\n" +
+      "This caused large Aug 2026 billing. Run only when needed with:\n" +
+      "  node afterten-website-portal/scripts/stock-catalog-sync.mjs --allow-expensive-sync\n" +
+      "See docs/billing-cost-guards.md",
+  );
+  process.exit(1);
+}
+
 const DEFAULT_STOCK_CATALOG_API_URL =
   "https://afterten-stock-api-896827614552.us-central1.run.app/sync/catalog";
 
@@ -58,20 +68,13 @@ function inferItemKind(product) {
   return "ingredient";
 }
 
-function mapProductUnits(product) {
-  const consumptionUnit = cleanUnitName(product.unit?.name);
-  const storageUnit = cleanUnitName(product.subUnit?.name, consumptionUnit);
+function mapStockApiUnits(product) {
+  const storageUnit = cleanUnitName(product.subUnit?.name, "each");
   const unitsPerPurchasePack = Number(product.subUnit?.perUnit ?? 1);
   return {
-    consumption_unit: consumptionUnit,
-    consumption_uom: consumptionUnit,
-    purchase_pack_unit: consumptionUnit,
     storage_unit: storageUnit,
     units_per_purchase_pack:
       Number.isFinite(unitsPerPurchasePack) && unitsPerPurchasePack > 0 ? unitsPerPurchasePack : 1,
-    transfer_unit: consumptionUnit,
-    transfer_quantity: 1,
-    orders_app_uom: consumptionUnit,
   };
 }
 
@@ -226,7 +229,7 @@ for (const product of products) {
 
   const warehouseIds = collectWarehouseIds(product, warehouseMaps);
   const primaryWarehouseId = warehouseIds[0] ?? null;
-  const units = mapProductUnits(product);
+  const units = mapStockApiUnits(product);
   const syncedFields = {
     name: String(product.name ?? "").trim() || "Unnamed product",
     ...units,
@@ -284,6 +287,11 @@ for (const product of products) {
       supplier_sku: null,
       cost: 0,
       selling_price: 0,
+      consumption_unit: "pc",
+      consumption_uom: "pc",
+      orders_app_uom: "pc",
+      supervisor_uom: "pc",
+      supervisor_uom_qty_per_unit: 1,
       orders_app_cost_price: 0,
       has_variations: false,
       has_recipe: false,

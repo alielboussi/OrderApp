@@ -29,7 +29,7 @@ export type CatalogSyncEventRow = {
 };
 
 export const OFFLINE_MS = 10 * 60 * 1000;
-export const MIDDLEWARE_POLL_MS = 60_000;
+export const MIDDLEWARE_POLL_MS = 120_000;
 
 export const EXCLUDED_HEARTBEAT_OUTLET_IDS = new Set<string>([
   "24709409-08de-4906-b8ad-5b8d01db4a0b", // Ingredients Storeroom

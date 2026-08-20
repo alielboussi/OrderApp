@@ -396,7 +396,7 @@ function OutletOrdersPage() {
     if (status !== "ok" || !selectedDate) return;
     const intervalId = window.setInterval(() => {
       void loadOrders({ silent: true });
-    }, 20000);
+    }, 60_000);
     return () => window.clearInterval(intervalId);
   }, [loadOrders, selectedDate, status]);
 

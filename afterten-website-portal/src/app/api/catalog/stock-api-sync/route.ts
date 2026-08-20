@@ -31,6 +31,17 @@ export async function POST(request: NextRequest) {
   const auth = await requireWarehouseAuth(request);
   if (!auth.ok) return auth.response;
 
+  if (!STOCK_CATALOG_SYNC_ENABLED) {
+    return NextResponse.json(
+      {
+        error:
+          "Stock catalog sync is locked to prevent Firestore cost spikes. Unlock only in code for a one-off manual sync.",
+        enabled: false,
+      },
+      { status: 403 },
+    );
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const deleteMissing =

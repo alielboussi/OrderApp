@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.listOutletOrderCatalog = exports.syncStockCatalogScheduled = exports.syncStockCatalog = exports.getStockControlSnapshot = exports.completeDamageReport = exports.dispatchDamageReport = exports.getDamageReportSignatureUrl = exports.getDamageReportPhotoUrl = exports.reviewDamageReport = exports.submitDamageReport = exports.updateTransferOrderItems = exports.peekNextOrderNumber = exports.getTransferOrderSignatureUrl = exports.dispatchTransferOrder = exports.acceptTransferOrder = exports.completeTransferOrder = exports.placeTransferOrder = exports.health = void 0;
+exports.listOutletOrderCatalog = exports.getStockControlSnapshot = exports.completeDamageReport = exports.dispatchDamageReport = exports.getDamageReportSignatureUrl = exports.getDamageReportPhotoUrl = exports.reviewDamageReport = exports.submitDamageReport = exports.unregisterPushToken = exports.registerPushToken = exports.clearPreparationChecklist = exports.togglePreparationChecklistItem = exports.updateTransferOrderItems = exports.peekNextOrderNumber = exports.getTransferOrderSignatureUrl = exports.dispatchTransferOrder = exports.acceptTransferOrder = exports.completeTransferOrder = exports.placeTransferOrder = exports.health = void 0;
 const app_1 = require("firebase-admin/app");
 const https_1 = require("firebase-functions/v2/https");
 const schema_1 = require("./schema");
@@ -30,6 +30,12 @@ exports.health = (0, https_1.onCall)({ region: "africa-south1" }, async () => {
         at: new Date().toISOString(),
     };
 });
+var preparation_1 = require("./preparation");
+Object.defineProperty(exports, "togglePreparationChecklistItem", { enumerable: true, get: function () { return preparation_1.togglePreparationChecklistItem; } });
+Object.defineProperty(exports, "clearPreparationChecklist", { enumerable: true, get: function () { return preparation_1.clearPreparationChecklist; } });
+var push_tokens_1 = require("./push-tokens");
+Object.defineProperty(exports, "registerPushToken", { enumerable: true, get: function () { return push_tokens_1.registerPushToken; } });
+Object.defineProperty(exports, "unregisterPushToken", { enumerable: true, get: function () { return push_tokens_1.unregisterPushToken; } });
 var damage_reports_1 = require("./damage-reports");
 Object.defineProperty(exports, "submitDamageReport", { enumerable: true, get: function () { return damage_reports_1.submitDamageReport; } });
 Object.defineProperty(exports, "reviewDamageReport", { enumerable: true, get: function () { return damage_reports_1.reviewDamageReport; } });
@@ -39,9 +45,8 @@ Object.defineProperty(exports, "dispatchDamageReport", { enumerable: true, get: 
 Object.defineProperty(exports, "completeDamageReport", { enumerable: true, get: function () { return damage_reports_1.completeDamageReport; } });
 var stock_control_1 = require("./stock-control");
 Object.defineProperty(exports, "getStockControlSnapshot", { enumerable: true, get: function () { return stock_control_1.getStockControlSnapshot; } });
-var stock_catalog_sync_1 = require("./stock-catalog-sync");
-Object.defineProperty(exports, "syncStockCatalog", { enumerable: true, get: function () { return stock_catalog_sync_1.syncStockCatalog; } });
-Object.defineProperty(exports, "syncStockCatalogScheduled", { enumerable: true, get: function () { return stock_catalog_sync_1.syncStockCatalogScheduled; } });
+// BILLING SAFETY: do not export syncStockCatalog or any onSchedule catalog sync.
+// Manual portal sync (when unlocked in code) uses the Next.js stock-api-sync route.
 var outlet_order_catalog_list_1 = require("./outlet-order-catalog-list");
 Object.defineProperty(exports, "listOutletOrderCatalog", { enumerable: true, get: function () { return outlet_order_catalog_list_1.listOutletOrderCatalog; } });
 //# sourceMappingURL=index.js.map

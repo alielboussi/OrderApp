@@ -1,30 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncStockCatalogScheduled = exports.syncStockCatalog = void 0;
+exports.syncStockCatalog = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const https_1 = require("firebase-functions/v2/https");
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firebase_functions_1 = require("firebase-functions");
 const stock_api_secrets_1 = require("./stock-api-secrets");
 const stock_catalog_cleanup_1 = require("./stock-catalog-cleanup");
 const catalog_api_sync_matching_1 = require("./catalog-api-sync-matching");
 const outlet_order_catalog_refresh_1 = require("./outlet-order-catalog-refresh");
 const DEFAULT_STOCK_CATALOG_API_URL = "https://afterten-stock-api-896827614552.us-central1.run.app/sync/catalog";
-const DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS = 30;
-const STOCK_CATALOG_SYNC_WINDOW_MS = 59_000;
 function nowIso() {
     return new Date().toISOString();
-}
-function resolveStockCatalogSyncIntervalMs() {
-    const raw = stock_api_secrets_1.stockCatalogSyncIntervalSeconds.value();
-    const seconds = raw ? Number(raw) : DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS;
-    if (!Number.isFinite(seconds) || seconds < 1) {
-        return DEFAULT_STOCK_CATALOG_SYNC_INTERVAL_SECONDS * 1000;
-    }
-    return Math.min(seconds, 60) * 1000;
-}
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function normalizeWarehouseName(value) {
     return String(value ?? "")
@@ -166,9 +152,9 @@ async function syncStorageHomes(db, itemId, variantKey, warehouseIds) {
     await batch.commit();
 }
 async function runStockCatalogSync(options) {
-    const deleteMissing = options?.deleteMissing ?? stock_api_secrets_1.stockCatalogSyncDeleteMissing.value() !== "false";
+    const deleteMissing = options?.deleteMissing ?? stock_api_secrets_1.STOCK_CATALOG_SYNC_DELETE_MISSING;
     const deactivateMissing = !deleteMissing &&
-        (options?.deactivateMissing ?? stock_api_secrets_1.stockCatalogSyncDeactivateMissing.value() === "true");
+        (options?.deactivateMissing ?? stock_api_secrets_1.STOCK_CATALOG_SYNC_DEACTIVATE_MISSING);
     const db = (0, firestore_1.getFirestore)();
     const catalog = await fetchStockCatalog();
     const products = (catalog.products ?? []).filter((product) => String(product.uuid ?? "").trim());
@@ -246,6 +232,9 @@ async function runStockCatalogSync(options) {
                 continue;
             }
             if ((0, catalog_api_sync_matching_1.catalogItemFieldsChanged)(existingItem.existing, syncedFields)) {
+                // Only write stock-API fields. Portal-managed order fields (orders_app_uom,
+                // supervisor_uom, orders_app_name, etc.) must never be copied from the sync
+                // snapshot — that reverts values the user just saved in the catalog UI.
                 await db.collection("catalog_items").doc(existingItem.itemId).set({
                     ...syncedFields,
                     updated_at: nowIso(),
@@ -367,44 +356,19 @@ async function runStockCatalogSync(options) {
     await db.collection("stock_catalog_sync_state").doc("latest").set(report, { merge: true });
     return report;
 }
+/**
+ * Callable kept in source for reference only — NOT exported from index.ts.
+ * Do not re-export or add onSchedule.
+ */
 exports.syncStockCatalog = (0, https_1.onCall)({ region: "africa-south1", secrets: [stock_api_secrets_1.stockSyncApiToken] }, async (request) => {
     if (!request.auth?.uid) {
         throw new https_1.HttpsError("unauthenticated", "Sign in required.");
     }
-    if (stock_api_secrets_1.stockCatalogSyncEnabled.value() !== "true") {
-        throw new https_1.HttpsError("failed-precondition", "Stock catalog sync is disabled.");
+    if (!stock_api_secrets_1.STOCK_CATALOG_SYNC_ENABLED) {
+        throw new https_1.HttpsError("failed-precondition", "Stock catalog sync is disabled (billing safety).");
     }
     const deactivateMissing = request.data?.deactivateMissing === true;
     const report = await runStockCatalogSync({ deactivateMissing });
     return report;
-});
-exports.syncStockCatalogScheduled = (0, scheduler_1.onSchedule)({
-    // Cloud Scheduler does not support africa-south1.
-    region: "europe-west1",
-    // Sub-minute cadence is achieved by looping inside each 1-minute scheduler tick.
-    schedule: stock_api_secrets_1.stockCatalogSyncCron.value(),
-    timeZone: "Africa/Lusaka",
-    timeoutSeconds: 120,
-    secrets: [stock_api_secrets_1.stockSyncApiToken],
-}, async () => {
-    if (stock_api_secrets_1.stockCatalogSyncEnabled.value() !== "true") {
-        firebase_functions_1.logger.info("Stock catalog sync skipped (STOCK_CATALOG_SYNC_ENABLED is not true).");
-        return;
-    }
-    const intervalMs = resolveStockCatalogSyncIntervalMs();
-    const deadlineMs = Date.now() + STOCK_CATALOG_SYNC_WINDOW_MS;
-    while (Date.now() < deadlineMs) {
-        try {
-            const report = await runStockCatalogSync();
-            firebase_functions_1.logger.info("Stock catalog sync completed", report.summary);
-        }
-        catch (error) {
-            firebase_functions_1.logger.error("Stock catalog sync failed", error);
-        }
-        const remainingMs = deadlineMs - Date.now();
-        if (remainingMs < intervalMs)
-            break;
-        await sleep(intervalMs);
-    }
 });
 //# sourceMappingURL=stock-catalog-sync.js.map

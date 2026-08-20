@@ -40,6 +40,8 @@ export {
   peekNextOrderNumber,
   updateTransferOrderItems,
 };
+export { togglePreparationChecklistItem, clearPreparationChecklist } from "./preparation";
+export { registerPushToken, unregisterPushToken } from "./push-tokens";
 export {
   submitDamageReport,
   reviewDamageReport,
@@ -49,5 +51,6 @@ export {
   completeDamageReport,
 } from "./damage-reports";
 export { getStockControlSnapshot } from "./stock-control";
-export { syncStockCatalog, syncStockCatalogScheduled } from "./stock-catalog-sync";
+// BILLING SAFETY: do not export syncStockCatalog or any onSchedule catalog sync.
+// Manual portal sync (when unlocked in code) uses the Next.js stock-api-sync route.
 export { listOutletOrderCatalog } from "./outlet-order-catalog-list";

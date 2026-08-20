@@ -31,6 +31,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
       { label: "Add Variants", href: "/Warehouse_Backoffice/catalog/variants" },
       { label: "UOM's", href: "/Warehouse_Backoffice/catalog/uoms" },
       { label: "Bulk Updates", href: "/Warehouse_Backoffice/variant-bulk-update" },
+      { label: "Stock API Sync", href: "/Warehouse_Backoffice/stock-api-sync" },
     ],
     tone: "catalog",
   },
@@ -95,7 +96,7 @@ export function pageTitleForPath(pathname: string, hash?: string): string {
       }
     }
   }
-  if (pathname === "/Warehouse_Backoffice/catalog/menu") return "View Products & Variants";
+  if (pathname === "/Warehouse_Backoffice/stock-api-sync") return "Stock API Sync";
   if (pathname === "/Warehouse_Backoffice/cashiers") return "All Cashiers";
   if (pathname === "/Warehouse_Backoffice/cashiers/add") return "Add Cashier";
   if (pathname === "/Warehouse_Backoffice/cashiers/delete") return "Delete Cashier";
