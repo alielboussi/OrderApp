@@ -52,7 +52,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         try
         {
             var response = await SendWithRetryAsync(
-                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/validate_pos_order")
+                () => new HttpRequestMessage(HttpMethod.Post, PortalPath("/rest/v1/rpc/validate_pos_order"))
                 {
                     Content = JsonContent.Create(new { payload }, options: JsonOptions)
                 },
@@ -105,7 +105,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
             details
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/log_pos_sync_failure")
+        var request = new HttpRequestMessage(HttpMethod.Post, PortalPath("/rest/v1/rpc/log_pos_sync_failure"))
         {
             Content = JsonContent.Create(new { payload }, options: JsonOptions)
         };
@@ -280,7 +280,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         try
         {
             var response = await SendWithRetryAsync(
-                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/sync_pos_order")
+                () => new HttpRequestMessage(HttpMethod.Post, PortalPath("/rest/v1/rpc/sync_pos_order"))
                 {
                     // PostgREST expects RPC arguments by name; wrap the payload under the function parameter key
                     Content = JsonContent.Create(new { payload }, options: JsonOptions)
@@ -402,7 +402,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         {
             var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                $"/rest/v1/outlet_pos_heartbeats?select=last_seen_at&outlet_id=eq.{_outlet.Id}&limit=1"
+                PortalPath($"/rest/v1/outlet_pos_heartbeats?select=last_seen_at&outlet_id=eq.{_outlet.Id}&limit=1")
             );
             var response = await client.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -770,7 +770,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         {
             var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                $"/rest/v1/counter_values?select=last_value&counter_key=eq.{counterKey}&scope_id=eq.{_outlet.Id}&limit=1"
+                PortalPath($"/rest/v1/counter_values?select=last_value&counter_key=eq.{counterKey}&scope_id=eq.{_outlet.Id}&limit=1")
             );
 
             var response = await client.SendAsync(request, cancellationToken);
@@ -817,7 +817,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         try
         {
             var response = await SendWithRetryAsync(
-                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/debug_pos_sync_counter")
+                () => new HttpRequestMessage(HttpMethod.Post, PortalPath("/rest/v1/rpc/debug_pos_sync_counter"))
                 {
                     Content = JsonContent.Create(
                         new { p_scope_id = _outlet.Id, p_counter_key = counterKey },
@@ -963,6 +963,9 @@ public sealed class PortalCloudClient : IOutletCloudClient
         return value + "/";
     }
 
+    // HttpClient treats "/path" as absolute from the host root, ignoring BaseAddress path segments.
+    private static string PortalPath(string path) => path.TrimStart('/');
+
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         Func<HttpRequestMessage> requestFactory,
         CancellationToken cancellationToken)
@@ -1006,7 +1009,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         try
         {
             var client = CreateClient();
-            var response = await client.GetAsync(path, cancellationToken);
+            var response = await client.GetAsync(PortalPath(path), cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -1034,7 +1037,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         {
             var client = CreateClient();
             var response = await client.PostAsync(
-                path,
+                PortalPath(path),
                 JsonContent.Create(payload, options: JsonOptions),
                 cancellationToken
             );
@@ -1065,7 +1068,7 @@ public sealed class PortalCloudClient : IOutletCloudClient
         try
         {
             var response = await SendWithRetryAsync(
-                () => new HttpRequestMessage(HttpMethod.Post, "/rest/v1/rpc/list_orders_missing_shift")
+                () => new HttpRequestMessage(HttpMethod.Post, PortalPath("/rest/v1/rpc/list_orders_missing_shift"))
                 {
                     Content = JsonContent.Create(
                         new { p_outlet_id = _outlet.Id, p_limit = limit },

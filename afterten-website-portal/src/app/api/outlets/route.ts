@@ -6,7 +6,13 @@ import {
   MIDDLEWARE_SALES_API_PATHS,
 } from "@/lib/outletScope";
 import { isHeartbeatMonitoredOutlet } from "@/app/Warehouse_Backoffice/middlewareMonitorShared";
-import { createFirestoreOrdersOutlet, filterFirestoreOutletsByScope, listFirestoreOutlets, updateFirestoreOutletDefaultWarehouse } from "@/lib/firestore-outlets";
+import { cloudBackendMeta } from "@/lib/cloud-backend";
+import {
+  createOrdersOutlet,
+  filterOutletsByScope,
+  listOutlets,
+  updateOutletDefaultWarehouse,
+} from "@/lib/outlets-store";
 
 type OutletRow = {
   id: string;
@@ -50,9 +56,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const scope = url.searchParams.get("scope")?.trim().toLowerCase() || null;
 
-    let outlets = (await listFirestoreOutlets()).sort((a, b) => a.name.localeCompare(b.name));
-outlets = filterFirestoreOutletsByScope(outlets, scope);
-return NextResponse.json({ outlets, cloud_backend: "firebase" });
+    let outlets = (await listOutlets()).sort((a, b) => a.name.localeCompare(b.name));
+    outlets = filterOutletsByScope(outlets, scope);
+    return NextResponse.json({ outlets, ...cloudBackendMeta() });
     
   } catch (error) {
     console.error("[outlets] GET failed", error);
@@ -87,8 +93,8 @@ export async function PUT(request: Request) {
     }
 
     const validUpdates = updates.filter((row): row is { id: string; default_sales_warehouse_id: string | null } => Boolean(row.id));
-const updated = await updateFirestoreOutletDefaultWarehouse(validUpdates);
-return NextResponse.json({ ok: true, updated, cloud_backend: "firebase" });
+    const updated = await updateOutletDefaultWarehouse(validUpdates);
+    return NextResponse.json({ ok: true, updated, ...cloudBackendMeta() });
     
   } catch (error) {
     console.error("[outlets] PUT failed", error);
@@ -105,7 +111,7 @@ export async function POST(request: Request) {
     const warehouseId =
       typeof body.warehouse_id === "string" && body.warehouse_id.trim() ? body.warehouse_id.trim() : null;
 
-    const created = await createFirestoreOrdersOutlet({
+    const created = await createOrdersOutlet({
       name,
       code,
       ordersAppEmail,
@@ -115,7 +121,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      cloud_backend: "firebase",
+      ...cloudBackendMeta(),
       outlet: created,
       catalog_access_url: `/Warehouse_Backoffice/outlets/catalog-access?outlet_id=${created.outletId}`,
     });

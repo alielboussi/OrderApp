@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getFirestoreMiddlewareStatus } from "@/lib/firestore-middleware-status";
+import { cloudBackendMeta } from "@/lib/cloud-backend";
+import { getMiddlewareStatus } from "@/lib/middleware-status-store";
 import {
   type CatalogSyncEventRow,
   type HeartbeatRow,
@@ -11,7 +12,7 @@ import {
 
 export async function GET() {
   try {
-    return NextResponse.json(await getFirestoreMiddlewareStatus());
+    return NextResponse.json(await getMiddlewareStatus());
     
   } catch (error) {
     console.error("[middleware-status] GET failed", error);
@@ -20,7 +21,7 @@ export async function GET() {
         online_count: 0,
         offline_count: 0,
         outlets: [],
-        cloud_backend: "firebase",
+        ...cloudBackendMeta(),
         error: "Unable to load middleware status",
         debug: {
           message: error instanceof Error ? error.message : "Unknown error",

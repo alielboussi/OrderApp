@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { cloudBackendMeta } from "@/lib/cloud-backend";
 import {
-  filterFirestoreWarehousesByScope,
-  listFirestoreOutletWarehouseIds,
-  listFirestoreWarehouses,
-} from "@/lib/firestore-warehouses";
+  filterWarehousesByScope,
+  listOutletWarehouseIds,
+  listWarehouses,
+} from "@/lib/warehouses-store";
 
 export async function GET(request: Request) {
   try {
@@ -23,17 +24,17 @@ export async function GET(request: Request) {
     ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
     const lockedIds = Array.from(new Set(lockedIdCandidates.map((value) => value.trim())));
 
-    let normalized = await listFirestoreWarehouses({ includeInactive, lockedIds });
+    let normalized = await listWarehouses({ includeInactive, lockedIds });
 
     if (scope === "outlet") {
-      const outletWarehouseIds = new Set(await listFirestoreOutletWarehouseIds(outletId));
-      normalized = filterFirestoreWarehousesByScope(normalized, outletWarehouseIds);
+      const outletWarehouseIds = new Set(await listOutletWarehouseIds(outletId));
+      normalized = filterWarehousesByScope(normalized, outletWarehouseIds);
     } else if (scope === "hub") {
-      const outletIds = new Set(await listFirestoreOutletWarehouseIds());
+      const outletIds = new Set(await listOutletWarehouseIds());
       normalized = normalized.filter((w) => !outletIds.has(w.id));
     }
 
-    return NextResponse.json({ warehouses: normalized, cloud_backend: "firebase" });
+    return NextResponse.json({ warehouses: normalized, ...cloudBackendMeta() });
   } catch (error) {
     console.error("warehouses api failed", error);
     return NextResponse.json({ error: "Unable to load warehouses" }, { status: 500 });
