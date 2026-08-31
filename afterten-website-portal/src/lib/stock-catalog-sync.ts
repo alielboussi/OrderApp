@@ -85,17 +85,7 @@ function cleanUnitName(value: unknown, fallback = "each"): string {
   return text.length ? text : fallback;
 }
 
-function inferItemKind(product: StockApiCatalogProduct): "ingredient" | "raw" | null {
-  const warehouseName = normalizeWarehouseName(product.warehouse?.name);
-  if (warehouseName.includes("raw")) return "raw";
-  if (
-    warehouseName.includes("ingredient") ||
-    warehouseName.includes("beverage") ||
-    warehouseName.includes("coldroom") ||
-    warehouseName.includes("storeroom")
-  ) {
-    return "ingredient";
-  }
+function inferItemKind(_product: StockApiCatalogProduct): "ingredient" {
   return "ingredient";
 }
 
@@ -307,7 +297,7 @@ export async function syncStockCatalogToPortal(options?: {
     }
 
     const itemKind = inferItemKind(product);
-    if (!itemKind || !isApiManagedItemKind(itemKind)) {
+    if (!isApiManagedItemKind(itemKind)) {
       skippedPortalOnly += 1;
       continue;
     }

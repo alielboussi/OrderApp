@@ -54,17 +54,7 @@ function cleanUnitName(value, fallback = "each") {
   return text.length ? text : fallback;
 }
 
-function inferItemKind(product) {
-  const warehouseName = normalizeWarehouseName(product.warehouse?.name);
-  if (
-    warehouseName.includes("ingredient") ||
-    warehouseName.includes("beverage") ||
-    warehouseName.includes("coldroom") ||
-    warehouseName.includes("storeroom")
-  ) {
-    return "ingredient";
-  }
-  if (warehouseName.includes("raw")) return "raw";
+function inferItemKind(_product) {
   return "ingredient";
 }
 
@@ -267,6 +257,7 @@ for (const product of products) {
     await db.collection("catalog_items").doc(uuid).set(
       {
         ...syncedFields,
+        item_kind: inferItemKind(product),
         updated_at: nowIso(),
       },
       { merge: true },

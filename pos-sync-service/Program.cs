@@ -76,12 +76,39 @@ builder.Services.AddOptions<OutletOptions>()
     .Validate(o => o.Id != Guid.Empty, "Outlet:Id is required and must be a valid UUID from public.outlets")
     .ValidateOnStart();
 
-builder.Services.AddOptions<FirebaseOptions>()
-    .Bind(builder.Configuration.GetSection("Firebase"))
-    .Validate(o => !string.IsNullOrWhiteSpace(o.ProjectId), "Firebase:ProjectId is required")
-    .ValidateOnStart();
-builder.Services.AddSingleton<FirebaseFirestoreAccess>();
-builder.Services.AddSingleton<IOutletCloudClient, FirebaseCloudClient>();
+var cloudBackend = builder.Configuration.GetValue<string>("Cloud:Backend") ?? "Portal";
+var useFirebase = cloudBackend.Equals("Firebase", StringComparison.OrdinalIgnoreCase);
+var usePortal = cloudBackend.Equals("Portal", StringComparison.OrdinalIgnoreCase);
+
+if (useFirebase)
+{
+    builder.Services.AddOptions<FirebaseOptions>()
+        .Bind(builder.Configuration.GetSection("Firebase"))
+        .Validate(o => !string.IsNullOrWhiteSpace(o.ProjectId), "Firebase:ProjectId is required when Cloud:Backend=Firebase")
+        .ValidateOnStart();
+    builder.Services.AddSingleton<FirebaseFirestoreAccess>();
+    builder.Services.AddSingleton<IOutletCloudClient, FirebaseCloudClient>();
+}
+else if (usePortal)
+{
+    builder.Services.AddOptions<PortalOptions>()
+        .Bind(builder.Configuration.GetSection("Portal"))
+        .Validate(
+            o =>
+                !string.IsNullOrWhiteSpace(o.CredentialsPath) ||
+                (!string.IsNullOrWhiteSpace(o.BaseUrl) && !string.IsNullOrWhiteSpace(o.MiddlewareToken)),
+            "Portal requires CredentialsPath, or BaseUrl + MiddlewareToken")
+        .ValidateOnStart();
+    builder.Services.AddHttpClient("Portal", client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(120);
+    });
+    builder.Services.AddSingleton<IOutletCloudClient, PortalCloudClient>();
+}
+else
+{
+    throw new InvalidOperationException($"Unsupported Cloud:Backend '{cloudBackend}'. Use Portal or Firebase.");
+}
 
 builder.Services.AddOptions<SyncOptions>()
     .Bind(builder.Configuration.GetSection("Sync"))

@@ -69,6 +69,7 @@ gradle.properties
 
 # Local OAuth / API secrets (never commit)
 secrets/
+exports/middleware-credentials/
 client_secret_*.json
 **/google-oauth-credentials.txt
 **/*firebase-adminsdk*.json

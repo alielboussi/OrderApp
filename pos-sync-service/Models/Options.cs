@@ -47,6 +47,30 @@ public sealed class OutletOptions
     public Guid Id { get; init; }
 }
 
+public sealed class CloudBackendOptions
+{
+    public string Backend { get; init; } = "Portal";
+}
+
+public sealed class PortalOptions
+{
+    /// <summary>Portal base URL, e.g. https://portal.afterten.com (optional if set in credentials file).</summary>
+    public string BaseUrl { get; init; } = string.Empty;
+
+    /// <summary>Path to middleware-credentials.json (base_url + middleware_token).</summary>
+    public string CredentialsPath { get; init; } = string.Empty;
+
+    /// <summary>Optional inline middleware token (prefer CredentialsPath).</summary>
+    public string MiddlewareToken { get; init; } = string.Empty;
+}
+
+public sealed class PortalCredentialsFile
+{
+    public string BaseUrl { get; init; } = string.Empty;
+    public string MiddlewareToken { get; init; } = string.Empty;
+    public Guid OutletId { get; init; }
+}
+
 public sealed class FirebaseOptions
 {
     public string ProjectId { get; init; } = string.Empty;
