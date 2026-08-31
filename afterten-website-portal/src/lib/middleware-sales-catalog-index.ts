@@ -93,70 +93,58 @@ function asNullableInt(value: unknown): number | null {
   return null;
 }
 
-export async function loadMiddlewareSalesCatalogIndex(
-  db: Firestore,
+function assembleMiddlewareSalesCatalogIndex(
+  items: CatalogItemRow[],
+  variants: Array<{ id: string; item_id: string | null; name: string | null; sku: string | null; variant_key?: string | null }>,
+  menuGroups: CatalogMenuGroupRow[],
+  posMaps: PosItemMapRow[],
   outletIds: string[],
-): Promise<MiddlewareSalesCatalogIndex> {
-  const [itemsSnap, variantsSnap, menuGroupsSnap, posMapSnap] = await Promise.all([
-    db.collection("catalog_items").get(),
-    db.collection("catalog_variants").get(),
-    db.collection("catalog_menu_groups").get(),
-    db.collection("pos_item_map").get(),
-  ]);
-
+): MiddlewareSalesCatalogIndex {
   const itemById = new Map<string, CatalogItemRow>();
   const itemIdBySku = new Map<string, string>();
   const itemIdByNormalizedName = new Map<string, string>();
 
-  for (const doc of itemsSnap.docs) {
-    const data = doc.data();
-    const sku = asText(data.sku) ?? asText(data.itemSku);
-    const row: CatalogItemRow = {
-      id: doc.id,
-      name: asText(data.name),
-      sku,
-      menu_group_id: asText(data.menu_group_id),
-    };
-    itemById.set(doc.id, row);
-    if (sku) {
-      const skuKey = sku.toLowerCase();
+  for (const row of items) {
+    itemById.set(row.id, row);
+    if (row.sku) {
+      const skuKey = row.sku.toLowerCase();
       const existing = itemIdBySku.get(skuKey);
-      if (!existing || (!isCatalogUuid(existing) && isCatalogUuid(doc.id))) {
-        itemIdBySku.set(skuKey, doc.id);
+      if (!existing || (!isCatalogUuid(existing) && isCatalogUuid(row.id))) {
+        itemIdBySku.set(skuKey, row.id);
       }
     }
-    if (!isCatalogUuid(doc.id)) {
-      const existingSkuDoc = itemIdBySku.get(doc.id.toLowerCase());
+    if (!isCatalogUuid(row.id)) {
+      const existingSkuDoc = itemIdBySku.get(row.id.toLowerCase());
       if (!existingSkuDoc || !isCatalogUuid(existingSkuDoc)) {
-        itemIdBySku.set(doc.id.toLowerCase(), doc.id);
+        itemIdBySku.set(row.id.toLowerCase(), row.id);
       }
     }
     if (row.name) {
       const nameKey = itemNameLookupKey(row.name);
       const existing = itemIdByNormalizedName.get(nameKey);
-      if (!existing || (!isCatalogUuid(existing) && isCatalogUuid(doc.id))) {
-        itemIdByNormalizedName.set(nameKey, doc.id);
+      if (!existing || (!isCatalogUuid(existing) && isCatalogUuid(row.id))) {
+        itemIdByNormalizedName.set(nameKey, row.id);
       }
     }
   }
 
   const variantByItemAndKey = new Map<string, CatalogVariantRow>();
   const variantByItemAndName = new Map<string, CatalogVariantRow>();
-  for (const doc of variantsSnap.docs) {
-    const data = doc.data();
-    const itemId = asText(data.item_id) ?? asText(data.itemId) ?? asText(data.itemSku);
+  for (const variant of variants) {
+    const itemId = variant.item_id;
     if (!itemId) continue;
     const resolvedItemId = itemById.has(itemId) ? itemId : itemIdBySku.get(itemId.toLowerCase()) ?? itemId;
     const row: CatalogVariantRow = {
-      id: doc.id,
+      id: variant.id,
       item_id: resolvedItemId,
-      name: asText(data.name),
-      sku: asText(data.sku) ?? asText(data.variantSku),
+      name: variant.name,
+      sku: variant.sku,
     };
-    variantByItemAndKey.set(variantLookupKey(resolvedItemId, doc.id), row);
+    variantByItemAndKey.set(variantLookupKey(resolvedItemId, variant.id), row);
     if (row.sku) variantByItemAndKey.set(variantLookupKey(resolvedItemId, row.sku), row);
-    const variantKey = asText(data.variant_key) ?? asText(data.variantKey);
-    if (variantKey) variantByItemAndKey.set(variantLookupKey(resolvedItemId, variantKey), row);
+    if (variant.variant_key) {
+      variantByItemAndKey.set(variantLookupKey(resolvedItemId, variant.variant_key), row);
+    }
     if (row.name) {
       const nameKey = variantNameLookupKey(resolvedItemId, row.name);
       const existing = variantByItemAndName.get(nameKey);
@@ -167,32 +155,19 @@ export async function loadMiddlewareSalesCatalogIndex(
   }
 
   const menuGroupById = new Map<string, CatalogMenuGroupRow>();
-  for (const doc of menuGroupsSnap.docs) {
-    const data = doc.data();
-    menuGroupById.set(doc.id, {
-      id: doc.id,
-      name: asText(data.name),
-      pos_menu_group_id: asNullableInt(data.pos_menu_group_id),
-    });
+  for (const group of menuGroups) {
+    menuGroupById.set(group.id, group);
   }
 
   const outletIdSet = new Set(outletIds.map((id) => id.toLowerCase()));
   const posMapByOutletPosFlavour = new Map<string, PosItemMapRow>();
-  for (const doc of posMapSnap.docs) {
-    const data = doc.data();
-    const outletId = asText(data.outlet_id);
+  for (const row of posMaps) {
+    const outletId = row.outlet_id;
     if (outletId && outletIdSet.size > 0 && !outletIdSet.has(outletId.toLowerCase())) {
       continue;
     }
-    const posItemId = asText(data.pos_item_id);
+    const posItemId = row.pos_item_id;
     if (!posItemId) continue;
-    const row: PosItemMapRow = {
-      outlet_id: outletId,
-      pos_item_id: posItemId,
-      pos_flavour_id: asText(data.pos_flavour_id),
-      catalog_item_id: asText(data.catalog_item_id),
-      catalog_variant_key: asText(data.catalog_variant_key) ?? asText(data.normalized_variant_key),
-    };
     const key = posMapLookupKey(outletId ?? "*", posItemId, row.pos_flavour_id);
     posMapByOutletPosFlavour.set(key, row);
     if (outletId) {
@@ -209,6 +184,121 @@ export async function loadMiddlewareSalesCatalogIndex(
     menuGroupById,
     posMapByOutletPosFlavour,
   };
+}
+
+export async function loadMiddlewareSalesCatalogIndex(
+  db: Firestore,
+  outletIds: string[],
+): Promise<MiddlewareSalesCatalogIndex> {
+  const [itemsSnap, variantsSnap, menuGroupsSnap, posMapSnap] = await Promise.all([
+    db.collection("catalog_items").get(),
+    db.collection("catalog_variants").get(),
+    db.collection("catalog_menu_groups").get(),
+    db.collection("pos_item_map").get(),
+  ]);
+
+  const items: CatalogItemRow[] = itemsSnap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      name: asText(data.name),
+      sku: asText(data.sku) ?? asText(data.itemSku),
+      menu_group_id: asText(data.menu_group_id),
+    };
+  });
+
+  const variants = variantsSnap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      item_id: asText(data.item_id) ?? asText(data.itemId) ?? asText(data.itemSku),
+      name: asText(data.name),
+      sku: asText(data.sku) ?? asText(data.variantSku),
+      variant_key: asText(data.variant_key) ?? asText(data.variantKey),
+    };
+  });
+
+  const menuGroups = menuGroupsSnap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      name: asText(data.name),
+      pos_menu_group_id: asNullableInt(data.pos_menu_group_id),
+    };
+  });
+
+  const posMaps = posMapSnap.docs
+    .map((doc) => {
+      const data = doc.data();
+      return {
+        outlet_id: asText(data.outlet_id),
+        pos_item_id: asText(data.pos_item_id),
+        pos_flavour_id: asText(data.pos_flavour_id),
+        catalog_item_id: asText(data.catalog_item_id),
+        catalog_variant_key: asText(data.catalog_variant_key) ?? asText(data.normalized_variant_key),
+      };
+    })
+    .filter((row): row is PosItemMapRow => Boolean(row.pos_item_id));
+
+  return assembleMiddlewareSalesCatalogIndex(items, variants, menuGroups, posMaps, outletIds);
+}
+
+export async function loadSupabaseMiddlewareSalesCatalogIndex(
+  outletIds: string[],
+): Promise<MiddlewareSalesCatalogIndex> {
+  const { getSupabaseAdmin } = await import("@/lib/supabase-server");
+  const supabase = getSupabaseAdmin();
+
+  const [itemsRes, variantsRes, menuGroupsRes, bindingsRes] = await Promise.all([
+    supabase.from("catalog_items").select("id,name,sku,menu_group_id"),
+    supabase.from("catalog_variants").select("id,item_id,name,sku,variant_key"),
+    supabase.from("catalog_menu_groups").select("id,name,pos_menu_group_id"),
+    supabase.from("outlet_pos_catalog_bindings").select(
+      "outlet_id,item_sku,variant_sku,catalog_item_id,catalog_variant_key",
+    ),
+  ]);
+
+  if (itemsRes.error) throw new Error(itemsRes.error.message);
+  if (variantsRes.error) throw new Error(variantsRes.error.message);
+  if (menuGroupsRes.error) throw new Error(menuGroupsRes.error.message);
+  if (bindingsRes.error) throw new Error(bindingsRes.error.message);
+
+  const items: CatalogItemRow[] = (itemsRes.data ?? []).map((row) => ({
+    id: String(row.id),
+    name: asText(row.name),
+    sku: asText(row.sku),
+    menu_group_id: row.menu_group_id ? String(row.menu_group_id) : null,
+  }));
+
+  const variants = (variantsRes.data ?? []).map((row) => ({
+    id: String(row.id),
+    item_id: row.item_id ? String(row.item_id) : null,
+    name: asText(row.name),
+    sku: asText(row.sku),
+    variant_key: asText(row.variant_key),
+  }));
+
+  const menuGroups: CatalogMenuGroupRow[] = (menuGroupsRes.data ?? []).map((row) => ({
+    id: String(row.id),
+    name: asText(row.name),
+    pos_menu_group_id: asNullableInt(row.pos_menu_group_id),
+  }));
+
+  const posMaps: PosItemMapRow[] = [];
+  for (const row of bindingsRes.data ?? []) {
+    const posItemId = asText(row.item_sku);
+    if (!posItemId) continue;
+    const variantSku = asText(row.variant_sku);
+    posMaps.push({
+      outlet_id: row.outlet_id ? String(row.outlet_id) : null,
+      pos_item_id: posItemId,
+      pos_flavour_id: variantSku && variantSku.length > 0 ? variantSku : null,
+      catalog_item_id: row.catalog_item_id ? String(row.catalog_item_id) : null,
+      catalog_variant_key: asText(row.catalog_variant_key),
+    });
+  }
+
+  return assembleMiddlewareSalesCatalogIndex(items, variants, menuGroups, posMaps, outletIds);
 }
 
 export type RawSaleLineInput = {

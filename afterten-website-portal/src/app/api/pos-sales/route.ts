@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchFirestorePosSales } from "@/lib/firestore-pos-sales";
+import { fetchPosSales } from "@/lib/pos-sales-store";
 
 const MAX_LIMIT = 2000;
 const DEFAULT_LIMIT = 500;
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
 
     const limit = parseLimit(url.searchParams.get("limit"), DEFAULT_LIMIT);
 
-    const payload = await fetchFirestorePosSales({
+    const payload = await fetchPosSales({
   outletId,
   since: effectiveSince,
   until: effectiveUntil,

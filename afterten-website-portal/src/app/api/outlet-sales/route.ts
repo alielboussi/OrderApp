@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchFirestorePosSales } from "@/lib/firestore-pos-sales";
+import { cloudBackendMeta } from "@/lib/cloud-backend";
+import { fetchPosSales } from "@/lib/pos-sales-store";
 
 type RawSalesRow = {
   id: string;
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     const outletId = outletIds.length === 1 ? outletIds[0] : null;
-const payload = await fetchFirestorePosSales({
+const payload = await fetchPosSales({
   outletId,
   since,
   until,
@@ -81,7 +82,7 @@ const rows = filtered.map((row) => {
   };
 });
 
-return NextResponse.json({ rows, cloud_backend: "firebase" });
+return NextResponse.json({ rows, ...cloudBackendMeta() });
     
   } catch (error) {
     console.error("[outlet-sales] GET failed", error);

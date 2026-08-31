@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseBusinessDateRangeParam } from "@/lib/dateRangeParam";
+import { cloudBackendMeta } from "@/lib/cloud-backend";
 import { parseShiftFilterFromUrl } from "@/lib/posSalesStats";
-import {
-  loadFirestorePosSalesStats,
-  loadFirestoreTransferOrderStats,
-} from "@/lib/firestore-pos-sales";
+import { loadPosSalesStats, loadTransferOrderStats } from "@/lib/pos-sales-store";
 
 type OrderItemRow = {
   name: string | null;
@@ -105,7 +103,7 @@ export async function GET(request: NextRequest) {
 };
 
 if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
-  sales = await loadFirestorePosSalesStats({
+  sales = await loadPosSalesStats({
     outletIds: salesOutletIds,
     fromIso: salesRange.from.toISOString(),
     toIso: salesRange.to.toISOString(),
@@ -114,7 +112,7 @@ if (!(salesOutletFilterActive && salesOutletIds.length === 0)) {
   });
 }
 
-const outlet_orders = await loadFirestoreTransferOrderStats(
+const outlet_orders = await loadTransferOrderStats(
   salesOutletIds,
   ordersRange.from.toISOString(),
   ordersRange.to.toISOString(),
@@ -127,7 +125,7 @@ const outlet_orders = await loadFirestoreTransferOrderStats(
         sales: { from: salesRange.from.toISOString(), to: salesRange.to.toISOString() },
         orders: { from: ordersRange.from.toISOString(), to: ordersRange.to.toISOString() },
       },
-      backend: "firebase",
+      ...cloudBackendMeta(),
     });
   } catch (error) {
     console.error("[dashboard/stats] GET failed", error);
